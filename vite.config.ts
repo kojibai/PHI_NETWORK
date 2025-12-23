@@ -18,6 +18,30 @@ import {
   BEATS_DAY,
 } from "./src/utils/kai_pulse";
 
+// ──────────────────────────────────────────────────────────────
+// HARD LOCK: Pulse-0 Genesis must be this Chronos moment (UTC ms)
+// 1715323541888 = 2024-05-10 06:45:41.888Z
+// ──────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────
+// HARD LOCKS (UTC ms)
+// ──────────────────────────────────────────────────────────────
+const FIXED_PULSE0_GENESIS_TS_MS_UTC: number = 1715323541888; // pulse 0 anchor
+const FIXED_SOLAR_GENESIS_TS_MS_UTC: number = 1715400806000;  // your current solar anchor
+
+if (Number(GENESIS_TS) !== FIXED_PULSE0_GENESIS_TS_MS_UTC) {
+  throw new Error(
+    `GENESIS_TS mismatch. Expected ${FIXED_PULSE0_GENESIS_TS_MS_UTC} (pulse-0 anchor), got ${GENESIS_TS}. ` +
+      `Update src/utils/kai_pulse.ts so pulse 0 is always that moment.`
+  );
+}
+
+if (Number(SOLAR_GENESIS_UTC_TS) !== FIXED_SOLAR_GENESIS_TS_MS_UTC) {
+  throw new Error(
+    `SOLAR_GENESIS_UTC_TS mismatch. Expected ${FIXED_SOLAR_GENESIS_TS_MS_UTC}, got ${SOLAR_GENESIS_UTC_TS}.`
+  );
+}
+
+
 const SOVEREIGN_BUILD = {
   appVersion: BASE_APP_VERSION,
 
@@ -36,8 +60,7 @@ const SOVEREIGN_BUILD = {
 
   /**
    * Optional “built-in” μpulse seed (string) — leave null unless you *intentionally*
-   * hard-code a sovereign anchor. Your runtime should still prefer:
-   *   checkpoint > signed anchor > localStorage anchor > RTC fallback
+   * hard-code a sovereign NOW seed. (This is NOT the Genesis/pulse-0 anchor.)
    */
   kaiAnchorMicro: null as string | null,
 } as const;

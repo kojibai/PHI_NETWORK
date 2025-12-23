@@ -43,8 +43,13 @@ export const DAYS_PER_MONTH  = DAYS_PER_WEEK * WEEKS_PER_MONTH; // 42
 export const MONTHS_PER_YEAR = 8 as const;
 export const DAYS_PER_YEAR   = DAYS_PER_MONTH * MONTHS_PER_YEAR; // 336
 
+// φ-exact pulse duration as a JS Number (NOT rounded to an integer)
+export const PULSE_MS: number = (3 + Math.sqrt(5)) * 1000;
+
+
 // φ-exact pulse duration (display-only ms) from T = 3 + √5 seconds.
-export const PULSE_MS: number = Math.round((3 + Math.sqrt(5)) * 1000);
+export const PULSE_MS_DISPLAY: number = Math.round((3 + Math.sqrt(5)) * 1000);
+
 
 // There is intentionally **no** DAY_MS. Seconds/day is irrational; the engine stays in integers.
 
@@ -1241,4 +1246,12 @@ export function getLiveKaiPulseInt(msUTC?: bigint): bigint {
 /** Live pulse index as Number (safe for “current era”). */
 export function getLiveKaiPulse(msUTC?: bigint): number {
   return Number(getLiveKaiPulseInt(msUTC));
+}
+const GENESIS_ENV = (import.meta as unknown as { env?: Record<string, unknown> }).env?.VITE_KAI_GENESIS_TS_MS_UTC;
+
+if (typeof GENESIS_ENV === "string") {
+  const v = Number(GENESIS_ENV);
+  if (Number.isFinite(v) && v !== GENESIS_TS) {
+    throw new Error(`GENESIS_TS mismatch: env=${v} code=${GENESIS_TS}. Refusing to run.`);
+  }
 }
