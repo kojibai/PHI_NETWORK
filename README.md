@@ -1517,3 +1517,13 @@ index.html               # Vite entry HTML
 ```
 
 Proof of Breath™ is a sovereign, cryptographic time protocol that deterministically seals identity, authorship, and value to the exact breath-indexed lattice of reality — not clock time.
+
+
+
+# OFFICIAL NOTICE — HISTORICAL ARCHIVE
+
+✅ **HISTORICAL repository:** https://github.com/kojibai/verify.kai 
+
+This repository is preserved as a historical archive of prior development. It is read-only and will not receive new features, bug fixes, security updates, or support.
+
+For the actively maintained, canonical codebase, please use the current official repository at https://github.com/kojibai/phi_network and direct all issues, pull requests, and releases here.
