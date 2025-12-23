@@ -1314,11 +1314,21 @@ useEffect(() => {
   const [stargateOpen, setStargateOpen] = useState(false);
   const [stargateSrc, setStargateSrc] = useState<string>("");
 
-  useEffect(() => {
-    if (stargateOpen) return;
+  const releaseStargateScrollLock = useCallback(() => {
     document.documentElement.classList.remove("stargate-open");
     document.body.classList.remove("stargate-open");
-  }, [stargateOpen]);
+    document.documentElement.style.removeProperty("overflow");
+    document.documentElement.style.removeProperty("height");
+    document.documentElement.style.removeProperty("overscroll-behavior");
+    document.body.style.removeProperty("overflow");
+    document.body.style.removeProperty("height");
+    document.body.style.removeProperty("overscroll-behavior");
+  }, []);
+
+  useEffect(() => {
+    if (stargateOpen) return;
+    releaseStargateScrollLock();
+  }, [releaseStargateScrollLock, stargateOpen]);
 
   const openStargate = useCallback(async () => {
     const el = frameRef.current;
@@ -1332,7 +1342,8 @@ useEffect(() => {
   }, []);
   const closeStargate = useCallback(() => {
     setStargateOpen(false);
-  }, []);
+    releaseStargateScrollLock();
+  }, [releaseStargateScrollLock]);
   const stargatePress = useFastPress<HTMLButtonElement>(() => {
     void openStargate();
   });
