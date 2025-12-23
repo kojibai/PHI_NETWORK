@@ -1323,16 +1323,9 @@ useEffect(() => {
     );
     setStargateSrc(canvas.toDataURL("image/png"));
     setStargateOpen(true);
-    if (!isIOS()) {
-      const overlay = document.querySelector(".stargate-overlay") as HTMLElement | null;
-      overlay?.requestFullscreen?.().catch(() => {});
-    }
   }, []);
   const closeStargate = useCallback(() => {
     setStargateOpen(false);
-    if (document.fullscreenElement && !isIOS()) {
-      document.exitFullscreen?.().catch(() => {});
-    }
   }, []);
   const stargatePress = useFastPress<HTMLButtonElement>(() => {
     void openStargate();
