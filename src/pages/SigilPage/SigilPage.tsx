@@ -603,7 +603,33 @@ export default function SigilPage() {
   void setLoading;
   const payload = payloadState;
 
-const { pulse: currentPulse, msToNextPulse } = useKaiTickerDeterministic();
+  const { pulse: currentPulse, msToNextPulse } = useKaiTickerDeterministic();
+  const [nextPulseSeconds, setNextPulseSeconds] = useState<string>("0.000");
+  const nextPulseStartRef = useRef<number>(0);
+  const nextPulseDurationRef = useRef<number>(0);
+  const nextPulseRafRef = useRef<number | null>(null);
+  useEffect(() => {
+    const baseMs = Math.max(0, msToNextPulse ?? 0);
+    nextPulseDurationRef.current = baseMs;
+    nextPulseStartRef.current = typeof performance !== "undefined" ? performance.now() : 0;
+
+    const step = () => {
+      const now = typeof performance !== "undefined" ? performance.now() : 0;
+      const elapsed = now - nextPulseStartRef.current;
+      const remaining = Math.max(0, nextPulseDurationRef.current - elapsed);
+      setNextPulseSeconds((remaining / 1000).toFixed(3));
+      if (remaining > 0) {
+        nextPulseRafRef.current = requestAnimationFrame(step);
+      }
+    };
+
+    if (nextPulseRafRef.current != null) cancelAnimationFrame(nextPulseRafRef.current);
+    step();
+
+    return () => {
+      if (nextPulseRafRef.current != null) cancelAnimationFrame(nextPulseRafRef.current);
+    };
+  }, [msToNextPulse]);
   
 
   // Sovereign additions
@@ -1787,8 +1813,6 @@ const onReady = useCallback(
 
   const pulse = payload?.pulse ?? 0;
   const beat = payload?.beat ?? 0;
-
-  const nextPulseSeconds = (((msToNextPulse ?? 0) / 1000) as number).toFixed(3);
 
   const isArchived = linkStatus === "archived";
   const ownerVerified = ownershipVerified && !isArchived;
