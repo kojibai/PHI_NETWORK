@@ -322,3 +322,7 @@ src/
 vite.config.ts           # Vite config for build / dev
 index.html               # Vite entry HTML
 
+
+```
+
+Proof of Breath™ is a sovereign, cryptographic time protocol that deterministically seals identity, authorship, and value to the exact breath-indexed lattice of reality — not clock time.
