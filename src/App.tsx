@@ -41,7 +41,6 @@ import { SIGIL_EXPLORER_OPEN_EVENT } from "./constants/sigilExplorer";
 
 import SovereignDeclarations from "./components/SovereignDeclarations";
 import { DEFAULT_APP_VERSION, SW_VERSION_EVENT } from "./version";
-
 import "./App.css";
 
 declare global {
@@ -881,29 +880,82 @@ function useKaiAnchorPersistence(): void {
 
     hardResyncKaiAnchor();
 
+    const MICRO_PER_PULSE = 1_000_000n;
+
+    // Timer bridge only (truth stays μpulse-space)
+    const BREATH_MS = PULSE_MS;
+
+    let t: number | null = null;
+    let disposed = false;
+
     const writeAnchor = (): void => {
       const pμ = microPulsesNow();
       if (pμ > 0n) writeLocalStorageBigInt(KAI_ANCHOR_PMICRO_KEY, pμ);
     };
 
+    const clearTimer = (): void => {
+      if (t !== null) {
+        window.clearTimeout(t);
+        t = null;
+      }
+    };
+
+    const scheduleNextBoundaryWrite = (): void => {
+      if (disposed) return;
+
+      const pμ = microPulsesNow();
+      if (pμ <= 0n) {
+        clearTimer();
+        t = window.setTimeout(scheduleNextBoundaryWrite, 250);
+        return;
+      }
+
+      const rem = pμ % MICRO_PER_PULSE;
+      const until = rem === 0n ? 0n : (MICRO_PER_PULSE - rem);
+
+      // delayMs = floor((until μpulses / 1e6) * PULSE_MS)
+      // quantize ONLY here (timer edge)
+      const delayMs = Math.max(
+        1,
+        Math.min(
+          Math.round(BREATH_MS),
+          Math.floor((Number(until) * BREATH_MS) / 1_000_000)
+        )
+      );
+
+      clearTimer();
+      t = window.setTimeout(() => {
+        writeAnchor();
+        scheduleNextBoundaryWrite();
+      }, delayMs);
+    };
+
     const onVis = (): void => {
-      if (typeof document !== "undefined" && document.visibilityState === "hidden") writeAnchor();
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+        writeAnchor();
+      }
+    };
+
+    const onPageHide = (): void => {
+      writeAnchor();
     };
 
     writeAnchor();
-    const id = window.setInterval(writeAnchor, 15_000);
+    scheduleNextBoundaryWrite();
 
-    window.addEventListener("pagehide", writeAnchor);
+    window.addEventListener("pagehide", onPageHide);
     document.addEventListener("visibilitychange", onVis);
 
     return () => {
-      window.clearInterval(id);
-      window.removeEventListener("pagehide", writeAnchor);
+      disposed = true;
+      clearTimer();
+      window.removeEventListener("pagehide", onPageHide);
       document.removeEventListener("visibilitychange", onVis);
       writeAnchor();
     };
   }, []);
 }
+
 
 function useHeavyUiGate(): boolean {
   const [ready, setReady] = useState(false);

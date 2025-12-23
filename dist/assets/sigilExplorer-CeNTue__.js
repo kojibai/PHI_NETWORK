@@ -1,0 +1,1 @@
+const e=`sigil:explorer:open`;export{e as t};

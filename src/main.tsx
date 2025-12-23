@@ -5,13 +5,7 @@ import ReactDOM from "react-dom/client";
 import "./styles.css";
 import "./App.css";
 
-import AppRouter from "./router/AppRouter";
 import { APP_VERSION, SW_VERSION_EVENT } from "./version";
-
-// ✅ REPLACE scheduler impl with your utils cadence file
-import { startKaiCadence } from "./utils/kai_cadence";
-import { GENESIS_TS, PULSE_MS, seedKaiNowMicroPulses } from "./utils/kai_pulse";
-
 
 /* ────────────────────────────────────────────────────────────────
    Kai NOW seeding (μpulses) — one-time coordinate selection only.
@@ -19,6 +13,9 @@ import { GENESIS_TS, PULSE_MS, seedKaiNowMicroPulses } from "./utils/kai_pulse";
      1) localStorage checkpoint (if present)
      2) build-injected env anchor: VITE_KAI_ANCHOR_MICRO
      3) performance.timeOrigin + performance.now() → bridged to μpulses
+   NOTE:
+     - We intentionally avoid importing kai_pulse (or anything that imports it)
+       until AFTER we have ensured a seed checkpoint exists.
 ────────────────────────────────────────────────────────────────── */
 
 const KAI_SEED_KEYS: readonly string[] = [
@@ -29,6 +26,24 @@ const KAI_SEED_KEYS: readonly string[] = [
   "KAI_ANCHOR_MICRO",
   "KAI_NOW_MICRO",
 ];
+
+const envUnknown = import.meta.env as Record<string, unknown>;
+
+const readNumberEnv = (key: string): number => {
+  const v = envUnknown[key];
+  const n =
+    typeof v === "number" ? v :
+    typeof v === "string" ? Number(v) :
+    NaN;
+
+  if (!Number.isFinite(n)) {
+    throw new Error(`Missing/invalid ${key}. Check vite.config.ts define() injection.`);
+  }
+  return n;
+};
+
+const GENESIS_TS_MS_UTC: number = readNumberEnv("VITE_KAI_GENESIS_TS_MS_UTC");
+const PULSE_MS: number = readNumberEnv("VITE_KAI_PULSE_MS");
 
 const parseBigInt = (v: unknown): bigint | null => {
   if (typeof v !== "string") return null;
@@ -41,23 +56,18 @@ const parseBigInt = (v: unknown): bigint | null => {
   }
 };
 
-const roundTiesToEvenBigInt = (x: number): bigint => {
+const floorBigIntFromNumber = (x: number): bigint => {
   if (!Number.isFinite(x)) return 0n;
-  const sign = x < 0 ? -1 : 1;
-  const ax = Math.abs(x);
-  const i = Math.trunc(ax);
-  const frac = ax - i;
-
-  if (frac < 0.5) return BigInt(sign * i);
-  if (frac > 0.5) return BigInt(sign * (i + 1));
-  // exactly .5 → ties-to-even
-  return BigInt(sign * (i % 2 === 0 ? i : i + 1));
+  // floor toward -∞
+  const f = Math.floor(x);
+  // safe for current magnitudes (μpulses ~ 1e13–1e15 range)
+  return BigInt(f);
 };
 
 const microPulsesSinceGenesisFromEpochMs = (epochMs: number): bigint => {
-  const deltaMs = epochMs - GENESIS_TS;
-  const pulses = deltaMs / PULSE_MS; // PULSE_MS may be fractional; OK
-  return roundTiesToEvenBigInt(pulses * 1_000_000);
+  const deltaMs = epochMs - GENESIS_TS_MS_UTC;
+  const pulses = deltaMs / PULSE_MS; // bridge only
+  return floorBigIntFromNumber(pulses * 1_000_000);
 };
 
 const readSeedFromLocalStorage = (): bigint | null => {
@@ -75,10 +85,25 @@ const readSeedFromLocalStorage = (): bigint | null => {
 };
 
 const readSeedFromEnv = (): bigint | null => {
-  // avoids needing ImportMetaEnv augmentation
-  const env = import.meta.env as Record<string, string | boolean | undefined>;
-  const raw = env["VITE_KAI_ANCHOR_MICRO"];
-  return parseBigInt(typeof raw === "string" ? raw : undefined);
+  const raw = envUnknown["VITE_KAI_ANCHOR_MICRO"];
+  // vite define injects null literally when unset
+  if (raw === null || raw === undefined) return null;
+  return parseBigInt(raw);
+};
+
+const writeSeedCheckpoint = (pμ: bigint): void => {
+  if (typeof window === "undefined") return;
+  try {
+    const s = pμ.toString();
+    // write canonical + back-compat keys so older code paths still find it
+    for (const k of KAI_SEED_KEYS) {
+      if (window.localStorage.getItem(k) == null) {
+        window.localStorage.setItem(k, s);
+      }
+    }
+  } catch {
+    // ignore
+  }
 };
 
 const pickSeedMicroPulses = (): bigint => {
@@ -92,12 +117,6 @@ const pickSeedMicroPulses = (): bigint => {
   const epochMs = performance.timeOrigin + performance.now();
   return microPulsesSinceGenesisFromEpochMs(epochMs);
 };
-
-// 🔒 MUST happen before any component calls kairosEpochNow()
-if (typeof window !== "undefined") {
-  const pμ = pickSeedMicroPulses();
-  seedKaiNowMicroPulses(pμ);
-}
 
 const isProduction = import.meta.env.MODE === "production";
 
@@ -130,19 +149,42 @@ function rewriteLegacyHash(): void {
   window.history.replaceState(null, "", newUrl);
 }
 
-if (isProduction) {
+if (isProduction && typeof window !== "undefined") {
   window.addEventListener("DOMContentLoaded", rewriteLegacyHash, { once: true });
 }
 
-ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-  <React.StrictMode>
-    <AppRouter />
-  </React.StrictMode>
-);
+const bootstrap = async (): Promise<void> => {
+  // 🔒 MUST happen before any component/module calls kairosEpochNow()
+  if (typeof window !== "undefined") {
+    const pμ = pickSeedMicroPulses();
+    writeSeedCheckpoint(pμ);
+
+    // Now it is safe to import kai_pulse (it can read the checkpoint if it wants)
+    const kai = await import("./utils/kai_pulse");
+    kai.seedKaiNowMicroPulses(pμ);
+  }
+
+  // Import router only AFTER seeding
+  const mod = await import("./router/AppRouter");
+  const AppRouter = mod.default;
+
+  const rootEl = document.getElementById("root");
+  if (!rootEl) throw new Error('Missing #root element');
+
+  ReactDOM.createRoot(rootEl as HTMLElement).render(
+    <React.StrictMode>
+      <AppRouter />
+    </React.StrictMode>
+  );
+};
+
+void bootstrap().catch((err) => {
+  console.error("Bootstrap error:", err);
+});
 
 // ✅ Register Kairos Service Worker with instant-upgrade behavior
 if ("serviceWorker" in navigator && isProduction) {
-  const registerKairosSW = async () => {
+  const registerKairosSW = async (): Promise<void> => {
     try {
       const reg = await navigator.serviceWorker.register(`/sw.js?v=${APP_VERSION}`, { scope: "/" });
 
@@ -173,20 +215,26 @@ if ("serviceWorker" in navigator && isProduction) {
 
       watchForUpdates(reg);
 
-      navigator.serviceWorker.addEventListener("message", (event) => {
-        if (event.data?.type === "SW_ACTIVATED") {
+      const isSwActivatedMsg = (data: unknown): data is { type: "SW_ACTIVATED"; version: string } => {
+        if (typeof data !== "object" || data === null) return false;
+        const rec = data as Record<string, unknown>;
+        return rec["type"] === "SW_ACTIVATED" && typeof rec["version"] === "string";
+      };
+
+      navigator.serviceWorker.addEventListener("message", (event: MessageEvent<unknown>) => {
+        if (isSwActivatedMsg(event.data)) {
           console.log("Kairos service worker active", event.data.version);
-          if (typeof event.data.version === "string") {
-            window.kairosSwVersion = event.data.version;
-            window.dispatchEvent(new CustomEvent(SW_VERSION_EVENT, { detail: event.data.version }));
-          }
+          window.kairosSwVersion = event.data.version;
+          window.dispatchEvent(new CustomEvent<string>(SW_VERSION_EVENT, { detail: event.data.version }));
         }
       });
 
-      // ✅ REPLACES the hour interval: Kai beat cadence via utils
-      startKaiCadence({
+      // ✅ Import cadence only after seed + SW reg (avoids early kai_pulse import paths)
+      const cadence = await import("./utils/kai_cadence");
+
+      cadence.startKaiCadence({
         unit: "beat",
-        every: 1, // "do a beat"
+        every: 1,
         onTick: async () => {
           await reg.update();
         },
@@ -198,5 +246,7 @@ if ("serviceWorker" in navigator && isProduction) {
     }
   };
 
-  window.addEventListener("load", registerKairosSW);
+  window.addEventListener("load", () => {
+    void registerKairosSW();
+  });
 }
