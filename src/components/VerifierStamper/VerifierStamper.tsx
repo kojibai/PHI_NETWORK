@@ -96,6 +96,7 @@ import { verifyZkOnHead } from "./zk";
 import { DEFAULT_ISSUANCE_POLICY, quotePhiForUsd } from "../../utils/phi-issuance";
 import { BREATH_MS } from "../valuation/constants";
 import { recordSend, getSpentScaledFor, markConfirmedByLeaf } from "../../utils/sendLedger";
+import { recordSigilTransferMovement } from "../../utils/sigilTransferRegistry";
 
 /* Live chart popover (stay inside Verifier modal) */
 import LiveChart from "../valuation/chart/LiveChart";
@@ -201,6 +202,23 @@ const S = {
   },
   popTitle: { fontSize: 12, color: "rgba(255,255,255,.82)", letterSpacing: ".02em" },
 };
+
+function readPhiAmountFromMeta(meta: SigilMetadataWithOptionals): string | undefined {
+  const candidate =
+    meta.childAllocationPhi ??
+    meta.branchBasePhi ??
+    (meta as unknown as { childAllocationPhi?: number | string }).childAllocationPhi ??
+    (meta as unknown as { branchBasePhi?: number | string }).branchBasePhi;
+
+  if (typeof candidate === "number" && Number.isFinite(candidate)) {
+    return String(candidate);
+  }
+  if (typeof candidate === "string") {
+    const trimmed = candidate.trim();
+    return trimmed ? trimmed : undefined;
+  }
+  return undefined;
+}
 
 // Auto-shrink text to fit inside its container (down to a floor scale)
 function useAutoShrink<T extends HTMLElement>(
@@ -1578,6 +1596,11 @@ const VerifierStamperInner: React.FC = () => {
       } catch (err) {
         logError("recordSend", err);
       }
+      recordSigilTransferMovement({
+        hash: childCanonical,
+        direction: "send",
+        amountPhi: validPhi6,
+      });
       try {
         getSigilGlobal().registerSend?.(rec);
       } catch (err) {
@@ -1742,6 +1765,20 @@ const VerifierStamperInner: React.FC = () => {
         updated.sendLock = { ...(updated.sendLock ?? { nonce: updated.transferNonce! }), used: true, usedPulse: nowPulse };
     } catch (err) {
       logError("receive.setUsedLock", err);
+    }
+
+    try {
+      const eff = await computeEffectiveCanonical(updated);
+      const amountPhi = readPhiAmountFromMeta(updated as SigilMetadataWithOptionals);
+      if (eff?.canonical && amountPhi) {
+        recordSigilTransferMovement({
+          hash: eff.canonical,
+          direction: "receive",
+          amountPhi,
+        });
+      }
+    } catch (err) {
+      logError("receive.recordTransferMovement", err);
     }
 
     const durl = await embedMetadata(svgURL, updated);

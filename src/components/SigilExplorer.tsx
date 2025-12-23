@@ -50,6 +50,13 @@ import {
   subscribeUsernameClaimRegistry,
   type UsernameClaimRegistry,
 } from "../utils/usernameClaimRegistry";
+import {
+  readSigilTransferRegistry,
+  SIGIL_TRANSFER_CHANNEL_NAME,
+  SIGIL_TRANSFER_EVENT,
+  SIGIL_TRANSFER_LS_KEY,
+  type SigilTransferRecord,
+} from "../utils/sigilTransferRegistry";
 import { USERNAME_CLAIM_KIND, type UsernameClaimPayload } from "../types/usernameClaim";
 import { SIGIL_EXPLORER_OPEN_EVENT } from "../constants/sigilExplorer";
 import "./SigilExplorer.css";
@@ -1013,6 +1020,8 @@ function getPhiFromPayload(payload: SigilSharePayloadLoose): number | undefined 
     "phi",
     "phiValue",
     "phi_amount_sent",
+    "childAllocationPhi",
+    "branchBasePhi",
   ];
 
   for (const key of candidates) {
@@ -1028,6 +1037,80 @@ function getPhiFromPayload(payload: SigilSharePayloadLoose): number | undefined 
     }
   }
   return undefined;
+}
+
+type TransferMove = {
+  direction: "send" | "receive";
+  amount: number;
+  source: "registry" | "payload";
+};
+
+function readPhiAmount(raw: unknown): number | undefined {
+  if (typeof raw === "number") {
+    if (!Number.isFinite(raw)) return undefined;
+    if (Math.abs(raw) < 1e-12) return undefined;
+    return Math.abs(raw);
+  }
+  if (typeof raw === "string") {
+    const n = Number(raw);
+    if (!Number.isNaN(n) && Math.abs(n) >= 1e-12) return Math.abs(n);
+  }
+  return undefined;
+}
+
+function readTransferDirection(raw: unknown): "send" | "receive" | null {
+  if (typeof raw !== "string") return null;
+  const t = raw.trim().toLowerCase();
+  if (!t) return null;
+  if (t.includes("receive") || t.includes("received") || t.includes("inhale")) return "receive";
+  if (t.includes("send") || t.includes("sent") || t.includes("exhale")) return "send";
+  return null;
+}
+
+function getTransferMoveFromPayload(payload: SigilSharePayloadLoose): TransferMove | undefined {
+  const record = payload as unknown as Record<string, unknown>;
+  const dir =
+    readTransferDirection(record.phiDirection) ||
+    readTransferDirection(record.transferDirection) ||
+    readTransferDirection(record.transferMode) ||
+    readTransferDirection(record.transferKind);
+
+  const signedDelta = record.phiDelta ?? record.phiSigned ?? record.phiChange;
+  let deltaNumber = typeof signedDelta === "number" ? signedDelta : undefined;
+  if (deltaNumber === undefined && typeof signedDelta === "string") deltaNumber = Number(signedDelta);
+
+  const inferred =
+    dir ??
+    (typeof deltaNumber === "number" && Number.isFinite(deltaNumber)
+      ? deltaNumber >= 0
+        ? "receive"
+        : "send"
+      : null);
+
+  if (!inferred) return undefined;
+
+  const amount =
+    readPhiAmount(record.amountPhi) ??
+    readPhiAmount(record.phiAmount) ??
+    readPhiAmount(record.childAllocationPhi) ??
+    readPhiAmount(record.branchBasePhi) ??
+    (typeof deltaNumber === "number" && Number.isFinite(deltaNumber) ? Math.abs(deltaNumber) : undefined);
+
+  if (amount === undefined) return undefined;
+
+  return { direction: inferred, amount, source: "payload" };
+}
+
+function getTransferMoveFromRegistry(
+  hash: string | undefined,
+  registry: ReadonlyMap<string, SigilTransferRecord>,
+): TransferMove | undefined {
+  if (!hash) return undefined;
+  const entry = registry.get(hash.toLowerCase());
+  if (!entry) return undefined;
+  const amount = readPhiAmount(entry.amountPhi);
+  if (amount === undefined) return undefined;
+  return { direction: entry.direction, amount, source: "registry" };
 }
 
 function persistRegistryToStorage(): void {
@@ -1787,13 +1870,29 @@ function buildForest(reg: Registry): SigilNode[] {
 /* ─────────────────────────────────────────────────────────────────────
  *  Memory Stream detail extraction (per content node)
  *  ───────────────────────────────────────────────────────────────────── */
-function buildDetailEntries(node: SigilNode, usernameClaims: UsernameClaimRegistry): DetailEntry[] {
+function buildDetailEntries(
+  node: SigilNode,
+  usernameClaims: UsernameClaimRegistry,
+  transferRegistry: ReadonlyMap<string, SigilTransferRecord>,
+): DetailEntry[] {
   const record = node.payload as unknown as Record<string, unknown>;
   const entries: DetailEntry[] = [];
   const usedKeys = new Set<string>();
 
   const phiSelf = getPhiFromPayload(node.payload);
   if (phiSelf !== undefined) entries.push({ label: "This glyph Φ", value: `${formatPhi(phiSelf)} Φ` });
+
+  const canonicalHash =
+    parseHashFromUrl(node.url) ?? (typeof record.canonicalHash === "string" ? record.canonicalHash : undefined);
+  const transferMove =
+    getTransferMoveFromRegistry(canonicalHash, transferRegistry) ?? getTransferMoveFromPayload(node.payload);
+
+  if (transferMove) {
+    entries.push({
+      label: `Φ ${transferMove.direction === "receive" ? "Received" : "Sent"}`,
+      value: `${transferMove.direction === "receive" ? "+" : "-"}${formatPhi(transferMove.amount)} Φ`,
+    });
+  }
 
   const feed = record.feed as FeedPostPayload | undefined;
   const authorRaw =
@@ -1996,12 +2095,24 @@ type SigilTreeNodeProps = {
   toggle: (id: string) => void;
   phiTotalsByPulse: ReadonlyMap<number, number>;
   usernameClaims: UsernameClaimRegistry;
+  transferRegistry: ReadonlyMap<string, SigilTransferRecord>;
 };
 
-function SigilTreeNode({ node, expanded, toggle, phiTotalsByPulse, usernameClaims }: SigilTreeNodeProps) {
+function SigilTreeNode({
+  node,
+  expanded,
+  toggle,
+  phiTotalsByPulse,
+  usernameClaims,
+  transferRegistry,
+}: SigilTreeNodeProps) {
   const open = expanded.has(node.id);
 
-  const hash = parseHashFromUrl(node.url);
+  const hash =
+    parseHashFromUrl(node.url) ??
+    (typeof (node.payload as unknown as { canonicalHash?: string }).canonicalHash === "string"
+      ? (node.payload as unknown as { canonicalHash?: string }).canonicalHash
+      : undefined);
   const sig = node.payload.kaiSignature;
   const chakraDay = node.payload.chakraDay;
 
@@ -2009,7 +2120,9 @@ function SigilTreeNode({ node, expanded, toggle, phiTotalsByPulse, usernameClaim
   const phiSentFromPulse = pulseKey != null ? phiTotalsByPulse.get(pulseKey) : undefined;
 
   const openHref = explorerOpenUrl(node.url);
-  const detailEntries = open ? buildDetailEntries(node, usernameClaims) : [];
+  const detailEntries = open ? buildDetailEntries(node, usernameClaims, transferRegistry) : [];
+  const transferMove =
+    getTransferMoveFromRegistry(hash, transferRegistry) ?? getTransferMoveFromPayload(node.payload);
 
   return (
     <div
@@ -2048,6 +2161,29 @@ function SigilTreeNode({ node, expanded, toggle, phiTotalsByPulse, usernameClaim
           {chakraDay && (
             <span className="chakra" title={String(chakraDay)}>
               {String(chakraDay)}
+            </span>
+          )}
+
+          {transferMove && (
+            <span
+              className={`phi-move phi-move--${transferMove.direction}`}
+              title={`Φ ${transferMove.direction === "receive" ? "received" : "sent"}: ${formatPhi(
+                transferMove.amount,
+              )} Φ`}
+            >
+              <img
+                className="phi-move__mark"
+                src={PHI_MARK_SRC}
+                alt=""
+                aria-hidden="true"
+                decoding="async"
+                loading="lazy"
+                draggable={false}
+              />
+              <span className="phi-move__sign" aria-hidden="true">
+                {transferMove.direction === "receive" ? "+" : "-"}
+              </span>
+              <span className="phi-move__amount">{formatPhi(transferMove.amount)} Φ</span>
             </span>
           )}
 
@@ -2098,6 +2234,7 @@ function SigilTreeNode({ node, expanded, toggle, phiTotalsByPulse, usernameClaim
                   toggle={toggle}
                   phiTotalsByPulse={phiTotalsByPulse}
                   usernameClaims={usernameClaims}
+                  transferRegistry={transferRegistry}
                 />
               ))}
             </div>
@@ -2114,12 +2251,14 @@ function OriginPanel({
   toggle,
   phiTotalsByPulse,
   usernameClaims,
+  transferRegistry,
 }: {
   root: SigilNode;
   expanded: ReadonlySet<string>;
   toggle: (id: string) => void;
   phiTotalsByPulse: ReadonlyMap<number, number>;
   usernameClaims: UsernameClaimRegistry;
+  transferRegistry: ReadonlyMap<string, SigilTransferRecord>;
 }) {
   const count = useMemo(() => {
     let n = 0;
@@ -2181,6 +2320,7 @@ function OriginPanel({
                 toggle={toggle}
                 phiTotalsByPulse={phiTotalsByPulse}
                 usernameClaims={usernameClaims}
+                transferRegistry={transferRegistry}
               />
             ))}
           </div>
@@ -2292,6 +2432,7 @@ function ExplorerToolbar({
  *  ───────────────────────────────────────────────────────────────────── */
 const SigilExplorer: React.FC = () => {
   const [registryRev, setRegistryRev] = useState(0);
+  const [transferRev, setTransferRev] = useState(0);
   const [lastAdded, setLastAdded] = useState<string | undefined>(undefined);
   const [usernameClaims, setUsernameClaims] = useState<UsernameClaimRegistry>(() => getUsernameClaimRegistry());
 
@@ -2742,6 +2883,11 @@ const SigilExplorer: React.FC = () => {
       if (!ev.key) return;
       const isRegistryKey = ev.key === REGISTRY_LS_KEY;
       const isModalKey = ev.key === MODAL_FALLBACK_LS_KEY;
+      const isTransferKey = ev.key === SIGIL_TRANSFER_LS_KEY;
+      if (isTransferKey) {
+        setTransferRev((v) => v + 1);
+        return;
+      }
       if (!isRegistryKey && !isModalKey) return;
       if (!ev.newValue) return;
 
@@ -2775,6 +2921,19 @@ const SigilExplorer: React.FC = () => {
       }
     };
     window.addEventListener("storage", onStorage);
+
+    const onTransferEvent = () => setTransferRev((v) => v + 1);
+    window.addEventListener(SIGIL_TRANSFER_EVENT, onTransferEvent as EventListener);
+
+    const transferChannel =
+      hasWindow && "BroadcastChannel" in window ? new BroadcastChannel(SIGIL_TRANSFER_CHANNEL_NAME) : null;
+    const onTransferMsg = (ev: MessageEvent) => {
+      const data = ev.data as unknown as { type?: unknown };
+      if (data?.type === "transfer:update") {
+        setTransferRev((v) => v + 1);
+      }
+    };
+    transferChannel?.addEventListener("message", onTransferMsg);
 
     const onPageHide = () => {
       saveInhaleQueueToStorage();
@@ -2958,6 +3117,11 @@ window.addEventListener("online", onOnline);
       window.removeEventListener("sigil:url-registered", onUrlRegistered as EventListener);
       window.removeEventListener("sigil:minted", onMint as EventListener);
       window.removeEventListener("storage", onStorage);
+      window.removeEventListener(SIGIL_TRANSFER_EVENT, onTransferEvent as EventListener);
+      if (transferChannel) {
+        transferChannel.removeEventListener("message", onTransferMsg);
+        transferChannel.close();
+      }
       window.removeEventListener("pagehide", onPageHide);
       window.removeEventListener("focus", onFocus);
       window.removeEventListener("online", onOnline);
@@ -2992,6 +3156,7 @@ breathTimer = null;
   }, [requestImmediateSync]);
 
   const forest = useMemo(() => buildForest(memoryRegistry), [registryRev]);
+  const transferRegistry = useMemo(() => readSigilTransferRegistry(), [transferRev]);
 
   const phiTotalsByPulse = useMemo((): ReadonlyMap<number, number> => {
     const totals = new Map<number, number>();
@@ -3256,6 +3421,7 @@ breathTimer = null;
                   toggle={toggle}
                   phiTotalsByPulse={phiTotalsByPulse}
                   usernameClaims={usernameClaims}
+                  transferRegistry={transferRegistry}
                 />
               ))}
             </div>

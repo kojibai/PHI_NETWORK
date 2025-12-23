@@ -876,6 +876,62 @@
   text-shadow: 0 1px 0 rgba(0,0,0,0.25);
 }
 
+/* Φ transfer marker (+/-) */
+.phi-move{
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 215, 128, 0.52);
+  background:
+    radial-gradient(140% 220% at 0% 0%, rgba(255,215,128,0.18), transparent 62%),
+    linear-gradient(180deg, rgba(255,215,128,0.18), rgba(255,215,128,0.05));
+  color: #fff8e0;
+  font-size: 11px;
+  white-space: nowrap;
+  text-shadow: 0 1px 0 rgba(0,0,0,0.25);
+}
+
+.phi-move--receive{
+  border-color: rgba(120, 255, 200, 0.6);
+  background:
+    radial-gradient(140% 220% at 0% 0%, rgba(120,255,200,0.22), transparent 62%),
+    linear-gradient(180deg, rgba(120,255,200,0.18), rgba(120,255,200,0.04));
+  color: #eafff5;
+}
+
+.phi-move--send{
+  border-color: rgba(255, 140, 160, 0.65);
+  background:
+    radial-gradient(140% 220% at 0% 0%, rgba(255,140,160,0.22), transparent 62%),
+    linear-gradient(180deg, rgba(255,140,160,0.18), rgba(255,140,160,0.04));
+  color: #ffe9ee;
+}
+
+.phi-move__mark{
+  width: 12px;
+  height: 12px;
+  display: inline-block;
+  filter: drop-shadow(0 0 6px rgba(255, 215, 128, 0.35));
+}
+
+.phi-move--receive .phi-move__mark{
+  filter: drop-shadow(0 0 6px rgba(120, 255, 200, 0.45));
+}
+
+.phi-move--send .phi-move__mark{
+  filter: drop-shadow(0 0 6px rgba(255, 140, 160, 0.45));
+}
+
+.phi-move__sign{
+  font-weight: 700;
+}
+
+.phi-move__amount{
+  font-variant-numeric: tabular-nums;
+}
+
 /* Copy button */
 .node-copy{
   width: 30px;
