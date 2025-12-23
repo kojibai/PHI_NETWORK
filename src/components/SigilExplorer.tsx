@@ -1069,13 +1069,33 @@ function readTransferDirection(raw: unknown): "send" | "receive" | null {
 
 function getTransferMoveFromPayload(payload: SigilSharePayloadLoose): TransferMove | undefined {
   const record = payload as unknown as Record<string, unknown>;
-  const dir =
-    readTransferDirection(record.phiDirection) ||
-    readTransferDirection(record.transferDirection) ||
-    readTransferDirection(record.transferMode) ||
-    readTransferDirection(record.transferKind);
+  const feedRecord = isRecord(record.feed) ? (record.feed as Record<string, unknown>) : null;
 
-  const signedDelta = record.phiDelta ?? record.phiSigned ?? record.phiChange;
+  const readDir = (src: Record<string, unknown> | null) =>
+    src
+      ? readTransferDirection(src.phiDirection) ||
+        readTransferDirection(src.transferDirection) ||
+        readTransferDirection(src.transferMode) ||
+        readTransferDirection(src.transferKind)
+      : null;
+
+  const readDelta = (src: Record<string, unknown> | null) => {
+    if (!src) return undefined;
+    return src.phiDelta ?? src.phiSigned ?? src.phiChange;
+  };
+
+  const readAmount = (src: Record<string, unknown> | null) =>
+    src
+      ? readPhiAmount(src.transferAmountPhi) ??
+        readPhiAmount(src.transferPhi) ??
+        readPhiAmount(src.amountPhi) ??
+        readPhiAmount(src.phiAmount) ??
+        readPhiAmount(src.childAllocationPhi) ??
+        readPhiAmount(src.branchBasePhi)
+      : undefined;
+
+  const dir = readDir(record) ?? readDir(feedRecord);
+  const signedDelta = readDelta(record) ?? readDelta(feedRecord);
   let deltaNumber = typeof signedDelta === "number" ? signedDelta : undefined;
   if (deltaNumber === undefined && typeof signedDelta === "string") deltaNumber = Number(signedDelta);
 
@@ -1090,17 +1110,38 @@ function getTransferMoveFromPayload(payload: SigilSharePayloadLoose): TransferMo
   if (!inferred) return undefined;
 
   const amount =
-    readPhiAmount(record.transferAmountPhi) ??
-    readPhiAmount(record.transferPhi) ??
-    readPhiAmount(record.amountPhi) ??
-    readPhiAmount(record.phiAmount) ??
-    readPhiAmount(record.childAllocationPhi) ??
-    readPhiAmount(record.branchBasePhi) ??
+    readAmount(record) ??
+    readAmount(feedRecord) ??
+    (isRecord(record.preview) ? readPhiAmount((record.preview as Record<string, unknown>).amountPhi) : undefined) ??
+    (isRecord(feedRecord?.preview) ? readPhiAmount((feedRecord.preview as Record<string, unknown>).amountPhi) : undefined) ??
     (typeof deltaNumber === "number" && Number.isFinite(deltaNumber) ? Math.abs(deltaNumber) : undefined);
 
   if (amount === undefined) return undefined;
 
   return { direction: inferred, amount, source: "payload" };
+}
+
+function getTransferMoveFromTransferUrl(record: Record<string, unknown>): TransferMove | undefined {
+  const urlKeys = [
+    "transferUrl",
+    "transferURL",
+    "transferLink",
+    "transfer_link",
+    "sealUrl",
+    "sealURL",
+    "sigilTransferUrl",
+  ];
+
+  for (const key of urlKeys) {
+    const raw = record[key];
+    if (typeof raw !== "string" || !raw.trim()) continue;
+    const payload = extractPayloadFromUrl(raw.trim());
+    if (!payload) continue;
+    const move = getTransferMoveFromPayload(payload);
+    if (move) return move;
+  }
+
+  return undefined;
 }
 
 function getTransferMoveFromRegistry(
@@ -1910,11 +1951,23 @@ function resolveTransferMoveForNode(
   const payloadMove = getTransferMoveFromPayload(node.payload);
   if (payloadMove) return payloadMove;
 
+  const record = node.payload as unknown as Record<string, unknown>;
+  const transferUrlMove = getTransferMoveFromTransferUrl(record);
+  if (transferUrlMove) return transferUrlMove;
+  if (isRecord(record.feed)) {
+    const feedTransferUrlMove = getTransferMoveFromTransferUrl(record.feed as Record<string, unknown>);
+    if (feedTransferUrlMove) return feedTransferUrlMove;
+  }
+
   for (const url of node.urls) {
     const payload = extractPayloadFromUrl(url);
     if (!payload) continue;
     const derived = getTransferMoveFromPayload(payload);
     if (derived) return derived;
+
+    const record = payload as unknown as Record<string, unknown>;
+    const derivedTransferUrl = getTransferMoveFromTransferUrl(record);
+    if (derivedTransferUrl) return derivedTransferUrl;
   }
 
   return undefined;
