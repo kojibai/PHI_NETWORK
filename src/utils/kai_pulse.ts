@@ -2,15 +2,16 @@
 // Single source of truth for Kai-Klok timing & parsing (no React hooks).
 // φ-exact engine: integers + fixed-point only. No float accumulation anywhere.
 //
-// v13.3.0 — SOVEREIGN BUILD-TIME ANCHOR (NO .env)
-//   - Adds optional build-time μpulse seed via Vite `define` constant: __KAI_ANCHOR_MICRO__
-//   - Auto-seeds deterministic NOW on first read (or import) if constant is present
-//   - No behavior change to all pure math / parsing. No Chronos “NOW” usage.
+// Canon recap (normative):
+//   • Breath (pulse) T = 3 + √5 seconds (φ-exact)
+//   • Lattice: 11 pulses/step • 44 steps/beat • 36 beats/day
+//   • Closure: N_day = 17,491.270421 pulses/day (exact, millionths)
 //
-// v13.2.1 — TYPE-UNIFIED UTC INPUTS (fix TS2345)
-//   - Accepts UTC inputs as: string | number(ms) | bigint(ms) | Date
-//   - Fixes: bigint not assignable to number|Date, and number not assignable to string|bigint|Date
-//   - No behavior change; still NO Chronos “NOW” (seed once → monotonic advance)
+// Engine rules:
+//   • Track state in integer pulses, or integer μpulses (10^6 per pulse).
+//   • Chronos ↔ pulses bridges use fixed-point with ties-to-even rounding.
+//   • Past / future / present use the same bridge logic → v13-identical behavior.
+//   • NO NETWORK CALLS. All math is local and deterministic.
 
 // ─────────────────────────────────────────────────────────────
 // CONSTANTS (exact / integer-safe)
@@ -43,13 +44,8 @@ export const DAYS_PER_MONTH  = DAYS_PER_WEEK * WEEKS_PER_MONTH; // 42
 export const MONTHS_PER_YEAR = 8 as const;
 export const DAYS_PER_YEAR   = DAYS_PER_MONTH * MONTHS_PER_YEAR; // 336
 
-// φ-exact pulse duration as a JS Number (NOT rounded to an integer)
-export const PULSE_MS: number = (3 + Math.sqrt(5)) * 1000;
-
-
 // φ-exact pulse duration (display-only ms) from T = 3 + √5 seconds.
-export const PULSE_MS_DISPLAY: number = Math.round((3 + Math.sqrt(5)) * 1000);
-
+export const PULSE_MS: number = Math.round((3 + Math.sqrt(5)) * 1000);
 
 // There is intentionally **no** DAY_MS. Seconds/day is irrational; the engine stays in integers.
 
@@ -61,7 +57,7 @@ export const PULSE_MS_DISPLAY: number = Math.round((3 + Math.sqrt(5)) * 1000);
 const T_MS_NUM = BigInt("5236067977499789696409173668731276235440618359611525724270897245");
 const T_MS_DEN = 10n ** 60n;
 
-// INV_Tx1000 = 1000 / (3 + √5)  (μpulses per millisecond).
+// INV_Tx1000 = 1000 / (3 + √5)  (pulses per millisecond, scaled by 1000).
 // 190.983005625052575897706582817180941139845410097118568932275689
 const INV_Tx1000_NUM = BigInt("190983005625052575897706582817180941139845410097118568932275689");
 const INV_Tx1000_DEN = 10n ** 60n;
@@ -87,10 +83,10 @@ export type Weekday =
   | "Kaelith";
 
 export type KaiMoment = {
-  pulse: number;             // integer pulse index (Euclidean floor)
-  beat: number;              // 0..35
-  stepIndex: number;         // 0..43
-  stepPctAcrossBeat: number; // [0,1)
+  pulse: number;                // integer pulse index (Euclidean floor)
+  beat: number;                 // 0..35
+  stepIndex: number;            // 0..43
+  stepPctAcrossBeat: number;    // [0,1)
   chakraDay: ChakraDay;
   weekday: Weekday;
 };
@@ -132,9 +128,10 @@ const modE = (a: bigint, m: bigint) => {
   return r >= 0n ? r : r + m;
 };
 const floorDivE = (a: bigint, d: bigint) => {
+  // Euclidean floor division
   const q = a / d;
   const r = a % d;
-  return r === 0n || a >= 0n ? q : q - 1n;
+  return (r === 0n || a >= 0n) ? q : q - 1n;
 };
 const toSafeNumber = (x: bigint): number => {
   const MAX = BigInt(Number.MAX_SAFE_INTEGER);
@@ -166,157 +163,151 @@ const chakraForWeekdayIndex = (idx: number): { weekday: Weekday; chakraDay: Chak
 };
 
 // ─────────────────────────────────────────────────────────────
-// DETERMINISTIC “NOW” (μpulse provider)
-//   - NO Date.now / new Date defaults
-//   - Seed once with μpulses coordinate, then advance via monotonic time
-//   - v13.3.0: optional build-time hard-coded anchor (Vite define)
+// KaiTimeSource — monotonic φ-clock rooted in deterministic seeds
 // ─────────────────────────────────────────────────────────────
-export type KaiNowMicroProvider = () => bigint;
+type PerfClock = { now: () => number; timeOrigin: number };
 
-type PerformanceLike = { now: () => number };
-type HrtimeLike = { bigint: () => bigint };
-type ProcessLike = { hrtime?: HrtimeLike };
-type GlobalLike = { performance?: PerformanceLike; process?: ProcessLike };
+type SignedPulseSnapshot = { pulse?: number; microPulses?: bigint; capturedMs?: number };
 
-let __nowProvider: KaiNowMicroProvider | null = null;
-let __seeded = false;
-let __seedMicro = 0n;
-let __seedMonoUs = 0n;
+const DEFAULT_SIGNED_SNAPSHOT: SignedPulseSnapshot = {
+  pulse: 0,
+  microPulses: 0n,
+  capturedMs: GENESIS_TS,
+};
 
-function monotonicNowUs(): bigint {
-  const g = globalThis as unknown as GlobalLike;
+const resolvePerfClock = (): PerfClock => {
+  const perf = globalThis.performance;
+  const now =
+    perf && typeof perf.now === "function" ? () => perf.now() : () => Date.now();
+  const timeOrigin =
+    perf && typeof perf.timeOrigin === "number" ? perf.timeOrigin : Date.now();
+  return { now, timeOrigin };
+};
 
-  const perf = g.performance;
-  if (perf && typeof perf.now === "function") {
-    // perf.now() is ms; convert to μs
-    return BigInt(Math.round(perf.now() * 1000));
-  }
-
-  const proc = g.process;
-  const hr = proc?.hrtime;
-  if (hr && typeof hr.bigint === "function") {
-    return hr.bigint() / 1_000n; // ns → μs
-  }
-
-  return 0n;
-}
-
-function hasMonotonicClock(): boolean {
-  const g = globalThis as unknown as GlobalLike;
-  return !!(g.performance && typeof g.performance.now === "function") ||
-         !!(g.process?.hrtime && typeof g.process.hrtime.bigint === "function");
-}
-
-/**
- * Build-time sovereign anchor injection (NO env files):
- *   In vite.config.ts you will define:
- *     define: { __KAI_ANCHOR_MICRO__: '"1749123456789012"' }
- *   (string is safest; numbers lose precision)
- */
-declare const __KAI_ANCHOR_MICRO__: unknown;
-
-function parseBuildAnchorMicro(v: unknown): bigint | null {
-  if (typeof v === "bigint") return v;
-  if (typeof v === "number") {
-    if (!Number.isFinite(v)) return null;
-    return BigInt(Math.trunc(v));
-  }
-  if (typeof v === "string") {
-    const s0 = v.trim();
-    if (!s0) return null;
-    const s = s0.endsWith("n") ? s0.slice(0, -1) : s0;
-    if (!/^[+-]?\d+$/.test(s)) return null;
-    const bi = BigInt(s);
-    return bi;
+const parsePulseNumber = (value: unknown): number | null => {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "bigint") return Number(value);
+  if (typeof value === "string" && value.trim().length) {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : null;
   }
   return null;
-}
+};
 
-function tryAutoSeedFromBuildAnchor(): void {
-  if (__seeded || __nowProvider) return;
+const readOverridePulse = (): number | null => {
+  const g = globalThis as Record<string, unknown>;
+  const rc =
+    (g.__KLOCKRC__ as Record<string, unknown> | undefined) ??
+    (g.__klockrc as Record<string, unknown> | undefined) ??
+    (g.klockrc as Record<string, unknown> | undefined);
 
-  // Only auto-seed when a monotonic clock exists; otherwise seeding at mono=0 would drift incorrectly later.
-  if (!hasMonotonicClock()) return;
+  const candidates = [
+    g.override_pulse,
+    g.overridePulse,
+    rc?.override_pulse,
+    rc?.pulse,
+  ];
 
-  // `typeof` guard: if the symbol is not defined by bundler, referencing it would throw.
-  // In Vite builds with `define`, it WILL be defined.
-  let raw: unknown = undefined;
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    raw = typeof __KAI_ANCHOR_MICRO__ === "undefined" ? undefined : __KAI_ANCHOR_MICRO__;
-  } catch {
-    raw = undefined;
+  for (const value of candidates) {
+    const parsed = parsePulseNumber(value);
+    if (parsed !== null) return parsed;
   }
 
-  const anchor = parseBuildAnchorMicro(raw);
-  if (anchor === null) return;
-  if (anchor < 0n) throw new Error("Invalid __KAI_ANCHOR_MICRO__: must be >= 0.");
+  const envCandidate =
+    typeof process !== "undefined" && process?.env
+      ? process.env.KAI_OVERRIDE_PULSE ?? process.env.OVERRIDE_PULSE
+      : undefined;
+  const metaEnv =
+    typeof import.meta !== "undefined"
+      ? (import.meta as { env?: Record<string, string | undefined> }).env
+      : undefined;
+  const metaCandidate = metaEnv?.VITE_OVERRIDE_PULSE ?? metaEnv?.OVERRIDE_PULSE;
 
-  seedKaiNowMicroPulses(anchor);
-}
+  return parsePulseNumber(envCandidate ?? metaCandidate);
+};
 
-/** Seed deterministic NOW from a known μpulse coordinate. */
-export function seedKaiNowMicroPulses(pμ: bigint): void {
-  __seeded = true;
-  __seedMicro = pμ;
-  __seedMonoUs = monotonicNowUs();
-
-  if (!__nowProvider) {
-    __nowProvider = () => {
-      if (!__seeded) throw new Error("Kai NOW not seeded.");
-      const nowUs = monotonicNowUs();
-      const deltaUs = nowUs - __seedMonoUs;
-
-      // μs → ms (ties-to-even)
-      const deltaMs = mulDivRoundHalfEven(deltaUs, 1n, 1000n);
-
-      // ms → μpulses (ties-to-even), using φ-exact INV_Tx1000
-      const deltaMicro = mulDivRoundHalfEven(deltaMs, INV_Tx1000_NUM, INV_Tx1000_DEN);
-
-      return __seedMicro + deltaMicro;
-    };
+const readSignedSnapshot = (): SignedPulseSnapshot | null => {
+  const g = globalThis as Record<string, unknown>;
+  const snap = g.__KAI_SIGNED_PULSE_SNAPSHOT__ as SignedPulseSnapshot | undefined;
+  if (snap && (typeof snap.pulse === "number" || typeof snap.microPulses === "bigint")) {
+    return snap;
   }
-}
+  return DEFAULT_SIGNED_SNAPSHOT;
+};
 
-/** Convenience: seed deterministic NOW from a single UTC input (one-time coordinate selection). */
-export function seedKaiNowFromUTC(utc: string | number | Date | bigint): void {
-  seedKaiNowMicroPulses(microPulsesSinceGenesis(utc));
-}
+export type KaiTimeSourceOptions = {
+  overridePulse?: number | bigint;
+  snapshot?: SignedPulseSnapshot;
+  clock?: PerfClock;
+};
 
-/** Override NOW provider (recommended: wire your PulseClock’s μpulse getter). */
-export function setKaiNowMicroProvider(provider: KaiNowMicroProvider | null): void {
-  __nowProvider = provider;
-}
+export class KaiTimeSource {
+  private readonly clock: PerfClock;
+  private readonly seedMicroPulses: bigint;
+  private readonly perfAtSeed: number;
 
-/** Read deterministic NOW μpulses (requires seed/provider; auto-seeds if build anchor is present). */
-function kaiNowMicroPulses(): bigint {
-  if (!__nowProvider) {
-    tryAutoSeedFromBuildAnchor();
-  }
-  if (!__nowProvider) {
-    throw new Error(
-      "Kai NOW provider not set. Sovereign options:\n" +
-        "  1) Build-time define: __KAI_ANCHOR_MICRO__ (recommended)\n" +
-        "  2) Call seedKaiNowMicroPulses(anchorMicro) once on boot\n" +
-        "  3) Call setKaiNowMicroProvider(() => microPulses)\n"
+  constructor(options: KaiTimeSourceOptions = {}) {
+    this.clock = options.clock ?? resolvePerfClock();
+    const overridePulse =
+      options.overridePulse !== undefined
+        ? parsePulseNumber(options.overridePulse)
+        : readOverridePulse();
+    const snapshot = options.snapshot ?? readSignedSnapshot();
+
+    const snapshotMicro =
+      snapshot?.microPulses ??
+      (typeof snapshot?.pulse === "number"
+        ? BigInt(Math.trunc(snapshot.pulse)) * 1_000_000n
+        : null);
+
+    const epochMs = BigInt(
+      Math.round(this.clock.timeOrigin + this.clock.now())
     );
+    const bridgedMicro = microPulsesSinceGenesis(epochMs);
+
+    this.seedMicroPulses =
+      overridePulse !== null
+        ? BigInt(Math.trunc(overridePulse)) * 1_000_000n
+        : snapshotMicro ?? bridgedMicro;
+
+    this.perfAtSeed = this.clock.now();
   }
-  return __nowProvider();
+
+  /** Current μpulses using monotonic performance deltas. */
+  nowMicroPulses(): bigint {
+    const deltaUs = BigInt(
+      Math.round((this.clock.now() - this.perfAtSeed) * 1000)
+    );
+    const deltaMicro = mulDivRoundHalfEven(
+      deltaUs,
+      INV_Tx1000_NUM,
+      INV_Tx1000_DEN * 1000n
+    );
+    return this.seedMicroPulses + deltaMicro;
+  }
+
+  /** Current pulse index (floor) based on the internal μpulse counter. */
+  nowPulse(): number {
+    return toSafeNumber(floorDivE(this.nowMicroPulses(), 1_000_000n));
+  }
+
+  /** Current epoch milliseconds (φ bridge, monotonic perf deltas). */
+  nowEpochMs(): number {
+    const deltaMs = microPulsesToMs(this.nowMicroPulses());
+    const epochMs = BigInt(GENESIS_TS) + deltaMs;
+    return toSafeNumber(epochMs);
+  }
 }
 
-/** Convert μpulses → epoch ms (deterministic, derived from Genesis + φ bridge). */
-function epochMsFromMicroPulses(pμ: bigint): bigint {
-  // ms = round( μpulses * (ms/pulse) / 1e6 )
-  const deltaMs = mulDivRoundHalfEven(pμ, T_MS_NUM, T_MS_DEN * 1_000_000n);
-  return BigInt(GENESIS_TS) + deltaMs;
-}
+const kaiTimeSource = new KaiTimeSource();
+export const getKaiTimeSource = () => kaiTimeSource;
 
 // ─────────────────────────────────────────────────────────────
 // BIGINT ISO-8601 PARSER (signed/zero years; proleptic Gregorian)
 //   - No reliance on JS Date for strings
 //   - Unlimited range (BigInt ms since Unix epoch)
 // ─────────────────────────────────────────────────────────────
-const MS_PER_DAY_BI  = 86_400_000n;
+const MS_PER_DAY_BI  = 86_400_000n; // standard Gregorian 24h day (ms)
 const MS_PER_HOUR_BI = 3_600_000n;
 const MS_PER_MIN_BI  = 60_000n;
 const MS_PER_SEC_BI  = 1_000n;
@@ -333,10 +324,10 @@ function daysFromCivilBI(year: bigint, month: bigint, day: bigint): bigint {
   const m = month <= 2n ? month + 12n : month;
 
   const era = div(y >= 0n ? y : y - 399n, 400n);
-  const yoe = y - era * 400n;
-  const doy = div(153n * (m - 3n) + 2n, 5n) + day - 1n;
-  const doe = yoe * 365n + div(yoe, 4n) - div(yoe, 100n) + doy;
-  return era * 146097n + doe - 719468n;
+  const yoe = y - era * 400n;                                       // [0, 399]
+  const doy = div(153n * (m - 3n) + 2n, 5n) + day - 1n;             // [0, 365]
+  const doe = yoe * 365n + div(yoe, 4n) - div(yoe, 100n) + doy;     // [0, 146096]
+  return era * 146097n + doe - 719468n;                             // 719468: 0000-03-01 → 1970-01-01
 }
 
 function parseSignedIsoToEpochMs(iso: string): bigint {
@@ -344,7 +335,7 @@ function parseSignedIsoToEpochMs(iso: string): bigint {
   if (!m) {
     const d = new Date(iso);
     const t = d.getTime();
-    if (Number.isFinite(t)) return BigInt(Math.trunc(t));
+    if (Number.isFinite(t)) return BigInt(t);
     throw new Error("Invalid ISO datetime.");
   }
 
@@ -383,34 +374,83 @@ function parseSignedIsoToEpochMs(iso: string): bigint {
   return epochMsUTC;
 }
 
-/** Convert delta-ms → μpulses using φ-exact bridge (ties-to-even). */
-export function microPulsesFromDeltaMs(deltaMs: bigint | number): bigint {
-  const ms = typeof deltaMs === "bigint" ? deltaMs : BigInt(Math.trunc(deltaMs));
-  return mulDivRoundHalfEven(ms, INV_Tx1000_NUM, INV_Tx1000_DEN);
-}
-
-
 // ─────────────────────────────────────────────────────────────
-/** Convert Unix ms (UTC) → integer μpulses since Genesis using φ-exact bridge. */
-export function microPulsesSinceGenesis(utc: string | number | Date | bigint): bigint {
+/** Convert Unix ms (UTC) → integer μpulses since Genesis using φ-exact bridge.
+ * μpulses = round_half_even( Δms * (1/T) * 1000 )  with T = 3 + √5.
+ */
+export function microPulsesSinceGenesis(utc: string | Date | bigint): bigint {
   let msEpoch: bigint;
-
   if (typeof utc === "bigint") {
     msEpoch = utc;
-  } else if (typeof utc === "number") {
-    if (!Number.isFinite(utc)) throw new Error("Invalid ms epoch number.");
-    msEpoch = BigInt(Math.trunc(utc));
   } else if (typeof utc === "string") {
     msEpoch = parseSignedIsoToEpochMs(utc);
   } else {
     const t = utc.getTime();
     if (!Number.isFinite(t)) throw new Error(`Invalid Date: ${String(utc)}`);
-    msEpoch = BigInt(Math.trunc(t));
+    msEpoch = BigInt(t);
   }
-
   const deltaMs = msEpoch - BigInt(GENESIS_TS);
   return mulDivRoundHalfEven(deltaMs, INV_Tx1000_NUM, INV_Tx1000_DEN);
 }
+
+const microPulsesToMs = (microPulses: bigint): bigint =>
+  mulDivRoundHalfEven(microPulses, T_MS_NUM, T_MS_DEN * 1_000_000n);
+
+/** Convert μpulses since Genesis → epoch ms (BigInt). */
+export function epochMsFromMicroPulses(microPulses: bigint): bigint {
+  return BigInt(GENESIS_TS) + microPulsesToMs(microPulses);
+}
+
+/** Epoch ms from φ-clock (monotonic, ignores wall-clock jumps). */
+export function kairosEpochNow(timeSource: KaiTimeSource = getKaiTimeSource()): number {
+  return timeSource.nowEpochMs();
+}
+
+/** Date object backed by the φ clock (no Date.now usage). */
+export function kairosDateNow(timeSource: KaiTimeSource = getKaiTimeSource()): Date {
+  return new Date(kairosEpochNow(timeSource));
+}
+/** Bridge used by UI timers: current pulse as a fractional number (μpulse precise). */
+export function kaiPulseNowBridge(timeSource: KaiTimeSource = getKaiTimeSource()): number {
+  const pμ = timeSource.nowMicroPulses();
+
+  // Safe near “now”; clamp if someone runs this millions of years out.
+  const LIM = 9_007_199_254_740_991n; // Number.MAX_SAFE_INTEGER as bigint
+  const v = pμ > LIM ? LIM : pμ < -LIM ? -LIM : pμ;
+
+  return Number(v) / 1_000_000;
+}
+
+/** Milliseconds until the next integer pulse boundary (>= 0).
+ * Arg retained for back-compat; boundary is computed from local φ-bridge time.
+ */
+export function msUntilNextPulseBoundary(
+  pulseNow?: number,
+  timeSource: KaiTimeSource = getKaiTimeSource(),
+): number {
+  const pμNow =
+    typeof pulseNow === "number" && Number.isFinite(pulseNow)
+      ? (() => {
+          // pulseNow is (μpulses / 1e6) from kaiPulseNowBridge() → recover μpulses safely.
+          const approx = Math.round(pulseNow * 1_000_000);
+          if (!Number.isFinite(approx)) return timeSource.nowMicroPulses();
+          // Clamp to safe BigInt range if someone hands insane values.
+          const LIM = Number.MAX_SAFE_INTEGER;
+          const clamped = Math.max(-LIM, Math.min(LIM, approx));
+          return BigInt(clamped);
+        })()
+      : timeSource.nowMicroPulses();
+
+  const next = (floorDivE(pμNow, 1_000_000n) + 1n) * 1_000_000n; // next whole pulse
+  const deltaμ = next - pμNow;                                   // 0..1_000_000
+
+  // μpulses → ms using φ-exact rational
+  const deltaMs = mulDivRoundHalfEven(deltaμ, T_MS_NUM, T_MS_DEN * 1_000_000n);
+
+  const out = toSafeNumber(deltaMs);
+  return out < 0 ? 0 : out;
+}
+
 
 /** Convert an integer pulse index → Unix ms offset using φ-exact bridge. */
 export function epochMsFromPulse(pulse: number | bigint): bigint {
@@ -428,36 +468,39 @@ export function latticeFromMicroPulses(pμ: bigint): {
   const pulsesInDay  = modE(pμ, N_DAY_MICRO);
   const pulsesInGrid = pulsesInDay % BASE_DAY_MICRO;
 
-  const beatBI       = pulsesInGrid / PULSES_PER_BEAT_MICRO; // 0..35
+  const beatBI       = pulsesInGrid / PULSES_PER_BEAT_MICRO;                // 0..35
   const pulsesInBeat = pulsesInGrid - beatBI * PULSES_PER_BEAT_MICRO;
 
-  const stepBI       = pulsesInBeat / PULSES_PER_STEP_MICRO; // 0..43
+  const stepBI       = pulsesInBeat / PULSES_PER_STEP_MICRO;                // 0..43
   const pulsesInStep = pulsesInBeat - stepBI * PULSES_PER_STEP_MICRO;
 
   const percentIntoStep = Number(pulsesInStep) / Number(PULSES_PER_STEP_MICRO);
   return { beat: Number(beatBI), stepIndex: Number(stepBI), percentIntoStep };
 }
 
-/** Build KaiMoment directly from μpulses (no UTC/Date parsing needed). */
-export function momentFromMicroPulses(pμ: bigint): KaiMoment {
+/** Full KaiMoment from any UTC input (string/Date/bigint). */
+export function momentFromUTC(
+  utc?: string | Date | bigint,
+  timeSource: KaiTimeSource = getKaiTimeSource(),
+): KaiMoment {
+  const pμ =
+    typeof utc === "undefined" ? timeSource.nowMicroPulses() : microPulsesSinceGenesis(utc);
+
+  // Integer pulse index (Euclidean floor toward −∞)
   const pulse = toSafeNumber(floorDivE(pμ, 1_000_000n));
 
+  // Lattice breakdown
   const { beat, stepIndex, percentIntoStep } = latticeFromMicroPulses(pμ);
   const stepPctAcrossBeat = normalizePercentIntoStep(
     (stepIndex + percentIntoStep) / STEPS_BEAT
   );
 
+  // Weekday/chakra from absolute day index (ETERNAL path)
   const dayIndexBI = floorDivE(pμ, N_DAY_MICRO);
   const weekdayIdx = toSafeNumber(modE(dayIndexBI, b(WEEKDAYS.length)));
   const { weekday, chakraDay } = chakraForWeekdayIndex(weekdayIdx);
 
   return { pulse, beat, stepIndex, stepPctAcrossBeat, chakraDay, weekday };
-}
-
-/** Full KaiMoment from any UTC input (string/number/Date/bigint). */
-export function momentFromUTC(utc: string | number | Date | bigint): KaiMoment {
-  const pμ = microPulsesSinceGenesis(utc);
-  return momentFromMicroPulses(pμ);
 }
 
 /** Convert a pulse index (±) → KaiMoment using exact bridges. */
@@ -480,8 +523,6 @@ export function utcFromBreathSlot(baseMinuteISO: string, breathIdx: number): str
   const n = Math.max(1, Math.floor(breathIdx)) - 1;
   const delta = mulDivRoundHalfEven(BigInt(n), T_MS_NUM, T_MS_DEN);
   const out = BigInt(minuteTrunc) + delta;
-
-  // This helper is intended for near-present UI scheduling; keep Date output.
   return new Date(Number(out)).toISOString();
 }
 
@@ -519,14 +560,14 @@ export function parseKaiFromServer(json: {
     if (!s) return null;
     const norm = s.trim().toLowerCase();
     const table: Record<string, ChakraDay> = {
-      root: "Root",
-      sacral: "Sacral",
+      "root": "Root",
+      "sacral": "Sacral",
       "solar plexus": "Solar Plexus",
-      heart: "Heart",
-      throat: "Throat",
+      "heart": "Heart",
+      "throat": "Throat",
       "third eye": "Third Eye",
-      thirdeye: "Third Eye",
-      crown: "Crown",
+      "thirdeye": "Third Eye",
+      "crown": "Crown",
     };
     return table[norm] ?? null;
   };
@@ -551,27 +592,24 @@ export function parseKaiFromServer(json: {
 }
 
 // ─────────────────────────────────────────────────────────────
-// LOCAL HELPERS — no network, no API. “NOW” is deterministic μpulses.
+// LOCAL HELPERS — no network, no API. These replace prior fetchers.
 // ─────────────────────────────────────────────────────────────
 
-/** Local-only: compute KaiMoment for deterministic now or a provided UTC input. */
-export async function fetchKai(utc?: string | number | Date | bigint): Promise<KaiMoment> {
-  if (typeof utc === "undefined") {
-    return Promise.resolve(momentFromMicroPulses(kaiNowMicroPulses()));
-  }
-  return Promise.resolve(momentFromUTC(utc));
+/** Local-only: compute KaiMoment for now or a provided ISO/Date/bigint. */
+export async function fetchKai(
+  iso?: string | Date | bigint,
+  timeSource: KaiTimeSource = getKaiTimeSource(),
+): Promise<KaiMoment> {
+  return Promise.resolve(momentFromUTC(iso, timeSource));
 }
 
 /** Local-only: same as fetchKai. Kept for call-site compatibility. */
 export async function fetchKaiOrLocal(
-  utc?: string | number | Date | bigint,
-  now?: Date
+  iso?: string | Date | bigint,
+  now?: Date,
+  timeSource: KaiTimeSource = getKaiTimeSource(),
 ): Promise<KaiMoment> {
-  if (typeof utc === "undefined") {
-    if (now) return Promise.resolve(momentFromUTC(now));
-    return Promise.resolve(momentFromMicroPulses(kaiNowMicroPulses()));
-  }
-  return Promise.resolve(momentFromUTC(utc));
+  return Promise.resolve(momentFromUTC(typeof iso === "undefined" ? now : iso, timeSource));
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -604,19 +642,11 @@ export function buildBreathIso(minuteLocalISO: string, breathIdx: number): strin
 }
 
 /** Back-compat export for sigil page (`computeKaiLocally`) */
-export function computeKaiLocally(date: Date): KaiMoment {
-  return momentFromUTC(date);
-}
-
-/** “Epoch now” in Kai terms: integer μpulses since GENESIS_TS at the current Kai instant. */
-export function kairosEpochNow(msUTC?: bigint): bigint {
-  if (typeof msUTC === "bigint") return microPulsesSinceGenesis(msUTC);
-  return kaiNowMicroPulses();
-}
-
-/** Convenience: KaiMoment for “now”. */
-export function kairosMomentNow(msUTC?: bigint): KaiMoment {
-  return momentFromMicroPulses(kairosEpochNow(msUTC));
+export function computeKaiLocally(
+  date?: Date | string | bigint,
+  timeSource: KaiTimeSource = getKaiTimeSource(),
+): KaiMoment {
+  return momentFromUTC(date, timeSource);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -650,19 +680,15 @@ function getUTCYMD(msUTC: bigint): { y: number; m: number; d: number } {
 }
 
 function julianNoonApprox(J: number, lonDeg: number): number {
+  // J* ≈ 2451545.0009 - Lw/360 + n ; where Lw = -lon
   const Lw = -lonDeg * DEG2RAD;
   const n = Math.round(J - 2451545.0009 - Lw * RAD2DAY);
   return 2451545.0009 + Lw * RAD2DAY + n;
 }
 
 /** NOAA sunrise equation (with standard refraction h0 = -0.833°). */
-function sunriseJulianForDate(
-  y: number,
-  m: number,
-  d: number,
-  latDeg = GREENWICH_LAT,
-  lonDeg = GREENWICH_LON
-): number {
+function sunriseJulianForDate(y: number, m: number, d: number, latDeg = GREENWICH_LAT, lonDeg = GREENWICH_LON): number {
+  // Julian day at 00:00 UTC for Y-M-D
   const J0 = toJulianDay(Date.UTC(y, m - 1, d));
   const Jnoon = julianNoonApprox(J0, lonDeg);
 
@@ -674,19 +700,21 @@ function sunriseJulianForDate(
 
   const Jtransit = Jnoon + 0.0053 * Math.sin(Mrad) - 0.0069 * Math.sin(2 * lambda);
 
-  const epsilon = 23.4397 * DEG2RAD;
-  const delta = Math.asin(Math.sin(lambda) * Math.sin(epsilon));
+  const epsilon = 23.4397 * DEG2RAD; // obliquity
+  const delta = Math.asin(Math.sin(lambda) * Math.sin(epsilon)); // solar declination
 
   const phi = latDeg * DEG2RAD;
-  const h0 = -0.833 * DEG2RAD;
+  const h0 = -0.833 * DEG2RAD; // sunrise altitude (deg) incl. refraction
   const cos_omega0 = (Math.sin(h0) - Math.sin(phi) * Math.sin(delta)) / (Math.cos(phi) * Math.cos(delta));
-  const omega0 = Math.acos(clamp(cos_omega0, -1, 1));
+  const omega0 = Math.acos(clamp(cos_omega0, -1, 1)); // hour angle at sunrise
 
-  const Jrise = Jtransit - omega0 * RAD2DAY;
+  const Jrise = Jtransit - omega0 * RAD2DAY; // sunrise
   return Jrise;
 }
 
-/** Unix ms (BigInt) at Greenwich sunrise for the date carrying msUTC's UTC calendar. */
+/** Unix ms (BigInt) at Greenwich sunrise for the date carrying msUTC's UTC calendar.
+ * Memoized by "YYYY-MM-DD".
+ */
 function sunriseUtcMsForEpochMs(msUTC: bigint): bigint {
   const { y, m, d } = getUTCYMD(msUTC);
   const key = `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
@@ -694,7 +722,7 @@ function sunriseUtcMsForEpochMs(msUTC: bigint): bigint {
   if (cached !== undefined) return cached;
 
   const Jrise = sunriseJulianForDate(y, m, d);
-  const ms = BigInt(Math.round(fromJulianDay(Jrise)));
+  const ms = BigInt(Math.round(fromJulianDay(Jrise))); // nearest ms
   sunriseCache.set(key, ms);
   return ms;
 }
@@ -702,6 +730,7 @@ function sunriseUtcMsForEpochMs(msUTC: bigint): bigint {
 // ─────────────────────────────────────────────────────────────
 // HARMONIC LABELS & MAPPINGS (names only; math stays φ-exact)
 // ─────────────────────────────────────────────────────────────
+
 const ARC_NAMES = [
   "Ignition Ark",
   "Integration Ark",
@@ -753,6 +782,7 @@ const WEEK_SPIRALS = [
 // ─────────────────────────────────────────────────────────────
 // INTERNAL HELPERS (formatting only — math stays in μpulses)
 // ─────────────────────────────────────────────────────────────
+
 const STEPS_PER_BEAT = STEPS_BEAT; // 44
 const BEATS_PER_DAY = BEATS_DAY;   // 36
 
@@ -798,24 +828,26 @@ function utcMidnightDaysSinceEpoch(msUTC: bigint): bigint {
 }
 
 // Inverse of daysFromCivil (to get Y-M-D from a days count), using Hinnant's algo.
-function civilFromDaysBI(zIn: bigint): { year: bigint; month: bigint; day: bigint } {
-  const z = zIn + 719468n;
+function civilFromDaysBI(z: bigint): { year: bigint; month: bigint; day: bigint } {
+  z += 719468n;
   const era = div(z, 146097n);
-  const doe = z - era * 146097n;
-  const yoe = div(doe - div(doe, 1460n) + div(doe, 36524n) - div(doe, 146096n), 365n);
+  const doe = z - era * 146097n;                           // [0, 146096]
+  const yoe = div(doe - div(doe, 1460n) + div(doe, 36524n) - div(doe, 146096n), 365n); // [0, 399]
   const y = yoe + era * 400n;
-  const doy = doe - (365n * yoe + div(yoe, 4n) - div(yoe, 100n));
-  const mp = div(5n * doy + 2n, 153n);
-  const d = doy - div(153n * mp + 2n, 5n) + 1n;
-  const m = mp < 10n ? mp + 3n : mp - 9n;
+  const doy = doe - (365n * yoe + div(yoe, 4n) - div(yoe, 100n));         // [0, 365]
+  const mp = div(5n * doy + 2n, 153n);                                    // [0, 11]
+  const d = doy - div(153n * mp + 2n, 5n) + 1n;                           // [1, 31]
+  const m = mp < 10n ? mp + 3n : mp - 9n;                                 // [1, 12]
   const year = m <= 2n ? y + 1n : y;
-  const month = m <= 2n ? m + 12n - 12n : m;
+  const month = m <= 2n ? m + 12n - 12n : m;                              // normalize
   return { year, month, day: d };
 }
 
 // ─────────────────────────────────────────────────────────────
 // SOLAR (UTC-ALIGNED) INDICES — sunrise-driven boundaries
 // ─────────────────────────────────────────────────────────────
+
+// Solar genesis UTC date (for day counting)
 const SOLAR_GENESIS_Y = 2024n;
 const SOLAR_GENESIS_M = 5n;
 const SOLAR_GENESIS_D = 11n;
@@ -825,33 +857,38 @@ const SOLAR_GENESIS_DAYIDX = daysFromCivilBI(SOLAR_GENESIS_Y, SOLAR_GENESIS_M, S
  * If msUTC is before today's Greenwich sunrise, use previous day's date; else today's.
  */
 function solarCivilDateForInstant(msUTC: bigint): { y: bigint; m: bigint; d: bigint; sunriseMs: bigint } {
+  // Calendar date of the instant
+  const { y, m, d } = getUTCYMD(msUTC);
   const todaySunrise = sunriseUtcMsForEpochMs(msUTC);
 
   if (msUTC < todaySunrise) {
+    // Use previous day
     const dayIdx = utcMidnightDaysSinceEpoch(msUTC) - 1n;
     const prev = civilFromDaysBI(dayIdx);
     const prevMs = BigInt(Date.UTC(Number(prev.year), Number(prev.month) - 1, Number(prev.day)));
     const prevSunrise = sunriseUtcMsForEpochMs(prevMs);
     return { y: prev.year, m: prev.month, d: prev.day, sunriseMs: prevSunrise };
   }
-
-  const { y, m, d } = getUTCYMD(msUTC);
   return { y: BigInt(y), m: BigInt(m), d: BigInt(d), sunriseMs: todaySunrise };
 }
 
-/** Solar (UTC-aligned, sunrise-driven) indices with sunrise boundaries at Greenwich. */
+/** Solar (UTC-aligned, sunrise-driven) indices with sunrise boundaries at Greenwich.
+ * Day/week/month/year counting follows the harmonic 6/7/8 structure,
+ * but rollovers happen at actual sunrise time each UTC day.
+ */
 function solarIndices(msUTC: bigint) {
   const base = solarCivilDateForInstant(msUTC);
 
+  // Count solar days since solar genesis by civil-day difference (one sunrise each UTC day)
   const dayIdx = daysFromCivilBI(base.y, base.m, base.d) - SOLAR_GENESIS_DAYIDX;
 
   const weekIdx = floorDivE(dayIdx, BigInt(DAYS_PER_WEEK));
   const monthIdx = floorDivE(dayIdx, BigInt(DAYS_PER_MONTH));
 
-  const dayOfWeek   = toSafeNumber(modE(dayIdx, BigInt(DAYS_PER_WEEK)));      // 0..5
-  const dayOfMonth  = toSafeNumber(modE(dayIdx, BigInt(DAYS_PER_MONTH))) + 1; // 1..42
-  const monthIndex  = toSafeNumber(modE(monthIdx, BigInt(MONTHS_PER_YEAR)));  // 0..7
-  const weekInMonth = toSafeNumber(modE(weekIdx, BigInt(WEEKS_PER_MONTH)));   // 0..6
+  const dayOfWeek   = toSafeNumber(modE(dayIdx, BigInt(DAYS_PER_WEEK)));         // 0..5
+  const dayOfMonth  = toSafeNumber(modE(dayIdx, BigInt(DAYS_PER_MONTH))) + 1;    // 1..42
+  const monthIndex  = toSafeNumber(modE(monthIdx, BigInt(MONTHS_PER_YEAR)));     // 0..7
+  const weekInMonth = toSafeNumber(modE(weekIdx,  BigInt(WEEKS_PER_MONTH)));     // 0..6
 
   return {
     solarDayIdx: dayIdx,
@@ -874,7 +911,7 @@ function solarIndices(msUTC: bigint) {
 // ETERNAL INDICES (unchanged; μpulse day math)
 // ─────────────────────────────────────────────────────────────
 function eternalIndices(pμ: bigint) {
-  const dayIdx = floorDivE(pμ, N_DAY_MICRO);
+  const dayIdx = floorDivE(pμ, N_DAY_MICRO); // can be negative
   const inDay = modE(pμ, N_DAY_MICRO);
   const pulsesToday = floorDivE(inDay, 1_000_000n);
 
@@ -882,10 +919,10 @@ function eternalIndices(pμ: bigint) {
   const monthIdx = floorDivE(dayIdx, BigInt(DAYS_PER_MONTH));
   const yearIdx = floorDivE(dayIdx, BigInt(DAYS_PER_YEAR));
 
-  const weekdayIndex = toSafeNumber(modE(dayIdx, BigInt(DAYS_PER_WEEK)));
-  const dayOfMonth = toSafeNumber(modE(dayIdx, BigInt(DAYS_PER_MONTH))) + 1;
-  const weekInMonth = toSafeNumber(modE(weekIdx, BigInt(WEEKS_PER_MONTH)));
-  const monthIndex = toSafeNumber(modE(monthIdx, BigInt(MONTHS_PER_YEAR)));
+  const weekdayIndex = toSafeNumber(modE(dayIdx, BigInt(DAYS_PER_WEEK))); // 0..5
+  const dayOfMonth = toSafeNumber(modE(dayIdx, BigInt(DAYS_PER_MONTH))) + 1; // 1..42
+  const weekInMonth = toSafeNumber(modE(weekIdx, BigInt(WEEKS_PER_MONTH)));  // 0..6
+  const monthIndex = toSafeNumber(modE(monthIdx, BigInt(MONTHS_PER_YEAR)));  // 0..7
 
   return {
     dayIdx,
@@ -907,6 +944,7 @@ function eternalIndices(pμ: bigint) {
 // ─────────────────────────────────────────────────────────────
 // ETERNAL SEAL & NARRATIVE FORMATTERS (strings shown to users)
 // ─────────────────────────────────────────────────────────────
+
 function formatKairosSeal(
   beat: number,
   stepIndex: number,
@@ -918,12 +956,13 @@ function formatKairosSeal(
   phiLevel: number,
   yearIndex: number
 ) {
-  const bStr = `${beat}`;
-  const sStr = leftPad2(stepIndex);
+  const bStr = `${beat}`;             // 0..35
+  const sStr = leftPad2(stepIndex);   // 00..43
   const beatPct = (beat + stepIndex / STEPS_PER_BEAT) / BEATS_PER_DAY;
   const beatPctStr = pct(beatPct);
   const arcSeal = ARC_SEAL_NAMES[arcNameCanonical];
 
+  // NOTE: No "Eternal Pulse" here; it's appended after the Solar line to match the spec's exact order.
   return `Eternal Seal: Kairos:${bStr}:${sStr}, ${weekday}, ${arcSeal} • D${dayOfMonth}/M${monthIndex + 1} • Beat:${beat}/${BEATS_PER_DAY}(${beatPctStr}%) Step:${stepIndex}/${STEPS_PER_BEAT} Kai(Today):${pulsesToday} • Y${yearIndex + 1} PS${phiLevel}`;
 }
 
@@ -949,41 +988,37 @@ function formatKairosSealPercentStep(beat: number, stepIndex: number, percentInt
 // ─────────────────────────────────────────────────────────────
 // PUBLIC: Build full JSON like your OpenAPI from local φ-exact
 // ─────────────────────────────────────────────────────────────
-function epochMsFromUTCInput(utc: string | number | Date | bigint): bigint {
+function epochMsFromUTCInput(utc: string | Date | bigint): bigint {
   if (typeof utc === "bigint") return utc;
-  if (typeof utc === "number") {
-    if (!Number.isFinite(utc)) throw new Error("Invalid ms epoch number.");
-    return BigInt(Math.trunc(utc));
-  }
   if (typeof utc === "string") return parseSignedIsoToEpochMs(utc);
   const t = utc.getTime();
   if (!Number.isFinite(t)) throw new Error(`Invalid Date: ${String(utc)}`);
-  return BigInt(Math.trunc(t));
+  return BigInt(t);
 }
 
-export async function buildKaiKlockResponse(utc?: string | number | Date | bigint) {
-  const msUTC =
-    typeof utc === "undefined"
-      ? epochMsFromMicroPulses(kaiNowMicroPulses())
-      : epochMsFromUTCInput(utc);
-
-  const pμ =
-    typeof utc === "undefined"
-      ? kaiNowMicroPulses()
-      : microPulsesSinceGenesis(msUTC);
+export async function buildKaiKlockResponse(utc?: string | Date | bigint) {
+  // 1) Real UTC instant (no pulse snapping) and exact lattice & μpulses
+  const msUTC = (typeof utc === "undefined") ? BigInt(Date.now()) : epochMsFromUTCInput(utc);
+  const pμ = microPulsesSinceGenesis(msUTC);
 
   const pulse = toSafeNumber(floorDivE(pμ, 1_000_000n));
   const { beat, stepIndex } = latticeFromMicroPulses(pμ);
 
+  // Eternal weekday (from μpulse day math)
   const dayIndexBI = floorDivE(pμ, N_DAY_MICRO);
   const weekdayIdx = toSafeNumber(modE(dayIndexBI, b(WEEKDAYS.length)));
   const eternalWeekday = WEEKDAYS[weekdayIdx];
 
+  // 2) Eternal (harmonic) indices
   const eternal = eternalIndices(pμ);
+
+  // 3) Solar (UTC-aligned, sunrise-driven) indices from the real UTC instant
   const solar = solarIndices(msUTC);
 
+  // 4) Arc
   const { name: arcName, idx: arcIdx, desc: arcDesc } = arcFromBeat(beat);
 
+  // 5) Beat/Step μpulse breakdown for % to next
   const pulsesInDay = modE(pμ, N_DAY_MICRO);
   const pulsesInGrid = pulsesInDay % BASE_DAY_MICRO;
   const beatBI = pulsesInGrid / PULSES_PER_BEAT_MICRO;
@@ -993,10 +1028,12 @@ export async function buildKaiKlockResponse(utc?: string | number | Date | bigin
   const beatPercent = percent(pulsesInBeat, PULSES_PER_BEAT_MICRO);
   const stepPercent = percent(pulsesInStep, PULSES_PER_STEP_MICRO);
 
+  // 6) Derived counts
   const kaiPulseEternal = pulse;
   const kaiPulseToday = safeInt(floorDivE(modE(pμ, N_DAY_MICRO), 1_000_000n));
   const eternalKaiPulseToday = kaiPulseToday;
 
+  // 7) Year/Month/Week progress (eternal)
   const daysIntoYear = toSafeNumber(modE(eternal.dayIdx, BigInt(DAYS_PER_YEAR)));
   const yearDaysRemaining = DAYS_PER_YEAR - 1 - daysIntoYear;
   const yearPct = (daysIntoYear + Number(pulsesInDay) / Number(N_DAY_MICRO)) / DAYS_PER_YEAR;
@@ -1005,12 +1042,14 @@ export async function buildKaiKlockResponse(utc?: string | number | Date | bigin
   const monthDaysRemaining = DAYS_PER_MONTH - eternal.dayOfMonth;
   const monthPct = (monthDaysElapsed + Number(pulsesInDay) / Number(N_DAY_MICRO)) / DAYS_PER_MONTH;
 
+  // 8) Phi spiral level
   const phiSpiralLevel = phiSpiralLevelFromPulse(kaiPulseEternal);
 
+  // 9) Seals & narratives (match spec wording/order)
   const kairosSeal = formatKairosSeal(
     beat,
     stepIndex,
-    eternalWeekday,
+    eternalWeekday, // use eternal weekday
     arcName,
     eternal.dayOfMonth,
     eternal.monthIndex,
@@ -1018,7 +1057,6 @@ export async function buildKaiKlockResponse(utc?: string | number | Date | bigin
     phiSpiralLevel,
     eternal.yearIndex
   );
-
   const solarSeal = formatSolarKairos(
     beat,
     stepIndex,
@@ -1027,10 +1065,10 @@ export async function buildKaiKlockResponse(utc?: string | number | Date | bigin
     solar.monthIndex,
     arcName
   );
-
   const kairosSealPercentStep = formatKairosSealPercentStep(beat, stepIndex, stepPercent);
   const kairosSealPercentStepSolar = formatKairosSealPercentStep(beat, stepIndex, stepPercent);
 
+  // Compose with Solar first, then append final Eternal Pulse to match the examples exactly.
   const eternalSeal = `${kairosSeal} • ${solarSeal} • Eternal Pulse:${kaiPulseEternal}`;
 
   const kaiMomentSummary =
@@ -1043,6 +1081,7 @@ export async function buildKaiKlockResponse(utc?: string | number | Date | bigin
     `Eternal Month ${eternal.monthIndex + 1} (${eternal.monthName}), Day ${eternal.dayOfMonth}. ` +
     `Eternal pulses today: ${kaiPulseToday}.`;
 
+  // 10) Harmonic levels (cycles shown as pulses; percent ∈ [0,1])
   const cycleArcLen = PULSES_PER_BEAT_MICRO * 6n;
   const cycleArcPos = modE(pulsesInGrid, cycleArcLen);
   const arcPercent = percent(cycleArcPos, cycleArcLen);
@@ -1059,7 +1098,9 @@ export async function buildKaiKlockResponse(utc?: string | number | Date | bigin
   const cycleDayPos = pulsesInDay;
   const dayPercent = percent(cycleDayPos, cycleDayLen);
 
-  const T_PULSE_MS = Number(mulDivRoundHalfEven(1_000_000n, T_MS_NUM, T_MS_DEN)) / 1_000_000;
+  // 11) Subdivisions table (display helpers)
+  // Compute seconds per pulse using exact ratio → ms, then divide by 1000.
+  const T_PULSE_MS = Number(mulDivRoundHalfEven(1_000_000n, T_MS_NUM, T_MS_DEN)) / 1_000_000; // ms/pulse
   const T_PULSE_S = T_PULSE_MS / 1000;
 
   const subdivisions = {
@@ -1097,19 +1138,24 @@ export async function buildKaiKlockResponse(utc?: string | number | Date | bigin
     },
   } as const;
 
+  // 12) Compose response (keys match your OpenAPI names)
   const res = {
+    // — compact seals (and variants) —
     kairos_seal: kairosSeal,
     kairos_seal_percent_step: kairosSealPercentStep,
     kairos_seal_percent_step_solar: kairosSealPercentStepSolar,
     kairos_seal_solar: solarSeal,
 
+    // — canonical strings —
     eternalSeal,
     seal: eternalSeal,
 
+    // — narration & summaries —
     harmonicNarrative: harmonicTimestampDescription,
     kaiMomentSummary,
     compressed_summary: `${beat}:${leftPad2(stepIndex)} • D${eternal.dayOfMonth}/M${eternal.monthIndex + 1} • ${eternalWeekday} • ${ARC_NAMES[arcIdx]}`,
 
+    // — eternal (harmonic) calendar —
     eternalMonth: MONTHS[eternal.monthIndex].name,
     eternalMonthIndex: eternal.monthIndex,
     eternalMonthDescription: MONTHS[eternal.monthIndex].desc,
@@ -1125,6 +1171,7 @@ export async function buildKaiKlockResponse(utc?: string | number | Date | bigin
     },
     kaiPulseToday,
 
+    // — solar (UTC-aligned, sunrise) view —
     solarChakraArc: ARC_NAMES[arcIdx],
     solarDayOfMonth: solar.dayOfMonth,
     solarMonthIndex: solar.monthIndex,
@@ -1136,8 +1183,9 @@ export async function buildKaiKlockResponse(utc?: string | number | Date | bigin
     solar_month_description: solar.monthDesc,
     solar_day_name: solar.weekdayName,
     solar_day_description: DAY_TO_CHAKRA[solar.weekdayName] + " focus",
-    solar_day_start_iso: new Date(Number(solar.sunriseMs)).toISOString(),
+    solar_day_start_iso: new Date(Number(solar.sunriseMs)).toISOString(), // optional debug/export
 
+    // — harmonic day / arc context (eternal) —
     harmonicDay: eternalWeekday,
     harmonicDayDescription: DAY_TO_CHAKRA[eternalWeekday] + " focus",
     chakraArc: ARC_NAMES[arcIdx],
@@ -1149,15 +1197,18 @@ export async function buildKaiKlockResponse(utc?: string | number | Date | bigin
     harmonicWeekProgress: {
       weekDay: eternalWeekday,
       weekDayIndex: eternal.weekdayIndex,
-      pulsesIntoWeek: safeInt(modE(pμ, N_DAY_MICRO * BigInt(DAYS_PER_WEEK)) / 1_000_000n),
+      pulsesIntoWeek: safeInt(
+        modE(pμ, N_DAY_MICRO * BigInt(DAYS_PER_WEEK)) / 1_000_000n
+      ),
       percent:
         Number(modE(pμ, N_DAY_MICRO * BigInt(DAYS_PER_WEEK))) /
         Number(N_DAY_MICRO * BigInt(DAYS_PER_WEEK)),
     },
 
+    // — beat / step (eternal + copy to solar strings) —
     chakraBeat: {
       beatIndex: beat,
-      pulsesIntoBeat: Number(pulsesInBeat) / 1_000_000,
+      pulsesIntoBeat: Number(pulsesInBeat) / 1_000_000, // display only
       beatPulseCount: Number(PULSES_PER_BEAT_MICRO) / 1_000_000,
       totalBeats: BEATS_PER_DAY,
     },
@@ -1181,18 +1232,21 @@ export async function buildKaiKlockResponse(utc?: string | number | Date | bigin
     },
     solarChakraStepString: `${beat}:${leftPad2(stepIndex)}`,
 
+    // — phi spiral & kai-turah —
     phiSpiralLevel,
     kaiTurahPhrase: "Rah veh yah dah",
 
+    // — epochs (sampled structure aligned to spec narrative) —
     phiSpiralEpochs: [
       { unit: "Eternal Year", pulses: 5_877_066.9, approx_days: 373.1 },
       { unit: "Φ Epoch", pulses: 9_510_213.0, approx_days: 956.1 },
       { unit: "Φ² Resonance Epoch", pulses: 15_386_991.0, approx_days: 1542.0 },
     ],
 
+    // — nested harmonic levels —
     harmonicLevels: {
       arcBeat: {
-        pulseInCycle: Number(cycleArcPos) / 1_000_000,
+        pulseInCycle: Number(cycleArcPos) / 1_000_000, // display only
         cycleLength: Number(cycleArcLen) / 1_000_000,
         percent: arcPercent,
       },
@@ -1219,39 +1273,12 @@ export async function buildKaiKlockResponse(utc?: string | number | Date | bigin
       percent: yearPct,
     },
 
+    // — canonical timestamp & narratives —
     harmonicTimestampDescription,
+
+    // — subdivisions —
     subdivisions,
   };
 
   return res;
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
-// Compatibility exports (number-facing callers)
-//   NOTE: kairosEpochNow() returns μpulses (BigInt), not ms.
-// ──────────────────────────────────────────────────────────────────────────────
-
-/** μpulses “now” (BigInt). Optionally: pass epoch-ms BigInt to convert deterministically. */
-export function kairosEpochNowNumber(msUTC?: bigint): number {
-  return Number(kairosEpochNow(msUTC));
-}
-
-/** Live pulse index (integer pulses since Genesis). */
-export function getLiveKaiPulseInt(msUTC?: bigint): bigint {
-  const pμ = kairosEpochNow(msUTC);
-  // floorDivE already exists above; this keeps correct behavior for negative inputs too.
-  return floorDivE(pμ, 1_000_000n);
-}
-
-/** Live pulse index as Number (safe for “current era”). */
-export function getLiveKaiPulse(msUTC?: bigint): number {
-  return Number(getLiveKaiPulseInt(msUTC));
-}
-const GENESIS_ENV = (import.meta as unknown as { env?: Record<string, unknown> }).env?.VITE_KAI_GENESIS_TS_MS_UTC;
-
-if (typeof GENESIS_ENV === "string") {
-  const v = Number(GENESIS_ENV);
-  if (Number.isFinite(v) && v !== GENESIS_TS) {
-    throw new Error(`GENESIS_TS mismatch: env=${v} code=${GENESIS_TS}. Refusing to run.`);
-  }
 }

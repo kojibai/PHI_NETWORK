@@ -1,8 +1,6 @@
 // lib/sync/ipfsAdapter.ts
 // Minimal IPFS HTTP adapter that implements: export interface IpfsLike { publish(buf: Uint8Array): Promise<{ headCid: string }> }
 
-import { kairosEpochNow } from "../../utils/kai_pulse";
-
 export type PublishResult = { headCid: string };
 
 export interface IpfsLike {
@@ -85,13 +83,10 @@ export function createIpfsHttpAdapter(opts: IpfsHttpOptions): IpfsLike {
   const base = endpoint.replace(/\/+$/, "");
   const addUrl = `${base}/api/v0/add?pin=true&cid-version=1&raw-leaves=true`;
 
-  // BIGINT TIME: kairosEpochNow() returns bigint → keep all epoch-ms in bigint.
-  const cooldownMsB = BigInt(Math.max(0, Math.floor(cooldownMs)));
-
   // circuit-breaker state
   let consecutiveFailures = 0;
   let fallbackActive = false;
-  let lastFailureAt: bigint = 0n;
+  let lastFailureAt = 0;
   let warnedOnce = false;
   const nop = createNopAdapter();
 
@@ -100,9 +95,7 @@ export function createIpfsHttpAdapter(opts: IpfsHttpOptions): IpfsLike {
     try {
       // eslint-disable-next-line no-console
       console.warn(msg);
-    } catch {
-      /* ignore */
-    }
+    } catch { /* ignore */ }
     warnedOnce = true;
   };
 
@@ -122,19 +115,14 @@ export function createIpfsHttpAdapter(opts: IpfsHttpOptions): IpfsLike {
       let detail = "";
       try {
         detail = await res.text();
-      } catch {
-        /* ignore */
-      }
+      } catch { /* ignore */ }
       throw new Error(
-        `[ipfsAdapter] HTTP ${res.status} ${res.statusText} while adding file${detail ? ` — ${detail}` : ""}`,
+        `[ipfsAdapter] HTTP ${res.status} ${res.statusText} while adding file${detail ? ` — ${detail}` : ""}`
       );
     }
 
     const text = await res.text();
-    const lines = text
-      .split(/\r?\n/)
-      .map((l) => l.trim())
-      .filter((l) => l.length > 0);
+    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
     if (lines.length === 0) throw new Error("[ipfsAdapter] Empty response from IPFS add");
 
     const last: IpfsAddResponse = JSON.parse(lines[lines.length - 1]) as IpfsAddResponse;
@@ -148,17 +136,17 @@ export function createIpfsHttpAdapter(opts: IpfsHttpOptions): IpfsLike {
 
   const softFail = async (buf: Uint8Array): Promise<PublishResult> => {
     fallbackActive = true;
-    lastFailureAt = kairosEpochNow();
+    lastFailureAt = Date.now();
     warnOnce("[ipfsAdapter] IPFS not ready; using in-memory fallback. Will retry later.");
     return nop.publish(buf);
   };
 
   return {
     async publish(buf: Uint8Array): Promise<PublishResult> {
-      const now = kairosEpochNow(); // bigint
+      const now = Date.now();
 
       if (fallbackActive) {
-        if (now - lastFailureAt < cooldownMsB) {
+        if (now - lastFailureAt < cooldownMs) {
           return nop.publish(buf);
         }
         // cooldown elapsed → try network once
@@ -167,10 +155,9 @@ export function createIpfsHttpAdapter(opts: IpfsHttpOptions): IpfsLike {
           consecutiveFailures = 0;
           fallbackActive = false;
           warnedOnce = false;
-          lastFailureAt = 0n;
           return out;
         } catch {
-          // still down → remain in fallback
+          // FIX: no-unused-vars — no var name in catch
           lastFailureAt = now;
           return nop.publish(buf);
         }
@@ -179,7 +166,6 @@ export function createIpfsHttpAdapter(opts: IpfsHttpOptions): IpfsLike {
       try {
         const out = await tryNetworkAdd(buf);
         consecutiveFailures = 0;
-        lastFailureAt = 0n;
         return out;
       } catch (err: unknown) {
         consecutiveFailures += 1;
@@ -198,11 +184,14 @@ export function createIpfsHttpAdapter(opts: IpfsHttpOptions): IpfsLike {
  * Default export adapter via env.
  */
 const DEFAULT_ENDPOINT =
-  (typeof process !== "undefined" && (process.env.NEXT_PUBLIC_IPFS_API || process.env.IPFS_API)) ||
+  (typeof process !== "undefined" &&
+    (process.env.NEXT_PUBLIC_IPFS_API || process.env.IPFS_API)) ||
   "https://ipfs.infura.io:5001";
 
 const DEFAULT_AUTH =
-  typeof process !== "undefined" ? process.env.NEXT_PUBLIC_IPFS_AUTH || process.env.IPFS_AUTH : undefined;
+  typeof process !== "undefined"
+    ? process.env.NEXT_PUBLIC_IPFS_AUTH || process.env.IPFS_AUTH
+    : undefined;
 
 const envNumber = (keys: string[], fallback: number): number => {
   if (typeof process === "undefined") return fallback;
@@ -226,8 +215,14 @@ const envBoolean = (keys: string[], fallback: boolean): boolean => {
   return fallback;
 };
 
-const DEFAULT_FAILS_BEFORE_NOP = envNumber(["NEXT_PUBLIC_IPFS_FAILS_BEFORE_NOP", "IPFS_FAILS_BEFORE_NOP"], 2);
-const DEFAULT_COOLDOWN_MS = envNumber(["NEXT_PUBLIC_IPFS_COOLDOWN_MS", "IPFS_COOLDOWN_MS"], 5 * 60 * 1000);
+const DEFAULT_FAILS_BEFORE_NOP = envNumber(
+  ["NEXT_PUBLIC_IPFS_FAILS_BEFORE_NOP", "IPFS_FAILS_BEFORE_NOP"],
+  2
+);
+const DEFAULT_COOLDOWN_MS = envNumber(
+  ["NEXT_PUBLIC_IPFS_COOLDOWN_MS", "IPFS_COOLDOWN_MS"],
+  5 * 60 * 1000
+);
 const DEFAULT_QUIET = envBoolean(["NEXT_PUBLIC_IPFS_QUIET", "IPFS_QUIET"], true);
 
 export const ipfs: IpfsLike = createIpfsHttpAdapter({

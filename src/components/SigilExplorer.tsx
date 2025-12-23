@@ -44,7 +44,6 @@ import type { FeedPostPayload } from "../utils/feedPayload";
 import { extractPayloadFromUrl, resolveLineageBackwards, getOriginUrl } from "../utils/sigilUrl";
 import type { SigilSharePayloadLoose } from "../utils/sigilUrl";
 import { normalizeClaimGlyphRef, normalizeUsername } from "../utils/usernameClaim";
-import { kairosEpochNow, microPulsesSinceGenesis } from "../utils/kai_pulse";
 import {
   getUsernameClaimRegistry,
   ingestUsernameClaimGlyph,
@@ -185,41 +184,33 @@ const canStorage = hasWindow && typeof window.localStorage !== "undefined";
 
 /** KKS-1.0 φ-breath pulse cadence (ms). Used ONLY for cadence, never ordering. */
 /** KKS-1.0 φ-exact breath (seconds). */
-/** μpulses per pulse (KKS-1.0). */
-const MICRO_PER_PULSE = 1_000_000n;
-/** setTimeout clamps: prevent 0ms spin + absurd long sleeps if something goes weird */
-const KAI_TIMER_MIN_MS = 8;        // never schedule tighter than a few ms
-const KAI_TIMER_MAX_MS = 20_000;   // safety cap (should normally be ~5.2s)
+const KAI_BREATH_SEC = 3 + Math.sqrt(5);
+/** Breath duration in ms (≈ 5236.0679ms). Used ONLY to schedule, never to order. */
+const KAI_BREATH_MS = KAI_BREATH_SEC * 1000;
 
 /**
- * Next wake delay computed in Kai-domain:
- * - Compute current μpulse coordinate.
- * - Target next integer pulse boundary.
- * - Convert μpulse delta → ms using the bridge’s local slope (μpulses per 1ms).
- *
- * No floats. No sqrt. No Unix epoch anchor needed.
+ * Genesis epoch (bridge only) used to phase-lock “pulse ticks” to breath boundaries.
+ * Ordering still uses payload pulse/beat/stepIndex; this is only the wake cadence.
  */
-function msUntilNextKaiBreath(): number {
-  const nowMsBig = kairosEpochNow(); // bigint ms (Kairos engine)
-  const microNow = microPulsesSinceGenesis(nowMsBig); // bigint μpulses since Genesis
+const KAI_GENESIS_EPOCH_MS = 1715323541888;
 
-  const nextPulseMicro = ((microNow / MICRO_PER_PULSE) + 1n) * MICRO_PER_PULSE;
-  const deltaMicro = nextPulseMicro - microNow;
+/** Timer guards (avoid 0ms storms / long sleeps). */
+const KAI_TIMER_MIN_MS = 25;
+const KAI_TIMER_MAX_MS = 30_000;
 
-  // Local slope: μpulses gained per +1ms step (should be ~191 μpulses/ms)
-  const microPlus1 = microPulsesSinceGenesis(nowMsBig + 1n);
-  const microPerMsRaw = microPlus1 - microNow;
+function msUntilNextKaiBreath(now = nowMs()): number {
+  const dt = now - KAI_GENESIS_EPOCH_MS;
+  if (!Number.isFinite(dt)) return 5236;
 
-  // Defensive clamp (should never hit unless bridge is misbehaving)
-  const microPerMs = microPerMsRaw > 0n ? microPerMsRaw : 191n;
+  const breaths = dt / KAI_BREATH_MS;
+  const nextBreathIndex = Math.floor(breaths) + 1;
+  const nextAt = KAI_GENESIS_EPOCH_MS + nextBreathIndex * KAI_BREATH_MS;
 
-  // Ceil(deltaMicro / microPerMs)
-  const delayMsBig = (deltaMicro + microPerMs - 1n) / microPerMs;
-  const delayMs = Number(delayMsBig);
+  const ms = nextAt - now;
+  const safe = Number.isFinite(ms) ? ms : 5236;
 
-  return Math.min(KAI_TIMER_MAX_MS, Math.max(KAI_TIMER_MIN_MS, delayMs));
+  return Math.min(KAI_TIMER_MAX_MS, Math.max(KAI_TIMER_MIN_MS, Math.round(safe)));
 }
-
 
 
 /** Remote pull limits. */
@@ -251,15 +242,8 @@ const UI_TOGGLE_INTERACT_MS = 900; // “reading” window after expanding/colla
 const UI_FLUSH_PAD_MS = 80; // padding before applying deferred bumps
 
 function nowMs(): number {
-  const t = kairosEpochNow(); // bigint (ms)
-  const maxSafe = BigInt(Number.MAX_SAFE_INTEGER);
-
-  // clamp only if something ever goes out of range (shouldn't for epoch ms)
-  const clamped = t < 0n ? 0n : t > maxSafe ? maxSafe : t;
-
-  return Number(clamped);
+  return Date.now();
 }
-
 
 function cssEscape(v: string): string {
   if (!hasWindow) return v;

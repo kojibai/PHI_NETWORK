@@ -6,30 +6,10 @@
 //   if (paused) skip game updates.
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { kairosEpochNow } from "../../../utils/kai_pulse";
-
-type UnknownRecord = Record<string, unknown>;
-
-function isRecord(v: unknown): v is UnknownRecord {
-  return typeof v === "object" && v !== null;
-}
-
-function coerceBigInt(v: unknown): bigint | null {
-  if (typeof v === "bigint") return v;
-  if (typeof v === "number" && Number.isFinite(v) && Number.isSafeInteger(v)) return BigInt(v);
-  if (typeof v === "string") {
-    try {
-      return BigInt(v);
-    } catch {
-      return null;
-    }
-  }
-  return null;
-}
 
 export type GameFocusDetail = {
   id: string; // unique id of the component taking focus ("KaiMaze", "KaiKasino", ...)
-  ts: bigint; // kairos epoch timestamp (bigint)
+  ts: number; // timestamp
 };
 
 const EVT = "kai:game:focus";
@@ -53,7 +33,7 @@ function getBC(): BroadcastChannel | null {
 }
 
 export function announceGameFocus(id: string): void {
-  const detail: GameFocusDetail = { id, ts: kairosEpochNow() };
+  const detail: GameFocusDetail = { id, ts: Date.now() };
 
   if (hasWindow) {
     try {
@@ -66,8 +46,7 @@ export function announceGameFocus(id: string): void {
   const bc = getBC();
   if (bc) {
     try {
-      // ✅ avoid BigInt structured-clone issues across browsers
-      bc.postMessage({ type: EVT, detail: { id: detail.id, ts: detail.ts.toString() } });
+      bc.postMessage({ type: EVT, detail });
     } catch (err) {
       warn("BroadcastChannel postMessage failed", err);
     } finally {
@@ -80,20 +59,12 @@ export function announceGameFocus(id: string): void {
   }
 }
 
-
-function normalizeDetail(raw: unknown): GameFocusDetail | null {
-  if (!isRecord(raw)) return null;
-  const id = raw.id;
-  const ts = coerceBigInt(raw.ts);
-  if (typeof id !== "string" || ts === null) return null;
-  return { id, ts };
-}
-
-export function subscribeGameFocus(handler: (d: GameFocusDetail) => void): () => void {
+export function subscribeGameFocus(
+  handler: (d: GameFocusDetail) => void
+): () => void {
   const onWin = (e: Event) => {
-    const ev = e as CustomEvent<unknown>;
-    const d = normalizeDetail(ev?.detail);
-    if (d) handler(d);
+    const ev = e as CustomEvent<GameFocusDetail>;
+    if (ev?.detail) handler(ev.detail);
   };
 
   if (hasWindow) {
@@ -103,12 +74,10 @@ export function subscribeGameFocus(handler: (d: GameFocusDetail) => void): () =>
   const bc = getBC();
   const onBC = (msg: MessageEvent) => {
     const data = msg?.data;
-    if (!isRecord(data)) return;
-    if (data.type !== EVT) return;
-    const d = normalizeDetail(data.detail);
-    if (d) handler(d);
+    if (data?.type === EVT && data.detail) {
+      handler(data.detail as GameFocusDetail);
+    }
   };
-
   if (bc) {
     try {
       bc.addEventListener("message", onBC);
@@ -139,7 +108,7 @@ export function subscribeGameFocus(handler: (d: GameFocusDetail) => void): () =>
 
 export function useGameFocus(gameId: string) {
   const [paused, setPaused] = useState<boolean>(false);
-  const lastFocusRef = useRef<bigint>(0n);
+  const lastFocusRef = useRef<number>(0);
 
   useEffect(() => {
     return subscribeGameFocus((d) => {
@@ -148,6 +117,7 @@ export function useGameFocus(gameId: string) {
     });
   }, [gameId]);
 
+  // Call when the game becomes active / user interacts
   const takeFocus = useCallback(() => {
     announceGameFocus(gameId);
     setPaused(false);

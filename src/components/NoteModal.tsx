@@ -5,7 +5,6 @@ import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import type React from "react";
 import type { FC } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { kairosEpochNow } from "../utils/kai_pulse";
 
 /* ══════════════ Public types ══════════════ */
 export interface Note {
@@ -332,12 +331,10 @@ const NoteModal: FC<NoteModalProps> = ({ pulse, initialText, onSave, onClose }) 
     if (!trimmed || saving) return;
     setSaving(true);
 
-    const nowMsBI = kairosEpochNow();                 // bigint (epoch ms)
-const nowKai = computeLocalKai(new Date(Number(nowMsBI))); // Date needs number
-
+    const nowKai = computeLocalKai(new Date());
     const livePulse = Math.max(0, nowKai.livePulseApprox ?? Math.round(pulse));
     const note: Note = {
-      id: `${livePulse}-${kairosEpochNow()}`,
+      id: `${livePulse}-${Date.now()}`,
       pulse: livePulse,
       text: trimmed,
       beat: nowKai.beat,

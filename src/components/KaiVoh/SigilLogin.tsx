@@ -33,22 +33,18 @@ export interface SigilLoginProps {
 function lower(s: string | undefined | null): string {
   return typeof s === "string" ? s.toLowerCase() : "";
 }
-
 function hasOwn<T extends object, K extends PropertyKey>(
   obj: T,
   key: K
 ): obj is T & Record<K, unknown> {
   return Object.prototype.hasOwnProperty.call(obj, key);
 }
-
 function isNonEmptyString(v: unknown): v is string {
   return typeof v === "string" && v.length > 0;
 }
-
 function isFiniteNumber(v: unknown): v is number {
   return typeof v === "number" && Number.isFinite(v);
 }
-
 function isHttpUrl(s: unknown): s is string {
   if (typeof s !== "string" || !s) return false;
   try {
@@ -82,7 +78,6 @@ function extractPrimaryMetaFromSvgText(svgText: string): SigilMeta | null {
     const doc = new DOMParser().parseFromString(svgText, "image/svg+xml");
     const nodes = Array.from(doc.getElementsByTagName("metadata"));
     const skipIds = ["valuation", "ledger", "dht", "source"];
-
     for (const el of nodes) {
       const idAttr = el.getAttribute("id") ?? "";
       if (skipIds.some((k) => idAttr.includes(k))) continue;
@@ -108,7 +103,6 @@ function extractPrimaryMetaFromSvgText(svgText: string): SigilMeta | null {
         /* ignore non-JSON */
       }
     }
-
     return null;
   } catch {
     return null;
@@ -116,10 +110,8 @@ function extractPrimaryMetaFromSvgText(svgText: string): SigilMeta | null {
 }
 
 /** Try to find the canonical sigil action URL inside the SVG text/metas */
-function extractSigilActionUrlFromSvgText(
-  svgText: string,
-  metaCandidate?: Record<string, unknown>
-): string | null {
+function extractSigilActionUrlFromSvgText(svgText: string, metaCandidate?: Record<string, unknown>): string | null {
+  // 1) Look in the verified meta candidate first
   const keys = [
     "sigilActionUrl",
     "sigilUrl",
@@ -132,8 +124,6 @@ function extractSigilActionUrlFromSvgText(
     "link",
     "href",
   ];
-
-  // 1) Look in the verified meta candidate first
   if (metaCandidate) {
     for (const k of keys) {
       const v = (metaCandidate as Record<string, unknown>)[k];
@@ -221,7 +211,7 @@ export default function SigilLogin({ onVerified }: SigilLoginProps) {
       setVerified(null);
 
       try {
-        if (file.type !== "image/svg+xml" && !file.name.toLowerCase().endsWith(".svg")) {
+        if (file.type !== "image/svg+xml" && !file.name.endsWith(".svg")) {
           throw new Error("Please upload an SVG sigil file.");
         }
 
@@ -229,9 +219,7 @@ export default function SigilLogin({ onVerified }: SigilLoginProps) {
         const { meta, contextOk, typeOk } = await parseSvgFile(file);
 
         const primaryMeta =
-          meta &&
-          hasOwn(meta as Record<string, unknown>, "kaiSignature") &&
-          hasOwn(meta as Record<string, unknown>, "pulse")
+          meta && hasOwn(meta as Record<string, unknown>, "kaiSignature") && hasOwn(meta as Record<string, unknown>, "pulse")
             ? meta
             : extractPrimaryMetaFromSvgText(svgText);
 
@@ -256,11 +244,11 @@ export default function SigilLogin({ onVerified }: SigilLoginProps) {
           (core as SigilMetaCore).userPhiKey = expectedPhiKey;
         }
 
-        // Extract canonical action URL from the SVG
+        // NEW: Extract canonical action URL from the SVG
         const actionUrl =
           extractSigilActionUrlFromSvgText(svgText, core as unknown as Record<string, unknown>) ?? undefined;
 
-        // Persist for app-wide use (includes sigilActionUrl when present)
+        // Persist for app-wide use (now includes sigilActionUrl)
         const authMeta: SigilAuthMeta = {
           pulse: core.pulse,
           beat: core.beat,
@@ -285,7 +273,6 @@ export default function SigilLogin({ onVerified }: SigilLoginProps) {
         setError(message);
       } finally {
         setLoading(false);
-        // allow same-file reselect
         if (fileInputRef.current) fileInputRef.current.value = "";
       }
     },
@@ -298,7 +285,6 @@ export default function SigilLogin({ onVerified }: SigilLoginProps) {
   };
 
   const onKey = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (loading) return;
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
       fileInputRef.current?.click();
@@ -331,9 +317,7 @@ export default function SigilLogin({ onVerified }: SigilLoginProps) {
     loading ? "sigil-dropzone--loading" : "",
     verified ? "sigil-dropzone--ok" : "",
     error ? "sigil-dropzone--err" : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
+  ].join(" ");
 
   return (
     <div className="sigil-login-only w-full max-w-xl mx-auto">
@@ -346,13 +330,10 @@ export default function SigilLogin({ onVerified }: SigilLoginProps) {
         className={dzClass}
         role="button"
         tabIndex={0}
-        aria-disabled={loading}
         title="Drag & drop your Kai-sealed SVG here, or tap to browse"
-        aria-label="Inhale or drop your Kai-sealed SVG sigil"
+        aria-label="inhale or drop your Kai-sealed SVG sigil"
         aria-describedby="sigil-instructions sigil-trustline"
-        onClick={() => {
-          if (!loading) fileInputRef.current?.click();
-        }}
+        onClick={() => fileInputRef.current?.click()}
       >
         <div className="sigil-grid" aria-hidden />
         <div className="sigil-ring sigil-ring--outer" aria-hidden />
@@ -370,13 +351,13 @@ export default function SigilLogin({ onVerified }: SigilLoginProps) {
           <div className="sigil-status" aria-live="polite">
             {loading && (
               <div className="sigil-status__row">
-                <span className="sigil-spinner" aria-hidden="true" />
-                <span>Verifying signature &amp; deriving Φ-Key…</span>
+                <span className="sigil-spinner" />
+                <span>Verifying signature & deriving Φ-Key…</span>
               </div>
             )}
             {!loading && verified && (
               <div className="sigil-status__ok">
-                <span className="ok-dot" aria-hidden="true" />
+                <span className="ok-dot" />
                 <span>Verified — Φ-Key bound</span>
               </div>
             )}
@@ -384,15 +365,12 @@ export default function SigilLogin({ onVerified }: SigilLoginProps) {
           </div>
         </div>
 
-        {/* ✅ Bulletproof: never rely on Tailwind .hidden for file inputs */}
         <input
           ref={fileInputRef}
           type="file"
           accept=".svg,image/svg+xml"
           onChange={handleUpload}
-          className="sigil-file-input"
-          tabIndex={-1}
-          aria-hidden="true"
+          className="hidden"
         />
       </div>
     </div>

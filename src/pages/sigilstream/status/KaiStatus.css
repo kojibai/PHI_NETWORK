@@ -868,34 +868,3 @@
   font-size: 12px;
   color: rgba(198, 212, 235, 0.78);
 }
-/* KaiStatus.css (add) */
-.kai-status__nNum { font-variant-numeric: tabular-nums; }
-.kai-feed-status__barFill { transform: scaleX(var(--kai-progress, 0)); transform-origin: 0 50%; will-change: transform; }
-.kai-feed-status__barSpark { will-change: transform, opacity; }
-.kai-feed-status{
-  /* ───────── global scale ───────── */
-  --s: 1;
-
-  /* ───────── inner padding ───────── */
-  --padX: 12px;
-  --padY: 9px;
-
-  --r: 16px;
-
-  --gapTop: 10px;
-  --gapBottom: 9px;   
-  --pillGap: 8px;
-  --barH: 6px;
-  --barBottom: 8px;
-  /* ───────── shadows ───────── */
-  --shadow: 0 12px 32px rgba(0,0,0,0.24);
-  --inner: inset 0 0 12px rgba(0,0,0,0.18);
-  /* ───────── ring color ───────── */
-  --ring: rgba(255,255,255,0.14);
-  /* ───────── aurora accents ───────── */
-  --a1: rgba(120,190,255,0.12);
-  --a2: rgba(255,180,245,0.08);
-  /* ───────── pulse timing ───────── */
-  --pulse-dur: 5.236s;
-  --pulse-offset: 0s;
-}
