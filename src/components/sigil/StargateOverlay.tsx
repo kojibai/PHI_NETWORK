@@ -365,16 +365,35 @@ export default function StargateOverlay({
   onClose,
   closePress,
 }: Props) {
+  const overlayRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    document.documentElement.classList.add("stargate-open");
+    document.body.classList.add("stargate-open");
+    const id = window.setTimeout(() => {
+      overlayRef.current?.focus();
+    }, 0);
+    return () => {
+      window.clearTimeout(id);
+      document.documentElement.classList.remove("stargate-open");
+      document.body.classList.remove("stargate-open");
+    };
+  }, [open]);
+
   if (!open) return null;
 
   return (
     <div
-      className="stargate-overlay"
+      ref={overlayRef}
+      className="stargate-overlay is-open"
       role="dialog"
       aria-modal="true"
       onKeyDown={(e) => e.key === "Escape" && onClose()}
       tabIndex={-1}
-      onClick={() => onClose()}
+      onPointerDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
       style={{
         position: "fixed",
         inset: 0,

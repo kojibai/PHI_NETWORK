@@ -190,6 +190,12 @@ html.sigil-scroll, body{
 }
 /* lock background scroll while overlay is open */
 body.bp-open { overflow: hidden; }
+body.stargate-open,
+html.stargate-open {
+  overflow: hidden;
+  height: 100%;
+  overscroll-behavior: none;
+}
 
 /* neutralize ancestor transforms ONLY while overlay is open */
 body.bp-open :where(.sigilpage, .sp-viewport, .sp-shell, .sp-veil, .sp-veil-stars) {
@@ -428,6 +434,17 @@ body.bp-open :where(.sigilpage, .sp-viewport, .sp-shell, .sp-veil, .sp-veil-star
 .mono{ font-family:var(--font-mono); }
 .mono-wrap{ white-space:normal; word-break:break-word; overflow-wrap:anywhere; }
 .sp-cta{ display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-start; }
+
+/* Mobile render optimization (defer heavy sections below the fold) */
+@media (max-width: 900px){
+  .sp-debits,
+  .sp-lineage,
+  .sp-provenance,
+  .sp-panel{
+    content-visibility: auto;
+    contain-intrinsic-size: 520px;
+  }
+}
 
 /* ========== 9) PROVENANCE ====================================== */
 .sp-provenance{

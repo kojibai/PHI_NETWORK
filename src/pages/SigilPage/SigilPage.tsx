@@ -58,7 +58,7 @@ import { validateSvgForVerifier, putMetadata } from "../../utils/svgMeta";
 import { decodeSigilHistory } from "../../utils/sigilUrl";
 
 /* ——— Theme ——— */
-import { CHAKRA_THEME, isIOS } from "../../components/sigil/theme";
+import { CHAKRA_THEME} from "../../components/sigil/theme";
 
 /* ——— Hooks ——— */
 import { useKaiTicker } from "../../hooks/useKaiTicker";
@@ -467,6 +467,7 @@ export default function SigilPage() {
   const [uploadedMeta, setUploadedMeta] = useState<SigilMetaLoose | null>(null);
   const [attachment, setAttachment] = useState<StrictAttachment | null>(null);
   const [exporting, setExporting] = useState<boolean>(false);
+  const [posterExporting, setPosterExporting] = useState<boolean>(false);
   const [newOwner, setNewOwner] = useState<string>("");
   const [newKaiSig, setNewKaiSig] = useState<string>("");
   const [expiryUnit, setExpiryUnit] = useState<ExpiryUnit>("breaths");
@@ -1291,21 +1292,33 @@ useEffect(() => {
 }, [payload]);
 
   /* Poster Export (module) */
-  const posterPress = useFastPress<HTMLButtonElement>(() => {
+  const posterPress = useFastPress<HTMLButtonElement>(async () => {
+    if (posterExporting) return;
+    setPosterExporting(true);
     const stageEl = document.getElementById("sigil-stage");
-    void exportPosterPNG({
-      stageEl,
-      payload,
-      localHash,
-      routeHash,
-      qr: { uid: qrUid, url: absUrl, hue: qrHue, accent: qrAccent },
-      onToast: (m: string) => signal(setToast, m),
-    });
+    try {
+      await exportPosterPNG({
+        stageEl,
+        payload,
+        localHash,
+        routeHash,
+        qr: { uid: qrUid, url: absUrl, hue: qrHue, accent: qrAccent },
+        onToast: (m: string) => signal(setToast, m),
+      });
+    } finally {
+      setPosterExporting(false);
+    }
   });
 
   /* Stargate */
   const [stargateOpen, setStargateOpen] = useState(false);
   const [stargateSrc, setStargateSrc] = useState<string>("");
+
+  useEffect(() => {
+    if (stargateOpen) return;
+    document.documentElement.classList.remove("stargate-open");
+    document.body.classList.remove("stargate-open");
+  }, [stargateOpen]);
 
   const openStargate = useCallback(async () => {
     const el = frameRef.current;
@@ -1316,16 +1329,9 @@ useEffect(() => {
     );
     setStargateSrc(canvas.toDataURL("image/png"));
     setStargateOpen(true);
-    if (!isIOS()) {
-      const overlay = document.querySelector(".stargate-overlay") as HTMLElement | null;
-      overlay?.requestFullscreen?.().catch(() => {});
-    }
   }, []);
   const closeStargate = useCallback(() => {
     setStargateOpen(false);
-    if (document.fullscreenElement && !isIOS()) {
-      document.exitFullscreen?.().catch(() => {});
-    }
   }, []);
   const stargatePress = useFastPress<HTMLButtonElement>(() => {
     void openStargate();
@@ -3380,6 +3386,7 @@ useEffect(() => {
   showError={showError}
   expired={!!expired}
   exporting={exporting}
+  posterExporting={posterExporting}
   isFutureSealed={isFutureSealed}
   isArchived={isArchived}
   claimPress={claimPress}
