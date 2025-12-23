@@ -467,6 +467,7 @@ export default function SigilPage() {
   const [uploadedMeta, setUploadedMeta] = useState<SigilMetaLoose | null>(null);
   const [attachment, setAttachment] = useState<StrictAttachment | null>(null);
   const [exporting, setExporting] = useState<boolean>(false);
+  const [posterExporting, setPosterExporting] = useState<boolean>(false);
   const [newOwner, setNewOwner] = useState<string>("");
   const [newKaiSig, setNewKaiSig] = useState<string>("");
   const [expiryUnit, setExpiryUnit] = useState<ExpiryUnit>("breaths");
@@ -1291,16 +1292,22 @@ useEffect(() => {
 }, [payload]);
 
   /* Poster Export (module) */
-  const posterPress = useFastPress<HTMLButtonElement>(() => {
+  const posterPress = useFastPress<HTMLButtonElement>(async () => {
+    if (posterExporting) return;
+    setPosterExporting(true);
     const stageEl = document.getElementById("sigil-stage");
-    void exportPosterPNG({
-      stageEl,
-      payload,
-      localHash,
-      routeHash,
-      qr: { uid: qrUid, url: absUrl, hue: qrHue, accent: qrAccent },
-      onToast: (m: string) => signal(setToast, m),
-    });
+    try {
+      await exportPosterPNG({
+        stageEl,
+        payload,
+        localHash,
+        routeHash,
+        qr: { uid: qrUid, url: absUrl, hue: qrHue, accent: qrAccent },
+        onToast: (m: string) => signal(setToast, m),
+      });
+    } finally {
+      setPosterExporting(false);
+    }
   });
 
   /* Stargate */
@@ -3380,6 +3387,7 @@ useEffect(() => {
   showError={showError}
   expired={!!expired}
   exporting={exporting}
+  posterExporting={posterExporting}
   isFutureSealed={isFutureSealed}
   isArchived={isArchived}
   claimPress={claimPress}

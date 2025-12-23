@@ -12,6 +12,7 @@ export type Props = {
   showError: boolean;
   expired: boolean;
   exporting: boolean;
+  posterExporting: boolean;
   isFutureSealed: boolean;
   isArchived: boolean;
 
@@ -37,6 +38,7 @@ export default function SigilCTA({
   claimPress,
   stargatePress,
   posterPress,
+  posterExporting,
 }: Props) {
   return (
     <div className="sp-cta">
@@ -70,8 +72,15 @@ export default function SigilCTA({
           <button className="btn-ghost" {...stargatePress}>
             Stargate
           </button>
-          <button className="btn-ghost" {...posterPress} title="Save a shareable poster (QR + sleek Pulse Bar)">
-            Sigil-Stamp
+          <button
+            className="btn-ghost"
+            {...posterPress}
+            disabled={posterExporting}
+            aria-busy={posterExporting}
+            data-busy={posterExporting || undefined}
+            title={posterExporting ? "Exhaling…" : "Save a shareable poster (QR + sleek Pulse Bar)"}
+          >
+            {posterExporting ? "Exhaling…" : "Sigil-Stamp"}
           </button>
         </>
       )}
