@@ -1470,8 +1470,15 @@ const SigilModal: FC<Props> = ({ initialPulse = 0, onClose }) => {
                     onError={() => setMintSvgOk(false)}
                   />
                 ) : (
-                  <MintIcon />
+               <MintIcon />
                 )}
+              </span>
+
+              <span className="mint-btn__text">
+                <span className="mint-btn__title">MINT ΦKey </span>
+                <span className="mint-btn__sub">
+                  ☤KAI {pulse.toLocaleString()}
+                </span>
               </span>
             </button>
           </div>

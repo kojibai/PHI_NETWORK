@@ -33,10 +33,7 @@ export interface SigilLoginProps {
 function lower(s: string | undefined | null): string {
   return typeof s === "string" ? s.toLowerCase() : "";
 }
-function hasOwn<T extends object, K extends PropertyKey>(
-  obj: T,
-  key: K
-): obj is T & Record<K, unknown> {
+function hasOwn<T extends object, K extends PropertyKey>(obj: T, key: K): obj is T & Record<K, unknown> {
   return Object.prototype.hasOwnProperty.call(obj, key);
 }
 function isNonEmptyString(v: unknown): v is string {
@@ -78,6 +75,7 @@ function extractPrimaryMetaFromSvgText(svgText: string): SigilMeta | null {
     const doc = new DOMParser().parseFromString(svgText, "image/svg+xml");
     const nodes = Array.from(doc.getElementsByTagName("metadata"));
     const skipIds = ["valuation", "ledger", "dht", "source"];
+
     for (const el of nodes) {
       const idAttr = el.getAttribute("id") ?? "";
       if (skipIds.some((k) => idAttr.includes(k))) continue;
@@ -124,10 +122,11 @@ function extractSigilActionUrlFromSvgText(svgText: string, metaCandidate?: Recor
     "link",
     "href",
   ];
+
   if (metaCandidate) {
     for (const k of keys) {
-      const v = (metaCandidate as Record<string, unknown>)[k];
-      if (isHttpUrl(v)) return v as string;
+      const v = metaCandidate[k];
+      if (isHttpUrl(v)) return v;
     }
   }
 
@@ -143,9 +142,10 @@ function extractSigilActionUrlFromSvgText(svgText: string, metaCandidate?: Recor
       try {
         const obj = JSON.parse(peeled) as unknown;
         if (typeof obj === "object" && obj !== null) {
+          const rec = obj as Record<string, unknown>;
           for (const k of keys) {
-            const v = (obj as Record<string, unknown>)[k];
-            if (isHttpUrl(v)) return v as string;
+            const v = rec[k];
+            if (isHttpUrl(v)) return v;
           }
         }
       } catch {
@@ -158,7 +158,7 @@ function extractSigilActionUrlFromSvgText(svgText: string, metaCandidate?: Recor
     // 3) Look for <a href="..."> or xlink:href on anchors
     for (const a of Array.from(doc.getElementsByTagName("a"))) {
       const href = a.getAttribute("href") || a.getAttribute("xlink:href");
-      if (isHttpUrl(href)) return href!;
+      if (isHttpUrl(href)) return href;
     }
   } catch {
     /* ignore parse errors */
@@ -219,7 +219,9 @@ export default function SigilLogin({ onVerified }: SigilLoginProps) {
         const { meta, contextOk, typeOk } = await parseSvgFile(file);
 
         const primaryMeta =
-          meta && hasOwn(meta as Record<string, unknown>, "kaiSignature") && hasOwn(meta as Record<string, unknown>, "pulse")
+          meta &&
+          hasOwn(meta as Record<string, unknown>, "kaiSignature") &&
+          hasOwn(meta as Record<string, unknown>, "pulse")
             ? meta
             : extractPrimaryMetaFromSvgText(svgText);
 
@@ -365,12 +367,18 @@ export default function SigilLogin({ onVerified }: SigilLoginProps) {
           </div>
         </div>
 
+        {/* IMPORTANT UPDATE:
+            Do NOT use Tailwind `hidden` (display:none) for file input.
+            Keep it visually hidden (but present) so iOS/Safari file picker always works,
+            while never rendering the "Choose File" UI. */}
         <input
           ref={fileInputRef}
           type="file"
           accept=".svg,image/svg+xml"
           onChange={handleUpload}
-          className="hidden"
+          className="sigil-file-input"
+          tabIndex={-1}
+          aria-hidden="true"
         />
       </div>
     </div>
