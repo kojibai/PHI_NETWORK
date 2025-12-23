@@ -737,8 +737,16 @@ body.bp-open :where(.sigilpage, .sp-viewport, .sp-shell, .sp-veil, .sp-veil-star
   transition: transform .04s ease, box-shadow .18s ease;
 }
 .stargate-exit:active{ transform: scale(var(--tap-scale)); }
-.stargate-stage{ display:grid; place-items:center; padding:10px; }
+.stargate-stage{ display:grid; place-items:center; padding:10px; position:absolute; inset:0; }
 .stargate-stage img{ max-width:100vw; max-height:85vh; width:auto; height:auto; object-fit:contain; animation: frame-breathe var(--pulse) var(--ease-breath) infinite; }
+.stargate-loading{
+  display:grid;
+  place-items:center;
+  height:100%;
+  color:var(--sp-text,#eafcff);
+  font-weight:800;
+  letter-spacing:.02em;
+}
 
 /* ========== 14) ETERNAL PULSE PANEL ============================ */
 .sp-epulse { margin: 16px 16px 4px; }

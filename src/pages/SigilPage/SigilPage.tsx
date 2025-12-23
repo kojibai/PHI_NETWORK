@@ -1475,22 +1475,33 @@ useEffect(() => {
   /* Stargate */
   const [stargateOpen, setStargateOpen] = useState(false);
   const [stargateSrc, setStargateSrc] = useState<string>("");
+  const [stargateLoading, setStargateLoading] = useState(false);
 
-  const openStargate = useCallback(async () => {
+  const openStargate = useCallback(() => {
     const el = frameRef.current;
     if (!el) return;
-    const canvas = await html2canvas(
-      el,
-      ({ backgroundColor: null } as unknown) as Parameters<typeof html2canvas>[1]
-    );
-    setStargateSrc(canvas.toDataURL("image/png"));
+    setStargateLoading(true);
     setStargateOpen(true);
-    if (!isIOS()) {
-      const overlay = document.querySelector(".stargate-overlay") as HTMLElement | null;
-      overlay?.requestFullscreen?.().catch(() => {});
-    }
+    requestAnimationFrame(() => {
+      void html2canvas(el, {
+        backgroundColor: null,
+        scale: Math.min(2, window.devicePixelRatio || 1),
+        useCORS: true,
+      }).then((canvas) => {
+        setStargateSrc(canvas.toDataURL("image/png"));
+        if (!isIOS()) {
+          const overlay = document.querySelector(".stargate-overlay") as HTMLElement | null;
+          overlay?.requestFullscreen?.().catch(() => {});
+        }
+      }).catch(() => {
+        setStargateOpen(false);
+      }).finally(() => {
+        setStargateLoading(false);
+      });
+    });
   }, []);
   const closeStargate = useCallback(() => {
+    setStargateLoading(false);
     setStargateOpen(false);
     if (document.fullscreenElement && !isIOS()) {
       document.exitFullscreen?.().catch(() => {});
@@ -1502,9 +1513,10 @@ useEffect(() => {
   const closeStargatePress = useFastPress<HTMLButtonElement>(() => {
     closeStargate();
   });
-// Fast/tap-safe toggles
-const toggleProofPress = useFastPress<HTMLButtonElement>(() => setProofOpen(v => !v));
-const openHistoryPress = useFastPress<HTMLButtonElement>(() => setHistoryOpen(true));
+
+  // Fast/tap-safe toggles
+  const toggleProofPress = useFastPress<HTMLButtonElement>(() => setProofOpen((v) => !v));
+  const openHistoryPress = useFastPress<HTMLButtonElement>(() => setHistoryOpen(true));
 
   /* Attach / Mint */
   const onAttachFile = useCallback(async (file: File) => {
@@ -3714,6 +3726,7 @@ const onSealModalClose = useCallback((ev?: unknown, reason?: string) => {
         src={stargateSrc}
         onClose={closeStargate}
         closePress={closeStargatePress}
+        loading={stargateLoading}
       />
 
       {/* SealMoment modal */}

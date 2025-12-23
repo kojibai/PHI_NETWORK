@@ -1,4 +1,5 @@
 // src/components/ValueHistoryModal.tsx
+import { createPortal } from "react-dom";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { kairosEpochNow } from "../utils/kai_pulse";
 import "./ValueHistoryModal.css";
@@ -373,19 +374,37 @@ export default function ValueHistoryModal({
     };
   }, [open, filtered, minT, maxT]);
 
+  useEffect(() => {
+    if (!open) return;
+    const prevOverflow = document.body.style.overflow;
+    const prevTouch = document.body.style.touchAction;
+    document.body.style.overflow = "hidden";
+    document.body.style.touchAction = "none";
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      document.body.style.touchAction = prevTouch;
+    };
+  }, [open]);
+
   if (!open) return null;
 
   const latestText = Number.isFinite(latestValue)
     ? latestValue.toLocaleString(undefined, { maximumFractionDigits: 6 })
     : "—";
 
-  return (
-    <div className="valuehist-overlay" role="dialog" aria-modal="true" aria-label="Value History">
+  const modal = (
+    <div
+      className="valuehist-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Value History"
+      onClick={onClose}
+    >
       <button className="valuehist-exit" onClick={onClose} title="Close">
         ✕
       </button>
 
-      <div className="valuehist-stage" style={{ alignItems: "stretch" }}>
+      <div className="valuehist-stage" style={{ alignItems: "stretch" }} onClick={(e) => e.stopPropagation()}>
         <div className="valuehist-panel">
           <div className="valuehist-head">
             <h3 className="valuehist-title">{label} — history</h3>
@@ -458,4 +477,6 @@ export default function ValueHistoryModal({
       </div>
     </div>
   );
+
+  return createPortal(modal, document.body);
 }

@@ -10,6 +10,7 @@ import {
 } from "@react-three/drei";
 import * as THREE from "three";
 import { BREATH_SEC, GENESIS_TS } from "../../SovereignSolar";
+import { createPortal } from "react-dom";
 
 /** Golden-breath timing (φ-exact): T = 3 + √5 seconds (imported via BREATH_SEC) */
 const BREATH_T = BREATH_SEC;
@@ -357,6 +358,7 @@ type Props = {
   src: string;
   onClose: () => void;
   closePress: Press;
+  loading?: boolean;
 };
 
 export default function StargateOverlay({
@@ -364,10 +366,20 @@ export default function StargateOverlay({
   src,
   onClose,
   closePress,
+  loading = false,
 }: Props) {
+  useEffect(() => {
+    if (!open) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [open]);
+
   if (!open) return null;
 
-  return (
+  const overlay = (
     <div
       className="stargate-overlay"
       role="dialog"
@@ -375,32 +387,11 @@ export default function StargateOverlay({
       onKeyDown={(e) => e.key === "Escape" && onClose()}
       tabIndex={-1}
       onClick={() => onClose()}
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 2_147_483_600,
-        background:
-          "radial-gradient(80% 60% at 50% 50%, rgba(0,0,0,0.75), rgba(0,0,0,0.95))",
-        backdropFilter: "blur(3px)",
-      }}
     >
       <button
         className="stargate-exit"
         aria-label="Close viewer"
         {...closePress}
-        style={{
-          position: "absolute",
-          top: "max(12px, env(safe-area-inset-top))",
-          right: "max(12px, env(safe-area-inset-right))",
-          width: 44,
-          height: 44,
-          borderRadius: 12,
-          border: "1px solid rgba(255,255,255,0.15)",
-          background: "rgba(255,255,255,0.06)",
-          color: "#fff",
-          fontSize: 18,
-          zIndex: 2,
-        }}
         onClick={(e) => {
           e.stopPropagation();
           closePress.onClick(e);
@@ -417,44 +408,51 @@ export default function StargateOverlay({
       <div
         className="stargate-stage"
         onClick={(e) => e.stopPropagation()}
-        style={{ position: "absolute", inset: 0 }}
       >
-        <Canvas
-          dpr={[1, 2]}
-          gl={{
-            antialias: true,
-            alpha: true,
-            powerPreference: "high-performance",
-          }}
-          onCreated={(state) => {
-            // TS-safe renderer with optional legacy flags for older three versions
-            const r = state.gl as THREE.WebGLRenderer &
-              Partial<{
-                physicallyCorrectLights: boolean;
-                useLegacyLights: boolean;
-              }>;
+        {src ? (
+          <Canvas
+            dpr={[1, 2]}
+            gl={{
+              antialias: true,
+              alpha: true,
+              powerPreference: "high-performance",
+            }}
+            onCreated={(state) => {
+              // TS-safe renderer with optional legacy flags for older three versions
+              const r = state.gl as THREE.WebGLRenderer &
+                Partial<{
+                  physicallyCorrectLights: boolean;
+                  useLegacyLights: boolean;
+                }>;
 
-            // Color/tone mapping
-            r.outputColorSpace = THREE.SRGBColorSpace;
-            r.toneMapping = THREE.ACESFilmicToneMapping;
-            r.toneMappingExposure = 1.0;
+              // Color/tone mapping
+              r.outputColorSpace = THREE.SRGBColorSpace;
+              r.toneMapping = THREE.ACESFilmicToneMapping;
+              r.toneMappingExposure = 1.0;
 
-            // For older three versions only (guards prevent TS errors + no-ops on modern builds)
-            if (typeof r.useLegacyLights !== "undefined")
-              r.useLegacyLights = false;
-            if (typeof r.physicallyCorrectLights !== "undefined")
-              r.physicallyCorrectLights = true;
-          }}
-          camera={{
-            fov: 55,
-            near: 0.1,
-            far: 200,
-            position: [0, 0, 3.2],
-          }}
-        >
-          <StargateScene src={src} />
-        </Canvas>
+              // For older three versions only (guards prevent TS errors + no-ops on modern builds)
+              if (typeof r.useLegacyLights !== "undefined")
+                r.useLegacyLights = false;
+              if (typeof r.physicallyCorrectLights !== "undefined")
+                r.physicallyCorrectLights = true;
+            }}
+            camera={{
+              fov: 55,
+              near: 0.1,
+              far: 200,
+              position: [0, 0, 3.2],
+            }}
+          >
+            <StargateScene src={src} />
+          </Canvas>
+        ) : (
+          <div className="stargate-loading" aria-live="polite">
+            {loading ? "Preparing Stargate…" : "Unable to load Stargate preview."}
+          </div>
+        )}
       </div>
     </div>
   );
+
+  return createPortal(overlay, document.body);
 }
