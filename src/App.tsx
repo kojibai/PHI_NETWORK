@@ -1614,7 +1614,7 @@ export function AppChrome(): React.JSX.Element {
                     <span className="mono">V</span>{" "}
                     <a
                       className="mono"
-                      href="https://github.com/phinetwork/phi.network"
+                      href="https://github.com/phinetwork/phi_network"
                       target="_blank"
                       rel="noreferrer"
                       aria-label={`Version ${appVersion} (opens GitHub)`}
