@@ -805,7 +805,7 @@ const VerifierStamperInner: React.FC = () => {
     return m;
   }
 
-  const shareTransferLink = useCallback(async (m: SigilMetadata) => {
+  const shareTransferLink = useCallback(async (m: SigilMetadata, transferAmountPhi?: string) => {
     const parentCanonical =
       (m.canonicalHash as string | undefined)?.toLowerCase() ||
       (await sha256Hex(`${m.pulse}|${m.beat}|${m.stepIndex}|${m.chakraDay}`)).toLowerCase();
@@ -857,7 +857,21 @@ const VerifierStamperInner: React.FC = () => {
       logError("shareTransferLink.previewDecode", err);
     }
 
-    const enriched = { ...sharePayload, canonicalHash: childHash, parentHash: parentCanonical, transferNonce: token, claim, preview };
+    const enriched = {
+      ...sharePayload,
+      canonicalHash: childHash,
+      parentHash: parentCanonical,
+      transferNonce: token,
+      claim,
+      preview,
+      ...(transferAmountPhi
+        ? {
+            transferDirection: "send",
+            transferAmountPhi,
+            phiDelta: `-${transferAmountPhi}`,
+          }
+        : {}),
+    };
 
     let base = "";
     try {
@@ -1643,7 +1657,7 @@ const VerifierStamperInner: React.FC = () => {
       setError(null);
       setPhiInput("");
       setUsdInput("");
-      await shareTransferLink(rolled2);
+      await shareTransferLink(rolled2, validPhi6);
       return;
     }
 
@@ -1652,7 +1666,7 @@ const VerifierStamperInner: React.FC = () => {
     setError(null);
     setPhiInput("");
     setUsdInput("");
-    await shareTransferLink(updated2);
+    await shareTransferLink(updated2, validPhi6);
   };
 
   const receive = async () => {

@@ -1090,6 +1090,8 @@ function getTransferMoveFromPayload(payload: SigilSharePayloadLoose): TransferMo
   if (!inferred) return undefined;
 
   const amount =
+    readPhiAmount(record.transferAmountPhi) ??
+    readPhiAmount(record.transferPhi) ??
     readPhiAmount(record.amountPhi) ??
     readPhiAmount(record.phiAmount) ??
     readPhiAmount(record.childAllocationPhi) ??
