@@ -1315,14 +1315,17 @@ useEffect(() => {
   const [stargateSrc, setStargateSrc] = useState<string>("");
 
   const releaseStargateScrollLock = useCallback(() => {
+    document.documentElement.classList.add("sigil-scroll");
     document.documentElement.classList.remove("stargate-open");
     document.body.classList.remove("stargate-open");
-    document.documentElement.style.removeProperty("overflow");
-    document.documentElement.style.removeProperty("height");
-    document.documentElement.style.removeProperty("overscroll-behavior");
-    document.body.style.removeProperty("overflow");
-    document.body.style.removeProperty("height");
-    document.body.style.removeProperty("overscroll-behavior");
+    document.documentElement.style.overflow = "auto";
+    document.documentElement.style.overflowY = "auto";
+    document.documentElement.style.height = "auto";
+    document.documentElement.style.overscrollBehavior = "auto";
+    document.body.style.overflow = "auto";
+    document.body.style.overflowY = "auto";
+    document.body.style.height = "auto";
+    document.body.style.overscrollBehavior = "auto";
   }, []);
 
   useEffect(() => {
