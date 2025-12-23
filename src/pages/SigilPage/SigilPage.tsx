@@ -1503,6 +1503,8 @@ useEffect(() => {
   const closeStargate = useCallback(() => {
     setStargateLoading(false);
     setStargateOpen(false);
+    document.body.style.overflow = "";
+    document.body.style.touchAction = "";
     if (document.fullscreenElement && !isIOS()) {
       document.exitFullscreen?.().catch(() => {});
     }

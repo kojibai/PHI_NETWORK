@@ -45,7 +45,7 @@
   .valuehist-overlay {
     position: fixed;
     inset: 0;
-    z-index: 9999;
+    z-index: 2147483600;
     display: grid;
     place-items: center;
     padding: clamp(8px, 2.4vmin, 24px);
