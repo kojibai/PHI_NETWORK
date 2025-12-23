@@ -7,6 +7,7 @@ import {
   useCallback,
   useEffect,
   useId,
+  useMemo,
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
@@ -47,6 +48,7 @@ function SpiralSVG({ className }: { className?: string }) {
       height={SPIRAL_H}
       viewBox={`0 0 ${SPIRAL_W} ${SPIRAL_H}`}
       aria-hidden="true"
+      focusable="false"
     >
       <defs>
         <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="1">
@@ -114,11 +116,35 @@ function SigilAuthPill({ className }: { className?: string }) {
   );
 }
 
+/**
+ * Focus helpers (no libs, no nested components).
+ * Keeps Tab inside the modal, preventing “focus escape” which can cause iOS/Safari weird scroll jumps.
+ */
+function getFocusable(container: HTMLElement | null): HTMLElement[] {
+  if (!container) return [];
+  const nodes = Array.from(
+    container.querySelectorAll<HTMLElement>(
+      [
+        "a[href]",
+        "button:not([disabled])",
+        "input:not([disabled])",
+        "select:not([disabled])",
+        "textarea:not([disabled])",
+        "[tabindex]:not([tabindex='-1'])",
+      ].join(",")
+    )
+  );
+  return nodes.filter((el) => !el.hasAttribute("disabled") && !el.getAttribute("aria-hidden"));
+}
+
 export default function KaiVohModal({ open, onClose }: KaiVohModalProps) {
   // Hooks MUST run unconditionally (rules-of-hooks)
+  const rootRef = useRef<HTMLDivElement | null>(null);
   const firstFocusableRef = useRef<HTMLButtonElement | null>(null);
   const scrollRegionRef = useRef<HTMLDivElement | null>(null);
+
   const touchStartYRef = useRef<number>(0);
+  const lockedScrollYRef = useRef<number>(0);
 
   const [view, setView] = useState<ViewMode>("voh");
   const [realmsMounted, setRealmsMounted] = useState(false);
@@ -131,48 +157,105 @@ export default function KaiVohModal({ open, onClose }: KaiVohModalProps) {
     [realmsMounted]
   );
 
-  // Side-effects only when open (but effect itself is unconditional)
+  const viewportVars = useMemo(() => {
+    return {
+      breath: `${BREATH_SEC}s`,
+      phi: `${PHI}`,
+    };
+  }, []);
+
+  /**
+   * HARDENED MODAL LOCK (prevents reload / pull-to-refresh / overscroll glitches)
+   * - Locks page scroll using body:position:fixed (stronger than overflow hidden on iOS PWAs).
+   * - Prevents any touchmove/wheel outside the modal scroll region.
+   * - Prevents overscroll bounce at bounds INSIDE the modal scroll region (iOS pull-to-refresh trigger).
+   * - Adds Escape-to-close + Tab focus trap (avoids focus escape → accidental page scroll).
+   * - Sets global CSS vars for breath/phi + an innerHeight var for stable layout.
+   */
   useEffect(() => {
     if (!open) return;
 
-    const prevOverflow = document.body.style.overflow;
-    const prevDocOverscroll = document.documentElement.style.getPropertyValue("overscroll-behavior");
-    const prevBodyOverscroll = document.body.style.getPropertyValue("overscroll-behavior");
-    const prevHtmlOverflow = document.documentElement.style.overflow;
-    const prevBodyHeight = document.body.style.height;
-    const prevHtmlHeight = document.documentElement.style.height;
-    const prevTouchAction = document.documentElement.style.touchAction;
-    const prevBreath = document.documentElement.style.getPropertyValue("--kai-breath");
-    const prevPhi = document.documentElement.style.getPropertyValue("--kai-phi");
+    // Save prior styles (restore exactly)
+    const prev = {
+      bodyOverflow: document.body.style.overflow,
+      bodyPosition: document.body.style.position,
+      bodyTop: document.body.style.top,
+      bodyLeft: document.body.style.left,
+      bodyRight: document.body.style.right,
+      bodyWidth: document.body.style.width,
+      bodyHeight: document.body.style.height,
+      htmlOverflow: document.documentElement.style.overflow,
+      htmlHeight: document.documentElement.style.height,
+      docOverscroll: document.documentElement.style.getPropertyValue("overscroll-behavior"),
+      bodyOverscroll: document.body.style.getPropertyValue("overscroll-behavior"),
+      touchAction: document.documentElement.style.touchAction,
+      breath: document.documentElement.style.getPropertyValue("--kai-breath"),
+      phi: document.documentElement.style.getPropertyValue("--kai-phi"),
+      kaiVh: document.documentElement.style.getPropertyValue("--kai-vh"),
+    };
 
-    document.body.style.overflow = "hidden";
+    // Lock scroll (strong iOS-safe pattern)
+    lockedScrollYRef.current = window.scrollY || window.pageYOffset || 0;
+    document.body.style.position = "fixed";
+    document.body.style.top = `-${lockedScrollYRef.current}px`;
+    document.body.style.left = "0";
+    document.body.style.right = "0";
+    document.body.style.width = "100%";
     document.body.style.height = "100%";
+    document.body.style.overflow = "hidden";
+
     document.documentElement.style.overflow = "hidden";
     document.documentElement.style.height = "100%";
-    document.documentElement.style.setProperty("overscroll-behavior", "contain");
-    document.body.style.setProperty("overscroll-behavior", "contain");
+
+    // Global overscroll kill (desktop + Android); iOS still needs touchmove gate below.
+    document.documentElement.style.setProperty("overscroll-behavior", "none");
+    document.body.style.setProperty("overscroll-behavior", "none");
+
+    // Avoid double-tap zoom / weird pan interactions outside our scroll region
     document.documentElement.style.touchAction = "manipulation";
 
-    // set CSS custom props globally for timing/phi
-    document.documentElement.style.setProperty("--kai-breath", `${BREATH_SEC}s`);
-    document.documentElement.style.setProperty("--kai-phi", `${PHI}`);
+    // CSS vars for timing/phi
+    document.documentElement.style.setProperty("--kai-breath", viewportVars.breath);
+    document.documentElement.style.setProperty("--kai-phi", viewportVars.phi);
 
-    // focus first interactive (if present)
+    // Stable viewport var (helps iOS address-bar / orientation “jump”)
+    const syncVh = (): void => {
+      document.documentElement.style.setProperty("--kai-vh", `${window.innerHeight}px`);
+    };
+    syncVh();
+    window.addEventListener("resize", syncVh, { passive: true });
+
+    // Make the scroll region itself “contain” overscroll (best-effort; iOS still needs touch gate)
+    const scrollEl = scrollRegionRef.current;
+    if (scrollEl) {
+
+      scrollEl.style.overscrollBehavior = "contain";
+      // iOS momentum scrolling (smooth)
+      // @ts-expect-error: webkitOverflowScrolling not in standard types.
+      scrollEl.style.webkitOverflowScrolling = "touch";
+    }
+
+    // Focus first interactive (if present)
     firstFocusableRef.current?.focus();
 
+    // Touch gating (iOS pull-to-refresh prevention)
     const onTouchStart = (e: TouchEvent): void => {
       touchStartYRef.current = e.touches[0]?.clientY ?? 0;
     };
 
     const onTouchMove = (e: TouchEvent): void => {
       if (e.touches.length !== 1) return;
-      const scrollEl = scrollRegionRef.current;
-      if (!scrollEl) return;
+
+      const s = scrollRegionRef.current;
+      if (!s) {
+        e.preventDefault();
+        return;
+      }
 
       const target = e.target as Node | null;
-      const insideScrollRegion = target ? scrollEl.contains(target) : false;
+      const insideScrollRegion = target ? s.contains(target) : false;
 
-      // Block any stray touches outside the KaiVoh scroll region (prevents pull-to-refresh)
+      // Never allow swipe gestures outside the modal scroll region.
       if (!insideScrollRegion) {
         e.preventDefault();
         return;
@@ -180,44 +263,141 @@ export default function KaiVohModal({ open, onClose }: KaiVohModalProps) {
 
       const currentY = e.touches[0]?.clientY ?? touchStartYRef.current;
       const deltaY = currentY - touchStartYRef.current;
-      const atTop = scrollEl.scrollTop <= 0;
-      const atBottom = scrollEl.scrollTop + scrollEl.clientHeight >= scrollEl.scrollHeight;
 
-      // When at the bounds, prevent the native overscroll that can trigger a reload in PWAs
+      const atTop = s.scrollTop <= 0;
+      const atBottom = s.scrollTop + s.clientHeight >= s.scrollHeight - 1;
+
+      // Prevent the native rubber-band at the bounds (pull-to-refresh trigger in PWAs)
       if ((atTop && deltaY > 0) || (atBottom && deltaY < 0)) {
         e.preventDefault();
       }
     };
 
-    window.addEventListener("touchstart", onTouchStart, { passive: true });
-    window.addEventListener("touchmove", onTouchMove, { passive: false });
+    // Wheel gating (trackpads can “overscroll” background under fixed body in some browsers)
+    const onWheel = (e: WheelEvent): void => {
+      const s = scrollRegionRef.current;
+      if (!s) {
+        e.preventDefault();
+        return;
+      }
+
+      const target = e.target as Node | null;
+      const insideScrollRegion = target ? s.contains(target) : false;
+
+      if (!insideScrollRegion) {
+        e.preventDefault();
+        return;
+      }
+
+      const dy = e.deltaY;
+      const atTop = s.scrollTop <= 0;
+      const atBottom = s.scrollTop + s.clientHeight >= s.scrollHeight - 1;
+
+      if ((atTop && dy < 0) || (atBottom && dy > 0)) {
+        e.preventDefault();
+      }
+    };
+
+    // Escape + focus trap
+    const onKeyDown = (e: KeyboardEvent): void => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        onClose();
+        return;
+      }
+
+      if (e.key !== "Tab") return;
+
+      const root = rootRef.current;
+      const focusables = getFocusable(root);
+      if (focusables.length === 0) return;
+
+      const active = document.activeElement as HTMLElement | null;
+      const first = focusables[0]!;
+      const last = focusables[focusables.length - 1]!;
+
+      if (!active || !root?.contains(active)) {
+        e.preventDefault();
+        first.focus();
+        return;
+      }
+
+      if (e.shiftKey) {
+        if (active === first) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else {
+        if (active === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    };
+
+    // Abortable listeners (clean, reliable)
+    const ac = new AbortController();
+    const optTouchStart: AddEventListenerOptions = { passive: true, signal: ac.signal, capture: true };
+    const optTouchMove: AddEventListenerOptions = { passive: false, signal: ac.signal, capture: true };
+    const optWheel: AddEventListenerOptions = { passive: false, signal: ac.signal, capture: true };
+    const optKey: AddEventListenerOptions = { signal: ac.signal, capture: true };
+
+    document.addEventListener("touchstart", onTouchStart, optTouchStart);
+    document.addEventListener("touchmove", onTouchMove, optTouchMove);
+    document.addEventListener("wheel", onWheel, optWheel);
+    document.addEventListener("keydown", onKeyDown, optKey);
+
+    // Optional: block iOS gesture events that can cause zoom/scroll jumps
+    const onGesture = (ev: Event): void => {
+      ev.preventDefault();
+    };
+    document.addEventListener("gesturestart", onGesture, { passive: false, signal: ac.signal } as AddEventListenerOptions);
+    document.addEventListener("gesturechange", onGesture, {
+      passive: false,
+      signal: ac.signal,
+    } as AddEventListenerOptions);
+    document.addEventListener("gestureend", onGesture, { passive: false, signal: ac.signal } as AddEventListenerOptions);
 
     return () => {
-      window.removeEventListener("touchstart", onTouchStart);
-      window.removeEventListener("touchmove", onTouchMove);
+      // Remove listeners
+      ac.abort();
+      window.removeEventListener("resize", syncVh);
 
-      document.body.style.overflow = prevOverflow;
-      document.body.style.height = prevBodyHeight;
+      // Restore global styles/vars
+      document.body.style.overflow = prev.bodyOverflow;
+      document.body.style.position = prev.bodyPosition;
+      document.body.style.top = prev.bodyTop;
+      document.body.style.left = prev.bodyLeft;
+      document.body.style.right = prev.bodyRight;
+      document.body.style.width = prev.bodyWidth;
+      document.body.style.height = prev.bodyHeight;
 
-      // restore prior values (avoid leaking globals across app)
-      if (prevDocOverscroll)
-        document.documentElement.style.setProperty("overscroll-behavior", prevDocOverscroll);
+      document.documentElement.style.overflow = prev.htmlOverflow;
+      document.documentElement.style.height = prev.htmlHeight;
+
+      if (prev.docOverscroll) document.documentElement.style.setProperty("overscroll-behavior", prev.docOverscroll);
       else document.documentElement.style.removeProperty("overscroll-behavior");
 
-      if (prevBodyOverscroll) document.body.style.setProperty("overscroll-behavior", prevBodyOverscroll);
+      if (prev.bodyOverscroll) document.body.style.setProperty("overscroll-behavior", prev.bodyOverscroll);
       else document.body.style.removeProperty("overscroll-behavior");
 
-      document.documentElement.style.overflow = prevHtmlOverflow;
-      document.documentElement.style.height = prevHtmlHeight;
-      document.documentElement.style.touchAction = prevTouchAction;
+      document.documentElement.style.touchAction = prev.touchAction;
 
-      if (prevBreath) document.documentElement.style.setProperty("--kai-breath", prevBreath);
+      if (prev.breath) document.documentElement.style.setProperty("--kai-breath", prev.breath);
       else document.documentElement.style.removeProperty("--kai-breath");
 
-      if (prevPhi) document.documentElement.style.setProperty("--kai-phi", prevPhi);
+      if (prev.phi) document.documentElement.style.setProperty("--kai-phi", prev.phi);
       else document.documentElement.style.removeProperty("--kai-phi");
+
+      if (prev.kaiVh) document.documentElement.style.setProperty("--kai-vh", prev.kaiVh);
+      else document.documentElement.style.removeProperty("--kai-vh");
+
+      // Restore scroll position after unlocking fixed body
+      const y = lockedScrollYRef.current || 0;
+      window.scrollTo(0, y);
     };
-  }, [open, onClose]);
+  }, [open, onClose, viewportVars.breath, viewportVars.phi]);
 
   // Close button handlers
   const handleClosePointerDown = useCallback(
@@ -244,6 +424,7 @@ export default function KaiVohModal({ open, onClose }: KaiVohModalProps) {
 
   const node = (
     <div
+      ref={rootRef}
       className="kai-voh-modal-backdrop atlantean-veil"
       role="dialog"
       aria-modal="true"

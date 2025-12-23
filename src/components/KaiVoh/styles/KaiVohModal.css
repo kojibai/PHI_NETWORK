@@ -1,11 +1,16 @@
 /* ──────────────────────────────────────────────────────────────
    KaiVohModal.css — Atlantean Glass (Phi / Breath 5.236s)
-   Everything animates on --kai-breath (default 5.236s) and honors φ.
-   TSX sets these vars on <html>, but we provide fallbacks here.
+   HARDENED “NATIVE APP” MODAL (no pull-to-refresh, no scroll chaining,
+   no iOS input zoom, no weird reloads when focusing inputs)
    ────────────────────────────────────────────────────────────── */
+
+/* Global fallbacks (TSX sets these on <html> when modal opens) */
 :root{
   --kai-breath: 5.236s;
   --kai-phi: 1.61803398875;
+
+  /* TSX sets --kai-vh = innerHeight px while open (stable iOS viewport) */
+  --kai-vh: 100vh;
 
   /* Palette (deep ocean glass + auric cyan/violet + gold) */
   --kai-bg: #070a14;
@@ -45,28 +50,49 @@
 
 /* ──────────────────────────────────────────────────────────────
    Backdrop + celestial layers
+   Key hardening:
+   - touch-action: none on backdrop (prevents stray gestures / iOS bounce)
+   - overscroll-behavior: none/contain (no scroll chaining)
+   - stable height using --kai-vh (set by TSX)
    ────────────────────────────────────────────────────────────── */
 .kai-voh-modal-backdrop{
   position: fixed;
   inset: 0;
   z-index: 2147483646;
+
   display: flex;
   align-items: center;
   justify-content: center;
+
   padding: clamp(16px, 4vw, 28px);
-  min-height: 100vh;
+
+  /* Stable viewport while keyboard opens/closes (TSX updates --kai-vh on resize) */
+  min-height: var(--kai-vh, 100vh);
+  height: var(--kai-vh, 100vh);
+
   background:
     radial-gradient(1200px 800px at 50% 0%, rgba(0,180,255,0.08), transparent 70%),
     radial-gradient(900px 700px at 50% 100%, rgba(0,255,208,0.06), transparent 70%),
     rgba(3,6,23,0.66);
+
   backdrop-filter: blur(6px) saturate(1.08);
   animation: portal-fade .42s ease-out both;
-  overscroll-behavior: contain;
-  touch-action: pan-y pinch-zoom;
+
+  /* HARD: never allow overscroll/pull-to-refresh from backdrop */
+  overscroll-behavior: none;
+
+  /* HARD: block pan/zoom gestures at the backdrop level (scroll is allowed only in .kai-voh-body) */
+  touch-action: none;
+
+  /* Prevent highlight/selection weirdness on iOS */
+  -webkit-tap-highlight-color: transparent;
 }
 
 @supports (height: 100dvh){
-  .kai-voh-modal-backdrop{ min-height: 100dvh; }
+  .kai-voh-modal-backdrop{
+    min-height: var(--kai-vh, 100dvh);
+    height: var(--kai-vh, 100dvh);
+  }
 }
 
 .atlantean-veil::before,
@@ -112,24 +138,48 @@
 
 /* ──────────────────────────────────────────────────────────────
    Container — Atlantean glass
+   Key hardening:
+   - max-height uses --kai-vh to stay stable with iOS keyboard
+   - touch-action none on shell; scroll only inside .kai-voh-body
    ────────────────────────────────────────────────────────────── */
 .kai-voh-container{
   position: relative;
+
   width: min(1000px, 96vw);
-  max-height: 92vh;
+
+  /* Stable iOS keyboard behavior */
+  max-height: min(92vh, calc(var(--kai-vh, 100vh) - 32px));
+
   color: var(--kai-fg);
+
   background:
     linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02)) padding-box,
     linear-gradient(180deg, rgba(255,255,255,0.15), rgba(255,255,255,0.06)) border-box,
     var(--kai-glass);
+
   border-radius: clamp(16px, 2.1vw, 22px);
   border: 1px solid var(--glass-border);
+
   box-shadow:
     0 12px 50px rgba(0,0,0,.48),
     inset 0 0 0 1px var(--glass-inset);
+
   overflow: hidden;
-  display:flex; flex-direction:column;
+
+  display:flex;
+  flex-direction:column;
+
   isolation:isolate;
+
+  /* HARD: block pan/zoom gestures on container (scroll allowed only in inner region) */
+  touch-action: none;
+
+  /* Prevent iOS “smart zoom” text scaling */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+
+  /* Helps reduce paint churn */
+  contain: layout paint;
 }
 
 .glass-omni::before{
@@ -191,17 +241,38 @@
 .phi-spiral--tl{ top:-10px; left:-20px; transform: rotate(2deg) scale(.95); }
 .phi-spiral--br{ bottom:-10px; right:-16px; transform: rotate(182deg) scale(.95); }
 
-/* Body area */
+/* ──────────────────────────────────────────────────────────────
+   Body area (ONLY scrollable region)
+   Key hardening:
+   - touch-action pan-y => native vertical scroll
+   - overscroll-behavior contain => no chaining
+   - scrollbar-gutter stable => no layout shifts
+   - webkit momentum scrolling enabled
+   ────────────────────────────────────────────────────────────── */
 .kai-voh-body{
   flex: 1;
   min-height: 440px;
+
   overflow: auto;
   padding: clamp(14px, 2.2vw, 18px);
+
   background:
     radial-gradient(80% 60% at 50% 0%, rgba(0,255,208,.05), transparent 65%),
     radial-gradient(70% 50% at 50% 100%, rgba(138,43,226,.05), transparent 65%);
+
+  /* No scroll chaining to the page */
   overscroll-behavior: contain;
+  overscroll-behavior-y: contain;
+  overscroll-behavior-x: none;
+
+  /* Momentum scroll on iOS */
   -webkit-overflow-scrolling: touch;
+
+  /* Allow vertical scrolling inside, but block pinch/zoom/pan outside */
+  touch-action: pan-y;
+
+  /* Avoid desktop scrollbar “jump” when content mounts */
+  scrollbar-gutter: stable both-edges;
 }
 
 /* Ensure decorations never steal clicks */
@@ -215,9 +286,46 @@
 .breath-meter { pointer-events: none; }
 
 /* ──────────────────────────────────────────────────────────────
-   CLOSE BUTTON — “OMG WOW” Living Crystal X (Breath-synced)
-   Drop-in: uses the same .kai-voh-close class.
-   Draws the X via ::before/::after (no markup changes).
+   FORM HARDENING (prevents iOS “tap to zoom” + keeps native feel)
+   - iOS zoom-on-focus happens when font-size < 16px.
+   - This forces 16px minimum on all form controls within the modal.
+   - Also tightens touch-action so tapping inputs never propagates weird gestures.
+   ────────────────────────────────────────────────────────────── */
+.kai-voh-container input,
+.kai-voh-container textarea,
+.kai-voh-container select{
+  font-size: 16px !important;
+  line-height: 1.25;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+
+  /* Native app feel */
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.kai-voh-container textarea{ resize: vertical; }
+
+.kai-voh-container input:focus,
+.kai-voh-container textarea:focus,
+.kai-voh-container select:focus{
+  outline: none;
+}
+
+/* Allow text selection inside inputs only (avoid accidental selection on glass) */
+.kai-voh-container{ user-select: none; -webkit-user-select: none; }
+.kai-voh-container input,
+.kai-voh-container textarea{ user-select: text; -webkit-user-select: text; }
+
+/* Buttons/links feel firm */
+.kai-voh-container button,
+.kai-voh-container a{
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+/* ──────────────────────────────────────────────────────────────
+   CLOSE BUTTON — Living Crystal X (Breath-synced)
    ────────────────────────────────────────────────────────────── */
 .kai-voh-close{
   position:absolute; top:8px; right:8px;
@@ -238,7 +346,6 @@
   cursor:pointer;
   outline: none;
   -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
 
   /* Prismatic glass core (alive) */
   background:
@@ -317,7 +424,6 @@
   transform: translate(-50%,-50%) rotate(-45deg);
 }
 
-/* Hover = “it evolves” (micro-rotation + bloom + sharper beams) */
 .kai-voh-close:hover{
   border-color: rgba(0,255,208,0.32);
   box-shadow:
@@ -330,7 +436,6 @@
   transform: translateY(-1px) rotate(0.45deg);
   filter: saturate(1.08) brightness(1.05);
 }
-
 .kai-voh-close:hover::before{ transform: translate(-50%,-50%) rotate(50deg); }
 .kai-voh-close:hover::after{ transform: translate(-50%,-50%) rotate(-50deg); }
 
@@ -374,7 +479,7 @@
   top: var(--voh-orb-top);
   left: 50%;
   transform: translateX(-50%);
-  z-index: 900;                 /* below close button, above rings */
+  z-index: 900;
   width: var(--voh-orb-size); height: var(--voh-orb-size);
   display: grid; place-items: center;
   pointer-events: none;
@@ -412,6 +517,9 @@
   padding: calc(var(--voh-orb-size) + var(--voh-orb-top) + 6px) 10px 0;
   align-items:center; justify-content:center;
   position: relative;
+
+  /* Don’t allow accidental scroll/pan on the tab bar itself */
+  touch-action: none;
 }
 
 .kai-voh-tab{
@@ -436,7 +544,7 @@
   margin-right: 6px; filter: drop-shadow(0 0 4px rgba(0,255,208,.4));
 }
 
-/* Breath meter (phi-timed) — keep visible on all screens */
+/* Breath meter (phi-timed) */
 .breath-meter{
   position:absolute;
   right: 12px;
@@ -461,11 +569,11 @@
    ────────────────────────────────────────────────────────────── */
 .portal-pane{
   animation: pane-in .35s ease-out;
+  contain: content;
 }
 
 /* ──────────────────────────────────────────────────────────────
    Footer / seals / chakra dots
-   (grid keeps center *exactly* centered)
    ────────────────────────────────────────────────────────────── */
 .atlantean-footer{
   position: relative;
@@ -479,6 +587,8 @@
   border-top: 1px solid rgba(255,255,255,.08);
   color: var(--kai-muted);
   font-size: .9rem;
+
+  touch-action: none;
 }
 .footer-left, .footer-right{ display:flex; align-items:center; gap:8px; }
 .footer-left{ justify-self: start; }
@@ -487,7 +597,7 @@
 .breath-label{ opacity:.85; }
 .breath-time{ color: var(--kai-gold); font-weight:700; }
 
-/* Chakra dots (glow + slow drift) */
+/* Chakra dots */
 .sigil-dot{
   width: 10px; height: 10px; border-radius: 50%;
   filter: drop-shadow(0 0 6px currentColor);
@@ -501,7 +611,6 @@
 .sigil-dot--third{ color:#9933FF; }
 .sigil-dot--crown{ color:#AA00FF; }
 
-/* Seal pulse */
 .seal-pulse{
   width: 10px; height: 10px; border-radius: 50%;
   background: radial-gradient(circle at 40% 40%, #fff, var(--kai-violet));
@@ -564,26 +673,6 @@
   0%{ transform: scale(.92) }
   50%{ transform: scale(1.18) }
   100%{ transform: scale(.92) }
-}
-
-/* Kai-seal coin motion */
-.seal-coin{ filter: drop-shadow(0 0 10px rgba(255,216,107,.35)); }
-.seal-coin__rotor{
-  transform-origin: 28px 28px;
-  animation: rotor-spin calc(var(--kai-breath) * 2.618) linear infinite;
-}
-.seal-coin__core{
-  fill: url(#coinGlow);
-  filter: drop-shadow(0 0 12px rgba(255,216,107,.5));
-  animation: coin-core var(--kai-breath) ease-in-out infinite;
-}
-@keyframes rotor-spin{
-  to { transform: rotate(360deg) }
-}
-@keyframes coin-core{
-  0%{ transform: scale(.96) }
-  50%{ transform: scale(1.06) }
-  100%{ transform: scale(.96) }
 }
 
 /* ──────────────────────────────────────────────────────────────
@@ -716,7 +805,8 @@
 }
 
 /* ──────────────────────────────────────────────────────────────
-   Small screens (keep ALL ornaments; scale/reposition instead)
+   Small screens (keep ornaments; scale/reposition instead)
+   + keep iOS input zoom disabled (still 16px)
    ────────────────────────────────────────────────────────────── */
 @media (max-width: 560px){
   :root{
@@ -736,9 +826,9 @@
   /* keep spirals visible; just scale them a touch */
   .phi-spiral--tl{ top:-8px; left:-12px; transform: rotate(2deg) scale(.78); }
   .phi-spiral--br{ bottom:-6px; right:-8px; transform: rotate(182deg) scale(.78); }
-}
 
-/* ──────────────────────────────────────────────────────────────
-   (Optional) Utility classes referenced by TSX
-   ────────────────────────────────────────────────────────────── */
-.auric-btn{ backdrop-filter: blur(6px) saturate(1.08); }
+  /* extra safety: never drop below 16px */
+  .kai-voh-container input,
+  .kai-voh-container textarea,
+  .kai-voh-container select{ font-size: 16px !important; }
+}
