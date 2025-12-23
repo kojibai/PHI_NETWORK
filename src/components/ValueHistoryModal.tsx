@@ -1,6 +1,6 @@
 // src/components/ValueHistoryModal.tsx
 import { createPortal } from "react-dom";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { kairosEpochNow } from "../utils/kai_pulse";
 import "./ValueHistoryModal.css";
 
@@ -392,13 +392,20 @@ export default function ValueHistoryModal({
     ? latestValue.toLocaleString(undefined, { maximumFractionDigits: 6 })
     : "—";
 
+  const handleOverlayClick = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      if (e.target === e.currentTarget) onClose();
+    },
+    [onClose]
+  );
+
   const modal = (
     <div
       className="valuehist-overlay"
       role="dialog"
       aria-modal="true"
       aria-label="Value History"
-      onClick={onClose}
+      onClick={handleOverlayClick}
     >
       <button className="valuehist-exit" onClick={onClose} title="Close">
         ✕
