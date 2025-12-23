@@ -1314,25 +1314,6 @@ useEffect(() => {
   const [stargateOpen, setStargateOpen] = useState(false);
   const [stargateSrc, setStargateSrc] = useState<string>("");
 
-  const releaseStargateScrollLock = useCallback(() => {
-    document.documentElement.classList.add("sigil-scroll");
-    document.documentElement.classList.remove("stargate-open");
-    document.body.classList.remove("stargate-open");
-    document.documentElement.style.overflow = "auto";
-    document.documentElement.style.overflowY = "auto";
-    document.documentElement.style.height = "auto";
-    document.documentElement.style.overscrollBehavior = "auto";
-    document.body.style.overflow = "auto";
-    document.body.style.overflowY = "auto";
-    document.body.style.height = "auto";
-    document.body.style.overscrollBehavior = "auto";
-  }, []);
-
-  useEffect(() => {
-    if (stargateOpen) return;
-    releaseStargateScrollLock();
-  }, [releaseStargateScrollLock, stargateOpen]);
-
   const openStargate = useCallback(async () => {
     const el = frameRef.current;
     if (!el) return;
@@ -1345,8 +1326,8 @@ useEffect(() => {
   }, []);
   const closeStargate = useCallback(() => {
     setStargateOpen(false);
-    releaseStargateScrollLock();
-  }, [releaseStargateScrollLock]);
+    setStargateSrc("");
+  }, []);
   const stargatePress = useFastPress<HTMLButtonElement>(() => {
     void openStargate();
   });
@@ -2444,7 +2425,7 @@ const ensureParentTokenActive = useCallback(
   
   // Disable transform/fixed glitches on iOS while any overlay is up
 const anyOverlayOpen =
-proofOpen || historyOpen || stargateOpen || sealOpen || (upgradeOpen && isLegacyPage);
+proofOpen || historyOpen || sealOpen || (upgradeOpen && isLegacyPage);
 
 useEffect(() => {
 const cls = "bp-open";
@@ -3343,7 +3324,7 @@ useEffect(() => {
       </div>
 
       <StargateOverlay
-        open={stargateOpen}
+        open={stargateOpen && !!stargateSrc}
         src={stargateSrc}
         onClose={closeStargate}
         closePress={closeStargatePress}

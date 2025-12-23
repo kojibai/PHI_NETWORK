@@ -1,5 +1,5 @@
 // src/components/sigil/StargateOverlay.tsx
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import {
   Environment,
@@ -367,17 +367,40 @@ export default function StargateOverlay({
 }: Props) {
   const overlayRef = useRef<HTMLDivElement | null>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!open) return undefined;
-    document.documentElement.classList.add("stargate-open");
-    document.body.classList.add("stargate-open");
+    const html = document.documentElement;
+    const body = document.body;
+    const prev = {
+      htmlOverflow: html.style.overflow,
+      htmlOverflowY: html.style.overflowY,
+      htmlHeight: html.style.height,
+      htmlOverscroll: html.style.overscrollBehavior,
+      bodyOverflow: body.style.overflow,
+      bodyOverflowY: body.style.overflowY,
+      bodyHeight: body.style.height,
+      bodyOverscroll: body.style.overscrollBehavior,
+    };
+
+    html.classList.add("stargate-open");
+    body.classList.add("stargate-open");
+
     const id = window.setTimeout(() => {
       overlayRef.current?.focus();
     }, 0);
+
     return () => {
       window.clearTimeout(id);
-      document.documentElement.classList.remove("stargate-open");
-      document.body.classList.remove("stargate-open");
+      html.classList.remove("stargate-open");
+      body.classList.remove("stargate-open");
+      html.style.overflow = prev.htmlOverflow;
+      html.style.overflowY = prev.htmlOverflowY;
+      html.style.height = prev.htmlHeight;
+      html.style.overscrollBehavior = prev.htmlOverscroll;
+      body.style.overflow = prev.bodyOverflow;
+      body.style.overflowY = prev.bodyOverflowY;
+      body.style.height = prev.bodyHeight;
+      body.style.overscrollBehavior = prev.bodyOverscroll;
     };
   }, [open]);
 
