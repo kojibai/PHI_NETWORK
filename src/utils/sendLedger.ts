@@ -7,7 +7,6 @@
 // - Exposes helpers for parent-spent and child-incoming base lookups
 
 import { sha256Hex } from "../components/VerifierStamper/crypto"; // adjust path if needed
-import { kairosEpochNow } from "./kai_pulse";
 
 /* ──────────────────────────
    Storage + Broadcast setup
@@ -25,17 +24,17 @@ const channel: BroadcastChannel | null =
    Types
 ────────────────────────── */
 export type SendRecord = {
-  id: string; // deterministic (sha256 of fixed payload)
-  parentCanonical: string; // lowercase
-  childCanonical: string; // lowercase
-  amountPhiScaled: string; // BigInt string (Φ·10^18)
-  senderKaiPulse: number; // pulse at SEND
-  transferNonce: string; // nonce
-  senderStamp: string; // sender stamp
-  previousHeadRoot: string; // v14 prev-head root at SEND
-  transferLeafHashSend: string; // leaf hash (SEND side)
-  confirmed?: boolean; // set true on receive
-  createdAt: number; // epoch-ms (stored as number for sort/UI)
+  id: string;                    // deterministic (sha256 of fixed payload)
+  parentCanonical: string;       // lowercase
+  childCanonical: string;        // lowercase
+  amountPhiScaled: string;       // BigInt string (Φ·10^18)
+  senderKaiPulse: number;        // pulse at SEND
+  transferNonce: string;         // nonce
+  senderStamp: string;           // sender stamp
+  previousHeadRoot: string;      // v14 prev-head root at SEND
+  transferLeafHashSend: string;  // leaf hash (SEND side)
+  confirmed?: boolean;           // set true on receive
+  createdAt: number;             // ms epoch
 };
 
 type LedgerEvent =
@@ -60,20 +59,8 @@ function coerceBigIntString(v: unknown): string {
   return clean.replace(/^0+(?=\d)/, "") || "0";
 }
 
-/**
- * kairosEpochNow() returns bigint (epoch-ms). createdAt is stored as number for UI/sort.
- * This conversion stays deterministic and safe for modern epoch-ms values.
- */
-function bigintToSafeNumber(b: bigint): number {
-  const max = BigInt(Number.MAX_SAFE_INTEGER);
-  if (b > max) return Number.MAX_SAFE_INTEGER;
-  if (b < -max) return -Number.MAX_SAFE_INTEGER;
-  return Number(b);
-}
-
-function nowMs(): number {
-  // Deterministic Kairos epoch-ms (bigint) → number.
-  return bigintToSafeNumber(kairosEpochNow());
+function nowMs() {
+  return Date.now();
 }
 
 /* ──────────────────────────
@@ -83,7 +70,7 @@ function readAllRaw(): unknown {
   if (!canStorage) return [];
   try {
     const raw = localStorage.getItem(LS_SENDS);
-    return raw ? (JSON.parse(raw) as unknown) : [];
+    return raw ? JSON.parse(raw) : [];
   } catch {
     return [];
   }
@@ -98,67 +85,61 @@ function migrateIfNeeded(): void {
     for (const key of MIGRATE_KEYS) {
       const prev = localStorage.getItem(key);
       if (!prev) continue;
-
       try {
-        const arr = JSON.parse(prev) as unknown;
-        if (!Array.isArray(arr)) continue;
+        const arr = JSON.parse(prev);
+        if (Array.isArray(arr)) {
+          const migrated: SendRecord[] = [];
+          for (const r of arr) {
+            const rec = r || {};
+            const parentCanonical = lc((rec.parentCanonical ?? rec.parent ?? rec.p) as string);
+            const childCanonical = lc((rec.childCanonical ?? rec.child ?? rec.c) as string);
+            const amountPhiScaled = coerceBigIntString(
+              (rec.amountPhiScaled ?? rec.amountScaled ?? rec.a) as string
+            );
+            const senderKaiPulse = Number(rec.senderKaiPulse ?? rec.k ?? 0) || 0;
+            const transferNonce = String(rec.transferNonce ?? rec.n ?? "");
+            const senderStamp = String(rec.senderStamp ?? rec.s ?? "");
+            const previousHeadRoot = String(rec.previousHeadRoot ?? rec.r ?? "");
+            const transferLeafHashSend = String(rec.transferLeafHashSend ?? rec.l ?? "");
+            const confirmed = !!rec.confirmed;
+            const createdAt = Number(rec.createdAt ?? rec.t ?? nowMs()) || nowMs();
 
-        const migrated: SendRecord[] = [];
-        for (const r of arr) {
-          const rec = (r ?? {}) as Record<string, unknown>;
-          const parentCanonical = lc((rec.parentCanonical ?? rec.parent ?? rec.p) as string);
-          const childCanonical = lc((rec.childCanonical ?? rec.child ?? rec.c) as string);
-          const amountPhiScaled = coerceBigIntString(
-            (rec.amountPhiScaled ?? rec.amountScaled ?? rec.a) as unknown
-          );
-          const senderKaiPulse = Number(rec.senderKaiPulse ?? rec.k ?? 0) || 0;
-          const transferNonce = String(rec.transferNonce ?? rec.n ?? "");
-          const senderStamp = String(rec.senderStamp ?? rec.s ?? "");
-          const previousHeadRoot = String(rec.previousHeadRoot ?? rec.r ?? "");
-          const transferLeafHashSend = String(rec.transferLeafHashSend ?? rec.l ?? "");
-          const confirmed = !!rec.confirmed;
+            if (!parentCanonical || !childCanonical) continue;
 
-          const rawCreated = rec.createdAt ?? rec.t;
-          const createdAt =
-            (rawCreated !== undefined && rawCreated !== null ? Number(rawCreated) : nowMs()) || nowMs();
-
-          if (!parentCanonical || !childCanonical) continue;
-
-          migrated.push({
-            id: "", // fill below
-            parentCanonical,
-            childCanonical,
-            amountPhiScaled,
-            senderKaiPulse,
-            transferNonce,
-            senderStamp,
-            previousHeadRoot,
-            transferLeafHashSend,
-            confirmed,
-            createdAt,
-          });
-        }
-
-        (async () => {
-          for (const m of migrated) {
-            m.id = await buildSendId({
-              parentCanonical: m.parentCanonical,
-              childCanonical: m.childCanonical,
-              amountPhiScaled: m.amountPhiScaled,
-              senderKaiPulse: m.senderKaiPulse,
-              transferNonce: m.transferNonce,
-              senderStamp: m.senderStamp,
-              previousHeadRoot: m.previousHeadRoot,
-              transferLeafHashSend: m.transferLeafHashSend,
+            migrated.push({
+              id: "", // will fill below
+              parentCanonical,
+              childCanonical,
+              amountPhiScaled,
+              senderKaiPulse,
+              transferNonce,
+              senderStamp,
+              previousHeadRoot,
+              transferLeafHashSend,
+              confirmed,
+              createdAt,
             });
           }
 
-          const uniq = new Map<string, SendRecord>();
-          for (const m of migrated) uniq.set(m.id, m);
-          writeAll(Array.from(uniq.values()));
-        })();
-
-        return;
+          (async () => {
+            for (const m of migrated) {
+              m.id = await buildSendId({
+                parentCanonical: m.parentCanonical,
+                childCanonical: m.childCanonical,
+                amountPhiScaled: m.amountPhiScaled,
+                senderKaiPulse: m.senderKaiPulse,
+                transferNonce: m.transferNonce,
+                senderStamp: m.senderStamp,
+                previousHeadRoot: m.previousHeadRoot,
+                transferLeafHashSend: m.transferLeafHashSend,
+              });
+            }
+            const uniq = new Map<string, SendRecord>();
+            for (const m of migrated) uniq.set(m.id, m);
+            writeAll(Array.from(uniq.values()));
+          })();
+          return;
+        }
       } catch {
         /* ignore malformed prior store */
       }
@@ -172,7 +153,6 @@ function readAll(): SendRecord[] {
   migrateIfNeeded();
   const raw = readAllRaw();
   if (!Array.isArray(raw)) return [];
-
   const out: SendRecord[] = [];
   for (const r of raw) {
     try {
@@ -190,16 +170,13 @@ function readAll(): SendRecord[] {
         confirmed: !!rr.confirmed,
         createdAt: Number(rr.createdAt ?? nowMs()) || nowMs(),
       };
-
       if (!rec.parentCanonical || !rec.childCanonical) continue;
       if (!rec.id) continue;
-
       out.push(rec);
     } catch {
       /* ignore corrupted row */
     }
   }
-
   out.sort((a, b) => a.createdAt - b.createdAt);
   return out;
 }
@@ -207,14 +184,13 @@ function readAll(): SendRecord[] {
 function writeAll(list: SendRecord[]) {
   if (!canStorage) return;
   try {
-    const clean: SendRecord[] = list.map((r) => ({
+    const clean = list.map((r) => ({
       ...r,
       parentCanonical: lc(r.parentCanonical),
       childCanonical: lc(r.childCanonical),
       amountPhiScaled: coerceBigIntString(r.amountPhiScaled),
       createdAt: Number(r.createdAt || nowMs()) || nowMs(),
     }));
-
     localStorage.setItem(LS_SENDS, JSON.stringify(clean));
   } catch {
     /* ignore write failures */
@@ -258,7 +234,6 @@ export async function recordSend(rec: Omit<SendRecord, "id" | "createdAt">): Pro
       amountPhiScaled: coerceBigIntString(rec.amountPhiScaled),
       createdAt: nowMs(),
     };
-
     writeAll([...list, row]);
     safePost({ type: "send:add", record: row });
   }
@@ -279,7 +254,6 @@ export function markConfirmedByLeaf(parentCanonical: string, transferLeafHashSen
       changed = true;
     }
   }
-
   if (changed) {
     writeAll(list);
     safePost({ type: "send:update", parentCanonical: pc });
@@ -307,7 +281,6 @@ export function getIncomingBaseScaledFor(childCanonical: string): bigint {
   const cc = lc(childCanonical);
   const rows = readAll().filter((r) => r.childCanonical === cc);
   if (!rows.length) return 0n;
-
   for (let i = rows.length - 1; i >= 0; i--) {
     const amt = coerceBigIntString(rows[i].amountPhiScaled);
     try {
@@ -317,7 +290,6 @@ export function getIncomingBaseScaledFor(childCanonical: string): bigint {
       /* ignore parse and continue */
     }
   }
-
   return 0n;
 }
 
@@ -342,7 +314,7 @@ export function listen(cb: () => void): () => void {
 export function listenDetailed(cb: (e: LedgerEvent) => void): () => void {
   if (!channel) return () => {};
   const onMsg = (ev: MessageEvent) => {
-    const data = ev?.data as unknown;
+    const data = ev?.data;
     if (!data || typeof data !== "object") return;
     const t = (data as LedgerEvent).type;
     if (t === "send:add" || t === "send:update") cb(data as LedgerEvent);

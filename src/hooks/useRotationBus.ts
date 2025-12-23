@@ -1,5 +1,4 @@
 import * as React from "react";
-import { kairosEpochNow } from "../utils/kai_pulse";
 
 export const ROTATE_CH = "sigil-xfer-v1";
 export const rotationKey = (h: string) => `sigil:rotated:${h}`;
@@ -13,7 +12,7 @@ export function publishRotation(keys: string[], token: string) {
   const uniq = Array.from(new Set(keys.map(k => k.toLowerCase()).filter(Boolean)));
   uniq.forEach((canonical) => {
     try {
-      localStorage.setItem(rotationKey(canonical), `${token}@${kairosEpochNow()}`);
+      localStorage.setItem(rotationKey(canonical), `${token}@${Date.now()}`);
     } catch {
       noop();
     }

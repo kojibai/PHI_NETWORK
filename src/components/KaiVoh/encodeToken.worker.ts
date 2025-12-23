@@ -17,7 +17,7 @@ type EncodeWorkerResponse =
 const now = (): number =>
   self.performance && typeof self.performance.now === "function"
     ? self.performance.now()
-    : 0;
+    : Date.now();
 
 self.onmessage = (ev: MessageEvent<EncodeWorkerRequest>) => {
   const t0 = now();

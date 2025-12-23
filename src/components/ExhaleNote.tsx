@@ -8,11 +8,7 @@ import { DEFAULT_ISSUANCE_POLICY, quotePhiForUsd } from "../utils/phi-issuance";
 
 /* ---- modular pieces ---- */
 import { NOTE_TITLE } from "./exhale-note/titles";
-import {
-  epochMsFromPulse,
-  PULSE_MS as KAI_PULSE_MS,
-  kairosEpochNow,
-} from "../utils/kai_pulse";
+import { momentFromUTC, epochMsFromPulse, PULSE_MS as KAI_PULSE_MS } from "../utils/kai_pulse";
 import { renderPreview } from "./exhale-note/dom";
 import { buildBanknoteSVG } from "./exhale-note/banknoteSvg";
 import buildProofPagesHTML from "./exhale-note/proofPages";
@@ -42,38 +38,6 @@ import "./ExhaleNote.css";
  * Never type these as NodeJS.Timeout in React/Vite apps.
  */
 type TimerId = number;
-
-/**
- * IMPORTANT (Kai-Klok v29.9.0 parity):
- * kairosEpochNow() returns μpulses since GENESIS (BigInt), NOT epoch-ms.
- * Do not pass kairosEpochNow() into any function that expects UTC ms.
- */
-const MICRO_PER_PULSE = 1_000_000n;
-
-function toBigIntSafe(v: bigint): bigint {
-  return v;
-}
-
-function pulseIntFromMicro(micro: bigint): number {
-  const p = micro / MICRO_PER_PULSE;
-  const n = Number(p);
-  return Number.isFinite(n) ? Math.trunc(n) : 0;
-}
-
-/**
- * Convert current μpulse position → epoch-ms "now" using ONLY:
- *   epochMsFromPulse(pulseStart) + fractionalWithinPulse
- *
- * This is for UI scheduling (setTimeout), not for truth.
- */
-function epochMsFromMicroNow(microNow: bigint): bigint {
-  const p = pulseIntFromMicro(microNow);
-  const base = epochMsFromPulse(p); // bigint ms at pulse boundary
-  const withinMicro = microNow % MICRO_PER_PULSE; // 0..999,999
-  // Within-pulse ms is always < ~6s, safe in Number space.
-  const withinMs = Math.floor((Number(withinMicro) * KAI_PULSE_MS) / 1_000_000);
-  return base + BigInt(Math.max(0, withinMs));
-}
 
 function materializeStampedSeal(input: MaybeUnsignedSeal): ValueSeal {
   if (typeof (input as ValueSeal).stamp === "string") return input as ValueSeal;
@@ -189,14 +153,16 @@ function ensurePrintStylesInjected(): void {
   document.head.appendChild(style);
 }
 
-/** rAF coalescer for heavy preview work (NO performance.now / NO Date). */
-function useRafCoalesce(cb: () => void) {
+/** rAF throttle for heavy preview work */
+function useRafThrottle(cb: () => void, fps = 8) {
   const cbRef = useRef(cb);
   useEffect(() => {
     cbRef.current = cb;
   }, [cb]);
 
+  const lastRef = useRef(0);
   const rafRef = useRef<number | null>(null);
+  const limit = 1000 / Math.max(1, fps);
 
   useEffect(() => {
     return () => {
@@ -205,12 +171,20 @@ function useRafCoalesce(cb: () => void) {
   }, []);
 
   return useCallback(() => {
-    if (rafRef.current != null) return;
-    rafRef.current = requestAnimationFrame(() => {
+    const now = typeof performance !== "undefined" ? performance.now() : Date.now();
+    const run = () => {
+      lastRef.current = typeof performance !== "undefined" ? performance.now() : Date.now();
       rafRef.current = null;
       cbRef.current();
-    });
-  }, []);
+    };
+
+    if (now - lastRef.current >= limit) {
+      if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
+      rafRef.current = requestAnimationFrame(run);
+    } else if (rafRef.current == null) {
+      rafRef.current = requestAnimationFrame(run);
+    }
+  }, [limit]);
 }
 
 /* === Valuation stamp (offline parity) === */
@@ -394,16 +368,11 @@ async function computeValuationStamp(u: IntrinsicUnsigned): Promise<string> {
   return sha256HexCanon(`val-stamp:${safeJsonStringify(minimal)}`);
 }
 
-/**
- * ms until next pulse boundary:
- * - Use local μpulse now → derive epoch-ms now (bridge) → schedule by delta.
- * - NO Date.now / NO performance.now.
- */
-function msUntilNextPulseBoundaryLocal(microNow: bigint): number {
+/** Exact-ish ms until next pulse boundary using the φ-exact bridge (via epochMsFromPulse). */
+function msUntilNextPulseBoundaryLocal(pulseNowInt: number): number {
   try {
-    const p = pulseIntFromMicro(microNow);
-    const nextPulseMs = epochMsFromPulse(p + 1);
-    const nowMs = epochMsFromMicroNow(microNow);
+    const nextPulseMs = epochMsFromPulse(pulseNowInt + 1);
+    const nowMs = BigInt(Date.now());
     const delta = nextPulseMs - nowMs;
     if (delta <= 0n) return 0;
     // delta is always ~0..6000ms here, safe to Number()
@@ -435,22 +404,19 @@ const ExhaleNote: React.FC<NoteProps> = ({
     ensurePrintStylesInjected();
   }, []);
 
-  /** Read local μpulse now + pulse int; optionally accept external pulse override if sane. */
-  const readNow = useCallback((): { pulse: number; micro: bigint } => {
-    const micro = toBigIntSafe(kairosEpochNow());
-    const localPulse = pulseIntFromMicro(micro);
-
+  /* Live Kai pulse (integer) + boundary timer */
+  const readNowPulseInt = useCallback((): number => {
+    const local = momentFromUTC(BigInt(Date.now())).pulse;
     const ext = getNowPulse?.();
     const extOk =
       typeof ext === "number" &&
       Number.isFinite(ext) &&
-      Math.abs(Math.trunc(ext) - Math.trunc(localPulse)) <= 2;
+      Math.abs(Math.trunc(ext) - Math.trunc(local)) <= 2;
 
-    return { pulse: Math.trunc(extOk ? ext : localPulse), micro };
+    return Math.trunc(extOk ? (ext as number) : local);
   }, [getNowPulse]);
 
-  const [{ pulse: pulseInt }, setPulseState] = useState<{ pulse: number; micro: bigint }>(() => readNow());
-
+  const [pulseInt, setPulseInt] = useState<number>(() => readNowPulseInt());
   const timeoutRef = useRef<TimerId | null>(null);
   const lastPulseRef = useRef<number>(pulseInt);
 
@@ -461,25 +427,23 @@ const ExhaleNote: React.FC<NoteProps> = ({
     }
 
     const scheduleNext = () => {
-      const cur = readNow();
-      lastPulseRef.current = cur.pulse;
+      const p0 = readNowPulseInt();
+      lastPulseRef.current = p0;
+      setPulseInt((prev) => (prev === p0 ? prev : p0));
 
-      setPulseState((prev) => (prev.pulse === cur.pulse ? prev : cur));
-
-      const wait = msUntilNextPulseBoundaryLocal(cur.micro);
-
+      const wait = msUntilNextPulseBoundaryLocal(p0);
       timeoutRef.current = window.setTimeout(() => {
-        const nxt = readNow();
-        if (nxt.pulse !== lastPulseRef.current) {
-          lastPulseRef.current = nxt.pulse;
-          setPulseState(nxt);
+        const p1 = readNowPulseInt();
+        if (p1 !== lastPulseRef.current) {
+          lastPulseRef.current = p1;
+          setPulseInt(p1);
         }
         scheduleNext();
       }, Math.max(0, wait));
     };
 
     scheduleNext();
-  }, [readNow]);
+  }, [readNowPulseInt]);
 
   useEffect(() => {
     armTimers();
@@ -556,7 +520,7 @@ const ExhaleNote: React.FC<NoteProps> = ({
       setForm((prev) => ({ ...prev, [k]: v }));
 
   /* Live valuation (derived) */
-  const nowFloor = Math.trunc(pulseInt);
+  const nowFloor = pulseInt;
 
   const liveUnsigned = useMemo<IntrinsicUnsigned>(() => {
     const { unsigned } = computeIntrinsicUnsigned(meta, nowFloor) as { unsigned: IntrinsicUnsigned };
@@ -626,7 +590,7 @@ const ExhaleNote: React.FC<NoteProps> = ({
     });
   }, [form, liveValuePhi, livePremium, nowFloor, liveAlgString, locked, defaultVerifyUrl]);
 
-  const renderPreviewCoalesced = useRafCoalesce(() => {
+  const renderPreviewThrottled = useRafThrottle(() => {
     const host = previewHostRef.current;
     if (!host) return;
     try {
@@ -635,11 +599,11 @@ const ExhaleNote: React.FC<NoteProps> = ({
       // eslint-disable-next-line no-console
       console.error("preview render failed", e);
     }
-  });
+  }, 8);
 
   useEffect(() => {
-    renderPreviewCoalesced();
-  }, [renderPreviewCoalesced, buildCurrentSVG]);
+    renderPreviewThrottled();
+  }, [renderPreviewThrottled, buildCurrentSVG]);
 
   /* Single final Render (locks pulse + valuation) */
   const handleRenderLock = useCallback(async () => {
@@ -736,7 +700,9 @@ const ExhaleNote: React.FC<NoteProps> = ({
         if (!detail) return;
 
         const normalizeIncoming = (obj: Partial<BanknoteInputs>) => {
-          if (typeof obj.verifyUrl === "string") obj.verifyUrl = resolveVerifyUrl(obj.verifyUrl, defaultVerifyUrl);
+          if (typeof obj.verifyUrl === "string") {
+            obj.verifyUrl = resolveVerifyUrl(obj.verifyUrl, defaultVerifyUrl);
+          }
           return obj;
         };
 

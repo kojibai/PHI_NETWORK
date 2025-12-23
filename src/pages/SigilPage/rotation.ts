@@ -1,7 +1,5 @@
 // Link rotation (burn old tokens, broadcast new)
 
-import { kairosEpochNow } from "../../utils/kai_pulse";
-
 export const ROTATE_CH = "sigil-xfer-v1";
 export const ROTATION_EVENT = "sigil:transfer-rotated";
 export const ROTATION_ERROR_EVENT = "sigil:rotation-error";
@@ -43,7 +41,7 @@ function dispatchAsync(eventName: string, detail: unknown): void {
 }
 
 export function publishRotation(keys: readonly string[], token: string): void {
-  const now = kairosEpochNow();
+  const now = Date.now();
 
   // Deduplicate, normalize, and validate keys
   const uniq = Array.from(

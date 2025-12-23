@@ -19,25 +19,12 @@ import {
   verifierSigmaString,
   readIntentionSigil,
 } from "./verifierCanon";
-import { kairosEpochNow } from "../../utils/kai_pulse";
 
 /** ─────────────────────────────────────────────────────────────
  * Local helpers — scoped to the hook so we don't fight page types
  * (Page can keep its own copies for non-send features.)
  * ──────────────────────────────────────────────────────────── */
 const EPS = 1e-9;
-
-/**
- * kairosEpochNow() returns bigint in your canon.
- * This hook needs number-ms for UI timers + localStorage timestamps.
- */
-const nowMs = (): number => {
-  const bi = kairosEpochNow();
-  if (bi <= 0n) return 0;
-  const max = BigInt(Number.MAX_SAFE_INTEGER);
-  if (bi > max) return Number.MAX_SAFE_INTEGER;
-  return Number(bi);
-};
 
 /** Narrow extension the page sometimes augments on SigilPayload */
 type DebitLoose = {
@@ -99,9 +86,8 @@ const capDebitsQS = (qs: DebitQS): DebitQS => {
       ? qs.originalAmount
       : Number.NaN;
 
-  const rawList = Array.isArray(qs.debits)
-    ? (dedupeByNonce(qs.debits as unknown as DebitLoose[]) as DebitLoose[])
-    : [];
+  const rawList =
+    Array.isArray(qs.debits) ? (dedupeByNonce(qs.debits as unknown as DebitLoose[]) as DebitLoose[]) : [];
   const list = sortDebitsStable(rawList);
 
   if (!Number.isFinite(orig)) {
@@ -132,79 +118,50 @@ const capDebitsQS = (qs: DebitQS): DebitQS => {
  * ──────────────────────────────────────────────────────────── */
 const SEND_LOCK_CH = "sigil-sendlock-v1";
 const SEND_LOCK_TTL_MS = 15_000;
-const sendLockKey = (canonical: string, token: string) =>
-  `sigil:sendlock:${canonical}:t:${token}`;
+const sendLockKey = (canonical: string, token: string) => `sigil:sendlock:${canonical}:t:${token}`;
 
 type SendLockWire = {
   type: "lock" | "unlock";
   canonical: string;
   token: string;
   id: string;
-  at: number; // ms epoch (number)
+  at: number;
 };
-type SendLockRecord = { id: string; at: number }; // ms epoch (number)
+type SendLockRecord = { id: string; at: number };
 
-const acquireSendLock = (
-  canonical: string | null,
-  token: string | null
-): { ok: boolean; id: string } => {
+const acquireSendLock = (canonical: string | null, token: string | null): { ok: boolean; id: string } => {
   const id = crypto.getRandomValues(new Uint32Array(4)).join("");
-  if (typeof window === "undefined") return { ok: false, id };
   if (!canonical || !token) return { ok: false, id };
-
   const key = sendLockKey(canonical.toLowerCase(), token);
   try {
     const raw = localStorage.getItem(key);
     const rec: SendLockRecord | null = raw ? (JSON.parse(raw) as SendLockRecord) : null;
-
-    const now = nowMs();
-    const stale = !rec || !Number.isFinite(rec.at) || now - rec.at > SEND_LOCK_TTL_MS;
-
+    const stale = !rec || !Number.isFinite(rec.at) || Date.now() - rec.at > SEND_LOCK_TTL_MS;
     if (!rec || stale) {
-      const row: SendLockRecord = { id, at: now };
-      localStorage.setItem(key, JSON.stringify(row));
-
+      localStorage.setItem(key, JSON.stringify({ id, at: Date.now() } satisfies SendLockRecord));
       try {
         const bc = new BroadcastChannel(SEND_LOCK_CH);
-        const msg: SendLockWire = {
-          type: "lock",
-          canonical: canonical.toLowerCase(),
-          token,
-          id,
-          at: now,
-        };
+        const msg: SendLockWire = { type: "lock", canonical: canonical.toLowerCase(), token, id, at: Date.now() };
         bc.postMessage(msg);
         bc.close();
       } catch {}
-
       return { ok: true, id };
     }
   } catch {}
-
   return { ok: false, id };
 };
 
 const releaseSendLock = (canonical: string | null, token: string | null, id: string): void => {
-  if (typeof window === "undefined") return;
   if (!canonical || !token) return;
-
   const key = sendLockKey(canonical.toLowerCase(), token);
   try {
     const raw = localStorage.getItem(key);
     const rec: SendLockRecord | null = raw ? (JSON.parse(raw) as SendLockRecord) : null;
-
     if (!rec || rec.id === id) {
       localStorage.removeItem(key);
-
       try {
         const bc = new BroadcastChannel(SEND_LOCK_CH);
-        const msg: SendLockWire = {
-          type: "unlock",
-          canonical: canonical.toLowerCase(),
-          token,
-          id,
-          at: nowMs(),
-        };
+        const msg: SendLockWire = { type: "unlock", canonical: canonical.toLowerCase(), token, id, at: Date.now() };
         bc.postMessage(msg);
         bc.close();
       } catch {}
@@ -289,7 +246,7 @@ export function useSigilSend(params: {
   /** Canonical recipient Φkey (verifier algorithm) */
   const generateRecipientPhiKey = useCallback(async () => {
     if (!payload) return "";
-    const stepsNum = (payload.stepsPerBeat ?? 44) as number;
+    const stepsNum = (payload.stepsPerBeat ?? 44) as number; // default isn’t used; sealedIdx computed from payload
     const sealedIdx = Math.floor(((payload.pulse % (stepsNum || 1)) + (stepsNum || 1)) % (stepsNum || 1));
     const sig =
       payload.kaiSignature ??
@@ -363,12 +320,11 @@ export function useSigilSend(params: {
       const autoRecipientPhiKey = await generateRecipientPhiKey();
       if (!autoRecipientPhiKey) return setToast("Could not derive Φkey");
 
-      // Use Kai-now for the pulse timestamp (no wall-clock Date()).
       const debit: DebitRecord = {
         amount: Number(amt.toFixed(6)),
         nonce: crypto.getRandomValues(new Uint32Array(4)).join(""),
         recipientPhiKey: autoRecipientPhiKey,
-        timestamp: getKaiPulseEternalInt(new Date(nowMs())),
+        timestamp: getKaiPulseEternalInt(new Date()),
       };
 
       const proposed = capDebitsQS({
@@ -410,9 +366,7 @@ export function useSigilSend(params: {
       });
 
       setSendAmount(0);
-      setToast(
-        `Sent ${Number(amt.toFixed(6)).toLocaleString(undefined, { maximumFractionDigits: 6 })} Φ`
-      );
+      setToast(`Sent ${Number(amt.toFixed(6)).toLocaleString(undefined, { maximumFractionDigits: 6 })} Φ`);
 
       // Mint child sigil under SAME token so modal stays open on first send
       void onMintChild(debit.amount, tok);

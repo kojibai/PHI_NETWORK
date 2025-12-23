@@ -1,15 +1,14 @@
 // src/components/DayDetailModal.tsx
 /* ───────────────────────────────────────────────────────────────
    DayDetailModal.tsx · Atlantean Lumitech  “Kairos Kalendar — Day”
-   v3.0.2 · REF-TYPED (accept RefObject<T|null> safely) • PURE RENDER • Deterministic Note IDs
+   v2.9 · NO setState-in-effect • PURE RENDER • Deterministic Note IDs
    ───────────────────────────────────────────────────────────────
    • Bottom-sheet editor auto-lifts above mobile keyboards
    • Uses VisualViewport (iOS/Android) with safe fallback
    • Textarea autofocus + scroll-into-view on open
-   • onSaveKaiNote callback maps Beat:Step → absolute pulse (BigInt-exact; no float drift)
+   • onSaveKaiNote callback maps Beat:Step → absolute pulse
    • ✅ No Date.now / Math.random / randomUUID
    • ✅ No setState called synchronously inside effects
-   • ✅ No inline style props (CSS owns visuals; JS only sets CSS vars on refs)
    ─────────────────────────────────────────────────────────────── */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -39,22 +38,14 @@ export type SaveKaiNote = (n: {
   step: number;
 }) => void;
 
-export type DayDetailModalProps = {
-  day: HarmonicDayInfo;
-  onClose: () => void;
-  onSaveKaiNote?: SaveKaiNote; // push to global dock in parent
-};
-
 /* ══════════════ Constants ══════════════ */
 const TOTAL_BEATS = 36; // 0 … 35
 const BEATS_PER_CHAPTER = 12; // → 3 chapters
 const STEPS_PER_BEAT = 44; // steps 0..43
 
-/* BigInt-exact mapping constants (match WeekKalendarModal) */
-const ONE_PULSE_MICRO = 1_000_000n;
-const N_DAY_MICRO = 17_491_270_421n;
-const PULSES_PER_STEP_MICRO = 11_000_000n;
-const MU_PER_BEAT_EXACT = (N_DAY_MICRO + 18n) / 36n;
+/* Exact mapping constants to align with WeekKalendarModal */
+const DAY_PULSES = 17_491.270_421;
+const BEAT_PULSES = DAY_PULSES / 36; // ≈ 486.98 pulses per beat (step blocks are 11 pulses)
 
 /* Local storage key for per-day editor (independent of global dock) */
 const STORAGE_PREFIX = "kai_notes_";
@@ -75,7 +66,8 @@ const noteIdFor = (dayStartPulse: number, beat: number, step: number): string =>
   `kai_note_${dayStartPulse}_${beat}_${step}`;
 
 type RawNote = Record<string, unknown>;
-const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  typeof v === "object" && v !== null;
 
 /** Parse & sanitize notes from storage without using `any`. */
 const loadNotes = (p: number): Note[] => {
@@ -99,7 +91,12 @@ const loadNotes = (p: number): Note[] => {
       const step = typeof stepU === "number" ? stepU : Number(stepU);
       const text = typeof textU === "string" ? textU : String(textU ?? "");
 
-      if (Number.isFinite(beat) && Number.isFinite(step) && step >= 0 && step < STEPS_PER_BEAT) {
+      if (
+        Number.isFinite(beat) &&
+        Number.isFinite(step) &&
+        step >= 0 &&
+        step < STEPS_PER_BEAT
+      ) {
         out.push({ beat, step, text });
       }
     }
@@ -118,19 +115,11 @@ const saveNotes = (p: number, n: Note[]): void => {
   }
 };
 
-function floorDiv(n: bigint, d: bigint): bigint {
-  const q = n / d;
-  const r = n % d;
-  return r !== 0n && (r > 0n) !== (d > 0n) ? q - 1n : q;
-}
-
-/* Map Beat:Step → absolute pulse (integer) within the given day (BigInt exact) */
+/* Map Beat:Step → absolute pulse (integer) within the given day */
 const beatStepToPulse = (dayStartPulse: number, beat: number, step: number): number => {
-  const beatB = BigInt(beat);
-  const stepB = BigInt(step);
-  const offsetMicro = beatB * MU_PER_BEAT_EXACT + stepB * PULSES_PER_STEP_MICRO;
-  const offsetPulses = floorDiv(offsetMicro, ONE_PULSE_MICRO);
-  return Number(BigInt(dayStartPulse) + offsetPulses);
+  const beatBase = Math.floor(BEAT_PULSES * beat);
+  const stepOffset = step * 11; // 11 whole pulses per step bucket
+  return Math.floor(dayStartPulse + beatBase + stepOffset);
 };
 
 /* ══════════════ Animation variants ══════════════ */
@@ -149,53 +138,48 @@ const onEnterOrSpace =
     }
   };
 
-/* ══════════════ Hook: keyboard inset → CSS var (NO setState) ══════════════
-   FIX: accept `RefObject<T | null>` so even if someone typed
-   `React.RefObject<HTMLDivElement | null>` it still matches.
-*/
-function useKeyboardInsetCSSVar<T extends HTMLElement>(
-  targetRef: React.RefObject<T | null>,
-  enabled: boolean,
-): void {
+/* ══════════════ Hook: keyboard inset (VisualViewport) ══════════════ */
+function useKeyboardInset(): number {
+  const computeInset = (): number => {
+    if (typeof window === "undefined") return 0;
+    const vv = window.visualViewport;
+    if (!vv) return 0;
+    return Math.round(Math.max(0, window.innerHeight - (vv.height + vv.offsetTop)));
+  };
+
+  // ✅ initial value computed in initializer (no setState-in-effect)
+  const [inset, setInset] = useState<number>(() => computeInset());
+
   useEffect(() => {
-    if (!enabled) return;
     if (typeof window === "undefined") return;
 
-    const el = targetRef.current;
-    if (!el) return;
-
-    const computeInset = (): number => {
-      const vv = window.visualViewport;
-      if (!vv) return 0;
-      return Math.round(Math.max(0, window.innerHeight - (vv.height + vv.offsetTop)));
-    };
-
-    const apply = (): void => {
-      const inset = computeInset();
-      el.style.setProperty("--kb-inset", `${inset}px`);
-    };
-
-    apply();
-
     const vv = window.visualViewport;
+    const onChange = () => setInset(computeInset());
+
     if (vv) {
-      vv.addEventListener("resize", apply);
-      vv.addEventListener("scroll", apply);
+      vv.addEventListener("resize", onChange);
+      vv.addEventListener("scroll", onChange);
     }
-    window.addEventListener("resize", apply);
+    window.addEventListener("resize", onChange);
 
     return () => {
       if (vv) {
-        vv.removeEventListener("resize", apply);
-        vv.removeEventListener("scroll", apply);
+        vv.removeEventListener("resize", onChange);
+        vv.removeEventListener("scroll", onChange);
       }
-      window.removeEventListener("resize", apply);
+      window.removeEventListener("resize", onChange);
     };
-  }, [enabled, targetRef]);
+  }, []);
+
+  return inset;
 }
 
 /* ══════════════ Component ══════════════ */
-const DayDetailModal: FC<DayDetailModalProps> = ({ day, onClose, onSaveKaiNote }) => {
+const DayDetailModal: FC<{
+  day: HarmonicDayInfo;
+  onClose: () => void;
+  onSaveKaiNote?: SaveKaiNote; // push to global dock in parent
+}> = ({ day, onClose, onSaveKaiNote }) => {
   /* ───────── state ───────── */
   const [editing, setEditing] = useState<Note | null>(null);
 
@@ -206,7 +190,7 @@ const DayDetailModal: FC<DayDetailModalProps> = ({ day, onClose, onSaveKaiNote }
   // within-beat step group (0..3), none open by default
   const [openGroup, setOpenGroup] = useState<number | null>(null);
 
-  // Notes: localStorage is source-of-truth; rev tick triggers reread
+  // Notes: localStorage is the source-of-truth; rev tick triggers reread (no setState-in-effect)
   const [notesRev, setNotesRev] = useState<number>(0);
 
   const notes = useMemo(() => loadNotes(day.startPulse), [day.startPulse, notesRev]);
@@ -219,7 +203,10 @@ const DayDetailModal: FC<DayDetailModalProps> = ({ day, onClose, onSaveKaiNote }
       const end = Math.min(start + BEATS_PER_CHAPTER, TOTAL_BEATS);
       const beats = Array.from({ length: end - start }, (_, i) => {
         const beatIdx = start + i;
-        return { beat: beatIdx, steps: Array.from({ length: STEPS_PER_BEAT }, (_, s) => s) };
+        return {
+          beat: beatIdx,
+          steps: Array.from({ length: STEPS_PER_BEAT }, (_, s) => s), // 0..43
+        };
       });
       return { chapter: c, title: `Beats ${start}–${end - 1}`, beats };
     });
@@ -228,7 +215,7 @@ const DayDetailModal: FC<DayDetailModalProps> = ({ day, onClose, onSaveKaiNote }
   /* ───────── notes helpers ───────── */
   const findNote = useCallback(
     (b: number, s: number) => notes.find((n) => n.beat === b && n.step === s),
-    [notes],
+    [notes]
   );
 
   const upsertNote = useCallback(
@@ -244,7 +231,7 @@ const DayDetailModal: FC<DayDetailModalProps> = ({ day, onClose, onSaveKaiNote }
       saveNotes(day.startPulse, next);
       setNotesRev((r) => r + 1);
     },
-    [day.startPulse],
+    [day.startPulse]
   );
 
   /* ───────── tap-friendly handlers (pointer) ───────── */
@@ -270,27 +257,21 @@ const DayDetailModal: FC<DayDetailModalProps> = ({ day, onClose, onSaveKaiNote }
     btn?.focus();
   }, []);
 
-  /* ───────── keyboard-safe editor (CSS var) ─────────
-     NOTE: keep it simple. Do NOT annotate as React.RefObject<HTMLDivElement | null>.
-  */
-  const sheetRef = useRef<HTMLDivElement>(null);
-  useKeyboardInsetCSSVar(sheetRef, Boolean(editing));
-
+  /* ───────── keyboard-safe editor ───────── */
+  const kbInset = useKeyboardInset();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  // When editor opens (or inset changes), ensure textarea is visible & focused
   useEffect(() => {
     if (!editing) return;
-    if (typeof window === "undefined") return;
-
     const t = window.setTimeout(() => {
       textareaRef.current?.focus();
       textareaRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
     }, 60);
-
     return () => window.clearTimeout(t);
-  }, [editing]);
+  }, [editing, kbInset]);
 
-  /* ───────── deterministic save handler ───────── */
+  /* ───────── deterministic save handler (no impure calls) ───────── */
   const handleSave = useCallback((): void => {
     if (!editing) return;
 
@@ -311,9 +292,10 @@ const DayDetailModal: FC<DayDetailModalProps> = ({ day, onClose, onSaveKaiNote }
   /* ══════════════ UI ══════════════ */
   return (
     <AnimatePresence>
-      {/* Backdrop is visible but does NOT intercept clicks (CSS: pointer-events:none) */}
+      {/* Backdrop is visible but does NOT intercept clicks */}
       <motion.div
         className="day-modal-backdrop"
+        style={{ pointerEvents: "none" }}
         initial={{ opacity: 0 }}
         animate={{ opacity: 0.85 }}
         exit={{ opacity: 0 }}
@@ -336,11 +318,10 @@ const DayDetailModal: FC<DayDetailModalProps> = ({ day, onClose, onSaveKaiNote }
           <h2 id="day-title">
             {day.name} <span>• {day.kaiTimestamp}</span>
           </h2>
-
           <button
             type="button"
             className="close-btn"
-            onPointerDown={onClose}
+            onPointerUp={onClose}
             onKeyDown={onEnterOrSpace(onClose)}
             aria-label="Close Day Detail"
           >
@@ -360,7 +341,7 @@ const DayDetailModal: FC<DayDetailModalProps> = ({ day, onClose, onSaveKaiNote }
                   className={`chapter-header ${chapterOpen ? "open" : ""}`}
                   aria-expanded={chapterOpen}
                   aria-controls={`chapter-${chapter}`}
-                  onPointerDown={() => toggleChapter(chapter)}
+                  onPointerUp={() => toggleChapter(chapter)}
                   onKeyDown={onEnterOrSpace(() => toggleChapter(chapter))}
                 >
                   {title}
@@ -389,7 +370,7 @@ const DayDetailModal: FC<DayDetailModalProps> = ({ day, onClose, onSaveKaiNote }
                               className={`beat-header ${beatOpen ? "open" : ""}`}
                               aria-expanded={beatOpen}
                               aria-controls={`beat-${beat}`}
-                              onPointerDown={() => toggleBeat(beat)}
+                              onPointerUp={() => toggleBeat(beat)}
                               onKeyDown={onEnterOrSpace(() => toggleBeat(beat))}
                             >
                               Beat&nbsp;{beat}
@@ -417,7 +398,7 @@ const DayDetailModal: FC<DayDetailModalProps> = ({ day, onClose, onSaveKaiNote }
                                           className={`group-header ${groupOpen ? "open" : ""}`}
                                           aria-expanded={groupOpen}
                                           aria-controls={`beat-${beat}-group-${idx}`}
-                                          onPointerDown={() => toggleGroup(idx)}
+                                          onPointerUp={() => toggleGroup(idx)}
                                           onKeyDown={onEnterOrSpace(() => toggleGroup(idx))}
                                         >
                                           {groupTitle}
@@ -442,7 +423,11 @@ const DayDetailModal: FC<DayDetailModalProps> = ({ day, onClose, onSaveKaiNote }
                                                   const globalIdx = beat * STEPS_PER_BEAT + step;
 
                                                   const openEditor = (): void => {
-                                                    setEditing({ beat, step, text: note?.text ?? "" });
+                                                    setEditing({
+                                                      beat,
+                                                      step,
+                                                      text: note?.text ?? "",
+                                                    });
                                                   };
 
                                                   return (
@@ -452,11 +437,12 @@ const DayDetailModal: FC<DayDetailModalProps> = ({ day, onClose, onSaveKaiNote }
                                                       tabIndex={0}
                                                       data-step-index={globalIdx}
                                                       className={`step-row${note ? " has-note" : ""}`}
-                                                      onPointerDown={openEditor}
+                                                      onPointerUp={openEditor}
                                                       onKeyDown={onEnterOrSpace(openEditor)}
                                                     >
-                                                      <span className="step-index">Step&nbsp;{step}</span>
-
+                                                      <span className="step-index">
+                                                        Step&nbsp;{step}
+                                                      </span>
                                                       {note && (
                                                         <span className="step-note-preview">
                                                           {note.text.length > 42
@@ -487,20 +473,19 @@ const DayDetailModal: FC<DayDetailModalProps> = ({ day, onClose, onSaveKaiNote }
           })}
         </div>
 
-        {/* Bottom-sheet editor (keyboard-safe; CSS reads --kb-inset) */}
+        {/* Bottom-sheet editor (keyboard-safe) */}
         <AnimatePresence>
           {editing && (
             <>
+              {/* The sheet’s own backdrop CAN dismiss the sheet (friendly) */}
               <motion.div
                 className="note-editor-backdrop"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 0.8 }}
                 exit={{ opacity: 0 }}
-                onPointerDown={() => setEditing(null)}
+                onPointerUp={() => setEditing(null)}
               />
-
               <motion.div
-                ref={sheetRef}
                 className="note-editor"
                 initial={{ y: "100%" }}
                 animate={{ y: 0 }}
@@ -508,7 +493,12 @@ const DayDetailModal: FC<DayDetailModalProps> = ({ day, onClose, onSaveKaiNote }
                 transition={{ type: "tween", duration: 0.24 }}
                 role="dialog"
                 aria-label={`Edit note for Beat ${editing.beat}, Step ${editing.step}`}
-                onPointerDown={(e) => e.stopPropagation()}
+                onPointerDown={(e: React.PointerEvent<HTMLDivElement>) => e.stopPropagation()}
+                // Keyboard avoidance: lift above the software keyboard
+                style={{
+                  bottom: kbInset,
+                  paddingBottom: "max(12px, env(safe-area-inset-bottom))",
+                }}
               >
                 <h4>
                   Beat&nbsp;{editing.beat} • Step&nbsp;{editing.step}
@@ -523,14 +513,19 @@ const DayDetailModal: FC<DayDetailModalProps> = ({ day, onClose, onSaveKaiNote }
                     const next = e.target.value;
                     setEditing((prev) => (prev ? { ...prev, text: next } : prev));
                   }}
-                  onFocus={() => textareaRef.current?.scrollIntoView({ block: "center", behavior: "smooth" })}
+                  onFocus={() =>
+                    textareaRef.current?.scrollIntoView({
+                      block: "center",
+                      behavior: "smooth",
+                    })
+                  }
                 />
 
                 <footer>
                   <button
                     type="button"
                     className="btn-cancel"
-                    onPointerDown={() => setEditing(null)}
+                    onPointerUp={() => setEditing(null)}
                     onKeyDown={onEnterOrSpace(() => setEditing(null))}
                   >
                     Cancel
@@ -540,7 +535,7 @@ const DayDetailModal: FC<DayDetailModalProps> = ({ day, onClose, onSaveKaiNote }
                     type="button"
                     className="btn-save"
                     disabled={!editing.text.trim()}
-                    onPointerDown={handleSave}
+                    onPointerUp={handleSave}
                     onKeyDown={onEnterOrSpace(handleSave)}
                   >
                     Save
