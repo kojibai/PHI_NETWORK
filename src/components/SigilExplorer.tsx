@@ -616,6 +616,16 @@ function formatPhi(value: number): string {
   return fixed.replace(/0+$/u, "").replace(/\.$/u, "");
 }
 
+const USD_FORMATTER = new Intl.NumberFormat("en-US", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+function formatUsd(value: number): string {
+  if (!Number.isFinite(value)) return "0.00";
+  return USD_FORMATTER.format(value);
+}
+
 function isOnline(): boolean {
   if (!hasWindow) return false;
   if (typeof navigator === "undefined") return true;
@@ -1042,6 +1052,8 @@ function getPhiFromPayload(payload: SigilSharePayloadLoose): number | undefined 
 type TransferMove = {
   direction: "send" | "receive";
   amount: number;
+  amountUsd?: number;
+  sentPulse?: number;
   source: "registry" | "payload";
 };
 
@@ -1065,6 +1077,27 @@ function readTransferDirection(raw: unknown): "send" | "receive" | null {
   if (t.includes("receive") || t.includes("received") || t.includes("inhale")) return "receive";
   if (t.includes("send") || t.includes("sent") || t.includes("exhale")) return "send";
   return null;
+}
+
+function readUsdAmount(raw: unknown): number | undefined {
+  if (typeof raw === "number") {
+    if (!Number.isFinite(raw) || raw <= 0) return undefined;
+    return raw;
+  }
+  if (typeof raw === "string") {
+    const n = Number(raw);
+    if (!Number.isNaN(n) && n > 0) return n;
+  }
+  return undefined;
+}
+
+function readSentPulse(raw: unknown): number | undefined {
+  if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) return raw;
+  if (typeof raw === "string") {
+    const n = Number(raw);
+    if (!Number.isNaN(n) && n > 0) return n;
+  }
+  return undefined;
 }
 
 function getTransferMoveFromPayload(payload: SigilSharePayloadLoose): TransferMove | undefined {
@@ -1094,6 +1127,26 @@ function getTransferMoveFromPayload(payload: SigilSharePayloadLoose): TransferMo
         readPhiAmount(src.branchBasePhi)
       : undefined;
 
+  const readUsd = (src: Record<string, unknown> | null) =>
+    src
+      ? readUsdAmount(src.amountUsd) ??
+        readUsdAmount(src.usdAmount) ??
+        readUsdAmount(src.usdValue) ??
+        readUsdAmount(src.valueUsd) ??
+        readUsdAmount(src.usd)
+      : undefined;
+
+  const readUsdPerPhi = (src: Record<string, unknown> | null) =>
+    src ? readUsdAmount(src.usdPerPhi) ?? readUsdAmount(src.fxUsdPerPhi) ?? readUsdAmount(src.usd_per_phi) : undefined;
+
+  const readPulse = (src: Record<string, unknown> | null) =>
+    src
+      ? readSentPulse(src.atPulse) ??
+        readSentPulse(src.sentPulse) ??
+        readSentPulse(src.senderKaiPulse) ??
+        readSentPulse(src.transferPulse)
+      : undefined;
+
   const dir = readDir(record) ?? readDir(feedRecord);
   const signedDelta = readDelta(record) ?? readDelta(feedRecord);
   let deltaNumber = typeof signedDelta === "number" ? signedDelta : undefined;
@@ -1118,7 +1171,31 @@ function getTransferMoveFromPayload(payload: SigilSharePayloadLoose): TransferMo
 
   if (amount === undefined) return undefined;
 
-  return { direction: inferred, amount, source: "payload" };
+  const amountUsd =
+    readUsd(record) ??
+    readUsd(feedRecord) ??
+    (isRecord(record.preview) ? readUsdAmount((record.preview as Record<string, unknown>).amountUsd) : undefined) ??
+    (isRecord(feedRecord?.preview) ? readUsdAmount((feedRecord.preview as Record<string, unknown>).amountUsd) : undefined);
+
+  const usdPerPhi =
+    readUsdPerPhi(record) ??
+    readUsdPerPhi(feedRecord) ??
+    (isRecord(record.preview) ? readUsdAmount((record.preview as Record<string, unknown>).usdPerPhi) : undefined) ??
+    (isRecord(feedRecord?.preview) ? readUsdAmount((feedRecord.preview as Record<string, unknown>).usdPerPhi) : undefined);
+
+  const sentPulse =
+    readPulse(record) ??
+    readPulse(feedRecord) ??
+    (isRecord(record.preview) ? readSentPulse((record.preview as Record<string, unknown>).atPulse) : undefined) ??
+    (isRecord(feedRecord?.preview) ? readSentPulse((feedRecord.preview as Record<string, unknown>).atPulse) : undefined);
+
+  return {
+    direction: inferred,
+    amount,
+    amountUsd: amountUsd ?? (usdPerPhi !== undefined ? amount * usdPerPhi : undefined),
+    sentPulse,
+    source: "payload",
+  };
 }
 
 function getTransferMoveFromTransferUrl(record: Record<string, unknown>): TransferMove | undefined {
@@ -1153,7 +1230,13 @@ function getTransferMoveFromRegistry(
   if (!entry) return undefined;
   const amount = readPhiAmount(entry.amountPhi);
   if (amount === undefined) return undefined;
-  return { direction: entry.direction, amount, source: "registry" };
+  return {
+    direction: entry.direction,
+    amount,
+    amountUsd: readUsdAmount(entry.amountUsd),
+    sentPulse: readSentPulse(entry.sentPulse),
+    source: "registry",
+  };
 }
 
 function persistRegistryToStorage(): void {
@@ -1992,6 +2075,12 @@ function buildDetailEntries(
       label: `Φ ${transferMove.direction === "receive" ? "Received" : "Sent"}`,
       value: `${transferMove.direction === "receive" ? "+" : "-"}${formatPhi(transferMove.amount)} Φ`,
     });
+    if (transferMove.amountUsd !== undefined) {
+      entries.push({ label: "USD value", value: `$${formatUsd(transferMove.amountUsd)}` });
+    }
+    if (transferMove.sentPulse !== undefined) {
+      entries.push({ label: "Sent pulse", value: String(transferMove.sentPulse) });
+    }
   }
 
   const feed = record.feed as FeedPostPayload | undefined;
@@ -2264,7 +2353,9 @@ function SigilTreeNode({
               className={`phi-move phi-move--${transferMove.direction}`}
               title={`Φ ${transferMove.direction === "receive" ? "received" : "sent"}: ${formatPhi(
                 transferMove.amount,
-              )} Φ`}
+              )} Φ${
+                transferMove.amountUsd !== undefined ? ` • $${formatUsd(transferMove.amountUsd)}` : ""
+              }${transferMove.sentPulse !== undefined ? ` • sent pulse ${transferMove.sentPulse}` : ""}`}
             >
               <img
                 className="phi-move__mark"
@@ -2279,6 +2370,9 @@ function SigilTreeNode({
                 {transferMove.direction === "receive" ? "+" : "-"}
               </span>
               <span className="phi-move__amount">{formatPhi(transferMove.amount)} Φ</span>
+              {transferMove.amountUsd !== undefined && (
+                <span className="phi-move__usd">${formatUsd(transferMove.amountUsd)}</span>
+              )}
             </span>
           )}
 

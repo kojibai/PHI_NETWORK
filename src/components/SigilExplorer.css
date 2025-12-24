@@ -932,6 +932,12 @@
   font-variant-numeric: tabular-nums;
 }
 
+.phi-move__usd{
+  font-variant-numeric: tabular-nums;
+  font-size: 10px;
+  opacity: 0.85;
+}
+
 /* Copy button */
 .node-copy{
   width: 30px;

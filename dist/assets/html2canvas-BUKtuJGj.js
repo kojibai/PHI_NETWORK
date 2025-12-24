@@ -1,0 +1,1 @@
+import{t as e}from"./html2canvas-BOXNnXk6.js";export default e();
