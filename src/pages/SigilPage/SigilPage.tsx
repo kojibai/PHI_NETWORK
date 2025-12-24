@@ -2026,9 +2026,6 @@ const { usdPerPhi, phiPerUsd } = useMemo(() => {
   }
 }, [payload, currentPulse, issuancePolicy]);
 
-// USD for whatever number you're currently showing in the chip
-const chipUsd: number = (displayedChipPhi ?? 0) * (usdPerPhi || 0);
-
   /* helper: generate canonical recipient Φkey (verifier algorithm) */
   const generateRecipientPhiKey = useCallback(async () => {
     if (!payload) return "";
@@ -2095,6 +2092,37 @@ const chipUsd: number = (displayedChipPhi ?? 0) * (usdPerPhi || 0);
       window.removeEventListener("storage", onStorage);
     };
   }, [payload, localHash, legacyInfo, transferToken, refreshDescendants]);
+
+  const descendantsTotal = useMemo(
+    () =>
+      descendants.reduce((sum, d) => {
+        const amt = Number.isFinite(d.amount) ? Number(d.amount) : 0;
+        return amt > 0 ? sum + amt : sum;
+      }, 0),
+    [descendants],
+  );
+
+  const explorerDeduction = useMemo(() => {
+    if (descendantsTotal <= 0) return 0;
+    if (totalDebited <= 0) return descendantsTotal;
+    return Math.max(0, descendantsTotal - totalDebited);
+  }, [descendantsTotal, totalDebited]);
+
+  const displayedChipPhiAdjusted = useMemo(() => {
+    const base = displayedChipPhi ?? 0;
+    const next = base - explorerDeduction;
+    return next > 0 ? next : 0;
+  }, [displayedChipPhi, explorerDeduction]);
+
+  // USD for whatever number you're currently showing in the chip
+  const chipUsd: number = (displayedChipPhiAdjusted ?? 0) * (usdPerPhi || 0);
+
+  const lineageBaseUrl = useMemo(() => {
+    if (typeof window === "undefined") return "";
+    const can = currentCanonicalUtil(payload ?? null, localHash, legacyInfo);
+    if (!can) return "";
+    return `${window.location.origin}/s/${can}`;
+  }, [payload, localHash, legacyInfo]);
 
   /* Mint a child sigil on send — ensures claim window time AND token-scoped ledger + lineage */
   /* Mint a child sigil on send — ensures claim window time AND token-scoped ledger + lineage */
@@ -2550,14 +2578,14 @@ const { series, pushSample } = useValueHistory({
   maxPoints: 36 * 42 * 8, // buffer size (samples), tune as you like
   maxBeats: 36 * 42,      // retention window in Kai beats
 });
-// wherever you have displayedChipPhi and pushSample
+// wherever you have displayedChipPhiAdjusted and pushSample
 useEffect(() => {
   const BREATH_MS = (3 + Math.sqrt(5)) * 1000; // ≈ 5236.0679 ms
   let raf: number | null = null;
   let tid: number | null = null;
 
   const tick = () => {
-    const v = displayedChipPhi;
+    const v = displayedChipPhiAdjusted;
     if (Number.isFinite(v)) {
       // push with legacy ms; the chart normalizes to Kai beats (fractional)
       pushSample({ t: Date.now(), v });
@@ -2572,7 +2600,7 @@ useEffect(() => {
     if (tid) clearTimeout(tid);
     if (raf) cancelAnimationFrame(raf);
   };
-}, [displayedChipPhi, pushSample]);
+}, [displayedChipPhiAdjusted, pushSample]);
 
 
   return (
@@ -2657,7 +2685,7 @@ useEffect(() => {
                 }
               />
               <span className="price" aria-label={hasDebitsOrFrozen ? "Available amount" : "Live valuation"}>
-                {currency(displayedChipPhi)}
+                {currency(displayedChipPhiAdjusted)}
               </span>
               <span className="usd-inline" aria-hidden="true">≈ {fmtUsd(chipUsd)}</span>
               <span className="chip-spacer" aria-hidden="true" />
@@ -2672,7 +2700,7 @@ useEffect(() => {
             open={historyOpen}
             onClose={() => setHistoryOpen(false)}
             series={series}
-            latestValue={displayedChipPhi ?? 0}
+            latestValue={displayedChipPhiAdjusted ?? 0}
             label={hasDebitsOrFrozen ? "Available Φ" : "Live Φ"}
           />
 
@@ -3109,6 +3137,17 @@ useEffect(() => {
                             <> • from <abbr title={node.senderPhiKey}>{node.senderPhiKey.slice(0, 10)}…</abbr></>
                           ) : null}
                         </span>
+                        {lineageBaseUrl && node.token && (
+                          <a
+                            className="sp-lineage__url"
+                            href={`${lineageBaseUrl}?t=${encodeURIComponent(node.token)}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title={`${lineageBaseUrl}?t=${node.token}`}
+                          >
+                            {`${lineageBaseUrl}?t=${node.token}`}
+                          </a>
+                        )}
                       </li>
                     ))}
                   </ol>
@@ -3364,4 +3403,3 @@ useEffect(() => {
     </main>
   );
 }
-

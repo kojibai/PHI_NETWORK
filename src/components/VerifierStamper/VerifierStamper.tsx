@@ -97,6 +97,7 @@ import { DEFAULT_ISSUANCE_POLICY, quotePhiForUsd } from "../../utils/phi-issuanc
 import { BREATH_MS } from "../valuation/constants";
 import { recordSend, getSpentScaledFor, markConfirmedByLeaf } from "../../utils/sendLedger";
 import { recordSigilTransferMovement } from "../../utils/sigilTransferRegistry";
+import { descendantsKey, readDescendantsStored, type DescendantLocal } from "../../pages/SigilPage/descendants";
 
 /* Live chart popover (stay inside Verifier modal) */
 import LiveChart from "../valuation/chart/LiveChart";
@@ -1193,6 +1194,35 @@ const VerifierStamperInner: React.FC = () => {
 
   const lastTransfer = useMemo(() => (meta?.transfers ?? []).slice(-1)[0], [meta?.transfers]);
   const isChildContext = useMemo(() => canonicalContext === "derivative", [canonicalContext]);
+  const [descendants, setDescendants] = useState<DescendantLocal[]>([]);
+  const descendantToken = meta?.transferNonce ?? null;
+
+  useEffect(() => {
+    if (!canonical || !descendantToken) {
+      setDescendants([]);
+      return;
+    }
+
+    const sync = () => setDescendants(readDescendantsStored(canonical, descendantToken));
+    sync();
+
+    const storageKey = descendantsKey(canonical, descendantToken);
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === storageKey) sync();
+    };
+
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, [canonical, descendantToken]);
+
+  const descendantsTotalPhi = useMemo(
+    () =>
+      descendants.reduce((sum, d) => {
+        const amt = Number.isFinite(d.amount) ? Number(d.amount) : 0;
+        return amt > 0 ? sum + amt : sum;
+      }, 0),
+    [descendants],
+  );
 
   const basePhiScaled = useMemo(() => {
     if (isChildContext) {
@@ -1249,6 +1279,11 @@ const VerifierStamperInner: React.FC = () => {
     }
   }, [canonical]);
 
+  const descendantsTotalScaled = useMemo(() => {
+    if (!descendantsTotalPhi || descendantsTotalPhi <= 0) return 0n;
+    return toScaledBig(descendantsTotalPhi.toFixed(6));
+  }, [descendantsTotalPhi]);
+
   const effectivePersistedSpentScaled = useMemo(
     () => (persistedSpentScaled > priorWindowSpentScaled ? persistedSpentScaled : priorWindowSpentScaled),
     [persistedSpentScaled, priorWindowSpentScaled]
@@ -1259,10 +1294,10 @@ const VerifierStamperInner: React.FC = () => {
     [isChildContext, effectivePersistedSpentScaled, currentWindowSpentScaled]
   );
 
-  const totalSpentScaled = useMemo(
-    () => (ledgerSpentScaled > metaSpentScaled ? ledgerSpentScaled : metaSpentScaled),
-    [ledgerSpentScaled, metaSpentScaled]
-  );
+  const totalSpentScaled = useMemo(() => {
+    const spent = ledgerSpentScaled > metaSpentScaled ? ledgerSpentScaled : metaSpentScaled;
+    return descendantsTotalScaled > spent ? descendantsTotalScaled : spent;
+  }, [ledgerSpentScaled, metaSpentScaled, descendantsTotalScaled]);
 
   const remainingPhiScaled = useMemo(
     () => (basePhiScaled > totalSpentScaled ? basePhiScaled - totalSpentScaled : 0n),
