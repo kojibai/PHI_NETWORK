@@ -292,9 +292,10 @@ function extractFeedTokenFromUrl(url: string): string | null {
   try {
     const u = new URL(url, "https://example.invalid");
 
-    // 1) Hash form: #t=<token>
+    // 1) Hash form: #t=<token> or #p=<token>
     if (u.hash) {
-      const hashToken = new URLSearchParams(u.hash.replace(/^#/, "")).get("t");
+      const hashParams = new URLSearchParams(u.hash.replace(/^#/, ""));
+      const hashToken = hashParams.get("t") ?? hashParams.get("p");
       if (hashToken) return hashToken;
     }
 
