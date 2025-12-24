@@ -19,7 +19,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ChangeEvent, DragEvent, ReactElement } from "react";
+import type { ChangeEvent, DragEvent, ReactElement, MutableRefObject } from "react";
 import "./styles/KaiVoh.css";
 import {
   ATTACHMENTS_VERSION,
@@ -42,7 +42,8 @@ import {
   encodeTokenWithBudgets,
 } from "../../utils/feedPayload";
 
-import { momentFromUTC } from "../../utils/kai_pulse";
+import { epochMsFromPulse } from "../../utils/kai_pulse";
+import { useAlignedKaiTicker } from "../../pages/sigilstream/core/ticker";
 import { useSigilAuth } from "./SigilAuthContext";
 import StoryRecorder, { type CapturedStory } from "./StoryRecorder";
 import { registerSigilUrl } from "../../utils/sigilRegistry";
@@ -325,6 +326,51 @@ const SEAL_MODE_OPTIONS: SealMode[] = ["derived", "glyph"];
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
 
+const toSafeNumberFromBigInt = (x: bigint): number => {
+  const MAX = BigInt(Number.MAX_SAFE_INTEGER);
+  const MIN = BigInt(Number.MIN_SAFE_INTEGER);
+  if (x > MAX) return Number.MAX_SAFE_INTEGER;
+  if (x < MIN) return Number.MIN_SAFE_INTEGER;
+  return Number(x);
+};
+
+const parsePulseLoose = (raw: unknown): number | null => {
+  const n =
+    typeof raw === "number"
+      ? raw
+      : typeof raw === "string"
+        ? Number.parseInt(raw, 10)
+        : typeof raw === "bigint"
+          ? Number(raw)
+          : Number.NaN;
+
+  if (!Number.isFinite(n)) return null;
+  const p = Math.floor(n);
+  if (p < 0) return null;
+  return p;
+};
+
+/**
+ * ✅ Pulse mirror:
+ * - Subscribes to aligned ticker (same source as KaiStatus)
+ * - Writes latest pulse into a ref
+ * - KaiVoh does NOT re-render on each pulse (only this child does)
+ */
+function KaiVohPulseMirror({ pulseRef }: { pulseRef: MutableRefObject<number> }): null {
+  const kaiNow = useAlignedKaiTicker() as unknown;
+
+  const pulse = useMemo(() => {
+    if (!isRecord(kaiNow)) return null;
+    return parsePulseLoose(kaiNow.pulse);
+  }, [kaiNow]);
+
+  useEffect(() => {
+    if (typeof pulse === "number") pulseRef.current = pulse;
+  }, [pulse, pulseRef]);
+
+  return null;
+}
+
 const readDraftString = (v: unknown, fallback = ""): string => (typeof v === "string" ? v : fallback);
 const readDraftBool = (v: unknown, fallback = false): boolean => (typeof v === "boolean" ? v : fallback);
 const readDraftStringArray = (v: unknown): string[] =>
@@ -366,7 +412,7 @@ type EncodeDiag = {
 };
 
 const nowMs = (): number =>
-  typeof performance !== "undefined" && typeof performance.now === "function" ? performance.now() : Date.now();
+  typeof performance !== "undefined" && typeof performance.now === "function" ? performance.now() : 0;
 
 const nextPaint = async (): Promise<void> => {
   await new Promise<void>((r) => requestAnimationFrame(() => r()));
@@ -386,8 +432,20 @@ const withTimeout = async <T,>(p: Promise<T>, ms: number, label: string): Promis
 
 const makeId = (): string => {
   const c: Crypto | undefined = typeof crypto !== "undefined" ? crypto : undefined;
+
   if (c && "randomUUID" in c && typeof c.randomUUID === "function") return c.randomUUID();
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+
+  // Chronos-free fallback: 16 random bytes → hex
+  if (c && "getRandomValues" in c && typeof c.getRandomValues === "function") {
+    const bytes = new Uint8Array(16);
+    c.getRandomValues(bytes);
+    let out = "";
+    for (let i = 0; i < bytes.length; i++) out += bytes[i].toString(16).padStart(2, "0");
+    return out;
+  }
+
+  // Absolute last resort (should never happen in modern browsers)
+  return `id-${Math.random().toString(16).slice(2)}-${Math.random().toString(16).slice(2)}`;
 };
 
 // Singleton worker plumbing (module-scope; not React state)
@@ -470,7 +528,6 @@ async function encodeTokenWorkerFirst(payload: FeedPostPayload): Promise<EncodeW
       // If fallback succeeds, prefer it. If it also fails, return worker error.
       return fallback.ok ? fallback : res;
     }
-    
 
     return res;
   } catch {
@@ -479,12 +536,14 @@ async function encodeTokenWorkerFirst(payload: FeedPostPayload): Promise<EncodeW
   }
 }
 
-
 /* ───────────────────────── Component ───────────────────────── */
 
 export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExhale }: KaiVohProps): ReactElement {
   const { auth } = useSigilAuth();
   const sigilMeta = auth.meta;
+
+  // ✅ Latest aligned pulse (KaiStatus-identical source), without re-rendering KaiVoh
+  const kaiPulseRef = useRef<number>(Number.NaN);
 
   const [caption, setCaption] = useState<string>(initialCaption);
   const [author, setAuthor] = useState<string>(initialAuthor);
@@ -1011,13 +1070,15 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
       }
     }
 
-    let pulse: number;
-    try {
-      pulse = momentFromUTC(new Date()).pulse;
-    } catch {
-      setErr("Failed to compute Kai pulse.");
+    // ✅ Pulse is aligned + identical to KaiStatus, but KaiVoh does NOT re-render per pulse.
+    const pulse = kaiPulseRef.current;
+    if (!Number.isFinite(pulse) || pulse < 0) {
+      setErr("Failed to compute Kai pulse (aligned ticker not ready).");
       return;
     }
+
+    // ✅ If payload requires a timestamp field, derive it FROM the pulse (not Date.now)
+    const ts = toSafeNumberFromBigInt(epochMsFromPulse(pulse));
 
     const t0 = nowMs();
 
@@ -1051,7 +1112,7 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
         sigilId,
         phiKey: hasVerifiedSigil && phiKey ? phiKey : undefined,
         kaiSignature: hasVerifiedSigil && kaiSignature ? kaiSignature : undefined,
-        ts: Date.now(),
+        ts,
         attachments: mergedAttachments,
         parentUrl,
         originUrl,
@@ -1681,6 +1742,9 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
 
   return (
     <div className="social-connector-container">
+      {/* ✅ This mirrors KaiStatus pulse math without causing KaiVoh to re-render every pulse */}
+      <KaiVohPulseMirror pulseRef={kaiPulseRef} />
+
       <h2 className="social-connector-title">KaiVoh</h2>
       <p className="social-connector-sub">
         Exhale a sealed <strong>Memory Stream</strong>.

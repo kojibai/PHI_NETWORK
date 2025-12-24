@@ -2580,6 +2580,46 @@ const FeedCardThread: React.FC<ThreadProps> = ({
       </article>
     );
   }
+const MICRO_PULSES_PER_PULSE = 1_000_000n;
+const BEATS_PER_DAY_BI = 36n;
+const STEPS_PER_BEAT_BI = BigInt(STEPS_BEAT);
+
+// IMPORTANT: verify this is exactly 17,491,270,421n in your file.
+// const N_DAY_MICRO = 17_491_270_421n;
+
+function microFromPulseIndex(pulse: number): bigint {
+  if (!Number.isFinite(pulse)) return 0n;
+  // Your node pulse is an integer "Eternal Pulse" index.
+  // Using trunc keeps it deterministic and prevents float noise.
+  const p = Math.trunc(pulse);
+  return BigInt(p) * MICRO_PULSES_PER_PULSE;
+}
+
+function beatStepFromPulseKKS(pulse: number): { beatZ: number; stepZ: number } {
+  const pμ = microFromPulseIndex(pulse);     // <-- NO ms roundtrip
+  const dayμ = modE(pμ, N_DAY_MICRO);        // μpulses into current day [0, N_DAY_MICRO)
+
+  // Beat index: floor(dayμ / (N_DAY_MICRO/36)) via exact ratio
+  const beatZRaw = floorDivE(dayμ * BEATS_PER_DAY_BI, N_DAY_MICRO);
+  const beatZ = Math.max(0, Math.min(35, toSafeNumber(beatZRaw)));
+
+  // Beat boundaries in μpulses (exact partitions)
+  const beatStart = floorDivE(BigInt(beatZ) * N_DAY_MICRO, BEATS_PER_DAY_BI);
+  const beatEnd =
+    beatZ >= 35
+      ? N_DAY_MICRO
+      : floorDivE(BigInt(beatZ + 1) * N_DAY_MICRO, BEATS_PER_DAY_BI);
+
+  const beatSpan = beatEnd - beatStart;
+  const withinBeat = dayμ - beatStart;
+
+  const stepRaw =
+    beatSpan > 0n ? floorDivE(withinBeat * STEPS_PER_BEAT_BI, beatSpan) : 0n;
+
+  const stepZ = Math.max(0, Math.min(STEPS_BEAT - 1, toSafeNumber(stepRaw)));
+
+  return { beatZ, stepZ };
+}
 
   const capsule: Capsule = nodeResolved!.capsule;
 
@@ -2595,10 +2635,11 @@ const FeedCardThread: React.FC<ThreadProps> = ({
       ? nodeResolved!.pulse
       : 0;
 
-  const m = momentFromPulse(pulse);
-  const beatZ = Math.max(0, Math.floor(m.beat));
-  const stepZ = Math.max(0, Math.floor(m.stepIndex));
+ const { beatZ, stepZ } = beatStepFromPulseKKS(pulse);
 
+
+
+ const m = momentFromPulse(pulse);
   const chakraDay: ChakraDay = toChakra(m.chakraDay, m.chakraDay);
   const chakraDayDisplay = chakraDay === "Crown" ? "Krown" : String(chakraDay);
 

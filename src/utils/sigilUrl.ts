@@ -322,6 +322,25 @@ function extractFeedTokenFromUrl(url: string): string | null {
 }
 
 /** Internal: decode a Stream URL into a SigilSharePayloadLoose via FeedPostPayload. */
+const CHAKRA_DAYS = [
+  "Root",
+  "Sacral",
+  "Solar Plexus",
+  "Heart",
+  "Throat",
+  "Third Eye",
+  "Crown",
+] as const;
+
+function isChakraDay(v: unknown): v is SigilSharePayload["chakraDay"] {
+  return typeof v === "string" && (CHAKRA_DAYS as readonly string[]).includes(v);
+}
+
+function isFiniteNumber(v: unknown): v is number {
+  return typeof v === "number" && Number.isFinite(v);
+}
+
+/** Internal: decode a Stream URL into a SigilSharePayloadLoose via FeedPostPayload. */
 function extractStreamSigilPayload(url: string): SigilSharePayloadLoose | null {
   const token = extractFeedTokenFromUrl(url);
   if (!token) return null;
@@ -329,50 +348,80 @@ function extractStreamSigilPayload(url: string): SigilSharePayloadLoose | null {
   const feed: FeedPostPayload | null = decodeFeedPayload(token);
   if (!feed) return null;
 
-  // Derive Kai moment from pulse (beat/step/chakraDay/stepsPerBeat)
-  let beat = 0;
-  let stepIndex = 0;
-  let chakraDay: SigilSharePayload["chakraDay"] = "Root";
-  let stepsPerBeat = 44;
+  // Prefer moment fields embedded in feed payload (mint-truth),
+  // fallback to momentFromPulse only if missing.
+  let beat: number | undefined;
+  let stepIndex: number | undefined;
+  let chakraDay: SigilSharePayload["chakraDay"] | undefined;
+  let stepsPerBeat: number | undefined;
 
-  try {
-    const m = momentFromPulse(feed.pulse) as KaiMomentLike;
-    if (typeof m.beat === "number") {
-      beat = m.beat;
-    } else if (typeof m.beatIndex === "number") {
-      beat = m.beatIndex;
+  const fr = feed as unknown as Record<string, unknown>;
+
+  // beat
+  if (isFiniteNumber(fr.beat)) beat = fr.beat;
+  else if (isFiniteNumber(fr.beatIndex)) beat = fr.beatIndex;
+
+  // step
+  if (isFiniteNumber(fr.stepIndex)) stepIndex = fr.stepIndex;
+
+  // chakra
+  if (isChakraDay(fr.chakraDay)) chakraDay = fr.chakraDay;
+
+  // stepsPerBeat
+  if (isFiniteNumber(fr.stepsPerBeat)) stepsPerBeat = fr.stepsPerBeat;
+
+  // Fallback: derive from pulse if any are missing
+  if (beat == null || stepIndex == null || chakraDay == null || stepsPerBeat == null) {
+    try {
+      const m = momentFromPulse((feed as { pulse: number }).pulse) as KaiMomentLike;
+      if (beat == null) {
+        if (typeof m.beat === "number") beat = m.beat;
+        else if (typeof m.beatIndex === "number") beat = m.beatIndex;
+      }
+      if (stepIndex == null && typeof m.stepIndex === "number") stepIndex = m.stepIndex;
+      if (chakraDay == null && typeof m.chakraDay === "string" && isChakraDay(m.chakraDay)) {
+        chakraDay = m.chakraDay;
+      }
+      if (stepsPerBeat == null && typeof m.stepsPerBeat === "number") stepsPerBeat = m.stepsPerBeat;
+    } catch {
+      // ignore
     }
-    if (typeof m.stepIndex === "number") {
-      stepIndex = m.stepIndex;
-    }
-    if (typeof m.chakraDay === "string") {
-      chakraDay = m.chakraDay as SigilSharePayload["chakraDay"];
-    }
-    if (typeof m.stepsPerBeat === "number") {
-      stepsPerBeat = m.stepsPerBeat;
-    }
-  } catch {
-    // fall back to defaults if Kai moment isn't available
   }
 
+  // Final defaults (never undefined)
+  const outBeat = beat ?? 0;
+  const outStep = stepIndex ?? 0;
+  const outChakra = chakraDay ?? "Root";
+  const outSpb = stepsPerBeat ?? 44;
+
   const parentUrl =
-    typeof feed.parentUrl === "string"
-      ? feed.parentUrl
-      : typeof (feed as { parent?: string }).parent === "string"
-      ? (feed as { parent: string }).parent
+    typeof (feed as unknown as Record<string, unknown>).parentUrl === "string"
+      ? ((feed as unknown as Record<string, unknown>).parentUrl as string)
+      : typeof (feed as unknown as Record<string, unknown>).parent === "string"
+      ? ((feed as unknown as Record<string, unknown>).parent as string)
       : undefined;
 
   const out: SigilSharePayloadLoose = {
     pulse: feed.pulse,
-    beat,
-    stepIndex,
-    chakraDay,
-    stepsPerBeat,
-    kaiSignature: typeof feed.kaiSignature === "string" ? feed.kaiSignature : undefined,
-    userPhiKey: typeof feed.phiKey === "string" ? feed.phiKey : undefined,
+    beat: outBeat,
+    stepIndex: outStep,
+    chakraDay: outChakra,
+    stepsPerBeat: outSpb,
+    kaiSignature: typeof (feed as unknown as Record<string, unknown>).kaiSignature === "string"
+      ? ((feed as unknown as Record<string, unknown>).kaiSignature as string)
+      : undefined,
+    userPhiKey: typeof (feed as unknown as Record<string, unknown>).phiKey === "string"
+      ? ((feed as unknown as Record<string, unknown>).phiKey as string)
+      : undefined,
     parentUrl,
-    originUrl: typeof feed.originUrl === "string" ? feed.originUrl : undefined,
-    // expose full FeedPostPayload for Explorer / introspection
+    originUrl: typeof (feed as unknown as Record<string, unknown>).originUrl === "string"
+      ? ((feed as unknown as Record<string, unknown>).originUrl as string)
+      : undefined,
+
+    // 🔑 Keep the token so other layers can use it as a stable identity key
+    streamToken: token,
+
+    // Keep full feed payload available
     feed,
   };
 
@@ -380,6 +429,7 @@ function extractStreamSigilPayload(url: string): SigilSharePayloadLoose | null {
 }
 
 /** Decode the payload embedded in a sigil or stream URL (null if not present/decodable). */
+
 export function extractPayloadFromUrl(url: string): SigilSharePayloadLoose | null {
   // 1) Sigil (?p=c:...) case
   const qp = extractPayloadParamFromUrl(url);
