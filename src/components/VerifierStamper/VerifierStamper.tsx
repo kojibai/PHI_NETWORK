@@ -97,7 +97,11 @@ import { DEFAULT_ISSUANCE_POLICY, quotePhiForUsd } from "../../utils/phi-issuanc
 import { BREATH_MS } from "../valuation/constants";
 import { recordSend, getSpentScaledFor, markConfirmedByLeaf } from "../../utils/sendLedger";
 import { recordSigilTransferMovement } from "../../utils/sigilTransferRegistry";
-import { descendantsKey, readDescendantsStored, type DescendantLocal } from "../../pages/SigilPage/descendants";
+import {
+  EXPLORER_DEDUCTIONS_EVENT,
+  EXPLORER_DEDUCTIONS_LS_KEY,
+  getExplorerDeduction,
+} from "../../utils/sigilExplorerDeductions";
 
 /* Live chart popover (stay inside Verifier modal) */
 import LiveChart from "../valuation/chart/LiveChart";
@@ -1194,35 +1198,29 @@ const VerifierStamperInner: React.FC = () => {
 
   const lastTransfer = useMemo(() => (meta?.transfers ?? []).slice(-1)[0], [meta?.transfers]);
   const isChildContext = useMemo(() => canonicalContext === "derivative", [canonicalContext]);
-  const [descendants, setDescendants] = useState<DescendantLocal[]>([]);
-  const descendantToken = meta?.transferNonce ?? null;
+  const [explorerDeductionPhi, setExplorerDeductionPhi] = useState(0);
 
   useEffect(() => {
-    if (!canonical || !descendantToken) {
-      setDescendants([]);
+    if (!canonical) {
+      setExplorerDeductionPhi(0);
       return;
     }
 
-    const sync = () => setDescendants(readDescendantsStored(canonical, descendantToken));
+    const sync = () => setExplorerDeductionPhi(getExplorerDeduction(canonical));
     sync();
 
-    const storageKey = descendantsKey(canonical, descendantToken);
     const onStorage = (e: StorageEvent) => {
-      if (e.key === storageKey) sync();
+      if (e.key === EXPLORER_DEDUCTIONS_LS_KEY) sync();
     };
+    const onEvent = () => sync();
 
     window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
-  }, [canonical, descendantToken]);
-
-  const descendantsTotalPhi = useMemo(
-    () =>
-      descendants.reduce((sum, d) => {
-        const amt = Number.isFinite(d.amount) ? Number(d.amount) : 0;
-        return amt > 0 ? sum + amt : sum;
-      }, 0),
-    [descendants],
-  );
+    window.addEventListener(EXPLORER_DEDUCTIONS_EVENT, onEvent as EventListener);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener(EXPLORER_DEDUCTIONS_EVENT, onEvent as EventListener);
+    };
+  }, [canonical]);
 
   const basePhiScaled = useMemo(() => {
     if (isChildContext) {
@@ -1279,10 +1277,10 @@ const VerifierStamperInner: React.FC = () => {
     }
   }, [canonical]);
 
-  const descendantsTotalScaled = useMemo(() => {
-    if (!descendantsTotalPhi || descendantsTotalPhi <= 0) return 0n;
-    return toScaledBig(descendantsTotalPhi.toFixed(6));
-  }, [descendantsTotalPhi]);
+  const explorerDeductionScaled = useMemo(() => {
+    if (!explorerDeductionPhi || explorerDeductionPhi <= 0) return 0n;
+    return toScaledBig(explorerDeductionPhi.toFixed(6));
+  }, [explorerDeductionPhi]);
 
   const effectivePersistedSpentScaled = useMemo(
     () => (persistedSpentScaled > priorWindowSpentScaled ? persistedSpentScaled : priorWindowSpentScaled),
@@ -1296,8 +1294,8 @@ const VerifierStamperInner: React.FC = () => {
 
   const totalSpentScaled = useMemo(() => {
     const spent = ledgerSpentScaled > metaSpentScaled ? ledgerSpentScaled : metaSpentScaled;
-    return descendantsTotalScaled > spent ? descendantsTotalScaled : spent;
-  }, [ledgerSpentScaled, metaSpentScaled, descendantsTotalScaled]);
+    return explorerDeductionScaled > spent ? explorerDeductionScaled : spent;
+  }, [ledgerSpentScaled, metaSpentScaled, explorerDeductionScaled]);
 
   const remainingPhiScaled = useMemo(
     () => (basePhiScaled > totalSpentScaled ? basePhiScaled - totalSpentScaled : 0n),

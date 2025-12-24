@@ -59,6 +59,7 @@ import {
 } from "../utils/sigilTransferRegistry";
 import { USERNAME_CLAIM_KIND, type UsernameClaimPayload } from "../types/usernameClaim";
 import { SIGIL_EXPLORER_OPEN_EVENT } from "../constants/sigilExplorer";
+import { writeExplorerDeductions } from "../utils/sigilExplorerDeductions";
 import "./SigilExplorer.css";
 
 /* ─────────────────────────────────────────────────────────────────────
@@ -2023,6 +2024,31 @@ function resolveCanonicalHashFromNode(node: SigilNode): string | undefined {
   return undefined;
 }
 
+function sanitizePhiValue(value: number | undefined): number {
+  if (!Number.isFinite(value ?? NaN)) return 0;
+  if ((value ?? 0) <= 0) return 0;
+  return value ?? 0;
+}
+
+function buildExplorerDeductionMap(forest: SigilNode[]): Record<string, number> {
+  const totals: Record<string, number> = {};
+
+  const walk = (node: SigilNode): number => {
+    let descendantsTotal = 0;
+    for (const child of node.children) descendantsTotal += walk(child);
+
+    const selfPhi = sanitizePhiValue(getPhiFromPayload(node.payload));
+    const canonical = resolveCanonicalHashFromNode(node);
+    if (canonical) totals[canonical.toLowerCase()] = descendantsTotal;
+
+    return descendantsTotal + selfPhi;
+  };
+
+  for (const root of forest) walk(root);
+
+  return totals;
+}
+
 function resolveTransferMoveForNode(
   node: SigilNode,
   transferRegistry: ReadonlyMap<string, SigilTransferRecord>,
@@ -3346,6 +3372,11 @@ breathTimer = null;
 
   const forest = useMemo(() => buildForest(memoryRegistry), [registryRev]);
   const transferRegistry = useMemo(() => readSigilTransferRegistry(), [transferRev]);
+  const explorerDeductions = useMemo(() => buildExplorerDeductionMap(forest), [forest]);
+
+  useEffect(() => {
+    writeExplorerDeductions(explorerDeductions);
+  }, [explorerDeductions]);
 
   const phiTotalsByPulse = useMemo((): ReadonlyMap<number, number> => {
     const totals = new Map<number, number>();

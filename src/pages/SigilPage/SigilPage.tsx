@@ -56,6 +56,11 @@ import {
 import { ensureLink, setJsonLd, setMeta } from "../../utils/domHead";
 import { validateSvgForVerifier, putMetadata } from "../../utils/svgMeta";
 import { decodeSigilHistory } from "../../utils/sigilUrl";
+import {
+  EXPLORER_DEDUCTIONS_EVENT,
+  EXPLORER_DEDUCTIONS_LS_KEY,
+  getExplorerDeduction,
+} from "../../utils/sigilExplorerDeductions";
 
 /* ——— Theme ——— */
 import { CHAKRA_THEME} from "../../components/sigil/theme";
@@ -2093,20 +2098,40 @@ const { usdPerPhi, phiPerUsd } = useMemo(() => {
     };
   }, [payload, localHash, legacyInfo, transferToken, refreshDescendants]);
 
-  const descendantsTotal = useMemo(
-    () =>
-      descendants.reduce((sum, d) => {
-        const amt = Number.isFinite(d.amount) ? Number(d.amount) : 0;
-        return amt > 0 ? sum + amt : sum;
-      }, 0),
-    [descendants],
+  const explorerCanonical = useMemo(
+    () => currentCanonicalUtil(payload ?? null, localHash, legacyInfo),
+    [payload, localHash, legacyInfo],
   );
 
+  const [explorerDeductionRaw, setExplorerDeductionRaw] = useState(0);
+
+  useEffect(() => {
+    if (!explorerCanonical) {
+      setExplorerDeductionRaw(0);
+      return;
+    }
+
+    const sync = () => setExplorerDeductionRaw(getExplorerDeduction(explorerCanonical));
+    sync();
+
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === EXPLORER_DEDUCTIONS_LS_KEY) sync();
+    };
+    const onEvent = () => sync();
+
+    window.addEventListener("storage", onStorage);
+    window.addEventListener(EXPLORER_DEDUCTIONS_EVENT, onEvent as EventListener);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener(EXPLORER_DEDUCTIONS_EVENT, onEvent as EventListener);
+    };
+  }, [explorerCanonical]);
+
   const explorerDeduction = useMemo(() => {
-    if (descendantsTotal <= 0) return 0;
-    if (totalDebited <= 0) return descendantsTotal;
-    return Math.max(0, descendantsTotal - totalDebited);
-  }, [descendantsTotal, totalDebited]);
+    if (explorerDeductionRaw <= 0) return 0;
+    if (totalDebited <= 0) return explorerDeductionRaw;
+    return Math.max(0, explorerDeductionRaw - totalDebited);
+  }, [explorerDeductionRaw, totalDebited]);
 
   const displayedChipPhiAdjusted = useMemo(() => {
     const base = displayedChipPhi ?? 0;
@@ -2119,10 +2144,9 @@ const { usdPerPhi, phiPerUsd } = useMemo(() => {
 
   const lineageBaseUrl = useMemo(() => {
     if (typeof window === "undefined") return "";
-    const can = currentCanonicalUtil(payload ?? null, localHash, legacyInfo);
-    if (!can) return "";
-    return `${window.location.origin}/s/${can}`;
-  }, [payload, localHash, legacyInfo]);
+    if (!explorerCanonical) return "";
+    return `${window.location.origin}/s/${explorerCanonical}`;
+  }, [explorerCanonical]);
 
   /* Mint a child sigil on send — ensures claim window time AND token-scoped ledger + lineage */
   /* Mint a child sigil on send — ensures claim window time AND token-scoped ledger + lineage */
