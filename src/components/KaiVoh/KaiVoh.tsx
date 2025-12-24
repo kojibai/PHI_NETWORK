@@ -301,6 +301,50 @@ type AllowedGlyph = GlyphCredential & {
   label: string; // file name or user label
 };
 
+type DraftState = {
+  v: 1;
+  caption: string;
+  author: string;
+  bodyKind: BodyKind;
+  codeLang: string;
+  htmlMode: HtmlMode;
+  extraUrlField: string;
+  extraUrls: string[];
+  privateOn: boolean;
+  sealMode: SealMode;
+  sealTeaser: string;
+  sealSalt: string;
+  allowedGlyphs: AllowedGlyph[];
+  sealAdvanced: boolean;
+};
+
+const DRAFT_STORAGE_KEY = "kai-voh:draft:v1";
+const BODY_KIND_OPTIONS: BodyKind[] = ["text", "code", "md", "html"];
+const HTML_MODE_OPTIONS: HtmlMode[] = ["code", "sanitized"];
+const SEAL_MODE_OPTIONS: SealMode[] = ["derived", "glyph"];
+
+const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
+
+const readDraftString = (v: unknown, fallback = ""): string => (typeof v === "string" ? v : fallback);
+const readDraftBool = (v: unknown, fallback = false): boolean => (typeof v === "boolean" ? v : fallback);
+const readDraftStringArray = (v: unknown): string[] =>
+  Array.isArray(v) ? v.filter((item): item is string => typeof item === "string") : [];
+
+const readDraftAllowedGlyphs = (v: unknown): AllowedGlyph[] => {
+  if (!Array.isArray(v)) return [];
+  const out: AllowedGlyph[] = [];
+  for (const item of v) {
+    if (!isRecord(item)) continue;
+    const phiKey = readDraftString(item.phiKey);
+    const kaiSignature = readDraftString(item.kaiSignature);
+    const label = readDraftString(item.label);
+    if (!phiKey || !kaiSignature || !label) continue;
+    const sigilId = typeof item.sigilId === "string" && item.sigilId.trim() ? item.sigilId : undefined;
+    out.push({ phiKey, kaiSignature, label, sigilId });
+  }
+  return out;
+};
+
 /* ───────────────────────── Non-hanging encode (REAL Module Worker file) ───────────────────────── */
 
 type EncodeWorkerRequest = { id: string; payload: FeedPostPayload };
@@ -486,11 +530,107 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
   const [allowedGlyphs, setAllowedGlyphs] = useState<AllowedGlyph[]>([]);
   const [sealAdvanced, setSealAdvanced] = useState<boolean>(false);
 
+  const draftHydratedRef = useRef(false);
+  const draftSaveTimerRef = useRef<number | null>(null);
+
   const dropRef = useRef<HTMLDivElement | null>(null);
   const hasVerifiedSigil = Boolean(sigilMeta);
 
-  useEffect(() => setCaption(initialCaption), [initialCaption]);
-  useEffect(() => setAuthor(initialAuthor), [initialAuthor]);
+  useEffect(() => {
+    if (!draftHydratedRef.current) setCaption(initialCaption);
+  }, [initialCaption]);
+
+  useEffect(() => {
+    if (!draftHydratedRef.current) setAuthor(initialAuthor);
+  }, [initialAuthor]);
+
+  useEffect(() => {
+    if (draftHydratedRef.current) return;
+    draftHydratedRef.current = true;
+
+    if (typeof window === "undefined") return;
+
+    const raw = window.sessionStorage.getItem(DRAFT_STORAGE_KEY);
+    if (!raw) return;
+
+    try {
+      const parsed = JSON.parse(raw) as DraftState;
+      if (!isRecord(parsed) || parsed.v !== 1) return;
+
+      const nextBodyKind = BODY_KIND_OPTIONS.includes(parsed.bodyKind) ? parsed.bodyKind : "text";
+      const nextHtmlMode = HTML_MODE_OPTIONS.includes(parsed.htmlMode) ? parsed.htmlMode : "code";
+      const nextSealMode = SEAL_MODE_OPTIONS.includes(parsed.sealMode) ? parsed.sealMode : "derived";
+      const nextExtraUrls = readDraftStringArray(parsed.extraUrls)
+        .map((url) => url.trim())
+        .filter((url) => isHttpUrl(url))
+        .map((url) => makeUrlAttachment({ url }));
+
+      setCaption(readDraftString(parsed.caption, initialCaption));
+      setAuthor(readDraftString(parsed.author, initialAuthor));
+      setBodyKind(nextBodyKind);
+      setCodeLang(readDraftString(parsed.codeLang, "tsx"));
+      setHtmlMode(nextHtmlMode);
+      setExtraUrlField(readDraftString(parsed.extraUrlField, ""));
+      setExtraUrls(nextExtraUrls);
+      setPrivateOn(readDraftBool(parsed.privateOn, false));
+      setSealMode(nextSealMode);
+      setSealTeaser(readDraftString(parsed.sealTeaser, ""));
+      setSealSalt(readDraftString(parsed.sealSalt, makeSealSaltB64Url(18)));
+      setAllowedGlyphs(readDraftAllowedGlyphs(parsed.allowedGlyphs));
+      setSealAdvanced(readDraftBool(parsed.sealAdvanced, false));
+    } catch {
+      // ignore draft restore failures
+    }
+  }, [initialAuthor, initialCaption]);
+
+  useEffect(() => {
+    if (!draftHydratedRef.current) return;
+
+    if (draftSaveTimerRef.current) window.clearTimeout(draftSaveTimerRef.current);
+
+    draftSaveTimerRef.current = window.setTimeout(() => {
+      const draft: DraftState = {
+        v: 1,
+        caption,
+        author,
+        bodyKind,
+        codeLang,
+        htmlMode,
+        extraUrlField,
+        extraUrls: extraUrls.map((item) => item.url),
+        privateOn,
+        sealMode,
+        sealTeaser,
+        sealSalt,
+        allowedGlyphs,
+        sealAdvanced,
+      };
+
+      try {
+        window.sessionStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draft));
+      } catch {
+        // ignore draft save failures
+      }
+    }, 250);
+
+    return () => {
+      if (draftSaveTimerRef.current) window.clearTimeout(draftSaveTimerRef.current);
+    };
+  }, [
+    caption,
+    author,
+    bodyKind,
+    codeLang,
+    htmlMode,
+    extraUrlField,
+    extraUrls,
+    privateOn,
+    sealMode,
+    sealTeaser,
+    sealSalt,
+    allowedGlyphs,
+    sealAdvanced,
+  ]);
 
   useEffect(() => {
     attachmentsRef.current = attachments;
@@ -1087,6 +1227,12 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
     if (storyPreview) {
       URL.revokeObjectURL(storyPreview.url);
       setStoryPreview(null);
+    }
+
+    try {
+      window.sessionStorage.removeItem(DRAFT_STORAGE_KEY);
+    } catch {
+      // ignore draft clear failures
     }
   };
 

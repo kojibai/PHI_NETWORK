@@ -137,6 +137,15 @@ function getFocusable(container: HTMLElement | null): HTMLElement[] {
   return nodes.filter((el) => !el.hasAttribute("disabled") && !el.getAttribute("aria-hidden"));
 }
 
+function isEditableElement(el: Element | null): boolean {
+  if (!el) return false;
+  if (el instanceof HTMLInputElement) return !el.disabled;
+  if (el instanceof HTMLTextAreaElement) return !el.disabled;
+  if (el instanceof HTMLSelectElement) return !el.disabled;
+  if (el instanceof HTMLElement && el.isContentEditable) return true;
+  return false;
+}
+
 export default function KaiVohModal({ open, onClose }: KaiVohModalProps) {
   // Hooks MUST run unconditionally (rules-of-hooks)
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -301,6 +310,7 @@ export default function KaiVohModal({ open, onClose }: KaiVohModalProps) {
     // Escape + focus trap
     const onKeyDown = (e: KeyboardEvent): void => {
       if (e.key === "Escape") {
+        if (isEditableElement(document.activeElement)) return;
         e.preventDefault();
         e.stopPropagation();
         onClose();
