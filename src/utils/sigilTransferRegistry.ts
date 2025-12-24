@@ -7,6 +7,8 @@ export type SigilTransferRecord = {
   hash: string;
   direction: SigilTransferDirection;
   amountPhi: string;
+  amountUsd?: string;
+  sentPulse?: number;
   updatedAt: number;
 };
 
@@ -35,6 +37,13 @@ function normalizePhiAmount(raw: unknown): string | null {
   return cleaned;
 }
 
+function normalizeUsdAmount(raw: unknown): string | null {
+  if (raw == null) return null;
+  const num = typeof raw === "number" ? raw : Number(String(raw).trim());
+  if (!Number.isFinite(num) || num <= 0) return null;
+  return num.toFixed(2);
+}
+
 function readRawRegistry(): Record<string, SigilTransferRecord> {
   if (!canStorage) return {};
   try {
@@ -53,6 +62,8 @@ function readRawRegistry(): Record<string, SigilTransferRecord> {
           hash: normalizeHash(rec.hash),
           direction: rec.direction,
           amountPhi: String(rec.amountPhi),
+          amountUsd: typeof rec.amountUsd === "string" ? rec.amountUsd : undefined,
+          sentPulse: Number.isFinite(rec.sentPulse) ? Number(rec.sentPulse) : undefined,
           updatedAt: Number(rec.updatedAt) || Date.now(),
         };
       }
@@ -68,6 +79,8 @@ function readRawRegistry(): Record<string, SigilTransferRecord> {
         hash: normalizeHash(rec.hash),
         direction: rec.direction,
         amountPhi: String(rec.amountPhi),
+        amountUsd: typeof rec.amountUsd === "string" ? rec.amountUsd : undefined,
+        sentPulse: Number.isFinite(rec.sentPulse) ? Number(rec.sentPulse) : undefined,
         updatedAt: Number(rec.updatedAt) || Date.now(),
       };
     }
@@ -86,17 +99,23 @@ export function recordSigilTransferMovement(args: {
   hash: string;
   direction: SigilTransferDirection;
   amountPhi: string | number;
+  amountUsd?: string | number;
+  sentPulse?: number;
 }): SigilTransferRecord | null {
   if (!hasWindow) return null;
   const hash = normalizeHash(args.hash || "");
   if (!hash) return null;
   const amountPhi = normalizePhiAmount(args.amountPhi);
   if (!amountPhi) return null;
+  const amountUsd = normalizeUsdAmount(args.amountUsd);
+  const sentPulse = Number.isFinite(args.sentPulse) ? Number(args.sentPulse) : undefined;
 
   const next: SigilTransferRecord = {
     hash,
     direction: args.direction,
     amountPhi,
+    amountUsd: amountUsd ?? undefined,
+    sentPulse,
     updatedAt: Date.now(),
   };
 
@@ -114,7 +133,14 @@ export function recordSigilTransferMovement(args: {
   try {
     if ("BroadcastChannel" in window) {
       const bc = new BroadcastChannel(SIGIL_TRANSFER_CHANNEL_NAME);
-      bc.postMessage({ type: "transfer:update", hash, direction: args.direction, amountPhi });
+      bc.postMessage({
+        type: "transfer:update",
+        hash,
+        direction: args.direction,
+        amountPhi,
+        amountUsd: amountUsd ?? undefined,
+        sentPulse,
+      });
       bc.close();
     }
   } catch {

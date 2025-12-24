@@ -220,6 +220,36 @@ function readPhiAmountFromMeta(meta: SigilMetadataWithOptionals): string | undef
   return undefined;
 }
 
+function readExhaleInfoFromTransfer(
+  transfer?: SigilTransfer
+): { amountUsd?: string; sentPulse?: number } {
+  if (!transfer) return {};
+  let sentPulse = typeof transfer.senderKaiPulse === "number" ? transfer.senderKaiPulse : undefined;
+  let amountUsd: string | undefined;
+
+  try {
+    if (transfer.payload?.mime?.startsWith("application/vnd.kairos-exhale")) {
+      const obj = JSON.parse(base64DecodeUtf8(transfer.payload.encoded)) as
+        | { kind?: string; amountUsd?: string | number; atPulse?: number }
+        | null;
+      if (obj?.kind === "exhale") {
+        if (typeof obj.amountUsd === "string" && obj.amountUsd.trim()) {
+          amountUsd = obj.amountUsd.trim();
+        } else if (typeof obj.amountUsd === "number" && Number.isFinite(obj.amountUsd)) {
+          amountUsd = obj.amountUsd.toFixed(2);
+        }
+        if (typeof obj.atPulse === "number" && Number.isFinite(obj.atPulse)) {
+          sentPulse = obj.atPulse;
+        }
+      }
+    }
+  } catch (err) {
+    logError("exhale.decodeTransferInfo", err);
+  }
+
+  return { amountUsd, sentPulse };
+}
+
 // Auto-shrink text to fit inside its container (down to a floor scale)
 function useAutoShrink<T extends HTMLElement>(
   deps: React.DependencyList = [],
@@ -1614,6 +1644,8 @@ const VerifierStamperInner: React.FC = () => {
         hash: childCanonical,
         direction: "send",
         amountPhi: validPhi6,
+        amountUsd: cleanUsd.toFixed(2),
+        sentPulse: nowPulse,
       });
       try {
         getSigilGlobal().registerSend?.(rec);
@@ -1785,10 +1817,14 @@ const VerifierStamperInner: React.FC = () => {
       const eff = await computeEffectiveCanonical(updated);
       const amountPhi = readPhiAmountFromMeta(updated as SigilMetadataWithOptionals);
       if (eff?.canonical && amountPhi) {
+        const lastTransfer = updated.transfers?.[updated.transfers.length - 1];
+        const exhaleInfo = readExhaleInfoFromTransfer(lastTransfer);
         recordSigilTransferMovement({
           hash: eff.canonical,
           direction: "receive",
           amountPhi,
+          amountUsd: exhaleInfo.amountUsd,
+          sentPulse: exhaleInfo.sentPulse,
         });
       }
     } catch (err) {
