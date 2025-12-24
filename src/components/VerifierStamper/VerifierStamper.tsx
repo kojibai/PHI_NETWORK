@@ -97,6 +97,7 @@ import { DEFAULT_ISSUANCE_POLICY, quotePhiForUsd } from "../../utils/phi-issuanc
 import { BREATH_MS } from "../valuation/constants";
 import { recordSend, getSpentScaledFor, markConfirmedByLeaf } from "../../utils/sendLedger";
 import { recordSigilTransferMovement } from "../../utils/sigilTransferRegistry";
+import { registerSigilUrl } from "../../utils/sigilUrl";
 
 /* Live chart popover (stay inside Verifier modal) */
 import LiveChart from "../valuation/chart/LiveChart";
@@ -377,38 +378,8 @@ const IconBtn: React.FC<
     </svg>
   </button>
 );
-const EXPLORER_REGISTRY_LS_KEY = "kai:sigils:v1";
-const EXPLORER_FALLBACK_LS_KEY = "sigil:urls";
-const EXPLORER_BC_NAME = "kai-sigil-registry";
-
 function registerUrlForExplorer(url: string) {
-  if (typeof window === "undefined") return;
-
-  const put = (key: string) => {
-    try {
-      const raw = window.localStorage.getItem(key);
-      const arr = (raw ? JSON.parse(raw) : []) as string[];
-      const next = Array.isArray(arr) ? arr.slice() : [];
-      if (!next.includes(url)) next.unshift(url);
-      // keep it sane; Explorer can still pull remote history
-      window.localStorage.setItem(key, JSON.stringify(next.slice(0, 20000)));
-    } catch {}
-  };
-
-  put(EXPLORER_REGISTRY_LS_KEY);
-  put(EXPLORER_FALLBACK_LS_KEY);
-
-  // Live notify Explorer tab(s)
-  try {
-    const bc = new BroadcastChannel(EXPLORER_BC_NAME);
-    bc.postMessage({ type: "add", url });
-    bc.close();
-  } catch {}
-
-  // Optional: DOM event hook if Explorer listens
-  try {
-    window.dispatchEvent(new CustomEvent("kai:registry:add", { detail: { url } }));
-  } catch {}
+  registerSigilUrl(url);
 }
 
 /* ═════════════ Component ═════════════ */
@@ -868,6 +839,12 @@ const VerifierStamperInner: React.FC = () => {
       userPhiKey: m.userPhiKey,
     };
 
+    const metaRecord = m as unknown as Record<string, unknown>;
+    const metaParentUrl = typeof metaRecord.parentUrl === "string" ? metaRecord.parentUrl : undefined;
+    const metaOriginUrl = typeof metaRecord.originUrl === "string" ? metaRecord.originUrl : undefined;
+    let parentUrl = metaParentUrl;
+    let originUrl = metaOriginUrl;
+
     const startPulse = last?.senderKaiPulse ?? kaiPulseNow();
     const claim = {
       steps: CLAIM_STEPS,
@@ -887,6 +864,15 @@ const VerifierStamperInner: React.FC = () => {
       logError("shareTransferLink.previewDecode", err);
     }
 
+    const exhaleInfo = readExhaleInfoFromTransfer(last);
+    const amountUsd =
+      exhaleInfo.amountUsd ??
+      preview?.amountUsd ??
+      (preview?.usdPerPhi && transferAmountPhi
+        ? (Number(transferAmountPhi) * preview.usdPerPhi).toFixed(2)
+        : undefined);
+    const sentPulse = exhaleInfo.sentPulse ?? startPulse;
+
     const enriched = {
       ...sharePayload,
       canonicalHash: childHash,
@@ -899,13 +885,27 @@ const VerifierStamperInner: React.FC = () => {
             transferDirection: "send",
             transferAmountPhi,
             phiDelta: `-${transferAmountPhi}`,
+            amountUsd,
+            usdPerPhi: preview?.usdPerPhi,
+            sentPulse,
           }
         : {}),
     };
 
     let base = "";
     try {
-      const { makeSigilUrl } = await import("../../utils/sigilUrl");
+      const { makeSigilUrl, extractPayloadFromUrl } = await import("../../utils/sigilUrl");
+      parentUrl =
+        parentUrl ||
+        makeSigilUrl(parentCanonical, sharePayload, {
+          origin: typeof window !== "undefined" ? window.location.origin : "",
+        });
+      if (!originUrl && parentUrl) {
+        const parentPayload = extractPayloadFromUrl(parentUrl);
+        originUrl = parentPayload?.originUrl || parentUrl;
+      }
+      enriched.parentUrl = parentUrl;
+      enriched.originUrl = originUrl;
       base = makeSigilUrl(childHash, sharePayload);
     } catch (err) {
       logError("shareTransferLink.makeSigilUrl", err);
@@ -913,6 +913,11 @@ const VerifierStamperInner: React.FC = () => {
       u.pathname = `/s/${childHash}`;
       base = u.toString();
     }
+
+    if (!parentUrl && typeof window !== "undefined") parentUrl = window.location.href;
+    if (!originUrl && parentUrl) originUrl = parentUrl;
+    enriched.parentUrl = parentUrl;
+    enriched.originUrl = originUrl;
 
     let historyParam: string | undefined;
     try {

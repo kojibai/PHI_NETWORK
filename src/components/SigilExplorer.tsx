@@ -651,6 +651,21 @@ function readStringField(obj: unknown, key: string): string | undefined {
   return t ? t : undefined;
 }
 
+function readHashField(obj: unknown, keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = readStringField(obj, key);
+    if (value) return value.toLowerCase();
+  }
+  return undefined;
+}
+
+function canonicalHashFromPayload(url: string, payload: SigilSharePayloadLoose): string | undefined {
+  const record = payload as unknown as Record<string, unknown>;
+  const payloadHash = readHashField(record, ["canonicalHash", "hash", "sigilHash"]);
+  const urlHash = parseHashFromUrl(url);
+  return payloadHash || (urlHash ? urlHash.toLowerCase() : undefined);
+}
+
 async function prefetchViewUrl(url: string): Promise<void> {
   if (!hasWindow) return;
   if (!isOnline()) return;
@@ -1820,6 +1835,20 @@ function buildContentIndex(reg: Registry): Map<string, ContentEntry> {
     });
   }
 
+  const hashToContentId = new Map<string, string>();
+  for (const entry of entries.values()) {
+    const hashes = new Set<string>();
+    const primaryHash = canonicalHashFromPayload(entry.primaryUrl, entry.payload);
+    if (primaryHash) hashes.add(primaryHash);
+    for (const u of entry.urls) {
+      const h = parseHashFromUrl(u);
+      if (h) hashes.add(h.toLowerCase());
+    }
+    for (const h of hashes) {
+      if (!hashToContentId.has(h)) hashToContentId.set(h, entry.id);
+    }
+  }
+
   const momentGroups = new Map<string, string[]>();
   for (const e of entries.values()) {
     const k = e.momentKey;
@@ -1866,10 +1895,13 @@ function buildContentIndex(reg: Registry): Map<string, ContentEntry> {
 
     const originUrlRaw = readStringField(e.payload as unknown, "originUrl");
     const originUrl = originUrlRaw ? canonicalizeUrl(originUrlRaw) : getOriginUrl(e.primaryUrl) ?? e.primaryUrl;
+    const originHash = readHashField(e.payload as unknown, ["originHash", "origin", "origin_hash"]);
 
     const originAnyId = urlToContentId.get(originUrl);
     const originMomentParent =
-      momentParentByUrl.get(originUrl) ?? (originAnyId ? momentParentById.get(originAnyId) : undefined);
+      momentParentByUrl.get(originUrl) ??
+      (originAnyId ? momentParentById.get(originAnyId) : undefined) ??
+      (originHash ? momentParentById.get(hashToContentId.get(originHash) ?? "") : undefined);
 
     momentOriginByParent.set(mp, originMomentParent ?? mp);
   }
@@ -1892,6 +1924,11 @@ function buildContentIndex(reg: Registry): Map<string, ContentEntry> {
         const parentMomentParent =
           momentParentByUrl.get(parentUrl) ?? (parentAnyId ? momentParentById.get(parentAnyId) : undefined);
 
+        if (parentMomentParent && parentMomentParent !== e.id) parentId = parentMomentParent;
+      } else {
+        const parentHash = readHashField(e.payload as unknown, ["parentHash", "parent", "parent_hash"]);
+        const parentEntryId = parentHash ? hashToContentId.get(parentHash) : undefined;
+        const parentMomentParent = parentEntryId ? momentParentById.get(parentEntryId) : undefined;
         if (parentMomentParent && parentMomentParent !== e.id) parentId = parentMomentParent;
       }
     }
