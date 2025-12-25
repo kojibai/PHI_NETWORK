@@ -7,6 +7,7 @@ import { USERNAME_CLAIM_KIND, type UsernameClaimPayload } from "../../types/user
 import { ingestUsernameClaimGlyph } from "../../utils/usernameClaimRegistry";
 import { normalizeClaimGlyphRef, normalizeUsername } from "../../utils/usernameClaim";
 import { resolveLineageBackwards } from "../../utils/sigilUrl";
+import { getInMemorySigilUrls } from "../../utils/sigilRegistry";
 import {
   canonicalizeUrl,
   extractPayloadFromUrl,
@@ -298,7 +299,7 @@ export function persistRegistryToStorage(): void {
 
 /** Hydrate persisted URLs into registry without broadcasting; no auto inhale here. */
 export function hydrateRegistryFromStorage(): boolean {
-  if (!canStorage) return false;
+  if (!hasWindow) return false;
 
   const ingestList = (raw: string | null): boolean => {
     if (!raw) return false;
@@ -329,11 +330,12 @@ export function hydrateRegistryFromStorage(): boolean {
     }
   };
 
-  const changedA = ingestList(localStorage.getItem(REGISTRY_LS_KEY));
-  const changedB = ingestList(localStorage.getItem(MODAL_FALLBACK_LS_KEY));
+  const changedA = canStorage ? ingestList(localStorage.getItem(REGISTRY_LS_KEY)) : false;
+  const changedB = canStorage ? ingestList(localStorage.getItem(MODAL_FALLBACK_LS_KEY)) : false;
+  const changedC = ingestList(JSON.stringify(getInMemorySigilUrls()));
 
-  if (changedA || changedB) persistRegistryToStorage();
-  return changedA || changedB;
+  if (changedA || changedB || changedC) persistRegistryToStorage();
+  return changedA || changedB || changedC;
 }
 
 /* ─────────────────────────────────────────────────────────────────────

@@ -1913,6 +1913,21 @@ function ensureRegistryBridge(): void {
     void e;
   }
 
+  const onFeedEvent = (e: Event): void => {
+    const evt = e as CustomEvent<{ url?: string }>;
+    const url = evt?.detail?.url;
+    if (typeof url !== "string" || !url.trim()) return;
+    upsertUrlList(FEED_LS_KEY, url);
+    notifyRegistryBatched();
+  };
+
+  try {
+    window.addEventListener("sigil:feed-registered", onFeedEvent as EventListener);
+    window.addEventListener("feed:url-registered", onFeedEvent as EventListener);
+  } catch (e: unknown) {
+    void e;
+  }
+
   // Persistent listeners (no echo; they only merge locally)
   try {
     if ("BroadcastChannel" in window) {

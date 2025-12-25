@@ -30,6 +30,7 @@ import { filesToManifest } from "../attachments/files";
 import { normalizeWebLink, addLinkItem, removeLinkItem } from "./linkHelpers";
 
 import { SigilActionUrl } from "../identity/SigilActionUrl";
+import { registerSigilUrl } from "../../../utils/sigilRegistry";
 import {
   ingestUsernameClaimGlyph,
   getUsernameClaimRegistry,
@@ -70,9 +71,7 @@ type ParentPreview = {
 const ADD_CHAIN_MAX = 512;
 
 /** Explorer + Feed integration (no backend): persist + cross-tab notify */
-const EXPLORER_FALLBACK_LS_KEY = "sigil:urls";
 const FEED_FALLBACK_LS_KEY = "sigil:feed";
-const EXPLORER_BC_NAME = "kai-sigil-registry";
 const FEED_BC_NAME = "kai-feed-registry";
 
 function safeDecodeURIComponent(v: string): string {
@@ -199,38 +198,6 @@ function upsertUrlIntoList(lsKey: string, rawUrl: string): { changed: boolean; v
   }
 }
 
-function notifyExplorerOfNewUrl(url: string): void {
-  if (typeof window === "undefined") return;
-
-  // (1) In-page hook (Explorer mounted)
-  try {
-    const w = window as unknown as {
-      __SIGIL__?: { registerSigilUrl?: (u: string) => void };
-    };
-    w.__SIGIL__?.registerSigilUrl?.(url);
-  } catch {
-    // silent
-  }
-
-  // (2) DOM event fallback
-  try {
-    window.dispatchEvent(new CustomEvent("sigil:url-registered", { detail: { url } }));
-  } catch {
-    // silent
-  }
-
-  // (3) Cross-tab BroadcastChannel
-  try {
-    if ("BroadcastChannel" in window) {
-      const bc = new BroadcastChannel(EXPLORER_BC_NAME);
-      bc.postMessage({ type: "sigil:add", url });
-      bc.close();
-    }
-  } catch {
-    // silent
-  }
-}
-
 function notifyFeedOfNewUrl(url: string): void {
   if (typeof window === "undefined") return;
 
@@ -246,6 +213,7 @@ function notifyFeedOfNewUrl(url: string): void {
 
   // (2) DOM event fallback
   try {
+    window.dispatchEvent(new CustomEvent("sigil:feed-registered", { detail: { url } }));
     window.dispatchEvent(new CustomEvent("feed:url-registered", { detail: { url } }));
   } catch {
     // silent
@@ -799,19 +767,17 @@ export function Composer({
 
       // ✅ Auto-register: Explorer (all), Feed (only the new reply URL)
       try {
-        // Explorer: upsert ancestors (canonical stream URLs) + the new share
+        // Explorer: register ancestors (canonical stream URLs) + the new share
         for (const t of adds) {
           const u = buildMomentUrlFromToken(t);
-          const ex = upsertUrlIntoList(EXPLORER_FALLBACK_LS_KEY, u);
-          if (ex.changed) notifyExplorerOfNewUrl(ex.value);
+          registerSigilUrl(u);
         }
 
-        const exSelf = upsertUrlIntoList(EXPLORER_FALLBACK_LS_KEY, share);
-        if (exSelf.changed) notifyExplorerOfNewUrl(exSelf.value);
+        registerSigilUrl(share);
 
         // Feed: only the new reply URL (unique, upgrade if richer)
         const fd = upsertUrlIntoList(FEED_FALLBACK_LS_KEY, share);
-        if (fd.changed) notifyFeedOfNewUrl(fd.value);
+        notifyFeedOfNewUrl(fd.value);
       } catch {
         // silent
       }

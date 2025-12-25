@@ -9,8 +9,17 @@
    - SSR-safe: everything is guarded behind window checks
    ───────────────────────────────────────────────────────────── */
 
+import { extractPayloadTokenFromUrlString } from "./feedPayload";
+
 export type SigilRegistryGlobal = {
   registerSigilUrl?: (url: string) => void;
+};
+
+export type SigilRegistryRegisterResult = {
+  changed: boolean;
+  added: boolean;
+  updated: boolean;
+  value: string;
 };
 
 /** Canonical localStorage key for the sigil registry. */
@@ -23,6 +32,7 @@ export const SIGIL_REGISTRY_FALLBACK_LS_KEY = "sigil:urls" as const;
 export const SIGIL_REGISTRY_CHANNEL_NAME = "kai-sigil-registry" as const;
 
 const hasWindow = typeof window !== "undefined";
+const inMemoryRegistry: string[] = [];
 
 /* ───────── Internal helpers ───────── */
 
@@ -47,22 +57,102 @@ function readList(key: string): string[] {
   }
 }
 
-/** Write a JSON string[] list to localStorage under the given key. */
-function writeList(key: string, list: string[]): void {
-  if (!hasWindow) return;
+function countAddsInUrl(rawUrl: string): number {
+  if (!hasWindow) return 0;
   try {
-    const unique = Array.from(new Set(list.map((s) => s.trim()).filter(Boolean)));
-    window.localStorage.setItem(key, JSON.stringify(unique));
+    const u = new URL(rawUrl, window.location.origin);
+    const hashStr = u.hash.startsWith("#") ? u.hash.slice(1) : "";
+    const hp = new URLSearchParams(hashStr);
+    return hp.getAll("add").length + u.searchParams.getAll("add").length;
   } catch {
-    // ignore LS errors (e.g. quota, private mode)
+    return 0;
   }
 }
 
-/** Add a URL to a list if it's not already present. Returns true if inserted. */
-function pushUnique(list: string[], url: string): boolean {
-  if (list.includes(url)) return false;
-  list.push(url);
-  return true;
+function registryScore(rawUrl: string): number {
+  const adds = countAddsInUrl(rawUrl);
+  return adds * 100_000 + rawUrl.length;
+}
+
+function upsertUrlList(key: string, rawUrl: string): SigilRegistryRegisterResult {
+  if (!hasWindow) return { changed: false, added: false, updated: false, value: rawUrl };
+  if (typeof window.localStorage === "undefined") {
+    return { changed: false, added: false, updated: false, value: rawUrl };
+  }
+
+  const canonical = canonicalizeUrl(rawUrl);
+  if (!canonical) return { changed: false, added: false, updated: false, value: rawUrl };
+
+  try {
+    const raw = window.localStorage.getItem(key);
+    const existing: string[] = [];
+    if (raw) {
+      const parsed: unknown = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        for (const v of parsed) if (typeof v === "string") existing.push(v);
+      }
+    }
+
+    const order: string[] = [];
+    const best = new Map<string, { url: string; score: number }>();
+
+    const keyOf = (u: string): string => {
+      const canon = canonicalizeUrl(u) ?? u;
+      const token = extractPayloadTokenFromUrlString(canon);
+      return token ? `t:${token}` : `u:${canon}`;
+    };
+
+    for (const v of existing) {
+      const canon = canonicalizeUrl(v);
+      if (!canon) continue;
+      const k = keyOf(canon);
+      const sc = registryScore(canon);
+
+      if (!best.has(k)) {
+        best.set(k, { url: canon, score: sc });
+        order.push(k);
+      } else {
+        const prior = best.get(k)!;
+        if (sc > prior.score) best.set(k, { url: canon, score: sc });
+      }
+    }
+
+    const newKey = keyOf(canonical);
+    const newScore = registryScore(canonical);
+
+    let added = false;
+    let updated = false;
+
+    if (!best.has(newKey)) {
+      best.set(newKey, { url: canonical, score: newScore });
+      order.push(newKey);
+      added = true;
+    } else {
+      const prior = best.get(newKey)!;
+      if (newScore > prior.score) {
+        best.set(newKey, { url: canonical, score: newScore });
+        updated = true;
+      }
+    }
+
+    const next: string[] = [];
+    for (const k of order) {
+      const it = best.get(k);
+      if (it) next.push(it.url);
+    }
+
+    const prevJson = JSON.stringify(existing);
+    const nextJson = JSON.stringify(next);
+
+    if (prevJson !== nextJson) {
+      window.localStorage.setItem(key, nextJson);
+      return { changed: true, added, updated, value: canonical };
+    }
+
+    return { changed: false, added, updated, value: canonical };
+  } catch {
+    return { changed: false, added: false, updated: false, value: canonical };
+  }
 }
 
 /** Canonicalize to an absolute URL when possible. */
@@ -79,6 +169,17 @@ function canonicalizeUrl(raw: string): string | null {
     // If URL constructor fails (e.g. custom schemes), fall back to raw
     return trimmed;
   }
+}
+
+function rememberInMemory(url: string): void {
+  const abs = canonicalizeUrl(url);
+  if (!abs) return;
+  if (inMemoryRegistry.includes(abs)) return;
+  inMemoryRegistry.push(abs);
+}
+
+export function getInMemorySigilUrls(): string[] {
+  return [...inMemoryRegistry];
 }
 
 /** Lazy BroadcastChannel (shared instance). */
@@ -111,19 +212,13 @@ export function registerSigilUrl(url: string): void {
   const abs = canonicalizeUrl(url);
   if (!abs) return;
 
-  // 1) Append to canonical list
-  const canon = readList(SIGIL_REGISTRY_LS_KEY);
-  const changedCanon = pushUnique(canon, abs);
-  if (changedCanon) {
-    writeList(SIGIL_REGISTRY_LS_KEY, canon);
-  }
+  rememberInMemory(abs);
+
+  // 1) Upsert into canonical list
+  const changedCanon = upsertUrlList(SIGIL_REGISTRY_LS_KEY, abs).changed;
 
   // 2) Mirror into fallback list for older code paths
-  const fallback = readList(SIGIL_REGISTRY_FALLBACK_LS_KEY);
-  const changedFallback = pushUnique(fallback, abs);
-  if (changedFallback) {
-    writeList(SIGIL_REGISTRY_FALLBACK_LS_KEY, fallback);
-  }
+  const changedFallback = upsertUrlList(SIGIL_REGISTRY_FALLBACK_LS_KEY, abs).changed;
 
   // 3) DOM event for same-tab listeners
   try {
