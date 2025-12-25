@@ -858,8 +858,20 @@ const VerifierStamperInner: React.FC = () => {
       logError("shareTransferLink.previewDecode", err);
     }
 
+    let parentUrl = "";
+    try {
+      const { makeSigilUrl } = await import("../../utils/sigilUrl");
+      parentUrl = makeSigilUrl(parentCanonical, sharePayload);
+    } catch (err) {
+      logError("shareTransferLink.parentUrl", err);
+      const u = new URL(typeof window !== "undefined" ? window.location.href : "http://localhost");
+      u.pathname = `/s/${parentCanonical}`;
+      parentUrl = u.toString();
+    }
+
     const enriched = {
       ...sharePayload,
+      parentUrl,
       canonicalHash: childHash,
       parentHash: parentCanonical,
       transferNonce: token,
@@ -907,6 +919,7 @@ const VerifierStamperInner: React.FC = () => {
     setSealUrl(url);
     setSealHash(childHash);
     setRotateOut(true);
+    if (parentUrl) registerUrlForExplorer(parentUrl);
     registerUrlForExplorer(url);
     switchModal(dlgRef.current, () => setSealOpen(true));
     try {
