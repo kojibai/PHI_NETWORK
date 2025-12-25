@@ -20,6 +20,26 @@ let inhaleFlushTimer: number | null = null;
 let inhaleInFlight = false;
 let inhaleRetryMs = 0;
 
+const canMatchMedia = hasWindow && typeof window.matchMedia === "function";
+const isCoarsePointer = canMatchMedia && window.matchMedia("(pointer: coarse)").matches;
+
+function shouldFastFlush(): boolean {
+  if (!hasWindow) return false;
+  if (!isCoarsePointer) return false;
+  if (typeof document === "undefined") return false;
+  return document.visibilityState === "visible";
+}
+
+function scheduleFastFlush(): void {
+  if (!shouldFastFlush()) return;
+  const run = () => void flushInhaleQueue();
+  if (typeof queueMicrotask === "function") {
+    queueMicrotask(run);
+  } else {
+    window.setTimeout(run, 0);
+  }
+}
+
 function randId(): string {
   if (hasWindow && typeof window.crypto?.randomUUID === "function") {
     return window.crypto.randomUUID();
@@ -74,6 +94,7 @@ function enqueueInhaleRawKrystal(krystal: Record<string, unknown>): void {
     inhaleFlushTimer = null;
     void flushInhaleQueue();
   }, INHALE_DEBOUNCE_MS);
+  scheduleFastFlush();
 }
 
 function enqueueInhaleKrystal(url: string, payload: SigilSharePayloadLoose): void {
@@ -89,6 +110,7 @@ function enqueueInhaleKrystal(url: string, payload: SigilSharePayloadLoose): voi
     inhaleFlushTimer = null;
     void flushInhaleQueue();
   }, INHALE_DEBOUNCE_MS);
+  scheduleFastFlush();
 }
 
 /**
