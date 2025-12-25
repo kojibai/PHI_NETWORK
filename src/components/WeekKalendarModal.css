@@ -29,8 +29,8 @@
   --portal-3: rgba(0, 34, 60, 0.34);
 
   /* etherik grid ink (tuned DARK) */
-  --grid-ink: rgba(0, 170, 210, 0.12);
-  --grid-ink-2: rgba(0, 140, 190, 0.09);
+  --grid-ink: rgba(6, 48, 70, 0.22);
+  --grid-ink-2: rgba(10, 36, 54, 0.18);
 
   /* depth wash */
   --void-wash: rgba(0, 0, 0, 0.42);
@@ -70,6 +70,7 @@
   position: fixed;
   inset: 0;
   z-index: var(--wk-z-backdrop);
+  isolation: isolate;
   background: var(--nebula-base);
 
   background-image:
@@ -103,6 +104,7 @@
   position: fixed;
   inset: 0;
   pointer-events: none;
+  z-index: 0;
 
   background-image:
     radial-gradient(ellipse at 50% 42%, rgba(0, 0, 0, 0) 0%, var(--void-wash) 58%, var(--void-edge) 100%),
@@ -125,6 +127,7 @@
   position: fixed;
   inset: 0;
   pointer-events: none;
+  z-index: 0;
 
   background-image:
     radial-gradient(circle, rgba(190, 250, 255, 0.55) 1px, transparent 2px),
@@ -160,6 +163,7 @@
   height: 100%;
   overflow: hidden;
   pointer-events: auto;
+  z-index: 1;
 
   /* move prior inline bg here */
   background-color: rgba(8, 10, 14, 0.92);

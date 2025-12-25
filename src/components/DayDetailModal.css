@@ -46,7 +46,7 @@ button{ -webkit-tap-highlight-color:transparent }
 /* ══════════════ Backdrops ══════════════ */
 /* MODAL backdrop: visible but NON-interactive (does not intercept taps/clicks). */
 .day-modal-backdrop{
-  position:fixed; inset:0; z-index:60;
+  position:fixed; inset:0; z-index:10040;
   display:flex; align-items:center; justify-content:center;
   padding:
     env(safe-area-inset-top,0)
@@ -63,7 +63,7 @@ button{ -webkit-tap-highlight-color:transparent }
 
 /* NOTE-EDITOR backdrop: interactive (tap to close the sheet) */
 .note-editor-backdrop{
-  position:fixed; inset:0; z-index:119;
+  position:fixed; inset:0; z-index:10050;
   background:radial-gradient(circle at 50% 50%, rgba(0,234,255,.10), rgba(0,0,0,.70));
   pointer-events:auto;           /* <— sheet can be dismissed by tapping outside */
   touch-action:manipulation;
