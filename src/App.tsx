@@ -35,6 +35,7 @@ import {
 import { fmt2, formatPulse, modPos, readNum } from "./utils/kaiTimeDisplay";
 import { usePerfMode } from "./hooks/usePerfMode";
 import { SIGIL_EXPLORER_OPEN_EVENT } from "./constants/sigilExplorer";
+import { startSigilExplorerSync } from "./utils/sigilExplorerSync";
 
 import SovereignDeclarations from "./components/SovereignDeclarations";
 import { DEFAULT_APP_VERSION, SW_VERSION_EVENT } from "./version";
@@ -879,6 +880,13 @@ export function AppChrome(): React.JSX.Element {
 
   useDisableZoom();
   usePerfMode();
+
+  useEffect(() => {
+    const stopSync = startSigilExplorerSync();
+    return () => {
+      stopSync();
+    };
+  }, []);
 
   // Re-kill splash on "/" before paint (guarantee)
   useIsoLayoutEffect(() => {

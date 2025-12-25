@@ -5,6 +5,7 @@ declare global {
     __SIGIL__?: {
       registerSigilUrl?: (url: string) => void;
       registerSend?: (rec: unknown) => void;
+      explorerSync?: { running: boolean; stop?: () => void };
     };
   }
 }

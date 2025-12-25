@@ -1,1 +1,0 @@
-import"./html2canvas-BwGT5aCJ.js";import{t as e}from"./SigilModal-vmu8NxAd.js";import"./SealMomentModal-BR2LA1dI.js";export{e as default};
