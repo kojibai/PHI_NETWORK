@@ -269,6 +269,7 @@ const API_BASE_FALLBACK = LIVE_BACKUP_URL;
 const API_SEAL_PATH = "/sigils/seal";
 const API_URLS_PATH = "/sigils/urls";
 const API_INHALE_PATH = "/sigils/inhale";
+const IMPORT_CHUNK_SIZE = 150;
 
 const API_BASE_HINT_LS_KEY = "kai:lahmahtorBase:v1";
 
@@ -1631,6 +1632,21 @@ function parseImportedJson(value: unknown): { urls: string[]; rawKrystals: Recor
   }
 
   return { urls, rawKrystals };
+}
+
+async function yieldToMain(): Promise<void> {
+  if (!hasWindow) return;
+  const w = window as unknown as {
+    requestAnimationFrame?: (cb: () => void) => number;
+  };
+
+  await new Promise<void>((resolve) => {
+    if (typeof w.requestAnimationFrame === "function") {
+      w.requestAnimationFrame(() => resolve());
+    } else {
+      window.setTimeout(resolve, 0);
+    }
+  });
 }
 
 /** Force inhale for URLs even if already present. */
@@ -3525,6 +3541,7 @@ breathTimer = null;
         if (urls.length === 0 && rawKrystals.length === 0) return;
 
         let changed = false;
+        let processed = 0;
         for (const u of urls) {
           if (
             addUrl(u, {
@@ -3537,6 +3554,12 @@ breathTimer = null;
           ) {
             changed = true;
           }
+
+          processed += 1;
+          if (processed % IMPORT_CHUNK_SIZE === 0) {
+            if (changed) bump();
+            await yieldToMain();
+          }
         }
 
         setLastAddedSafe(undefined);
@@ -3547,7 +3570,13 @@ breathTimer = null;
         }
 
         if (rawKrystals.length > 0) {
-          for (const k of rawKrystals) enqueueInhaleRawKrystal(k);
+          for (const k of rawKrystals) {
+            enqueueInhaleRawKrystal(k);
+            processed += 1;
+            if (processed % IMPORT_CHUNK_SIZE === 0) {
+              await yieldToMain();
+            }
+          }
           void flushInhaleQueue();
         } else if (urls.length > 0) {
           forceInhaleUrls(urls);
