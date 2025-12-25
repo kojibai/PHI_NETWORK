@@ -74,7 +74,8 @@ button{ -webkit-tap-highlight-color:transparent }
   pointer-events:auto; /* receives interactions */
 
   width:min(92vw,720px);
-  max-height:min(92vh, calc(var(--dvh) - 8vh));
+  max-height:min(92vh, calc(var(--vvh, var(--dvh, 100vh)) - 8vh));
+  min-height: min(66vh, calc(var(--vvh, var(--dvh, 100vh)) - 12vh));
   background:var(--c-panel);
   border:1px solid rgba(0,234,255,.18);
   border-radius:var(--radius-xl);
@@ -176,6 +177,35 @@ button{ -webkit-tap-highlight-color:transparent }
   touch-action:manipulation;
   user-select:none;
 }
+
+.group-header{
+  all:unset;
+  display:flex; justify-content:space-between; align-items:center;
+  width:100%;
+  padding:.6rem .85rem;
+  font-size:.95rem; font-weight:600;
+  background:rgba(0,234,255,.06);
+  border-radius:var(--radius);
+  cursor:pointer;
+  transition:background .18s;
+  touch-action:manipulation;
+  user-select:none;
+}
+.group-header:hover{ background:rgba(0,234,255,.12) }
+.group-header.open{ background:rgba(0,234,255,.16) }
+
+.chapter-count,
+.beat-count,
+.group-count{
+  margin-left:auto;
+  font-size:.72rem;
+  color:rgba(199,244,255,.85);
+  background:rgba(255,255,255,.08);
+  border:1px solid rgba(255,255,255,.12);
+  padding:.15rem .5rem;
+  border-radius:999px;
+  letter-spacing:.02em;
+}
 .chapter-header:hover,
 .beat-header:hover{ background:rgba(0,234,255,.12) }
 .chapter-header.open,
@@ -190,9 +220,11 @@ button{ -webkit-tap-highlight-color:transparent }
 }
 .chapter-header.open .chevron,
 .beat-header.open .chevron{ transform:rotate(225deg) }
+.group-header.open .chevron{ transform:rotate(225deg) }
 
 .chapter-body,
-.beat-steps{ overflow:hidden } /* for height animation */
+.beat-steps,
+.group-body{ overflow:hidden } /* for height animation */
 
 .beat-accordion + .beat-accordion{ margin-top:.6rem }
 
@@ -245,6 +277,8 @@ button{ -webkit-tap-highlight-color:transparent }
   content-visibility:auto;
   contain:layout paint style;
   will-change:transform;
+  max-height:calc(var(--vvh, 100vh) - var(--kb-inset, 0px) - 5rem);
+  overflow-y:auto;
 }
 .note-editor h4{
   margin:0 0 .6rem;

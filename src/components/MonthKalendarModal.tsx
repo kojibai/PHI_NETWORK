@@ -47,7 +47,15 @@ interface KaiKlockSnapshot {
   SpiralArc?: string;
 }
 
-interface Note { pulse:number; id:string; text:string; }
+interface Note {
+  pulse: number;
+  id: string;
+  text: string;
+  title?: string;
+  tags?: string[];
+  intent?: string;
+  pinned?: boolean;
+}
 
 /* ══════════ component props (unchanged) ══════════ */
 interface Props {

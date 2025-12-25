@@ -130,6 +130,19 @@
         transition: background .12s ease, border-color .12s ease;
       }
       .btn-secondary:hover { background:rgba(255,255,255,.06); border-color:rgba(255,255,255,.28); }
+
+      .btn-ghost {
+        background: rgba(255,255,255,.04);
+        color: #cfeaff;
+        border: 1px solid rgba(255,255,255,.12);
+        border-radius: 12px;
+        padding: 10px 14px;
+        font: 600 14px/1 Inter;
+        cursor: pointer;
+        transition: background .12s ease, border-color .12s ease, transform .12s ease;
+      }
+      .btn-ghost:hover { background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.22); }
+      .btn-ghost:active { transform: translateY(1px); }
       
       @media (min-width:700px){
         .note-modal { inset: 12vh auto auto auto; }
@@ -166,6 +179,276 @@
     .note-modal {
       /* use by setting style={{ "--kb-inset": `${kbInset}px` } as React.CSSProperties } */
       bottom: max(12px, var(--kb-inset, 0px));
+    }
+  }
+
+  .note-modal {
+    display: flex;
+    flex-direction: column;
+    max-height: min(88vh, calc(100dvh - 24px));
+  }
+
+  .note-modal__controls {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .note-modal__expand,
+  .note-modal__pin {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    color: #e6f9ff;
+    border-radius: 10px;
+    font: 600 12px/1 Inter, system-ui, sans-serif;
+    padding: 4px 8px;
+    cursor: pointer;
+    transition: background 0.15s ease, transform 0.15s ease, border-color 0.15s ease;
+  }
+  .note-modal__expand:hover,
+  .note-modal__pin:hover { background: rgba(255, 255, 255, 0.12); }
+  .note-modal__pin.is-active {
+    border-color: rgba(139,234,255,0.8);
+    box-shadow: 0 0 12px rgba(139,234,255,0.3);
+  }
+
+  .note-modal__toolbar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px 4px;
+    border-top: 1px solid rgba(255,255,255,0.05);
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    background: rgba(9, 12, 15, 0.7);
+    backdrop-filter: blur(6px);
+  }
+  .tool-btn {
+    all: unset;
+    cursor: pointer;
+    padding: 6px 8px;
+    border-radius: 8px;
+    color: #dff7ff;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.08);
+    font: 600 12px/1 Inter, system-ui, sans-serif;
+    transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+  }
+  .tool-btn:hover { background: rgba(255,255,255,0.12); border-color: rgba(255,255,255,0.16); }
+  .tool-btn:active { transform: translateY(1px); }
+  .tool-sep { width: 1px; height: 20px; background: rgba(255,255,255,0.08); }
+  .tool-stats {
+    margin-left: auto;
+    display: flex;
+    gap: 10px;
+    font: 600 11px/1 Inter, system-ui, sans-serif;
+    color: #9ec1d1;
+  }
+
+  .note-modal__meta-grid {
+    display: grid;
+    gap: 10px;
+    padding: 12px 16px 6px;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  }
+  .note-modal__label {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font: 600 11px/1 Inter, system-ui, sans-serif;
+    letter-spacing: 0.02em;
+    color: #a8c5d4;
+    text-transform: uppercase;
+  }
+  .note-modal__input {
+    width: 100%;
+    background: rgba(7, 10, 12, 0.7);
+    color: #eaf8ff;
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 10px;
+    padding: 8px 10px;
+    font: 500 13px/1.2 Inter, system-ui, sans-serif;
+    outline: none;
+  }
+  .note-modal__input:focus {
+    border-color: rgba(139,234,255,.65);
+    box-shadow: 0 0 0 2px rgba(139,234,255,.16);
+  }
+  .note-modal__select { appearance: none; }
+
+  .note-modal__tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 2px 16px 10px;
+  }
+  .note-modal__tag {
+    font: 600 11px/1 Inter, system-ui, sans-serif;
+    color: #d9f6ff;
+    background: rgba(139,234,255,0.12);
+    border: 1px solid rgba(139,234,255,0.25);
+    border-radius: 999px;
+    padding: 3px 8px;
+  }
+
+  .note-modal__field {
+    padding: 0 16px 6px;
+  }
+  .note-modal__field--doc textarea {
+    min-height: 260px;
+  }
+  .note-modal__field textarea {
+    width: 100%;
+    background: #0a0d10;
+    color: #e8f7ff;
+    border: 1px solid rgba(255,255,255,.10);
+    border-radius: 12px;
+    padding: 12px 14px;
+    resize: vertical;
+    min-height: 140px;
+    outline: none;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.02);
+  }
+  .note-modal__resize {
+    height: 6px;
+    margin: 4px auto 0;
+    width: 96px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.12);
+    cursor: ns-resize;
+  }
+
+  /* ── Atlantean Etheric Glass Revamp ───────────────────────────── */
+  .note-modal-backdrop {
+    background:
+      radial-gradient(1200px 800px at 10% -10%, rgba(116, 248, 255, 0.18), transparent 60%),
+      radial-gradient(800px 600px at 120% 120%, rgba(163, 120, 255, 0.18), transparent 60%),
+      rgba(2, 6, 12, 0.8);
+  }
+  .note-modal {
+    max-width: min(760px, 94vw);
+    border-radius: 22px;
+    background:
+      linear-gradient(180deg, rgba(7, 12, 18, 0.86) 0%, rgba(4, 8, 14, 0.92) 100%);
+    border: 1px solid rgba(150, 235, 255, 0.18);
+    box-shadow:
+      0 20px 50px rgba(0, 0, 0, 0.55),
+      0 0 40px rgba(118, 246, 255, 0.18),
+      inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+    backdrop-filter: blur(14px) saturate(140%);
+  }
+  .note-modal::before {
+    opacity: 0.8;
+    background: linear-gradient(120deg, rgba(118, 246, 255, 0.9), rgba(126, 255, 229, 0.55), rgba(152, 120, 255, 0.8));
+  }
+  .note-modal__header {
+    padding: 18px 20px 12px;
+  }
+  .note-modal__title {
+    font-size: 15px;
+    color: #e8fbff;
+    letter-spacing: 0.02em;
+  }
+  .note-modal__beatstep {
+    font-size: 18px;
+    color: #8ff6ff;
+  }
+  .note-modal__meta {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .note-modal__chip {
+    background: rgba(120, 240, 255, 0.12);
+    border: 1px solid rgba(120, 240, 255, 0.22);
+    color: #dff9ff;
+  }
+  .note-modal__controls {
+    gap: 10px;
+  }
+  .note-modal__expand,
+  .note-modal__pin {
+    background: rgba(120, 240, 255, 0.12);
+    border: 1px solid rgba(120, 240, 255, 0.22);
+    color: #e8fbff;
+  }
+  .note-modal__pin.is-active {
+    background: rgba(120, 240, 255, 0.28);
+    border-color: rgba(120, 240, 255, 0.7);
+  }
+  .note-modal__toolbar {
+    padding: 10px 18px;
+    gap: 8px;
+    background: linear-gradient(90deg, rgba(8, 14, 20, 0.9), rgba(6, 10, 16, 0.7));
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04);
+  }
+  .tool-btn {
+    background: rgba(120, 240, 255, 0.12);
+    border: 1px solid rgba(120, 240, 255, 0.18);
+    color: #e5fbff;
+  }
+  .tool-btn:hover {
+    background: rgba(120, 240, 255, 0.2);
+    border-color: rgba(120, 240, 255, 0.35);
+  }
+  .tool-stats {
+    color: rgba(202, 238, 255, 0.85);
+  }
+  .note-modal__meta-grid {
+    padding: 14px 18px 8px;
+    gap: 12px;
+  }
+  .note-modal__label {
+    color: rgba(186, 230, 255, 0.9);
+  }
+  .note-modal__input {
+    background: rgba(8, 14, 20, 0.8);
+    border: 1px solid rgba(120, 240, 255, 0.18);
+    box-shadow: inset 0 0 12px rgba(7, 180, 255, 0.08);
+  }
+  .note-modal__input::placeholder {
+    color: rgba(176, 210, 224, 0.7);
+  }
+  .note-modal__tags {
+    padding: 4px 18px 10px;
+  }
+  .note-modal__tag {
+    background: rgba(120, 240, 255, 0.18);
+    border-color: rgba(120, 240, 255, 0.3);
+  }
+  .note-modal__field {
+    padding: 0 18px 8px;
+  }
+  .note-modal__field textarea {
+    background: rgba(6, 12, 18, 0.95);
+    border: 1px solid rgba(120, 240, 255, 0.22);
+    box-shadow: inset 0 0 22px rgba(6, 160, 255, 0.08);
+  }
+  .note-modal__hints {
+    color: rgba(186, 230, 255, 0.85);
+  }
+  .note-modal__actions {
+    padding: 6px 18px 18px;
+  }
+  .btn-ghost {
+    background: rgba(120, 240, 255, 0.08);
+    border-color: rgba(120, 240, 255, 0.2);
+  }
+  .btn-primary {
+    background: linear-gradient(120deg, #76f6ff, #8dffe2, #a987ff);
+    color: #03111a;
+  }
+  .btn-primary:hover {
+    box-shadow: 0 0 26px rgba(120, 240, 255, 0.45);
+  }
+  @media (max-width: 520px) {
+    .note-modal {
+      inset: auto 10px 10px 10px;
+    }
+    .note-modal__toolbar {
+      flex-wrap: wrap;
+    }
+    .tool-stats {
+      width: 100%;
+      justify-content: flex-start;
     }
   }
   

@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import type React from "react";
 import type { FC } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import "./NoteModal.css";
 
 /* ══════════════ Public types ══════════════ */
 export interface Note {
@@ -12,6 +13,14 @@ export interface Note {
   pulse: number;
   /** Saved text content (plain text / markdown-ish) */
   text: string;
+  /** Optional title */
+  title?: string;
+  /** Optional tags */
+  tags?: string[];
+  /** Optional intent label */
+  intent?: string;
+  /** Pin note in docks */
+  pinned?: boolean;
   /** Unique id */
   id: string;
   /** 0–35 */
@@ -90,6 +99,13 @@ function computeLocalKai(now: Date): LocalKai {
 /* ══════════════ Pretty helpers ══════════════ */
 const pad2 = (n: number) => String(n).padStart(2, "0");
 
+type NoteDraft = {
+  text: string;
+  title: string;
+  tags: string;
+  intent: string;
+  pinned: boolean;
+};
 
 /* ══════════════ Hook: keyboard inset (VisualViewport) ══════════════ */
 function useKeyboardInset(): number {
@@ -117,6 +133,15 @@ function useKeyboardInset(): number {
 /* ══════════════ Small utils (editor ops) ══════════════ */
 const countWords = (s: string) => (s.trim() ? s.trim().split(/\s+/).length : 0);
 const estReadMin = (w: number) => Math.max(1, Math.round(w / 200));
+const normalizeTags = (raw: string) =>
+  Array.from(
+    new Set(
+      raw
+        .split(",")
+        .map((t) => t.trim())
+        .filter(Boolean)
+    )
+  );
 
 /** Insert or wrap selection in a textarea (accepts nullable ref) */
 function useTextOps(
@@ -158,11 +183,20 @@ function useTextOps(
     });
 
   return {
+    insert: (value: string) =>
+      withEl((el) => {
+        const { selectionStart, selectionEnd } = el;
+        const next = el.value.slice(0, selectionStart) + value + el.value.slice(selectionEnd);
+        setText(next);
+        const caret = selectionStart + value.length;
+        requestAnimationFrame(() => el.setSelectionRange(caret, caret));
+      }),
     bold: () => wrap("**"),
     italic: () => wrap("*"),
     h1: () => linePrefix("# "),
     h2: () => linePrefix("## "),
     bullet: () => linePrefix("- "),
+    task: () => linePrefix("- [ ] "),
     quote: () => linePrefix("> "),
   };
 }
@@ -170,9 +204,69 @@ function useTextOps(
 /* ══════════════ Component ══════════════ */
 const NoteModal: FC<NoteModalProps> = ({ pulse, initialText, onSave, onClose }) => {
   const reduceMotion = useReducedMotion();
+  const draftKey = useMemo(() => `kairosNoteDraft_${Math.round(pulse)}`, [pulse]);
 
   // Form & UX state
-  const [text, setText] = useState(initialText);
+  const [text, setText] = useState(() => {
+    if (typeof window === "undefined") return initialText;
+    if (initialText.trim()) return initialText;
+    try {
+      const raw = localStorage.getItem(draftKey);
+      if (!raw) return initialText;
+      const parsed = JSON.parse(raw) as NoteDraft;
+      return typeof parsed?.text === "string" ? parsed.text : initialText;
+    } catch {
+      return initialText;
+    }
+  });
+  const [title, setTitle] = useState(() => {
+    if (typeof window === "undefined") return "";
+    if (initialText.trim()) return "";
+    try {
+      const raw = localStorage.getItem(draftKey);
+      if (!raw) return "";
+      const parsed = JSON.parse(raw) as NoteDraft;
+      return typeof parsed?.title === "string" ? parsed.title : "";
+    } catch {
+      return "";
+    }
+  });
+  const [tagsInput, setTagsInput] = useState(() => {
+    if (typeof window === "undefined") return "";
+    if (initialText.trim()) return "";
+    try {
+      const raw = localStorage.getItem(draftKey);
+      if (!raw) return "";
+      const parsed = JSON.parse(raw) as NoteDraft;
+      return typeof parsed?.tags === "string" ? parsed.tags : "";
+    } catch {
+      return "";
+    }
+  });
+  const [intent, setIntent] = useState(() => {
+    if (typeof window === "undefined") return "Memory";
+    if (initialText.trim()) return "Memory";
+    try {
+      const raw = localStorage.getItem(draftKey);
+      if (!raw) return "Memory";
+      const parsed = JSON.parse(raw) as NoteDraft;
+      return typeof parsed?.intent === "string" ? parsed.intent : "Memory";
+    } catch {
+      return "Memory";
+    }
+  });
+  const [pinned, setPinned] = useState(() => {
+    if (typeof window === "undefined") return false;
+    if (initialText.trim()) return false;
+    try {
+      const raw = localStorage.getItem(draftKey);
+      if (!raw) return false;
+      const parsed = JSON.parse(raw) as NoteDraft;
+      return typeof parsed?.pinned === "boolean" ? parsed.pinned : false;
+    } catch {
+      return false;
+    }
+  });
   const [saving, setSaving] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [editorHeight, setEditorHeight] = useState<number | null>(null); // manual resize
@@ -187,6 +281,10 @@ const NoteModal: FC<NoteModalProps> = ({ pulse, initialText, onSave, onClose }) 
 
   // mobile keyboard clearance
   const kbInset = useKeyboardInset();
+
+  useEffect(() => {
+    setChars(text.length);
+  }, [text]);
 
   /* Editor ops (toolbar) */
   const ops = useTextOps(textareaRef, (s) => {
@@ -318,6 +416,27 @@ const NoteModal: FC<NoteModalProps> = ({ pulse, initialText, onSave, onClose }) 
   const beatLabel = useMemo(() => `${kai.beat}:${pad2(kai.step)}`, [kai.beat, kai.step]);
   const words = useMemo(() => countWords(text), [text]);
   const readMin = useMemo(() => estReadMin(words), [words]);
+  const tagList = useMemo(() => normalizeTags(tagsInput), [tagsInput]);
+
+  /* Draft persistence */
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handle = window.setTimeout(() => {
+      const payload: NoteDraft = {
+        text,
+        title,
+        tags: tagsInput,
+        intent,
+        pinned,
+      };
+      try {
+        localStorage.setItem(draftKey, JSON.stringify(payload));
+      } catch {
+        // ignore storage errors
+      }
+    }, 180);
+    return () => window.clearTimeout(handle);
+  }, [draftKey, intent, pinned, tagsInput, text, title]);
 
   /* Save — resample at the exact click/shortcut moment */
   const doHaptic = () => {
@@ -337,6 +456,10 @@ const NoteModal: FC<NoteModalProps> = ({ pulse, initialText, onSave, onClose }) 
       id: `${livePulse}-${Date.now()}`,
       pulse: livePulse,
       text: trimmed,
+      title: title.trim() || undefined,
+      tags: tagList.length ? tagList : undefined,
+      intent: intent.trim() || undefined,
+      pinned,
       beat: nowKai.beat,
       step: nowKai.step,
     };
@@ -346,6 +469,13 @@ const NoteModal: FC<NoteModalProps> = ({ pulse, initialText, onSave, onClose }) 
       await Promise.resolve(onSave(note));
     } finally {
       setSaving(false);
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.removeItem(draftKey);
+        } catch {
+          // ignore
+        }
+      }
       onClose();
     }
   };
@@ -406,11 +536,23 @@ const NoteModal: FC<NoteModalProps> = ({ pulse, initialText, onSave, onClose }) 
               <code className="note-modal__pulse" title="Absolute Kai-Pulse">
                 pulse&nbsp;{kai.livePulseApprox.toLocaleString()}
               </code>
-          
+              <span className="note-modal__chip">Intent: {intent}</span>
+              {tagList.length > 0 && (
+                <span className="note-modal__chip">Tags: {tagList.slice(0, 2).join(", ")}</span>
+              )}
             </div>
 
             {/* Top-right controls: Expand/Shrink + Close */}
             <div className="note-modal__controls">
+              <button
+                type="button"
+                className={`note-modal__pin${pinned ? " is-active" : ""}`}
+                aria-pressed={pinned}
+                title={pinned ? "Pinned note" : "Pin note"}
+                onClick={() => setPinned((v) => !v)}
+              >
+                ⬟
+              </button>
               <button
                 type="button"
                 className="note-modal__expand"
@@ -513,6 +655,17 @@ const NoteModal: FC<NoteModalProps> = ({ pulse, initialText, onSave, onClose }) 
             <button
               type="button"
               className="tool-btn"
+              title="Task list (- [ ] )"
+              onClick={(e) => {
+                e.preventDefault();
+                ops.task();
+              }}
+            >
+              ☐
+            </button>
+            <button
+              type="button"
+              className="tool-btn"
               title="Quote (> )"
               onClick={(e) => {
                 e.preventDefault();
@@ -520,6 +673,18 @@ const NoteModal: FC<NoteModalProps> = ({ pulse, initialText, onSave, onClose }) 
               }}
             >
               ❝
+            </button>
+            <button
+              type="button"
+              className="tool-btn"
+              title="Insert timestamp"
+              onClick={(e) => {
+                e.preventDefault();
+                const stamp = new Date().toLocaleString();
+                ops.insert(`\n- ${stamp}`);
+              }}
+            >
+              ⌚
             </button>
 
             {/* Stats (right-aligned) */}
@@ -531,6 +696,52 @@ const NoteModal: FC<NoteModalProps> = ({ pulse, initialText, onSave, onClose }) 
           </div>
 
           {/* Editor */}
+
+            <div className="note-modal__meta-grid">
+              <label className="note-modal__label">
+                Title
+                <input
+                  className="note-modal__input"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="Signal title…"
+                  maxLength={120}
+                />
+              </label>
+              <label className="note-modal__label">
+                Tags
+                <input
+                  className="note-modal__input"
+                  value={tagsInput}
+                  onChange={(e) => setTagsInput(e.target.value)}
+                  placeholder="ritual, focus, idea"
+                />
+              </label>
+              <label className="note-modal__label">
+                Intent
+                <select
+                  className="note-modal__input note-modal__select"
+                  value={intent}
+                  onChange={(e) => setIntent(e.target.value)}
+                >
+                  {["Memory", "Plan", "Idea", "Task", "Insight", "Reminder"].map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            {tagList.length > 0 && (
+              <div className="note-modal__tags">
+                {tagList.map((tag) => (
+                  <span key={tag} className="note-modal__tag">
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            )}
 
             <div className={`note-modal__field${expanded ? " note-modal__field--doc" : ""}`}>
               {/* The “page” textarea. Height prefers: manual resize > mode default > autosize */}

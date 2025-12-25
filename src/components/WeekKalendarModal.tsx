@@ -41,6 +41,7 @@ const DAY_PULSES = 17_491.270_421;
 
 const NOTES_KEY = "kairosNotes";
 const HIDDEN_IDS_KEY = "kairosNotesHiddenIds";
+const DAY_NOTES_PREFIX = "kai_notes_";
 
 /* ───────── Spiral → palette (Root-►Krown) ───────── */
 const Spiral_COLOR = {
@@ -205,6 +206,10 @@ function computeLocalKai(now: Date): LocalKai {
 type ExportRow = {
   id: string;
   text: string;
+  title: string;
+  tags: string;
+  intent: string;
+  pinned: string;
   pulse: number;
   beat: number;
   step: number;
@@ -226,6 +231,10 @@ function augmentForExport(n: SavedNote): ExportRow {
   return {
     id: n.id,
     text: n.text,
+    title: n.title ?? "",
+    tags: (n.tags ?? []).join("|"),
+    intent: n.intent ?? "",
+    pinned: n.pinned ? "yes" : "",
     pulse: n.pulse,
     beat: n.beat,
     step: n.step,
@@ -247,6 +256,10 @@ function toCSV(rows: ExportRow[]): string {
   const headers: (keyof ExportRow)[] = [
     "id",
     "text",
+    "title",
+    "tags",
+    "intent",
+    "pinned",
     "pulse",
     "beat",
     "step",
@@ -292,6 +305,10 @@ function buildKaiSnapshot(now: Date): KaiKlock {
 type StoredUnknownNote = {
   id?: unknown;
   text?: unknown;
+  title?: unknown;
+  tags?: unknown;
+  intent?: unknown;
+  pinned?: unknown;
   pulse?: unknown;
   beat?: unknown;
   step?: unknown;
@@ -300,6 +317,7 @@ type StoredUnknownNote = {
 
 const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 const isStr = (v: unknown): v is string => typeof v === "string";
+const isBool = (v: unknown): v is boolean => typeof v === "boolean";
 
 /* legacy helper (float-safe fallback) */
 const BEAT_PULSES = DAY_PULSES / 36;
@@ -319,12 +337,40 @@ function toSavedNote(u: unknown): SavedNote | null {
   const beat = isNum(r.beat) ? r.beat : undefined;
   const step = isNum(r.step) ? r.step : undefined;
   const createdAt = isNum(r.createdAt) ? r.createdAt : Date.now();
+  const title = isStr(r.title) ? r.title : undefined;
+  const intent = isStr(r.intent) ? r.intent : undefined;
+  const pinned = isBool(r.pinned) ? r.pinned : undefined;
+  const tags = Array.isArray(r.tags)
+    ? r.tags.filter((t): t is string => typeof t === "string")
+    : undefined;
 
   if (beat === undefined || step === undefined) {
     const d = deriveBeatStepFromPulse(r.pulse);
-    return { id: r.id, text: r.text, pulse: r.pulse, beat: d.beat, step: d.step, createdAt };
+    return {
+      id: r.id,
+      text: r.text,
+      title,
+      tags,
+      intent,
+      pinned,
+      pulse: r.pulse,
+      beat: d.beat,
+      step: d.step,
+      createdAt,
+    };
   }
-  return { id: r.id, text: r.text, pulse: r.pulse, beat, step, createdAt };
+  return {
+    id: r.id,
+    text: r.text,
+    title,
+    tags,
+    intent,
+    pinned,
+    pulse: r.pulse,
+    beat,
+    step,
+    createdAt,
+  };
 }
 
 function loadNotesFromStorage(): SavedNote[] {
@@ -334,7 +380,14 @@ function loadNotesFromStorage(): SavedNote[] {
     if (!raw) return [];
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return (parsed as unknown[]).map(toSavedNote).filter((n): n is SavedNote => n !== null);
+    return (parsed as unknown[])
+      .map(toSavedNote)
+      .filter((n): n is SavedNote => n !== null)
+      .sort((a, b) => {
+        const pin = Number(Boolean(b.pinned)) - Number(Boolean(a.pinned));
+        if (pin !== 0) return pin;
+        return a.pulse - b.pulse;
+      });
   } catch {
     return [];
   }
@@ -355,9 +408,41 @@ function loadHiddenIdsFromStorage(): Set<string> {
 }
 
 function insertSortedByPulse(prev: SavedNote[], next: SavedNote): SavedNote[] {
-  const i = prev.findIndex((p) => p.pulse > next.pulse);
+  const compare = (a: SavedNote, b: SavedNote) => {
+    const pin = Number(Boolean(b.pinned)) - Number(Boolean(a.pinned));
+    if (pin !== 0) return pin;
+    return a.pulse - b.pulse;
+  };
+  const i = prev.findIndex((p) => compare(next, p) < 0);
   if (i === -1) return [...prev, next];
   return [...prev.slice(0, i), next, ...prev.slice(i)];
+}
+
+type DayNote = { beat: number; step: number; text: string };
+
+function dayStartPulseFromAbsolute(pulse: number): number {
+  const safePulse = BigInt(Math.max(0, Math.floor(pulse)));
+  const dayIndex = floorDiv(safePulse * ONE_PULSE_MICRO, N_DAY_MICRO);
+  return Number(floorDiv(dayIndex * N_DAY_MICRO, ONE_PULSE_MICRO));
+}
+
+function saveNoteToDayStorage(note: EnrichedNote): void {
+  if (typeof window === "undefined") return;
+  try {
+    const dayStartPulse = dayStartPulseFromAbsolute(note.pulse);
+    const key = `${DAY_NOTES_PREFIX}${dayStartPulse}`;
+    const raw = localStorage.getItem(key);
+    const parsed = raw ? (JSON.parse(raw) as unknown) : [];
+    const list = Array.isArray(parsed) ? (parsed as DayNote[]) : [];
+    const idx = list.findIndex((n) => n.beat === note.beat && n.step === note.step);
+    const next = idx >= 0 ? list.map((n, i) => (i === idx ? { ...n, text: note.text } : n)) : [
+      ...list,
+      { beat: note.beat, step: note.step, text: note.text },
+    ];
+    localStorage.setItem(key, JSON.stringify(next));
+  } catch {
+    // ignore storage errors
+  }
 }
 
 /* ══════════════ WeekKalendarModal ══════════════ */
@@ -454,6 +539,7 @@ const WeekKalendarModal: FC<Props> = ({ onClose, container }) => {
 
   /* ── notes persistence (sorted insert; no per-render sort) ── */
   const addNote = useCallback((note: EnrichedNote) => {
+    saveNoteToDayStorage(note);
     setNotes((prev) => {
       const saved: SavedNote = { ...note, createdAt: Date.now() };
       const next = insertSortedByPulse(prev, saved);
@@ -808,7 +894,11 @@ const WeekKalendarModal: FC<Props> = ({ onClose, container }) => {
           {/* Day Detail overlay — TOPMOST */}
           {dayDetail && (
 <div className="wk-daydetail-overlay" onPointerDown={stop} onClick={stop} role="presentation">
-              <DayDetailModal day={dayDetail} onClose={() => flushSync(() => setDayDetail(null))} />
+              <DayDetailModal
+                day={dayDetail}
+                onClose={() => flushSync(() => setDayDetail(null))}
+                onSaveKaiNote={(note) => addNote(note)}
+              />
             </div>
           )}
 
@@ -894,10 +984,28 @@ const WeekKalendarModal: FC<Props> = ({ onClose, container }) => {
                 <ul className="wk-mem-ul" aria-label="Memories list">
                   {visibleMemories.map((n) => (
                     <li key={n.id} className="wk-mem-li">
-                      <strong className="wk-mem-kai">
-                        {Math.round(n.pulse)} · {n.beat}:{pad2(n.step)}
-                      </strong>
+                      <div className="wk-mem-head">
+                        <strong className="wk-mem-kai">
+                          {Math.round(n.pulse)} · {n.beat}:{pad2(n.step)}
+                        </strong>
+                        {n.pinned && <span className="wk-mem-pin">Pinned</span>}
+                      </div>
+                      {n.title && <div className="wk-mem-title">{n.title}</div>}
                       <span className="wk-mem-text"> {n.text}</span>
+                      {(n.tags?.length || n.intent) && (
+                        <div className="wk-mem-meta">
+                          {n.intent && <span className="wk-mem-intent">{n.intent}</span>}
+                          {n.tags?.length && (
+                            <span className="wk-mem-tags">
+                              {n.tags.slice(0, 3).map((tag) => (
+                                <span key={tag} className="wk-mem-tag">
+                                  {tag}
+                                </span>
+                              ))}
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </li>
                   ))}
                 </ul>

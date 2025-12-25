@@ -139,22 +139,24 @@ const onEnterOrSpace =
   };
 
 /* ══════════════ Hook: keyboard inset (VisualViewport) ══════════════ */
-function useKeyboardInset(): number {
-  const computeInset = (): number => {
-    if (typeof window === "undefined") return 0;
+function useKeyboardInset(): { inset: number; viewportHeight: number } {
+  const computeInset = (): { inset: number; viewportHeight: number } => {
+    if (typeof window === "undefined") return { inset: 0, viewportHeight: 0 };
     const vv = window.visualViewport;
-    if (!vv) return 0;
-    return Math.round(Math.max(0, window.innerHeight - (vv.height + vv.offsetTop)));
+    const viewportHeight = Math.round(vv?.height ?? window.innerHeight);
+    if (!vv) return { inset: 0, viewportHeight };
+    const inset = Math.round(Math.max(0, window.innerHeight - (vv.height + vv.offsetTop)));
+    return { inset, viewportHeight };
   };
 
   // ✅ initial value computed in initializer (no setState-in-effect)
-  const [inset, setInset] = useState<number>(() => computeInset());
+  const [state, setState] = useState<{ inset: number; viewportHeight: number }>(() => computeInset());
 
   useEffect(() => {
     if (typeof window === "undefined") return;
 
     const vv = window.visualViewport;
-    const onChange = () => setInset(computeInset());
+    const onChange = () => setState(computeInset());
 
     if (vv) {
       vv.addEventListener("resize", onChange);
@@ -171,7 +173,7 @@ function useKeyboardInset(): number {
     };
   }, []);
 
-  return inset;
+  return state;
 }
 
 /* ══════════════ Component ══════════════ */
@@ -195,6 +197,25 @@ const DayDetailModal: FC<{
 
   const notes = useMemo(() => loadNotes(day.startPulse), [day.startPulse, notesRev]);
 
+  const notesByBeat = useMemo(() => {
+    const map = new Map<number, Note[]>();
+    for (const n of notes) {
+      const list = map.get(n.beat) ?? [];
+      list.push(n);
+      map.set(n.beat, list);
+    }
+    return map;
+  }, [notes]);
+
+  const notesByChapter = useMemo(() => {
+    const map = new Map<number, number>();
+    for (const n of notes) {
+      const chapter = Math.floor(n.beat / BEATS_PER_CHAPTER);
+      map.set(chapter, (map.get(chapter) ?? 0) + 1);
+    }
+    return map;
+  }, [notes]);
+
   /* ───────── structure ───────── */
   const chapters = useMemo(() => {
     const num = Math.ceil(TOTAL_BEATS / BEATS_PER_CHAPTER); // 3
@@ -216,6 +237,15 @@ const DayDetailModal: FC<{
   const findNote = useCallback(
     (b: number, s: number) => notes.find((n) => n.beat === b && n.step === s),
     [notes]
+  );
+
+  const countGroupNotes = useCallback(
+    (beat: number, start: number, end: number): number => {
+      const list = notesByBeat.get(beat);
+      if (!list) return 0;
+      return list.filter((n) => n.step >= start && n.step <= end).length;
+    },
+    [notesByBeat]
   );
 
   const upsertNote = useCallback(
@@ -258,7 +288,8 @@ const DayDetailModal: FC<{
   }, []);
 
   /* ───────── keyboard-safe editor ───────── */
-  const kbInset = useKeyboardInset();
+  const { inset: kbInset, viewportHeight } = useKeyboardInset();
+  const viewportHeightValue = viewportHeight > 0 ? `${viewportHeight}px` : undefined;
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // When editor opens (or inset changes), ensure textarea is visible & focused
@@ -305,6 +336,12 @@ const DayDetailModal: FC<{
       <motion.section
         ref={panelRef}
         className="day-modal"
+        style={
+          {
+            "--kb-inset": `${kbInset}px`,
+            "--vvh": viewportHeightValue,
+          } as React.CSSProperties
+        }
         initial={{ scale: 0.92, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.92, opacity: 0 }}
@@ -333,6 +370,7 @@ const DayDetailModal: FC<{
         <div className="beat-list">
           {chapters.map(({ chapter, title, beats }) => {
             const chapterOpen = openChapter === chapter;
+            const chapterCount = notesByChapter.get(chapter) ?? 0;
             return (
               <div className="chapter-container" key={chapter}>
                 {/* Chapter toggle */}
@@ -344,7 +382,8 @@ const DayDetailModal: FC<{
                   onPointerUp={() => toggleChapter(chapter)}
                   onKeyDown={onEnterOrSpace(() => toggleChapter(chapter))}
                 >
-                  {title}
+                  <span>{title}</span>
+                  {chapterCount > 0 && <span className="chapter-count">{chapterCount} notes</span>}
                   <span className="chevron" aria-hidden="true" />
                 </button>
 
@@ -361,6 +400,7 @@ const DayDetailModal: FC<{
                     >
                       {beats.map(({ beat, steps }) => {
                         const beatOpen = openBeat === beat;
+                        const beatCount = notesByBeat.get(beat)?.length ?? 0;
 
                         return (
                           <div className="beat-accordion" key={beat}>
@@ -373,7 +413,8 @@ const DayDetailModal: FC<{
                               onPointerUp={() => toggleBeat(beat)}
                               onKeyDown={onEnterOrSpace(() => toggleBeat(beat))}
                             >
-                              Beat&nbsp;{beat}
+                              <span>Beat&nbsp;{beat}</span>
+                              {beatCount > 0 && <span className="beat-count">{beatCount} notes</span>}
                               <span className="chevron" aria-hidden="true" />
                             </button>
 
@@ -391,6 +432,7 @@ const DayDetailModal: FC<{
                                   {/* ── Four step-groups inside the open beat ── */}
                                   {STEP_GROUPS.map(({ idx, start, end, title: groupTitle }) => {
                                     const groupOpen = openGroup === idx;
+                                    const groupCount = countGroupNotes(beat, start, end);
                                     return (
                                       <div className="group-accordion" key={idx}>
                                         <button
@@ -401,7 +443,10 @@ const DayDetailModal: FC<{
                                           onPointerUp={() => toggleGroup(idx)}
                                           onKeyDown={onEnterOrSpace(() => toggleGroup(idx))}
                                         >
-                                          {groupTitle}
+                                          <span>{groupTitle}</span>
+                                          {groupCount > 0 && (
+                                            <span className="group-count">{groupCount} notes</span>
+                                          )}
                                           <span className="chevron" aria-hidden="true" />
                                         </button>
 
