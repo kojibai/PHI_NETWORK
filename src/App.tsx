@@ -69,7 +69,7 @@ const HomePriceChartCard = lazy(
 >;
 
 const SigilExplorer = lazy(
-  () => import("./components/SigilExplorer"),
+  () => import("./components/SigilExplorer/SigilExplorer"),
 ) as React.LazyExoticComponent<React.ComponentType<Record<string, never>>>;
 
 type EternalKlockProps = { initialDetailsOpen?: boolean };
@@ -1171,7 +1171,7 @@ export function AppChrome(): React.JSX.Element {
     void import("./components/HomePriceChartCard");
     void import("./components/KaiVoh/KaiVohModal");
     void import("./components/SigilModal");
-    void import("./components/SigilExplorer");
+    void import("./components/SigilExplorer/SigilExplorer");
     void import("./components/EternalKlock");
     void import("./pages/sigilstream/SigilStreamRoot");
   }, [heavyUiReady]);
