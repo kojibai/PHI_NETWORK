@@ -1,7 +1,7 @@
 // src/components/PhiStreamPopover.tsx
 import React, { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
-import PhiStream from "./SigilExplorer";
+import PhiStream from "./SigilExplorer/SigilExplorer";
 
 type Props = {
   open: boolean;

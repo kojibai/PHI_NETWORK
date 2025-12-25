@@ -1,11 +1,10 @@
 // src/components/SigilExplorer/index.ts
 /* ──────────────────────────────────────────────────────────────────────────────
    Sigil Explorer — Safe barrel exports
-   - Avoids TS2308 duplicate re-export collisions
    - Explicit exports only (no `export *`)
 ────────────────────────────────────────────────────────────────────────────── */
 
-/* Types (EXPLICIT — do not re-export SigilNode/BranchSummary here to avoid collisions) */
+/* Types */
 export type {
   JsonPrimitive,
   JsonValue,
@@ -29,10 +28,10 @@ export type {
 } from "./types";
 
 /* Chakra */
-export { chakraRgbFor, chakraRgba, chakraTintStyle, normalizeChakraKey, CHAKRA_PALETTE } from "./chakra";
+export { chakraTintStyle, normalizeChakraKey, CHAKRA_COLORS } from "./chakra";
 
 /* Formatting */
-export { short, formatPhi, formatUsd, safeJson, clipText, getPhiFromPayload, byKaiTime } from "./format";
+export { short, formatPhi, formatUsd, byKaiTime, getPhiFromPayload } from "./format";
 
 /* Kai cadence */
 export { hasWindow, nowMs, msUntilNextKaiBreath } from "./kaiCadence";
@@ -51,13 +50,29 @@ export {
   getOriginUrl,
   cssEscape,
   momentKeyFor,
+  contentIdFor,
+  parseStreamToken,
+  streamHashViewerUrlFromToken,
+  streamUrlFromToken,
+  viewBaseOrigin,
+  VIEW_BASE_FALLBACK,
 } from "./url";
 
 /* URL health */
-export { urlHealth, loadUrlHealthFromStorage, setUrlHealth, probeUrl, getUrlHealth } from "./urlHealth";
+export { urlHealth, loadUrlHealthFromStorage, setUrlHealth, probeUrl } from "./urlHealth";
 
 /* API client */
-export { apiFetchWithFailover, API_SEAL_PATH, loadApiBackupDeadUntil, loadApiBaseHint } from "./apiClient";
+export {
+  apiFetchWithFailover,
+  apiFetchJsonWithFailover,
+  API_SEAL_PATH,
+  API_URLS_PATH,
+  API_INHALE_PATH,
+  LIVE_BASE_URL,
+  LIVE_BACKUP_URL,
+  loadApiBackupDeadUntil,
+  loadApiBaseHint,
+} from "./apiClient";
 
 /* Registry store */
 export {
@@ -74,6 +89,7 @@ export {
 /* Inhale queue */
 export {
   enqueueInhaleRawKrystal,
+  enqueueInhaleKrystal,
   enqueueInhaleUrl,
   flushInhaleQueue,
   forceInhaleUrls,
@@ -92,6 +108,7 @@ export { getUsernameClaimRegistry, normalizeUsername, subscribeUsernameClaimRegi
 export {
   SIGIL_TRANSFER_CHANNEL_NAME,
   SIGIL_TRANSFER_EVENT,
+  SIGIL_TRANSFER_LS_KEY,
   readSigilTransferRegistry,
   getTransferMoveFromPayload,
   getTransferMoveFromRegistry,
@@ -101,7 +118,3 @@ export {
 /* Tree */
 export { buildForest, resolveCanonicalHashFromNode } from "./tree/buildForest";
 export type { SigilNode } from "./tree/types";
-
-/* Optional compat (only if those files exist and you still use them) */
-// export * from "./treeBuilder";
-// export * from "./treeTypes";

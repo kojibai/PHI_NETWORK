@@ -1,220 +1,209 @@
-// src/pages/sigilExplorer/transfers.ts
+// src/components/SigilExplorer/transfers.ts
 "use client";
 
 import { extractPayloadFromUrl } from "./url";
+import {
+  readSigilTransferRegistry,
+  SIGIL_TRANSFER_CHANNEL_NAME,
+  SIGIL_TRANSFER_EVENT,
+  SIGIL_TRANSFER_LS_KEY,
+  type SigilTransferRecord,
+} from "../../utils/sigilTransferRegistry";
+import type { SigilSharePayloadLoose } from "./types";
 
-const hasWindow = typeof window !== "undefined";
-
-export const SIGIL_TRANSFER_LS_KEY = "sigil:transferRegistry:v1";
-export const SIGIL_TRANSFER_EVENT = "sigil:transfer:update";
-export const SIGIL_TRANSFER_CHANNEL_NAME = "sigil:transfer:bc:v1";
-
-export type TransferDirection = "send" | "receive";
-
-export type SigilTransferRecord = {
-  canonicalHash: string;
-  direction: TransferDirection;
-  amount: number;
-  amountUsd?: number;
-  sentPulse?: number;
-  updatedAtMs: number;
-};
+export { readSigilTransferRegistry, SIGIL_TRANSFER_CHANNEL_NAME, SIGIL_TRANSFER_EVENT, SIGIL_TRANSFER_LS_KEY };
+export type { SigilTransferRecord };
 
 export type TransferMove = {
-  direction: TransferDirection;
+  direction: "send" | "receive";
   amount: number;
   amountUsd?: number;
   sentPulse?: number;
+  source: "registry" | "payload";
 };
 
 function isRecord(v: unknown): v is Record<string, unknown> {
-  return !!v && typeof v === "object" && !Array.isArray(v);
+  return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
-function readNumberField(rec: Record<string, unknown>, key: string): number | undefined {
-  const v = rec[key];
-  if (typeof v === "number" && Number.isFinite(v)) return v;
-  if (typeof v === "string" && v.trim().length > 0) {
-    const n = Number(v);
-    if (Number.isFinite(n)) return n;
+function readPhiAmount(raw: unknown): number | undefined {
+  if (typeof raw === "number") {
+    if (!Number.isFinite(raw)) return undefined;
+    if (Math.abs(raw) < 1e-12) return undefined;
+    return Math.abs(raw);
+  }
+  if (typeof raw === "string") {
+    const n = Number(raw);
+    if (!Number.isNaN(n) && Math.abs(n) >= 1e-12) return Math.abs(n);
   }
   return undefined;
 }
 
-function readStringField(rec: Record<string, unknown>, key: string): string | undefined {
-  const v = rec[key];
-  return typeof v === "string" && v.trim().length > 0 ? v.trim() : undefined;
+function readTransferDirection(raw: unknown): "send" | "receive" | null {
+  if (typeof raw !== "string") return null;
+  const t = raw.trim().toLowerCase();
+  if (!t) return null;
+  if (t.includes("receive") || t.includes("received") || t.includes("inhale")) return "receive";
+  if (t.includes("send") || t.includes("sent") || t.includes("exhale")) return "send";
+  return null;
 }
 
-export function readSigilTransferRegistry(): Map<string, SigilTransferRecord> {
-  const out = new Map<string, SigilTransferRecord>();
-  if (!hasWindow) return out;
-
-  try {
-    const raw = window.localStorage.getItem(SIGIL_TRANSFER_LS_KEY);
-    if (!raw) return out;
-    const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return out;
-
-    for (const row of parsed) {
-      if (!isRecord(row)) continue;
-      const canonicalHash = readStringField(row, "canonicalHash");
-      const direction = readStringField(row, "direction");
-      const amount = readNumberField(row, "amount");
-      const updatedAtMs = readNumberField(row, "updatedAtMs");
-
-      if (!canonicalHash || (direction !== "send" && direction !== "receive") || amount == null) continue;
-
-      out.set(canonicalHash, {
-        canonicalHash,
-        direction,
-        amount,
-        amountUsd: readNumberField(row, "amountUsd"),
-        sentPulse: readNumberField(row, "sentPulse"),
-        updatedAtMs: updatedAtMs ?? 0,
-      });
-    }
-  } catch {
-    // ignore
+function readUsdAmount(raw: unknown): number | undefined {
+  if (typeof raw === "number") {
+    if (!Number.isFinite(raw) || raw <= 0) return undefined;
+    return raw;
   }
-
-  return out;
+  if (typeof raw === "string") {
+    const n = Number(raw);
+    if (!Number.isNaN(n) && n > 0) return n;
+  }
+  return undefined;
 }
 
-function writeSigilTransferRegistry(map: ReadonlyMap<string, SigilTransferRecord>): void {
-  if (!hasWindow) return;
-
-  try {
-    const rows: SigilTransferRecord[] = [];
-    for (const r of map.values()) rows.push(r);
-    window.localStorage.setItem(SIGIL_TRANSFER_LS_KEY, JSON.stringify(rows));
-  } catch {
-    // ignore
+function readSentPulse(raw: unknown): number | undefined {
+  if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) return raw;
+  if (typeof raw === "string") {
+    const n = Number(raw);
+    if (!Number.isNaN(n) && n > 0) return n;
   }
+  return undefined;
 }
 
-function broadcastTransferUpdate(): void {
-  if (!hasWindow) return;
-  try {
-    window.dispatchEvent(new Event(SIGIL_TRANSFER_EVENT));
-  } catch {
-    // ignore
-  }
+export function getTransferMoveFromPayload(payload: SigilSharePayloadLoose): TransferMove | undefined {
+  const record = payload as unknown as Record<string, unknown>;
+  const feedRecord = isRecord(record.feed) ? (record.feed as Record<string, unknown>) : null;
 
-  try {
-    if ("BroadcastChannel" in window) {
-      const bc = new BroadcastChannel(SIGIL_TRANSFER_CHANNEL_NAME);
-      bc.postMessage({ type: "transfer:update" });
-      bc.close();
-    }
-  } catch {
-    // ignore
-  }
-}
+  const readDir = (src: Record<string, unknown> | null) =>
+    src
+      ? readTransferDirection(src.phiDirection) ||
+        readTransferDirection(src.transferDirection) ||
+        readTransferDirection(src.transferMode) ||
+        readTransferDirection(src.transferKind)
+      : null;
 
-export function upsertTransferRecord(rec: Omit<SigilTransferRecord, "updatedAtMs">): void {
-  if (!hasWindow) return;
-
-  const canonicalHash = rec.canonicalHash.trim();
-  if (!canonicalHash) return;
-
-  const next: SigilTransferRecord = {
-    ...rec,
-    canonicalHash,
-    updatedAtMs: Date.now(),
+  const readDelta = (src: Record<string, unknown> | null) => {
+    if (!src) return undefined;
+    return src.phiDelta ?? src.phiSigned ?? src.phiChange;
   };
 
-  const map = readSigilTransferRegistry();
-  const cur = map.get(canonicalHash);
+  const readAmount = (src: Record<string, unknown> | null) =>
+    src
+      ? readPhiAmount(src.transferAmountPhi) ??
+        readPhiAmount(src.transferPhi) ??
+        readPhiAmount(src.amountPhi) ??
+        readPhiAmount(src.phiAmount) ??
+        readPhiAmount(src.childAllocationPhi) ??
+        readPhiAmount(src.branchBasePhi)
+      : undefined;
 
-  if (
-    cur &&
-    cur.direction === next.direction &&
-    cur.amount === next.amount &&
-    (cur.amountUsd ?? undefined) === (next.amountUsd ?? undefined) &&
-    (cur.sentPulse ?? undefined) === (next.sentPulse ?? undefined)
-  ) {
-    return;
-  }
+  const readUsd = (src: Record<string, unknown> | null) =>
+    src
+      ? readUsdAmount(src.amountUsd) ??
+        readUsdAmount(src.usdAmount) ??
+        readUsdAmount(src.usdValue) ??
+        readUsdAmount(src.valueUsd) ??
+        readUsdAmount(src.usd)
+      : undefined;
 
-  map.set(canonicalHash, next);
-  writeSigilTransferRegistry(map);
-  broadcastTransferUpdate();
-}
+  const readUsdPerPhi = (src: Record<string, unknown> | null) =>
+    src ? readUsdAmount(src.usdPerPhi) ?? readUsdAmount(src.fxUsdPerPhi) ?? readUsdAmount(src.usd_per_phi) : undefined;
 
-export function getTransferMoveFromRegistry(
-  canonicalHash: string | undefined,
-  transferRegistry: ReadonlyMap<string, SigilTransferRecord>,
-): TransferMove | undefined {
-  if (!canonicalHash) return undefined;
-  const r = transferRegistry.get(canonicalHash);
-  if (!r) return undefined;
-  return { direction: r.direction, amount: r.amount, amountUsd: r.amountUsd, sentPulse: r.sentPulse };
-}
+  const readPulse = (src: Record<string, unknown> | null) =>
+    src
+      ? readSentPulse(src.atPulse) ??
+        readSentPulse(src.sentPulse) ??
+        readSentPulse(src.senderKaiPulse) ??
+        readSentPulse(src.transferPulse)
+      : undefined;
 
-export function getTransferMoveFromPayload(payload: unknown): TransferMove | undefined {
-  if (!isRecord(payload)) return undefined;
+  const dir = readDir(record) ?? readDir(feedRecord);
+  const signedDelta = readDelta(record) ?? readDelta(feedRecord);
+  let deltaNumber = typeof signedDelta === "number" ? signedDelta : undefined;
+  if (deltaNumber === undefined && typeof signedDelta === "string") deltaNumber = Number(signedDelta);
 
-  // common shapes:
-  // payload.transfer = { direction, amount, amountUsd, sentPulse }
-  // payload.move = { ... }
-  const candidates: unknown[] = [];
-  if (isRecord(payload.transfer)) candidates.push(payload.transfer);
-  if (isRecord(payload.move)) candidates.push(payload.move);
+  const inferred =
+    dir ??
+    (typeof deltaNumber === "number" && Number.isFinite(deltaNumber)
+      ? deltaNumber >= 0
+        ? "receive"
+        : "send"
+      : null);
 
-  // also check feed.transfer if present
-  if (isRecord(payload.feed) && isRecord(payload.feed.transfer)) candidates.push(payload.feed.transfer);
+  if (!inferred) return undefined;
 
-  for (const c of candidates) {
-    if (!isRecord(c)) continue;
-    const dir = readStringField(c, "direction");
-    if (dir !== "send" && dir !== "receive") continue;
+  const amount =
+    readAmount(record) ??
+    readAmount(feedRecord) ??
+    (isRecord(record.preview) ? readPhiAmount((record.preview as Record<string, unknown>).amountPhi) : undefined) ??
+    (isRecord(feedRecord?.preview) ? readPhiAmount((feedRecord.preview as Record<string, unknown>).amountPhi) : undefined) ??
+    (typeof deltaNumber === "number" && Number.isFinite(deltaNumber) ? Math.abs(deltaNumber) : undefined);
 
-    const amt = readNumberField(c, "amount") ?? readNumberField(c, "phi");
-    if (amt == null) continue;
+  if (amount === undefined) return undefined;
 
-    const usd = readNumberField(c, "amountUsd") ?? readNumberField(c, "usd");
-    const sentPulse = readNumberField(c, "sentPulse") ?? readNumberField(c, "pulse");
+  const amountUsd =
+    readUsd(record) ??
+    readUsd(feedRecord) ??
+    (isRecord(record.preview) ? readUsdAmount((record.preview as Record<string, unknown>).amountUsd) : undefined) ??
+    (isRecord(feedRecord?.preview) ? readUsdAmount((feedRecord.preview as Record<string, unknown>).amountUsd) : undefined);
 
-    return { direction: dir, amount: amt, amountUsd: usd, sentPulse };
-  }
+  const usdPerPhi =
+    readUsdPerPhi(record) ??
+    readUsdPerPhi(feedRecord) ??
+    (isRecord(record.preview) ? readUsdAmount((record.preview as Record<string, unknown>).usdPerPhi) : undefined) ??
+    (isRecord(feedRecord?.preview) ? readUsdAmount((feedRecord.preview as Record<string, unknown>).usdPerPhi) : undefined);
 
-  return undefined;
+  const sentPulse =
+    readPulse(record) ??
+    readPulse(feedRecord) ??
+    (isRecord(record.preview) ? readSentPulse((record.preview as Record<string, unknown>).atPulse) : undefined) ??
+    (isRecord(feedRecord?.preview) ? readSentPulse((feedRecord.preview as Record<string, unknown>).atPulse) : undefined);
+
+  return {
+    direction: inferred,
+    amount,
+    amountUsd: amountUsd ?? (usdPerPhi !== undefined ? amount * usdPerPhi : undefined),
+    sentPulse,
+    source: "payload",
+  };
 }
 
 export function getTransferMoveFromTransferUrl(record: Record<string, unknown>): TransferMove | undefined {
-  const raw = readStringField(record, "transferUrl") ?? readStringField(record, "transfer_url");
-  if (!raw) return undefined;
+  const urlKeys = [
+    "transferUrl",
+    "transferURL",
+    "transferLink",
+    "transfer_link",
+    "sealUrl",
+    "sealURL",
+    "sigilTransferUrl",
+  ];
 
-  // If transfer URL embeds payload, try it first.
-  const embedded = extractPayloadFromUrl(raw);
-  const fromEmbedded = getTransferMoveFromPayload(embedded);
-  if (fromEmbedded) return fromEmbedded;
-
-  // Otherwise parse query params
-  try {
-    const u = new URL(raw, "https://example.invalid");
-    const dir = u.searchParams.get("dir") ?? u.searchParams.get("direction");
-    const direction: TransferDirection | null = dir === "send" || dir === "receive" ? dir : null;
-
-    const a = u.searchParams.get("amount") ?? u.searchParams.get("phi");
-    const amount = a ? Number(a) : NaN;
-
-    if (!direction || !Number.isFinite(amount)) return undefined;
-
-    const usdRaw = u.searchParams.get("usd") ?? u.searchParams.get("amountUsd");
-    const usd = usdRaw ? Number(usdRaw) : NaN;
-
-    const spRaw = u.searchParams.get("sentPulse") ?? u.searchParams.get("pulse");
-    const sp = spRaw ? Number(spRaw) : NaN;
-
-    return {
-      direction,
-      amount,
-      amountUsd: Number.isFinite(usd) ? usd : undefined,
-      sentPulse: Number.isFinite(sp) ? sp : undefined,
-    };
-  } catch {
-    return undefined;
+  for (const key of urlKeys) {
+    const raw = record[key];
+    if (typeof raw !== "string" || !raw.trim()) continue;
+    const payload = extractPayloadFromUrl(raw.trim());
+    if (!payload) continue;
+    const move = getTransferMoveFromPayload(payload);
+    if (move) return move;
   }
+
+  return undefined;
+}
+
+export function getTransferMoveFromRegistry(
+  hash: string | undefined,
+  registry: ReadonlyMap<string, SigilTransferRecord>,
+): TransferMove | undefined {
+  if (!hash) return undefined;
+  const entry = registry.get(hash.toLowerCase());
+  if (!entry) return undefined;
+  const amount = readPhiAmount(entry.amountPhi);
+  if (amount === undefined) return undefined;
+  return {
+    direction: entry.direction,
+    amount,
+    amountUsd: readUsdAmount(entry.amountUsd),
+    sentPulse: readSentPulse(entry.sentPulse),
+    source: "registry",
+  };
 }

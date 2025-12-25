@@ -1,9 +1,7 @@
 // src/components/SigilExplorer/types.ts
-/* ──────────────────────────────────────────────────────────────────────────────
+/* ─────────────────────────────────────────────────────────────────────
    Sigil Explorer — Shared Types
-   - Strict, no `any`
-   - Designed to be imported across url/registry/tree/remote modules
-────────────────────────────────────────────────────────────────────────────── */
+────────────────────────────────────────────────────────────────────── */
 
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
@@ -12,7 +10,7 @@ export type JsonObject = { [k: string]: JsonValue };
 export type ChakraDay = string;
 
 /** What kind of content a URL represents (used for primary URL selection + grouping). */
-export type ContentKind = "post" | "stream" | "sigil" | "token" | "unknown";
+export type ContentKind = "post" | "stream" | "other";
 
 /** Minimal payload shape we rely on across the explorer (loose but typed). */
 export type SigilSharePayloadLoose = {
@@ -81,17 +79,12 @@ export type UsernameClaimRegistry = Record<string, UsernameClaimEntry>;
 export type SigilTransferDirection = "send" | "receive";
 
 export type SigilTransferRecord = {
-  canonicalHash: string;
+  hash: string;
   direction: SigilTransferDirection;
-  amount: number;
-  amountUsd?: number;
+  amountPhi: string;
+  amountUsd?: string;
   sentPulse?: number;
-
-  // Optional: provenance hints
-  fromPhiKey?: string;
-  toPhiKey?: string;
-
-  [k: string]: unknown;
+  updatedAt: number;
 };
 
 /** Normalized move object derived from registry/payload/url. */
@@ -100,6 +93,7 @@ export type TransferMove = {
   amount: number;
   amountUsd?: number;
   sentPulse?: number;
+  source: "registry" | "payload";
 };
 
 /** Detail entry rendered in the expanded node panel. */
@@ -117,18 +111,14 @@ export type ApiSealResponse = {
 export type SyncReason = "open" | "pulse" | "visible" | "focus" | "online" | "import";
 
 /** Small shared helpers (types only). */
-export type UrlHealthScore = -1 | 0 | 1;
+export type UrlHealthScore = 1 | -1;
 
-export type InhaleSource = "local" | "remote";
+export type InhaleSource = "local" | "remote" | "hydrate" | "import";
 
 export type AddUrlOptions = {
-  includeAncestry: boolean;
-  broadcast: boolean;
-  persist: boolean;
-  source: InhaleSource;
-  enqueueToApi: boolean;
+  includeAncestry?: boolean;
+  broadcast?: boolean;
+  persist?: boolean;
+  source?: InhaleSource;
+  enqueueToApi?: boolean;
 };
-export type FastPress = {
-  onClick: (e: React.MouseEvent<HTMLButtonElement>) => void;
-  onKeyDown: (e: React.KeyboardEvent<HTMLButtonElement>) => void;
-};      

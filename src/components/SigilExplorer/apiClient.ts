@@ -1,157 +1,177 @@
-// src/pages/sigilExplorer/apiClient.ts
+// src/components/SigilExplorer/apiClient.ts
 "use client";
 
 export type ApiSealResponse = { seal: string };
-export type ApiUrlsResponse = { seal?: string; urls?: string[] };
 
 const hasWindow = typeof window !== "undefined";
+const canStorage = hasWindow && typeof window.localStorage !== "undefined";
+
+/* ─────────────────────────────────────────────────────────────────────
+ *  LAH-MAH-TOR API (Primary + IKANN Failover, soft-fail backup)
+ *  ─────────────────────────────────────────────────────────────────── */
+export const LIVE_BASE_URL = "https://align.kaiklok.com";
+export const LIVE_BACKUP_URL = "https://m.phi.network";
+
+const API_BASE_PRIMARY = LIVE_BASE_URL;
+const API_BASE_FALLBACK = LIVE_BACKUP_URL;
 
 export const API_SEAL_PATH = "/sigils/seal";
 export const API_URLS_PATH = "/sigils/urls";
 export const API_INHALE_PATH = "/sigils/inhale";
 
-const LS_API_BASE_HINT = "sigil:apiBaseHint:v1";
-const LS_BACKUP_DEAD_UNTIL = "sigil:apiBackupDeadUntilMs:v1";
+const API_BASE_HINT_LS_KEY = "kai:lahmahtorBase:v1";
 
-const BACKUP_COOLDOWN_MS = 5 * 60 * 1000;
+/** Backup suppression: if m.kai fails, suppress it for a cooldown window (no issues, no spam). */
+const API_BACKUP_DEAD_UNTIL_LS_KEY = "kai:lahmahtorBackupDeadUntil:v1";
+const API_BACKUP_COOLDOWN_MS = 2 * 60 * 1000; // 2 minutes (tight, safe)
+
+let apiBackupDeadUntil = 0;
 
 function nowMs(): number {
   return Date.now();
 }
 
-function getEnvString(key: string): string | null {
-  // Vite-safe access without hard dependency
-  try {
-    const meta = import.meta as unknown as { env?: Record<string, unknown> };
-    const v = meta.env?.[key];
-    return typeof v === "string" && v.trim().length > 0 ? v.trim() : null;
-  } catch {
-    return null;
-  }
-}
-
-function getDefaultBase(): string {
-  if (!hasWindow) return "https://phi.network";
-  // default to same-origin if deployed with API behind same host
-  try {
-    return new URL("/", window.location.href).origin;
-  } catch {
-    return "https://phi.network";
-  }
-}
-
-function readBaseHint(): string | null {
-  if (!hasWindow) return null;
-  try {
-    const v = window.localStorage.getItem(LS_API_BASE_HINT);
-    return typeof v === "string" && v.trim().length > 0 ? v.trim() : null;
-  } catch {
-    return null;
-  }
-}
-
-export function loadApiBaseHint(): void {
-  // no-op: kept for parity with your component boot order
-  void readBaseHint();
-}
-
-export function setApiBaseHint(base: string): void {
-  if (!hasWindow) return;
-  try {
-    window.localStorage.setItem(LS_API_BASE_HINT, base);
-  } catch {
-    // ignore
-  }
-}
-
 export function loadApiBackupDeadUntil(): void {
-  if (!hasWindow) return;
-  // touch key for parity; no-op
+  if (!canStorage) return;
+  const raw = localStorage.getItem(API_BACKUP_DEAD_UNTIL_LS_KEY);
+  if (!raw) return;
+  const n = Number(raw);
+  if (Number.isFinite(n) && n > 0) apiBackupDeadUntil = n;
+}
+
+function saveApiBackupDeadUntil(): void {
+  if (!canStorage) return;
   try {
-    void window.localStorage.getItem(LS_BACKUP_DEAD_UNTIL);
+    localStorage.setItem(API_BACKUP_DEAD_UNTIL_LS_KEY, String(apiBackupDeadUntil));
   } catch {
     // ignore
   }
 }
 
 function isBackupSuppressed(): boolean {
-  if (!hasWindow) return false;
-  try {
-    const raw = window.localStorage.getItem(LS_BACKUP_DEAD_UNTIL);
-    const n = raw ? Number(raw) : 0;
-    return Number.isFinite(n) && n > nowMs();
-  } catch {
-    return false;
+  return nowMs() < apiBackupDeadUntil;
+}
+
+function clearBackupSuppression(): void {
+  if (apiBackupDeadUntil === 0) return;
+  apiBackupDeadUntil = 0;
+  saveApiBackupDeadUntil();
+}
+
+function markBackupDead(): void {
+  apiBackupDeadUntil = nowMs() + API_BACKUP_COOLDOWN_MS;
+  saveApiBackupDeadUntil();
+  // never “stick” to fallback if it’s failing
+  if (apiBaseHint === API_BASE_FALLBACK) {
+    apiBaseHint = API_BASE_PRIMARY;
+    saveApiBaseHint();
   }
 }
 
-function suppressBackup(): void {
-  if (!hasWindow) return;
+/** Sticky base: whichever succeeded last is attempted first. */
+let apiBaseHint: string = API_BASE_PRIMARY;
+
+export function loadApiBaseHint(): void {
+  if (!canStorage) return;
+  const raw = localStorage.getItem(API_BASE_HINT_LS_KEY);
+  if (raw === API_BASE_PRIMARY) {
+    apiBaseHint = raw;
+    return;
+  }
+  if (raw === API_BASE_FALLBACK) {
+    // if backup is currently suppressed, never load it as the preferred base
+    apiBaseHint = isBackupSuppressed() ? API_BASE_PRIMARY : raw;
+  }
+}
+
+function saveApiBaseHint(): void {
+  if (!canStorage) return;
   try {
-    window.localStorage.setItem(LS_BACKUP_DEAD_UNTIL, String(nowMs() + BACKUP_COOLDOWN_MS));
+    localStorage.setItem(API_BASE_HINT_LS_KEY, apiBaseHint);
   } catch {
     // ignore
   }
 }
 
-export function getApiBaseCandidates(): string[] {
-  const hint = readBaseHint();
-  const primary = getEnvString("VITE_SIGIL_API_BASE") ?? hint ?? getDefaultBase();
+function apiBases(): string[] {
+  const wantFallbackFirst = apiBaseHint === API_BASE_FALLBACK && !isBackupSuppressed();
+  const list = wantFallbackFirst
+    ? [API_BASE_FALLBACK, API_BASE_PRIMARY]
+    : [API_BASE_PRIMARY, API_BASE_FALLBACK];
 
-  const backupFromEnv = getEnvString("VITE_SIGIL_API_BACKUP_BASE");
-  const backup = backupFromEnv && backupFromEnv !== primary ? backupFromEnv : null;
+  if (!hasWindow) {
+    // SSR: keep both, but still respect suppression in case it was set via storage read before render.
+    return isBackupSuppressed() ? list.filter((b) => b !== API_BASE_FALLBACK) : list;
+  }
 
-  const out: string[] = [];
-  if (primary) out.push(primary);
-  if (backup && !isBackupSuppressed()) out.push(backup);
-  return out;
+  const isHttpsPage = window.location.protocol === "https:";
+  // Never try http fallback from an https page (browser will block + log loudly)
+  const protocolFiltered = isHttpsPage ? list.filter((b) => b.startsWith("https://")) : list;
+
+  // Soft-fail: suppress backup if marked dead
+  return isBackupSuppressed() ? protocolFiltered.filter((b) => b !== API_BASE_FALLBACK) : protocolFiltered;
 }
 
-function isLikelyTerminalStatus(status: number): boolean {
-  // 4xx likely means the endpoint exists and request was handled;
-  // only failover on network errors / 5xx.
-  return status >= 200 && status < 500;
+function shouldFailoverStatus(status: number): boolean {
+  // 0 = network/CORS/unknown from wrapper
+  if (status === 0) return true;
+  // common “route didn’t exist here but exists on the other base”
+  if (status === 404) return true;
+  // transient / throttling / upstream
+  if (status === 408 || status === 429) return true;
+  if (status >= 500) return true;
+  return false;
 }
 
-/**
- * Fetch helper that tries primary base first, then backup base if:
- * - network error, OR
- * - 5xx response
- */
 export async function apiFetchWithFailover(
-  buildUrl: (base: string) => string,
-  init: RequestInit,
+  makeUrl: (base: string) => string,
+  init?: RequestInit,
 ): Promise<Response | null> {
-  const bases = getApiBaseCandidates();
-  if (bases.length === 0) return null;
+  const bases = apiBases();
+  let last: Response | null = null;
 
-  let lastRes: Response | null = null;
-
-  for (let i = 0; i < bases.length; i += 1) {
-    const base = bases[i] ?? "";
-    const url = buildUrl(base);
-
+  for (const base of bases) {
+    const url = makeUrl(base);
     try {
       const res = await fetch(url, init);
-      lastRes = res;
+      last = res;
 
-      if (isLikelyTerminalStatus(res.status)) {
-        // success-ish: remember base
-        setApiBaseHint(base);
+      // 304 is a valid success for seal checks.
+      if (res.ok || res.status === 304) {
+        // if backup works again, clear suppression
+        if (base === API_BASE_FALLBACK) clearBackupSuppression();
+
+        apiBaseHint = base;
+        saveApiBaseHint();
         return res;
       }
 
-      // 5xx: try next if available
-      if (i === 0 && bases.length > 1) continue;
+      // If backup is failing (404/5xx/etc), suppress it so it never “causes issues”.
+      if (base === API_BASE_FALLBACK && shouldFailoverStatus(res.status)) markBackupDead();
 
-      return res;
+      // If this status is “final”, stop here; otherwise try the other base.
+      if (!shouldFailoverStatus(res.status)) return res;
     } catch {
-      // network error: try next if available
-      if (i === 0 && bases.length > 1) continue;
-      if (i === 1) suppressBackup();
-      return null;
+      // network failure → try next base
+      if (base === API_BASE_FALLBACK) markBackupDead();
+      continue;
     }
   }
 
-  return lastRes;
+  return last;
+}
+
+export async function apiFetchJsonWithFailover<T>(
+  makeUrl: (base: string) => string,
+  init?: RequestInit,
+): Promise<{ ok: true; value: T; status: number } | { ok: false; status: number }> {
+  const res = await apiFetchWithFailover(makeUrl, init);
+  if (!res) return { ok: false, status: 0 };
+  if (!res.ok) return { ok: false, status: res.status };
+  try {
+    const value = (await res.json()) as T;
+    return { ok: true, value, status: res.status };
+  } catch {
+    return { ok: false, status: 0 };
+  }
 }

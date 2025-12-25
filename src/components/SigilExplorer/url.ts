@@ -1,427 +1,384 @@
 // src/components/SigilExplorer/url.ts
-/* ──────────────────────────────────────────────────────────────────────────────
-   Sigil Explorer — URL utilities
-   - Canonicalization (stable keys for Maps/Sets)
-   - View URL conversion (/stream/p → /stream#p, /p~ → /stream#p)
-   - Payload extraction from share tokens (base64url JSON)
-   - Hash parsing helpers
-   - Content ID + Moment Key (tree grouping)
-────────────────────────────────────────────────────────────────────────────── */
+/* ─────────────────────────────────────────────────────────────────────
+   URL utilities (parity with SigilExplorer.tsx)
+────────────────────────────────────────────────────────────────────── */
 
-import type { ContentKind, SigilSharePayloadLoose } from "./types";
+import type { SigilSharePayloadLoose } from "./types";
 import { hasWindow } from "./kaiCadence";
+import { LIVE_BACKUP_URL, LIVE_BASE_URL } from "./apiClient";
+import { urlHealth } from "./urlHealth";
+import { extractPayloadFromUrl as extractPayloadFromUrlUtil, getOriginUrl as getOriginUrlUtil } from "../../utils/sigilUrl";
 
-/* ─────────────────────────────────────────────────────────────────────
- *  Type guards / safe field reads
- *  ───────────────────────────────────────────────────────────────────── */
-export function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
+export const VIEW_BASE_FALLBACK = "https://phi.network";
+
+export function viewBaseOrigin(): string {
+  if (!hasWindow) return VIEW_BASE_FALLBACK;
+  return window.location.origin;
 }
 
-export function readStringField(obj: unknown, key: string): string | undefined {
-  if (!isRecord(obj)) return undefined;
-  const v = obj[key];
-  return typeof v === "string" && v.trim().length > 0 ? v.trim() : undefined;
-}
-
-function readNumberField(obj: unknown, key: string): number | undefined {
-  if (!isRecord(obj)) return undefined;
-  const v = obj[key];
-  return typeof v === "number" && Number.isFinite(v) ? v : undefined;
-}
-
-/* ─────────────────────────────────────────────────────────────────────
- *  Canonicalization
- *  ───────────────────────────────────────────────────────────────────── */
-function safeBaseForRelative(): string {
-  if (hasWindow && typeof window.location?.origin === "string") return window.location.origin;
-  return "https://phi.network";
-}
-
-function normalizeSlashes(path: string): string {
-  return path.replace(/\/{2,}/g, "/");
-}
-
-/** Stable, comparable string form. Does NOT rewrite routes (keeps variants). */
+/**
+ * Canonical URL (stable key):
+ * - Always absolute
+ * - Always rooted to *current origin* (no localhost → phi.network rewriting)
+ * - Host-agnostic dedupe: foreign origins collapse to the same path on this host
+ */
 export function canonicalizeUrl(raw: string): string {
-  const input = String(raw ?? "").trim();
-  if (!input) return "";
-
   try {
-    const u = new URL(input, safeBaseForRelative());
-
-    u.protocol = u.protocol.toLowerCase();
-    u.hostname = u.hostname.toLowerCase();
-
-    if ((u.protocol === "https:" && u.port === "443") || (u.protocol === "http:" && u.port === "80")) {
-      u.port = "";
-    }
-
-    u.pathname = normalizeSlashes(u.pathname);
-
-    if (u.pathname.length > 1 && u.pathname.endsWith("/")) u.pathname = u.pathname.slice(0, -1);
-
-    if (u.hash === "#") u.hash = "";
-
-    return u.toString();
+    const base = viewBaseOrigin();
+    const u = new URL(raw, base);
+    const rooted = new URL(`${u.pathname}${u.search}${u.hash}`, base);
+    return rooted.toString();
   } catch {
-    return input;
+    return raw;
   }
 }
 
-/* ─────────────────────────────────────────────────────────────────────
- *  Token extraction (share payload)
- *  ───────────────────────────────────────────────────────────────────── */
-const MAX_TOKEN_CHARS = 24_000;
-
-function extractPTokenFromUrl(raw: string): string | undefined {
-  const input = String(raw ?? "").trim();
-  if (!input) return undefined;
-
-  // /p~<token>
-  const pTildeMatch = input.match(/\/p~([A-Za-z0-9\-_]+)/);
-  if (pTildeMatch?.[1]) return pTildeMatch[1].slice(0, MAX_TOKEN_CHARS);
-
+/** Attempt to parse hash from a /s/:hash URL (display only). */
+export function parseHashFromUrl(url: string): string | undefined {
   try {
-    const u = new URL(input, safeBaseForRelative());
-
-    // Hash: #p=<token> or #...&p=<token>
-    if (u.hash) {
-      const h = u.hash.startsWith("#") ? u.hash.slice(1) : u.hash;
-      const params = new URLSearchParams(h.startsWith("?") ? h.slice(1) : h);
-      const p = params.get("p");
-      if (p && p.length <= MAX_TOKEN_CHARS) return p;
-    }
-
-    // Query: ?p=<token>
-    const qp = u.searchParams.get("p");
-    if (qp && qp.length <= MAX_TOKEN_CHARS) return qp;
-
-    // Path: .../p/<token>
-    const m = u.pathname.match(/\/p\/([A-Za-z0-9\-_]+)/);
-    if (m?.[1]) return m[1].slice(0, MAX_TOKEN_CHARS);
-
-    // Path: .../stream/p/<token>
-    const mp = u.pathname.match(/\/stream\/p\/([A-Za-z0-9\-_]+)/);
-    if (mp?.[1]) return mp[1].slice(0, MAX_TOKEN_CHARS);
-  } catch {
-    const hashMatch = input.match(/[#?&]p=([A-Za-z0-9\-_]+)/);
-    if (hashMatch?.[1]) return hashMatch[1].slice(0, MAX_TOKEN_CHARS);
-
-    const pathMatch = input.match(/\/p\/([A-Za-z0-9\-_]+)/);
-    if (pathMatch?.[1]) return pathMatch[1].slice(0, MAX_TOKEN_CHARS);
-  }
-
-  return undefined;
-}
-
-function base64UrlToUtf8(token: string): string | undefined {
-  const t = token.trim();
-  if (!t) return undefined;
-
-  let b64 = t.replace(/-/g, "+").replace(/_/g, "/");
-  const mod = b64.length % 4;
-  if (mod === 2) b64 += "==";
-  else if (mod === 3) b64 += "=";
-  else if (mod !== 0) return undefined;
-
-  if (hasWindow && typeof window.atob === "function") {
-    try {
-      const bin = window.atob(b64);
-      const bytes = new Uint8Array(bin.length);
-      for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i) & 0xff;
-
-      if (typeof TextDecoder !== "undefined") {
-        return new TextDecoder("utf-8", { fatal: false }).decode(bytes);
-      }
-
-      let out = "";
-      for (let i = 0; i < bytes.length; i += 1) out += String.fromCharCode(bytes[i]);
-      try {
-        return decodeURIComponent(escape(out));
-      } catch {
-        return out;
-      }
-    } catch {
-      return undefined;
-    }
-  }
-
-  try {
-    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-    // @ts-ignore Buffer exists in Node-like runtimes
-    const buf = Buffer.from(b64, "base64") as { toString(enc: "utf8"): string };
-    if (buf && typeof buf.toString === "function") return buf.toString("utf8");
-  } catch {
-    // ignore
-  }
-
-  return undefined;
-}
-
-/** Extract and decode the embedded share payload (base64url JSON) if present. */
-export function extractPayloadFromUrl(raw: string): SigilSharePayloadLoose | undefined {
-  const token = extractPTokenFromUrl(raw);
-  if (!token) return undefined;
-
-  const json = base64UrlToUtf8(token);
-  if (!json) return undefined;
-
-  try {
-    const parsed: unknown = JSON.parse(json);
-    if (!isRecord(parsed)) return undefined;
-    return parsed as SigilSharePayloadLoose;
+    const u = new URL(url, viewBaseOrigin());
+    const m = u.pathname.match(/\/s\/([^/]+)/u);
+    return m?.[1] ? decodeURIComponent(m[1]) : undefined;
   } catch {
     return undefined;
   }
 }
 
-/* ─────────────────────────────────────────────────────────────────────
- *  Moment Key + Content ID (tree grouping)
- *  ───────────────────────────────────────────────────────────────────── */
+/** True if url is the SMS-safe /p~<token> route (never browser-viewable). */
+export function isPTildeUrl(url: string): boolean {
+  try {
+    const u = new URL(url, viewBaseOrigin());
+    return u.pathname.toLowerCase().startsWith("/p~");
+  } catch {
+    return url.toLowerCase().includes("/p~");
+  }
+}
+
+function safeDecodeURIComponent(v: string): string {
+  try {
+    return decodeURIComponent(v);
+  } catch {
+    return v;
+  }
+}
+
+export function looksLikeBareToken(s: string): boolean {
+  const t = s.trim();
+  if (t.length < 16) return false;
+  return /^[A-Za-z0-9_-]+$/u.test(t);
+}
+
+/** Build a canonical stream URL from a bare token (Composer uses /stream/p/<token>). */
+export function streamUrlFromToken(token: string): string {
+  const base = viewBaseOrigin();
+  return new URL(`/stream/p/${token}`, base).toString();
+}
+
+/** Build the WORKING hash-viewer URL for streams: /stream#p=<token> */
+export function streamHashViewerUrlFromToken(token: string): string {
+  const base = viewBaseOrigin();
+  const u = new URL("/stream", base);
+  const h = new URLSearchParams();
+  h.set("p", token);
+  u.hash = `#${h.toString()}`;
+  return u.toString();
+}
+
+/** Convert `/stream/p/<token>` → `/stream#p=<token>` (preserves search + existing hash params). */
+export function streamPPathToHashViewerUrl(raw: string): string {
+  try {
+    const base = viewBaseOrigin();
+    const u = new URL(raw, base);
+    const m = u.pathname.match(/\/stream\/p\/([^/]+)/u);
+    if (!m?.[1]) return raw;
+
+    const token = decodeURIComponent(m[1]);
+    const out = new URL("/stream", base);
+
+    // Preserve any query params (e.g. add=...) as-is.
+    out.search = u.search;
+
+    // Preserve existing hash params, but force `p=`.
+    const hashStr = u.hash.startsWith("#") ? u.hash.slice(1) : "";
+    const hp = new URLSearchParams(hashStr);
+    hp.set("p", token);
+    out.hash = `#${hp.toString()}`;
+
+    return out.toString();
+  } catch {
+    return raw;
+  }
+}
+
+/** Attempt to parse stream token from /stream/p/<token> or ?p=<token> or /p~<token> (identity help). */
+export function parseStreamToken(url: string): string | undefined {
+  try {
+    const u = new URL(url, viewBaseOrigin());
+    const path = u.pathname;
+
+    // /stream/p/<token>
+    const m = path.match(/\/stream\/p\/([^/]+)/u);
+    if (m?.[1]) return decodeURIComponent(m[1]);
+
+    // /p~<token>  (SMS-safe short route)
+    const pm = path.match(/^\/p~([^/]+)/u);
+    if (pm?.[1]) return decodeURIComponent(pm[1]);
+
+    // query p=
+    const p = u.searchParams.get("p");
+    if (p) return p;
+
+    const hashStr = u.hash.startsWith("#") ? u.hash.slice(1) : "";
+    const h = new URLSearchParams(hashStr);
+    const hp = h.get("p");
+    if (hp) return hp;
+
+    return undefined;
+  } catch {
+    const low = url.toLowerCase();
+    const pm = low.match(/\/p~([^/?#]+)/u);
+    if (pm?.[1]) return safeDecodeURIComponent(pm[1]);
+    return undefined;
+  }
+}
 
 /**
- * Stable grouping key for "same moment" across URL variants.
- * Priority:
- *  1) kai stamp (pulse/beat/step) → k:
- *  2) kaiSignature → sig:
- *  3) share token → tok:
- *  4) hash (/s/<hash>) → h:
- *  5) fallback url → u:
+ * Browser-view normalization:
+ * - /p~<token> → /stream#p=<token>
+ * - /stream/p/<token> → /stream#p=<token>
+ * (view-only; DOES NOT mutate stored registry URLs)
  */
-export function momentKeyFor(urlRaw: string, payload: SigilSharePayloadLoose): string {
-  const pulse = readNumberField(payload, "pulse");
-  const beat = readNumberField(payload, "beat");
-  const stepIndex = readNumberField(payload, "stepIndex");
+export function browserViewUrl(u: string): string {
+  const abs = canonicalizeUrl(u);
 
-  if (pulse !== undefined && beat !== undefined && stepIndex !== undefined) {
-    return `k:${pulse}:${beat}:${stepIndex}`;
+  // /p~<token> (never viewable) → hash-viewer
+  if (isPTildeUrl(abs)) {
+    const tok = parseStreamToken(abs);
+    return tok ? canonicalizeUrl(streamHashViewerUrlFromToken(tok)) : abs;
   }
 
-  const sig = readStringField(payload, "kaiSignature");
+  // /stream/p/<token> → /stream#p=<token>
+  const sp = streamPPathToHashViewerUrl(abs);
+  if (sp !== abs) return canonicalizeUrl(sp);
+
+  return abs;
+}
+
+/**
+ * CLICK OPEN URL: force opens on the CURRENT host origin, preserving path/search/hash.
+ * (Does NOT mutate stored URLs; view-only override for anchor clicks.)
+ */
+export function explorerOpenUrl(raw: string): string {
+  if (!hasWindow) return browserViewUrl(raw);
+
+  const safe = browserViewUrl(raw);
+  const origin = window.location.origin;
+
+  try {
+    const u = new URL(safe, origin);
+    return `${origin}${u.pathname}${u.search}${u.hash}`;
+  } catch {
+    const m = safe.match(/^(?:https?:\/\/[^/]+)?(\/.*)$/i);
+    const rel = (m?.[1] ?? safe).startsWith("/") ? (m?.[1] ?? safe) : `/${m?.[1] ?? safe}`;
+    return `${origin}${rel}`;
+  }
+}
+
+export const extractPayloadFromUrl = extractPayloadFromUrlUtil;
+export const getOriginUrl = getOriginUrlUtil;
+
+/* ─────────────────────────────────────────────────────────────────────
+ *  Content identity + parent-first /s grouping rules
+ *  (used for tree grouping)
+ *  ─────────────────────────────────────────────────────────────────── */
+export type UrlKind = "postS" | "streamT" | "streamP" | "streamQ" | "stream" | "other";
+export type ContentKind = "post" | "stream" | "other";
+
+export function classifyUrlKind(u: string): UrlKind {
+  try {
+    const url = new URL(u, viewBaseOrigin());
+    const path = url.pathname.toLowerCase();
+
+    if (path.includes("/s/")) return "postS";
+    if (path.startsWith("/p~")) return "streamP";
+
+    const isStream = path.includes("/stream");
+    if (!isStream) return "other";
+
+    if (path.includes("/stream/p/")) return "streamP";
+
+    const tQ = url.searchParams.get("t");
+    if (tQ && tQ.trim()) return "streamT";
+
+    const hashStr = url.hash.startsWith("#") ? url.hash.slice(1) : "";
+    const h = new URLSearchParams(hashStr);
+    const tH = h.get("t");
+    if (tH && tH.trim()) return "streamT";
+
+    if (path.includes("/stream/t")) return "streamT";
+
+    const pQ = url.searchParams.get("p");
+    if (pQ && pQ.trim()) return "streamQ";
+
+    const pH = h.get("p");
+    if (pH && pH.trim()) return "streamQ";
+
+    return "stream";
+  } catch {
+    const low = u.toLowerCase();
+    if (low.includes("/s/")) return "postS";
+    if (low.includes("/p~")) return "streamP";
+    if (low.includes("/stream/p/")) return "streamP";
+    if (low.includes("/stream/t") || /[?&#]t=/.test(low)) return "streamT";
+    if (low.includes("/stream") && /[?&#]p=/.test(low)) return "streamQ";
+    if (low.includes("/stream")) return "stream";
+    return "other";
+  }
+}
+
+export function contentKindForUrl(u: string): ContentKind {
+  const k = classifyUrlKind(u);
+  if (k === "postS") return "post";
+  if (k.startsWith("stream")) return "stream";
+  return "other";
+}
+
+function readPhiKeyFromPayload(p: SigilSharePayloadLoose): string {
+  const rec = p as unknown as Record<string, unknown>;
+  return (
+    (typeof rec.userPhiKey === "string" && rec.userPhiKey) ||
+    (typeof rec.phiKey === "string" && rec.phiKey) ||
+    (typeof rec.phikey === "string" && rec.phikey) ||
+    ""
+  );
+}
+
+/**
+ * Moment key (kindless): used to group /s + /stream nodes that represent the SAME moment.
+ * Priority: (phiKey+pulse) > kaiSignature > token > hash/time fallback.
+ */
+export function momentKeyFor(url: string, p: SigilSharePayloadLoose): string {
+  const phiKey = readPhiKeyFromPayload(p);
+  const pulse = Number.isFinite(p.pulse ?? NaN) ? (p.pulse as number) : null;
+
+  if (phiKey && pulse != null) return `k:${phiKey}|${pulse}`;
+
+  const sig = typeof p.kaiSignature === "string" ? p.kaiSignature.trim() : "";
   if (sig) return `sig:${sig}`;
 
-  const token = extractPTokenFromUrl(urlRaw);
-  if (token) return `tok:${token}`;
+  const tok = parseStreamToken(url);
+  if (tok && tok.trim()) return `tok:${tok.trim()}`;
 
-  const h = parseHashFromUrl(urlRaw);
+  const h = parseHashFromUrl(url) ?? "";
   if (h) return `h:${h}`;
 
-  return `u:${canonicalizeUrl(urlRaw)}`;
+  return `u:${canonicalizeUrl(url)}`;
 }
 
 /**
- * Stable content identity across URL variants.
- * Priority:
- *  1) canonicalHash in payload → h:
- *  2) hash parsed from URL → h:
- *  3) share token → tok:
- *  4) kaiSignature → sig:
- *  5) fallback url → u:
+ * Content identity (kind-aware):
+ * - /s posts are keyed by hash if available
+ * - streams are moment-true by (phiKey|pulse)
+ * - fallbacks remain for rare cases
  */
-export function contentIdFor(urlRaw: string, payload: SigilSharePayloadLoose): string {
-  const payloadHash = readStringField(payload, "canonicalHash");
-  if (payloadHash) return `h:${payloadHash}`;
+export function contentIdFor(url: string, p: SigilSharePayloadLoose): string {
+  const kind = contentKindForUrl(url);
 
-  const urlHash = parseHashFromUrl(urlRaw);
-  if (urlHash) return `h:${urlHash}`;
+  const h = parseHashFromUrl(url) ?? "";
+  if (kind === "post" && h) return `post:${h}`;
 
-  const token = extractPTokenFromUrl(urlRaw);
-  if (token) return `tok:${token}`;
+  const phiKey = readPhiKeyFromPayload(p);
+  const pulse = Number.isFinite(p.pulse ?? NaN) ? (p.pulse as number) : null;
+  if (kind === "stream" && phiKey && pulse != null) return `stream:${phiKey}|${pulse}`;
 
-  const sig = readStringField(payload, "kaiSignature");
-  if (sig) return `sig:${sig}`;
+  const sig = typeof p.kaiSignature === "string" ? p.kaiSignature.trim() : "";
+  if (sig) return `${kind}:sig:${sig}`;
 
-  return `u:${canonicalizeUrl(urlRaw)}`;
+  const tok = parseStreamToken(url);
+  if (tok && tok.trim()) return `${kind}:tok:${tok.trim()}`;
+
+  return `${kind}:u:${canonicalizeUrl(url)}`;
 }
 
-/* ─────────────────────────────────────────────────────────────────────
- *  View URL conversion (what we open in a browser tab)
- *  ───────────────────────────────────────────────────────────────────── */
-export function isPTildeUrl(raw: string): boolean {
-  const u = canonicalizeUrl(raw);
-  try {
-    const parsed = new URL(u, safeBaseForRelative());
-    return parsed.pathname.startsWith("/p~");
-  } catch {
-    return u.includes("/p~");
-  }
-}
+const isPackedViewerUrl = (raw: string): boolean => {
+  const u = raw.toLowerCase();
+  if (!u.includes("/stream")) return false;
 
-/**
- * Convert variants into the preferred browser-view form.
- * - /stream/p/<token> → /stream#p=<token>
- * - ?p=<token> → #p=<token>
- * - /p~<token> → /stream#p=<token>
- */
-export function browserViewUrl(raw: string): string {
-  const canon = canonicalizeUrl(raw);
-  if (!canon) return canon;
+  const hasPackedSignals = u.includes("root=") || u.includes("&seg=") || u.includes("&add=");
+  const isHashViewer = u.includes("/stream#") || u.includes("#v=");
 
-  const token = extractPTokenFromUrl(canon);
+  return hasPackedSignals && isHashViewer;
+};
 
-  try {
-    const u = new URL(canon, safeBaseForRelative());
+export function scoreUrlForView(u: string, prefer: ContentKind): number {
+  if (isPTildeUrl(u)) return -1e9;
 
-    if (u.hash && /(^#|[?&])p=/.test(u.hash)) return u.toString();
+  const url = u.toLowerCase();
+  const kind = classifyUrlKind(u);
+  let s = 0;
 
-    if (token) {
-      u.pathname = "/stream";
-      u.search = "";
-      u.hash = `#p=${token}`;
-      return u.toString();
-    }
+  if (isPackedViewerUrl(url)) s -= 10_000;
 
-    return u.toString();
-  } catch {
-    if (token) return `/stream#p=${token}`;
-    return canon;
-  }
-}
-
-/** What the explorer uses for external "Open" links (currently same as browserViewUrl). */
-export function explorerOpenUrl(raw: string): string {
-  return browserViewUrl(raw);
-}
-
-/* ─────────────────────────────────────────────────────────────────────
- *  Content kind + scoring (primary URL selection)
- *  ───────────────────────────────────────────────────────────────────── */
-export function contentKindForUrl(raw: string): ContentKind {
-  const u = canonicalizeUrl(raw);
-
-  if (u.includes("/p~") || u.includes("#p=") || u.includes("?p=") || u.includes("/stream/p/") || u.includes("/p/")) {
-    return "post";
-  }
-  if (u.includes("/stream") || u.includes("/memory") || u.includes("stream") || u.includes("memory")) return "stream";
-  if (u.includes("/sigil") || u.includes("sigil")) return "sigil";
-
-  if (parseHashFromUrl(u)) return "stream";
-
-  return "unknown";
-}
-
-/**
- * Higher score = preferred for UI viewing.
- * Pure heuristic (does not depend on URL health).
- */
-export function scoreUrlForView(raw: string, prefer: ContentKind): number {
-  const u = canonicalizeUrl(raw);
-  let score = 0;
-
-  if (u.startsWith("https://")) score += 30;
-  else if (u.startsWith("http://")) score += 10;
-
-  try {
-    const parsed = new URL(u, safeBaseForRelative());
-    const host = parsed.hostname.toLowerCase();
-    if (host === "phi.network" || host.endsWith(".phi.network")) score += 35;
-    if (parsed.pathname.startsWith("/stream")) score += 20;
-    if (parsed.pathname.startsWith("/p~")) score -= 25;
-    if (parsed.hash.startsWith("#p=")) score += 18;
-    if (parsed.pathname.includes("/stream/p/")) score += 6;
-    if (parsed.searchParams.has("p")) score += 4;
-  } catch {
-    // ignore
+  if (prefer === "post") {
+    if (kind === "postS") s += 220;
+    else s -= 25;
+  } else if (prefer === "stream") {
+    if (kind === "streamT") s += 220;
+    else if (kind === "streamP") s += 190;
+    else if (kind === "streamQ") s += 175;
+    else if (kind === "stream") s += 160;
+    else if (kind === "postS") s += 80;
+    else s -= 25;
+  } else {
+    if (kind === "postS") s += 120;
+    if (kind === "streamT") s += 125;
+    if (kind === "streamP") s += 105;
+    if (kind === "streamQ" || kind === "stream") s += 95;
   }
 
-  const kind = contentKindForUrl(u);
-  if (kind === prefer) score += 20;
-  if (prefer === "post" && kind === "stream") score -= 5;
+  const viewBase = viewBaseOrigin().toLowerCase();
+  if (url.startsWith(viewBase)) s += 12;
+  if (url.startsWith(LIVE_BASE_URL.toLowerCase())) s += 10;
+  if (url.startsWith(LIVE_BACKUP_URL.toLowerCase())) s += 10;
 
-  score += Math.max(-10, 10 - Math.min(10, Math.floor(u.length / 80)));
+  const h = urlHealth.get(canonicalizeUrl(u));
+  if (h === 1) s += 200;
+  if (h === -1) s -= 200;
 
-  return score;
+  s += Math.max(0, 20 - Math.floor(u.length / 40));
+
+  return s;
 }
 
 export function pickPrimaryUrl(urls: string[], prefer: ContentKind): string {
-  if (urls.length === 0) return "";
-  const sorted = urls
-    .slice()
-    .map((u) => canonicalizeUrl(u))
-    .filter((u) => u.length > 0)
-    .sort((a, b) => scoreUrlForView(b, prefer) - scoreUrlForView(a, prefer));
+  const nonPTilde = urls.filter((u) => !isPTildeUrl(u));
+  const candidates = nonPTilde.length > 0 ? nonPTilde : urls;
 
-  return sorted[0] ?? canonicalizeUrl(urls[0] ?? "");
-}
-
-/* ─────────────────────────────────────────────────────────────────────
- *  Hash helpers
- *  ───────────────────────────────────────────────────────────────────── */
-function pickLikelyHash(s: string): string | undefined {
-  const m64 = s.match(/[0-9a-f]{64}/i);
-  if (m64?.[0]) return m64[0];
-
-  const m = s.match(/[0-9a-f]{40,128}/i);
-  if (m?.[0]) return m[0];
-
-  return undefined;
-}
-
-export function parseHashFromUrl(raw: string): string | undefined {
-  const u = String(raw ?? "").trim();
-  if (!u) return undefined;
-
-  const direct = u.match(/\/s\/([0-9a-f]{40,128})/i);
-  if (direct?.[1]) return direct[1];
-
-  try {
-    const parsed = new URL(u, safeBaseForRelative());
-    const pathHit = parsed.pathname.match(/\/s\/([0-9a-f]{40,128})/i);
-    if (pathHit?.[1]) return pathHit[1];
-
-    const q = parsed.searchParams;
-    const qh = q.get("hash") || q.get("h") || q.get("s");
-    if (qh) {
-      const h = pickLikelyHash(qh);
-      if (h) return h;
-    }
-
-    if (parsed.hash) {
-      const h = pickLikelyHash(parsed.hash);
-      if (h) return h;
-    }
-
-    const h2 = pickLikelyHash(parsed.toString());
-    if (h2) return h2;
-  } catch {
-    const h = pickLikelyHash(u);
-    if (h) return h;
+  // If only /p~ exists, choose a viewable stream URL by token.
+  if (nonPTilde.length === 0 && urls.length > 0) {
+    const tok = parseStreamToken(urls[0] ?? "");
+    if (tok) return canonicalizeUrl(streamHashViewerUrlFromToken(tok));
   }
 
-  return undefined;
-}
+  let best = candidates[0] ?? "";
+  let bestScore = -1e9;
 
-/**
- * Best-effort: derive an "origin" URL from the payload embedded in the URL.
- */
-export function getOriginUrl(raw: string): string | undefined {
-  const payload = extractPayloadFromUrl(raw);
-  if (!payload) return undefined;
-
-  const origin =
-    readStringField(payload, "originUrl") ||
-    readStringField(payload, "origin_url") ||
-    readStringField(payload, "origin") ||
-    readStringField(payload, "streamUrl") ||
-    readStringField(payload, "stream_url") ||
-    readStringField(payload, "memoryUrl") ||
-    readStringField(payload, "memory_url") ||
-    readStringField(payload, "url");
-
-  return origin ? canonicalizeUrl(origin) : undefined;
+  for (const u of candidates) {
+    const sc = scoreUrlForView(u, prefer);
+    if (sc > bestScore || (sc === bestScore && u.length < best.length)) {
+      best = u;
+      bestScore = sc;
+    }
+  }
+  return best;
 }
 
 /* ─────────────────────────────────────────────────────────────────────
  *  CSS escape (for querySelector)
- *  ───────────────────────────────────────────────────────────────────── */
-export function cssEscape(value: string): string {
-  const v = String(value ?? "");
-  if (hasWindow) {
-    const w = window as unknown as { CSS?: { escape?: (s: string) => string } };
-    const esc = w.CSS?.escape;
-    if (typeof esc === "function") return esc(v);
-  }
-
-  return v.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/[^a-zA-Z0-9_-]/g, (m) => `\\${m}`);
+ *  ─────────────────────────────────────────────────────────────────── */
+export function cssEscape(s: string): string {
+  const w = hasWindow ? (window as unknown as { CSS?: { escape?: (v: string) => string } }) : null;
+  const esc = w?.CSS?.escape;
+  if (typeof esc === "function") return esc(s);
+  return s.replace(/["\\]/g, "\\$&");
 }

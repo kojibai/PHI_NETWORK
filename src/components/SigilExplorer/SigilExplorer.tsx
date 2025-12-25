@@ -13,7 +13,7 @@ import React, {
 } from "react";
 
 /* ✅ CSS contract you pasted */
-import "./SigilExplorer.css";
+import "../SigilExplorer.css";
 
 /* ──────────────────────────────────────────────────────────────────────────────
    Modular SigilExplorer wiring (components/SigilExplorer/*)
@@ -66,7 +66,6 @@ import {
 /** Inhale queue (push) */
 import {
   enqueueInhaleRawKrystal,
-  enqueueInhaleUrl,
   flushInhaleQueue,
   forceInhaleUrls,
   loadInhaleQueueFromStorage,
@@ -93,6 +92,7 @@ import {
   readSigilTransferRegistry,
   SIGIL_TRANSFER_CHANNEL_NAME,
   SIGIL_TRANSFER_EVENT,
+  SIGIL_TRANSFER_LS_KEY,
   type SigilTransferRecord,
   type TransferMove,
 } from "./transfers";
@@ -111,26 +111,13 @@ type SyncReason = "open" | "pulse" | "visible" | "focus" | "online" | "import";
 const SIGIL_EXPLORER_OPEN_EVENT = "sigil:explorer:open";
 const SIGIL_EXPLORER_CHANNEL_NAME = "sigil:explorer:bc:v1";
 
-const UI_SCROLL_INTERACT_MS = 650;
-const UI_TOGGLE_INTERACT_MS = 450;
-const UI_FLUSH_PAD_MS = 60;
+const UI_SCROLL_INTERACT_MS = 520;
+const UI_TOGGLE_INTERACT_MS = 900;
+const UI_FLUSH_PAD_MS = 80;
 
-const URL_PROBE_MAX_PER_REFRESH = 3;
+const URL_PROBE_MAX_PER_REFRESH = 18;
 
-const PHI_MARK_SRC =
-  "data:image/svg+xml;utf8," +
-  encodeURIComponent(
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
-      <defs>
-        <linearGradient id="g" x1="0" x2="1" y1="0" y2="1">
-          <stop offset="0" stop-color="white" stop-opacity="0.92"/>
-          <stop offset="1" stop-color="white" stop-opacity="0.62"/>
-        </linearGradient>
-      </defs>
-      <circle cx="64" cy="64" r="58" fill="none" stroke="url(#g)" stroke-width="6"/>
-      <path d="M44 34h40v12H74c10 0 18 8 18 18s-8 18-18 18H56v12h-12V82h-8V70h8V58h-8V46h8V34h12v12h18c4 0 6 4 6 6s-2 6-6 6H56v12h18c10 0 18-8 18-18S84 34 74 34H44z" fill="url(#g)"/>
-    </svg>`,
-  );
+const PHI_MARK_SRC = "/phi.svg";
 
 function nowMs(): number {
   return Date.now();
@@ -722,7 +709,7 @@ const SigilExplorer: React.FC = () => {
                 claimUrl: entry.claimUrl,
                 originHash: entry.originHash ?? current?.originHash,
                 ownerHint: entry.ownerHint ?? current?.ownerHint ?? null,
-                updatedAtMs: current?.updatedAtMs ?? 0,
+                updatedAt: current?.updatedAt ?? 0,
               },
             };
           }
@@ -982,7 +969,6 @@ const SigilExplorer: React.FC = () => {
       const here = canonicalizeUrl(window.location.href);
       if (extractPayloadFromUrl(here)) {
         const changed = addUrl(here, { includeAncestry: true, broadcast: false, persist: true, source: "local", enqueueToApi: true });
-        enqueueInhaleUrl(here);
         setLastAddedSafe(browserViewUrl(here));
         if (changed) bump();
       }
@@ -993,7 +979,6 @@ const SigilExplorer: React.FC = () => {
     if (!window.__SIGIL__) window.__SIGIL__ = {};
     window.__SIGIL__.registerSigilUrl = (u: string) => {
       const changed = addUrl(u, { includeAncestry: true, broadcast: true, persist: true, source: "local", enqueueToApi: true });
-      enqueueInhaleUrl(u);
       if (changed) {
         setLastAddedSafe(browserViewUrl(u));
         bump();
@@ -1006,7 +991,6 @@ const SigilExplorer: React.FC = () => {
       const u = anyEvent?.detail?.url;
       if (typeof u === "string" && u.length) {
         const changed = addUrl(u, { includeAncestry: true, broadcast: true, persist: true, source: "local", enqueueToApi: true });
-        enqueueInhaleUrl(u);
         if (changed) {
           setLastAddedSafe(browserViewUrl(u));
           bump();
@@ -1020,7 +1004,6 @@ const SigilExplorer: React.FC = () => {
       const u = anyEvent?.detail?.url;
       if (typeof u === "string" && u.length) {
         const changed = addUrl(u, { includeAncestry: true, broadcast: true, persist: true, source: "local", enqueueToApi: true });
-        enqueueInhaleUrl(u);
         if (changed) {
           setLastAddedSafe(browserViewUrl(u));
           bump();
@@ -1035,7 +1018,6 @@ const SigilExplorer: React.FC = () => {
       const data = ev.data as unknown as { type?: unknown; url?: unknown };
       if (data?.type === "sigil:add" && typeof data.url === "string") {
         const changed = addUrl(data.url, { includeAncestry: true, broadcast: false, persist: true, source: "local", enqueueToApi: true });
-        enqueueInhaleUrl(data.url);
         if (changed) {
           setLastAddedSafe(browserViewUrl(data.url));
           bump();
@@ -1049,7 +1031,7 @@ const SigilExplorer: React.FC = () => {
       if (!ev.key) return;
       const isRegistryKey = ev.key === REGISTRY_LS_KEY;
       const isModalKey = ev.key === MODAL_FALLBACK_LS_KEY;
-      const isTransferKey = ev.key === "sigil:transferRegistry:v1";
+      const isTransferKey = ev.key === SIGIL_TRANSFER_LS_KEY;
 
       if (isTransferKey) {
         setTransferRev((v) => v + 1);
@@ -1066,7 +1048,6 @@ const SigilExplorer: React.FC = () => {
         for (const u of urls) {
           if (typeof u !== "string") continue;
           if (addUrl(u, { includeAncestry: true, broadcast: false, persist: false, source: "local", enqueueToApi: true })) changed = true;
-          enqueueInhaleUrl(u);
         }
 
         setLastAddedSafe(undefined);
@@ -1448,7 +1429,7 @@ const SigilExplorer: React.FC = () => {
       markInteracting(UI_TOGGLE_INTERACT_MS);
 
       const changed = addUrl(url, { includeAncestry: true, broadcast: true, persist: true, source: "local", enqueueToApi: true });
-      enqueueInhaleUrl(url);
+      // addUrl already enqueues when requested
 
       if (changed) {
         setLastAddedSafe(browserViewUrl(url));
@@ -1486,7 +1467,7 @@ const SigilExplorer: React.FC = () => {
         ) {
           changed = true;
         }
-        enqueueInhaleUrl(u);
+        // addUrl already enqueues when requested
       }
 
       // If import had explicit urls, push them immediately (fast UX)
