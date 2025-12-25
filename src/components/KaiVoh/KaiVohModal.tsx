@@ -523,7 +523,7 @@ export default function KaiVohModal({ open, onClose }: KaiVohModalProps) {
 
             <KaiVohBoundary>
               <section
-                className="portal-pane"
+                className="portal-pane portal-pane--voh"
                 style={{ display: view === "voh" ? "block" : "none" }}
                 aria-hidden={view !== "voh"}
               >
@@ -540,7 +540,7 @@ export default function KaiVohModal({ open, onClose }: KaiVohModalProps) {
               </section>
 
               <section
-                className="portal-pane"
+                className="portal-pane portal-pane--realms"
                 style={{ display: view === "realms" ? "block" : "none" }}
                 aria-hidden={view !== "realms"}
               >

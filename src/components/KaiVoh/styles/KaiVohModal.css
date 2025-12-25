@@ -572,6 +572,12 @@
   contain: content;
 }
 
+/* Realms needs to break out of paint containment for its fixed backdrop. */
+.portal-pane--realms{
+  contain: none;
+  overflow: visible;
+}
+
 /* ──────────────────────────────────────────────────────────────
    Footer / seals / chakra dots
    ────────────────────────────────────────────────────────────── */
