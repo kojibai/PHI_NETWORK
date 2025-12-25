@@ -191,9 +191,12 @@ export default function HomePriceChartCard({
   useEffect(() => {
     onExpandChangeRef.current?.(false);
   }, []);
+  useEffect(() => {
+    setStripePromise(null);
+  }, [stripePk]);
 
   // Stripe
-  const stripePromise = useMemo(() => loadStripe(stripePk), [stripePk]);
+  const [stripePromise, setStripePromise] = useState<ReturnType<typeof loadStripe> | null>(null);
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [intentId, setIntentId] = useState<string | null>(null);
   const [elementsKey, setElementsKey] = useState(0);
@@ -265,6 +268,9 @@ export default function HomePriceChartCard({
   /* ---------- Checkout ---------- */
   const openInlineCheckout = useCallback(async () => {
     setErrorMsg("");
+    if (!stripePromise) {
+      setStripePromise(loadStripe(stripePk));
+    }
     try {
       const amt = Number.isFinite(sample) ? Math.max(1, Math.round(sample)) : ctaAmountUsd;
       const { clientSecret: secret, intentId: id } = await createPaymentIntent(apiBase, amt);
@@ -277,7 +283,7 @@ export default function HomePriceChartCard({
       setErrorMsg(msg);
       onError?.(err);
     }
-  }, [sample, ctaAmountUsd, apiBase, onError]);
+  }, [sample, ctaAmountUsd, apiBase, onError, stripePk, stripePromise]);
 
   const closeInlineCheckout = useCallback(() => {
     setClientSecret(null);
@@ -415,7 +421,7 @@ export default function HomePriceChartCard({
           {errorMsg && <div className="hp-error">{errorMsg}</div>}
         </div>
 
-        {clientSecret && intentId && (
+        {clientSecret && intentId && stripePromise && (
           <Elements
             key={elementsKey}
             stripe={stripePromise}

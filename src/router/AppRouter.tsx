@@ -27,6 +27,19 @@ const PREFETCH_LAZY_ROUTES: ReadonlyArray<() => Promise<unknown>> = [
   () => import("../pages/VerifyPage"),
 ];
 
+function shouldPrefetchLazyRoutes(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const navAny = navigator as Navigator & {
+    connection?: { saveData?: boolean; effectiveType?: string };
+    deviceMemory?: number;
+  };
+  const saveData = Boolean(navAny.connection?.saveData);
+  const et = navAny.connection?.effectiveType || "";
+  const slowNet = et === "slow-2g" || et === "2g";
+  const lowMemory = typeof navAny.deviceMemory === "number" && navAny.deviceMemory > 0 && navAny.deviceMemory <= 2;
+  return !(saveData || slowNet || lowMemory);
+}
+
 function RouteLoader(): React.JSX.Element {
 return (
   <div
@@ -82,6 +95,7 @@ export default function AppRouter(): React.JSX.Element {
     };
 
     const warmLazyBundles = (): void => {
+      if (!shouldPrefetchLazyRoutes()) return;
       for (const prefetch of PREFETCH_LAZY_ROUTES) {
         prefetch().catch(() => {
           /* non-blocking */
