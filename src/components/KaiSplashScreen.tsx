@@ -7,7 +7,7 @@ import React, {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-import { matchPath, useLocation } from "react-router-dom";
+import { matchPath, useLocation, useNavigationType } from "react-router-dom";
 
 type SplashPhase = "show" | "fade" | "hidden";
 
@@ -59,6 +59,7 @@ function usePrefersReducedMotion(): boolean {
 
 export default function KaiSplashScreen(): React.JSX.Element | null {
   const location = useLocation();
+  const navigationType = useNavigationType();
   const prefersReducedMotion = usePrefersReducedMotion();
 
   const [phase, setPhase] = useState<SplashPhase>("show");
@@ -185,6 +186,7 @@ export default function KaiSplashScreen(): React.JSX.Element | null {
       return undefined;
     }
 
+    if (navigationType === "REPLACE") return undefined;
     if (!matchesSplashRoute) return undefined;
 
     navShowTimerRef.current = window.setTimeout(() => {
@@ -210,6 +212,7 @@ export default function KaiSplashScreen(): React.JSX.Element | null {
     location.pathname,
     location.search,
     location.hash,
+    navigationType,
   ]);
 
   useEffect(

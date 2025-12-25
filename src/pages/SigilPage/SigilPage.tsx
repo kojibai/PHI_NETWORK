@@ -1000,6 +1000,7 @@ useEffect(() => {
 
   /* Local flag for stale link */
   const [oldLinkDetected, setOldLinkDetected] = useState<boolean>(false);
+  const hasCanonicalizedRef = useRef<boolean>(false);
 
   /* Reconcile URL/store (missing/stale ?d=) — v48: cap/prune before writing */
   useEffect(() => {
@@ -1039,9 +1040,11 @@ useEffect(() => {
 
   /* Canonicalize route to canonical hash when active */
   useEffect(() => {
+    if (hasCanonicalizedRef.current) return;
     if (!payload?.canonicalHash) return;
     const canon = payload.canonicalHash.toLowerCase();
     if (routeHash && canon && canon !== routeHash && linkStatus === "active" && !legacyInfo) {
+      hasCanonicalizedRef.current = true;
       const u = new URL(window.location.href);
       u.pathname = `/s/${canon}`;
       navigate(`${u.pathname}${u.search}${u.hash}`, { replace: true });
@@ -1050,6 +1053,7 @@ useEffect(() => {
 
   /* Canonicalize to computed localHash when payload has no canonical yet (fresh glyph) */
   useEffect(() => {
+    if (hasCanonicalizedRef.current) return;
     if (
       payload &&
       !payload.canonicalHash &&
@@ -1059,6 +1063,7 @@ useEffect(() => {
       linkStatus === "active" &&
       !legacyInfo
     ) {
+      hasCanonicalizedRef.current = true;
       const u = new URL(window.location.href);
       u.pathname = `/s/${localHash}`;
       navigate(`${u.pathname}${u.search}${u.hash}`, { replace: true });
@@ -2583,6 +2588,7 @@ useEffect(() => {
       data-owner-verified={ownerVerified}
       data-archived={isArchived}
       data-old-link={oldLinkDetected ? "true" : "false"}
+      data-ready={!loading && !!payload}
       data-version="v48"
     >
       <div className="sp-veil" aria-hidden="true" />
@@ -3364,4 +3370,3 @@ useEffect(() => {
     </main>
   );
 }
-
