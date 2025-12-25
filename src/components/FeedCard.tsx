@@ -2688,12 +2688,12 @@ function beatStepFromPulseKKS(pulse: number): { beatZ: number; stepZ: number } {
   const kai = buildKaiMetaLineZero(pulse, beatZ, stepZ, day, month, year);
   const stepPct = stepPctFromIndex(stepZ);
 const ARC_RGB = {
-  Ignite: [255, 92, 72],
-  Integrate: [72, 200, 255],
-  Harmonize: [72, 255, 170],
-  Reflekt: [180, 120, 255],
-  Purify: [230, 240, 255],
-  Dream: [90, 110, 255],
+  Ignite: [255, 92, 72],        // red
+  Integrate: [255, 160, 72],    // orange
+  Harmonize: [255, 215, 128],   // yellow
+  Reflekt: [72, 255, 170],      // green
+  Purify: [42, 197, 255],       // blue
+  Dream: [180, 120, 255],       // purple
 } as const;
 
 type KaiArc = keyof typeof ARC_RGB;

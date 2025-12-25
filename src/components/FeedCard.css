@@ -738,13 +738,12 @@
   user-select: none;
 }
 /* Arc pill (Ignite / Dream / etc) uses the exact chakra RGB for this card */
-.fc-arc {
-  color: rgb(var(--fc-accent-r), var(--fc-accent-g), var(--fc-accent-b));
-
-  /* optional, but matches your pill look while staying chakra-true */
-  border-color: rgba(var(--fc-accent-r), var(--fc-accent-g), var(--fc-accent-b), 0.55);
-  background-color: rgba(var(--fc-accent-r), var(--fc-accent-g), var(--fc-accent-b), 0.10);
+.fc-arc{
+  color: rgb(var(--fc-arc-r) var(--fc-arc-g) var(--fc-arc-b));
+  background: rgb(var(--fc-arc-r) var(--fc-arc-g) var(--fc-arc-b) / 0.14);
+  border-color: rgb(var(--fc-arc-r) var(--fc-arc-g) var(--fc-arc-b) / 0.35);
 }
+
 /* ARC badge ONLY — force it to use arc vars, not the card/day accent */
 .arcPill,
 .kaiArcPill,
