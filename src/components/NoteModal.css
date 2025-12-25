@@ -188,6 +188,18 @@
     max-height: min(88vh, calc(100dvh - 24px));
   }
 
+  .note-modal__header,
+  .note-modal__toolbar,
+  .note-modal__actions {
+    flex-shrink: 0;
+  }
+
+  .note-modal__content {
+    flex: 1 1 auto;
+    overflow: auto;
+    padding-bottom: 8px;
+  }
+
   .note-modal__controls {
     display: flex;
     gap: 8px;
@@ -449,6 +461,11 @@
     .tool-stats {
       width: 100%;
       justify-content: flex-start;
+    }
+    .note-modal__actions {
+      padding-bottom: max(18px, env(safe-area-inset-bottom));
+      flex-direction: column;
+      align-items: stretch;
     }
   }
   
