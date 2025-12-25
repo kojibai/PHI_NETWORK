@@ -9,7 +9,7 @@ import AppRouter from "./router/AppRouter";
 import { APP_VERSION, SW_VERSION_EVENT } from "./version";
 
 // ✅ REPLACE scheduler impl with your utils cadence file
-import { startKaiCadence } from "./utils/kai_cadence";
+import { startKaiCadence, startKaiFibBackoff } from "./utils/kai_cadence";
 
 const isProduction = import.meta.env.MODE === "production";
 
@@ -58,12 +58,19 @@ if ("serviceWorker" in navigator && isProduction) {
     try {
       const reg = await navigator.serviceWorker.register(`/sw.js?v=${APP_VERSION}`, { scope: "/" });
 
-      // Force refresh when a new worker takes control
-      let refreshing = false;
+      // Avoid mid-session reloads: refresh on next background/idle moment.
+      let pendingReload = false;
+      const tryReload = () => {
+        if (!pendingReload) return;
+        if (document.visibilityState === "hidden") {
+          window.location.reload();
+        }
+      };
+      const onVisChange = () => tryReload();
       navigator.serviceWorker.addEventListener("controllerchange", () => {
-        if (refreshing) return;
-        refreshing = true;
-        window.location.reload();
+        pendingReload = true;
+        tryReload();
+        document.addEventListener("visibilitychange", onVisChange, { passive: true, once: true });
       });
 
       // Auto-skip waiting once the new worker finishes installing
@@ -96,13 +103,29 @@ if ("serviceWorker" in navigator && isProduction) {
       });
 
       // ✅ REPLACES the hour interval: Kai beat cadence via utils
-      startKaiCadence({
-        unit: "beat",
-        every: 1, // "do a beat"
-        onTick: async () => {
-          await reg.update();
-        },
-      });
+      const navAny = navigator as Navigator & {
+        connection?: { saveData?: boolean; effectiveType?: string };
+      };
+      const saveData = Boolean(navAny.connection?.saveData);
+      const effectiveType = navAny.connection?.effectiveType || "";
+      const slowNet = effectiveType === "slow-2g" || effectiveType === "2g";
+
+      if (saveData || slowNet) {
+        startKaiCadence({
+          unit: "beat",
+          every: 144,
+          onTick: async () => {
+            await reg.update();
+          },
+        });
+      } else {
+        startKaiFibBackoff({
+          unit: "beat",
+          work: async () => {
+            await reg.update();
+          },
+        });
+      }
 
       console.log("Kairos Service Worker registered:", reg);
     } catch (err) {

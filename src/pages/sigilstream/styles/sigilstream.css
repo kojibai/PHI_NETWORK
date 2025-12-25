@@ -793,6 +793,13 @@ body{
 /* ========== 14) LINKCARDS (stream list) ======================== */
 .sf-rlist{ display:grid; gap: 12px; }
 .sf-rlist__item{ min-width:0; }
+.sf-rlist__item,
+.sf-att-card,
+.sf-embed,
+.sf-media{
+  content-visibility: auto;
+  contain-intrinsic-size: 260px 640px;
+}
 
 .sf-linkcard{
   border-radius: 18px;
@@ -965,6 +972,26 @@ body{
 .sf-reply-actions{ margin-top: .6rem; display:flex; gap: .6rem; flex-wrap: wrap; }
 .sf-reply-login{ margin-top: .5rem; }
 .sf-inhaler .sf-reply-actions{ display:flex; gap:.5rem; flex-wrap:wrap; }
+
+@media (max-width: 720px), (prefers-reduced-data: reduce) {
+  .sf::after{
+    animation: none;
+    filter: blur(16px) saturate(1);
+    opacity: .12;
+  }
+
+  .sf::before{
+    filter: none;
+    opacity: .28;
+  }
+
+  .sf-linkcard,
+  .sf-embed,
+  .sf-media,
+  .sf-payload{
+    box-shadow: 0 10px 28px rgba(0,0,0,.28);
+  }
+}
 
 /* ========== 18) ATTACHMENTS (Holy Card) — SCOPED =============== */
 .sf-attachments{ margin-top: 14px; }

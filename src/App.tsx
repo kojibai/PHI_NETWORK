@@ -441,7 +441,6 @@ function startVVListeners(): void {
   window.addEventListener("resize", schedule, { passive: true });
   if (vv) {
     vv.addEventListener("resize", schedule, { passive: true });
-    vv.addEventListener("scroll", schedule, { passive: true });
   }
 
   vvStore.cleanup = (): void => {
@@ -452,7 +451,6 @@ function startVVListeners(): void {
     window.removeEventListener("resize", schedule);
     if (vv) {
       vv.removeEventListener("resize", schedule);
-      vv.removeEventListener("scroll", schedule);
     }
     vvStore.cleanup = null;
     vvStore.listening = false;
@@ -1168,6 +1166,17 @@ export function AppChrome(): React.JSX.Element {
   // Optional: prefetch lazy chunks in idle (no UI impact)
   useEffect(() => {
     if (!heavyUiReady) return;
+    const navAny = navigator as Navigator & {
+      connection?: { saveData?: boolean; effectiveType?: string };
+      deviceMemory?: number;
+    };
+    const saveData = Boolean(navAny.connection?.saveData);
+    const et = navAny.connection?.effectiveType || "";
+    const slowNet = et === "slow-2g" || et === "2g";
+    const lowMemory = typeof navAny.deviceMemory === "number" && navAny.deviceMemory > 0 && navAny.deviceMemory <= 2;
+
+    if (saveData || slowNet || lowMemory) return;
+
     void import("./components/HomePriceChartCard");
     void import("./components/KaiVoh/KaiVohModal");
     void import("./components/SigilModal");
@@ -1188,8 +1197,11 @@ export function AppChrome(): React.JSX.Element {
     const saveData = Boolean(navAny.connection?.saveData);
     const et = navAny.connection?.effectiveType || "";
     const slowNet = et === "slow-2g" || et === "2g";
+    const lowMemory =
+      typeof (navAny as Navigator & { deviceMemory?: number }).deviceMemory === "number" &&
+      (navAny as Navigator & { deviceMemory?: number }).deviceMemory! <= 2;
 
-    if (saveData || slowNet) {
+    if (saveData || slowNet || lowMemory) {
       return () => aborter.abort();
     }
 

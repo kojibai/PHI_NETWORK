@@ -905,6 +905,25 @@ button {
   border-radius: var(--r-md);
 }
 
+/* Lighter mobile data profile */
+@media (max-width: 720px), (prefers-reduced-data: reduce) {
+  :root { --blur: 10px; }
+
+  .sf { animation: none; }
+
+  .sf-head,
+  .sf-payload,
+  .sf-reply,
+  .sf-list .feed-card{
+    box-shadow: 0 12px 32px rgba(0,0,0,0.34);
+  }
+}
+
+.sf-list .feed-card{
+  content-visibility: auto;
+  contain-intrinsic-size: 280px 640px;
+}
+
 /* ────────────────────────────────────────────────────────────────
    13) Responsive tightening
 ──────────────────────────────────────────────────────────────── */
