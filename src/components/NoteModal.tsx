@@ -98,6 +98,8 @@ function computeLocalKai(now: Date): LocalKai {
 
 /* ══════════════ Pretty helpers ══════════════ */
 const pad2 = (n: number) => String(n).padStart(2, "0");
+const noteIdForPulse = (pulse: number, beat: number, step: number): string =>
+  `kai_note_${pulse}_${beat}_${step}`;
 
 type NoteDraft = {
   text: string;
@@ -108,14 +110,15 @@ type NoteDraft = {
 };
 
 /* ══════════════ Hook: keyboard inset (VisualViewport) ══════════════ */
-function useKeyboardInset(): number {
-  const [inset, setInset] = useState(0);
+function useKeyboardInset(): { inset: number; viewportHeight: number } {
+  const [state, setState] = useState({ inset: 0, viewportHeight: 0 });
   useEffect(() => {
     const vv = window.visualViewport;
     const compute = () => {
-      if (!vv) return setInset(0);
+      const viewportHeight = Math.round(vv?.height ?? window.innerHeight);
+      if (!vv) return setState({ inset: 0, viewportHeight });
       const hidden = Math.max(0, window.innerHeight - (vv.height + vv.offsetTop));
-      setInset(Math.round(hidden));
+      setState({ inset: Math.round(hidden), viewportHeight });
     };
     compute();
     vv?.addEventListener("resize", compute);
@@ -127,7 +130,7 @@ function useKeyboardInset(): number {
       window.removeEventListener("resize", compute);
     };
   }, []);
-  return inset;
+  return state;
 }
 
 /* ══════════════ Small utils (editor ops) ══════════════ */
@@ -280,7 +283,7 @@ const NoteModal: FC<NoteModalProps> = ({ pulse, initialText, onSave, onClose }) 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   // mobile keyboard clearance
-  const kbInset = useKeyboardInset();
+  const { inset: kbInset, viewportHeight } = useKeyboardInset();
 
   useEffect(() => {
     setChars(text.length);
@@ -295,14 +298,17 @@ const NoteModal: FC<NoteModalProps> = ({ pulse, initialText, onSave, onClose }) 
   /* Autofocus text area on open */
   useEffect(() => textareaRef.current?.focus(), []);
 
-  /* ESC to close */
+  /* Lock body scroll while modal is open */
   useEffect(() => {
-    const h = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+    const prevOverflow = document.body.style.overflow;
+    const prevTouch = document.body.style.touchAction;
+    document.body.style.overflow = "hidden";
+    document.body.style.touchAction = "none";
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      document.body.style.touchAction = prevTouch;
     };
-    window.addEventListener("keydown", h);
-    return () => window.removeEventListener("keydown", h);
-  }, [onClose]);
+  }, []);
 
   /* Simple focus trap (keeps tabbing inside the modal) */
   useEffect(() => {
@@ -383,9 +389,10 @@ const NoteModal: FC<NoteModalProps> = ({ pulse, initialText, onSave, onClose }) 
     const el = textareaRef.current;
     if (!el || editorHeight !== null) return; // respect manual size
     el.style.height = "auto";
-    const max = Math.round(window.innerHeight * (expanded ? 0.7 : 0.42));
+    const baseHeight = viewportHeight || window.innerHeight;
+    const max = Math.round(baseHeight * (expanded ? 0.7 : 0.42));
     el.style.height = Math.min(max, el.scrollHeight + 2) + "px";
-  }, [expanded, editorHeight]);
+  }, [expanded, editorHeight, viewportHeight]);
   useEffect(() => {
     autoGrow();
   }, [text, expanded, autoGrow]);
@@ -417,6 +424,7 @@ const NoteModal: FC<NoteModalProps> = ({ pulse, initialText, onSave, onClose }) 
   const words = useMemo(() => countWords(text), [text]);
   const readMin = useMemo(() => estReadMin(words), [words]);
   const tagList = useMemo(() => normalizeTags(tagsInput), [tagsInput]);
+  const viewportHeightSafe = viewportHeight || (typeof window !== "undefined" ? window.innerHeight : 0);
 
   /* Draft persistence */
   useEffect(() => {
@@ -453,7 +461,7 @@ const NoteModal: FC<NoteModalProps> = ({ pulse, initialText, onSave, onClose }) 
     const nowKai = computeLocalKai(new Date());
     const livePulse = Math.max(0, nowKai.livePulseApprox ?? Math.round(pulse));
     const note: Note = {
-      id: `${livePulse}-${Date.now()}`,
+      id: noteIdForPulse(livePulse, nowKai.beat, nowKai.step),
       pulse: livePulse,
       text: trimmed,
       title: title.trim() || undefined,
@@ -509,6 +517,7 @@ const NoteModal: FC<NoteModalProps> = ({ pulse, initialText, onSave, onClose }) 
           // keyboard avoidance: lift above overlay keyboards (iOS)
           style={{
             bottom: Math.max(12, kbInset),
+            maxHeight: Math.max(240, viewportHeightSafe - 24),
             paddingBottom: "max(12px, env(safe-area-inset-bottom))",
           }}
         >
@@ -696,7 +705,7 @@ const NoteModal: FC<NoteModalProps> = ({ pulse, initialText, onSave, onClose }) 
           </div>
 
           {/* Editor */}
-
+          <div className="note-modal__content">
             <div className="note-modal__meta-grid">
               <label className="note-modal__label">
                 Title
@@ -786,7 +795,8 @@ const NoteModal: FC<NoteModalProps> = ({ pulse, initialText, onSave, onClose }) 
                 onPointerMove={onGripMove}
                 onPointerUp={onGripUp}
               />
-            
+            </div>
+
             <div className="note-modal__hints" aria-live="polite">
               Encoding to <strong>Beat {kai.beat}</strong> • <strong>Step {kai.step}</strong>
             </div>
@@ -794,9 +804,6 @@ const NoteModal: FC<NoteModalProps> = ({ pulse, initialText, onSave, onClose }) 
 
           {/* Actions */}
           <div className="note-modal__actions">
-            <button type="button" className="btn-ghost" onClick={onClose}>
-              Cancel
-            </button>
             <button
               type="button"
               className="btn-primary"

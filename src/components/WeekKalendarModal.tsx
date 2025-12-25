@@ -418,6 +418,11 @@ function insertSortedByPulse(prev: SavedNote[], next: SavedNote): SavedNote[] {
   return [...prev.slice(0, i), next, ...prev.slice(i)];
 }
 
+function upsertSortedByPulse(prev: SavedNote[], next: SavedNote): SavedNote[] {
+  const without = prev.filter((p) => p.id !== next.id);
+  return insertSortedByPulse(without, next);
+}
+
 type DayNote = { beat: number; step: number; text: string };
 
 function dayStartPulseFromAbsolute(pulse: number): number {
@@ -542,7 +547,7 @@ const WeekKalendarModal: FC<Props> = ({ onClose, container }) => {
     saveNoteToDayStorage(note);
     setNotes((prev) => {
       const saved: SavedNote = { ...note, createdAt: Date.now() };
-      const next = insertSortedByPulse(prev, saved);
+      const next = upsertSortedByPulse(prev, saved);
       try {
         localStorage.setItem(NOTES_KEY, JSON.stringify(next));
       } catch {

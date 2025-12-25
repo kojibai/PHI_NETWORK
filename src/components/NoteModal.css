@@ -188,6 +188,18 @@
     max-height: min(88vh, calc(100dvh - 24px));
   }
 
+  .note-modal__header,
+  .note-modal__toolbar,
+  .note-modal__actions {
+    flex-shrink: 0;
+  }
+
+  .note-modal__content {
+    flex: 1 1 auto;
+    overflow: auto;
+    padding-bottom: 8px;
+  }
+
   .note-modal__controls {
     display: flex;
     gap: 8px;
@@ -443,12 +455,80 @@
     .note-modal {
       inset: auto 10px 10px 10px;
     }
+    .note-modal__header {
+      padding: 14px 16px 10px;
+    }
+    .note-modal__title {
+      font-size: 13px;
+    }
+    .note-modal__beatstep {
+      font-size: 16px;
+    }
+    .note-modal__meta {
+      font-size: 11px;
+    }
+    .note-modal__controls {
+      gap: 8px;
+    }
+    .note-modal__expand,
+    .note-modal__pin {
+      padding: 3px 7px;
+      font-size: 11px;
+    }
+    .note-modal__toolbar {
+      padding: 8px 14px;
+      gap: 6px;
+    }
+    .tool-btn {
+      padding: 5px 7px;
+      font-size: 11px;
+    }
+    .tool-stats {
+      font-size: 10px;
+      gap: 8px;
+    }
+    .note-modal__meta-grid {
+      padding: 12px 14px 6px;
+      gap: 10px;
+    }
+    .note-modal__label {
+      font-size: 10px;
+      gap: 4px;
+    }
+    .note-modal__input {
+      padding: 7px 9px;
+      font-size: 12px;
+    }
+    .note-modal__field {
+      padding: 0 14px 6px;
+    }
+    .note-modal__field textarea {
+      padding: 10px 12px;
+      min-height: 120px;
+      font-size: 13px;
+    }
+    .note-modal__actions {
+      padding: 6px 14px 14px;
+      gap: 6px;
+    }
+    .btn-primary,
+    .btn-ghost,
+    .btn-secondary {
+      padding: 8px 12px;
+      font-size: 12px;
+      border-radius: 10px;
+    }
     .note-modal__toolbar {
       flex-wrap: wrap;
     }
     .tool-stats {
       width: 100%;
       justify-content: flex-start;
+    }
+    .note-modal__actions {
+      padding-bottom: max(18px, env(safe-area-inset-bottom));
+      flex-direction: column;
+      align-items: stretch;
     }
   }
   
