@@ -1,0 +1,1 @@
+import{kn as e}from"./index-C4g5G0I1.js";var t=e(((e,t)=>{t.exports={}}));export default t();
