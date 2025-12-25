@@ -32,7 +32,6 @@ import {
 } from "./registryStore";
 
 /** Breath cadence + chakra tinting */
-import { msUntilNextKaiBreath } from "./kaiCadence";
 import { chakraTintStyle } from "./chakra";
 
 /** URL surface */
@@ -117,6 +116,8 @@ const UI_TOGGLE_INTERACT_MS = 900;
 const UI_FLUSH_PAD_MS = 80;
 
 const URL_PROBE_MAX_PER_REFRESH = 18;
+const INHALE_INTERVAL_MS = 3236;
+const EXHALE_INTERVAL_MS = 2000;
 
 const PHI_MARK_SRC = "/phi.svg";
 
@@ -1116,7 +1117,16 @@ const SigilExplorer: React.FC = () => {
     // BREATH LOOP: inhale(push) ⇄ exhale(pull)
     const ac = new AbortController();
 
-    const syncOnce = async (reason: SyncReason) => {
+    const inhaleOnce = async (reason: SyncReason) => {
+      if (unmounted.current) return;
+      if (!isOnline()) return;
+      if (scrollingRef.current) return;
+      if (nowMs() < interactUntilRef.current && (reason === "pulse" || reason === "import")) return;
+
+      await flushInhaleQueue();
+    };
+
+    const exhaleOnce = async (reason: SyncReason) => {
       if (unmounted.current) return;
       if (!isOnline()) return;
       if (syncInFlightRef.current) return;
@@ -1125,8 +1135,6 @@ const SigilExplorer: React.FC = () => {
 
       syncInFlightRef.current = true;
       try {
-        await flushInhaleQueue();
-
         const prevSeal = remoteSealRef.current;
 
         const res = await apiFetchWithFailover((base) => new URL(API_SEAL_PATH, base).toString(), {
@@ -1178,56 +1186,65 @@ const SigilExplorer: React.FC = () => {
       }
     };
 
-    syncNowRef.current = syncOnce;
+    syncNowRef.current = exhaleOnce;
 
     seedInhaleFromRegistry();
-    void syncOnce("open");
+    void inhaleOnce("open");
+    void exhaleOnce("open");
 
-    let breathTimer: number | null = null;
+    let inhaleTimer: number | null = null;
+    let exhaleTimer: number | null = null;
 
-    const scheduleNextBreath = (): void => {
+    const scheduleInhale = (): void => {
       if (!hasWindow) return;
       if (unmounted.current) return;
-      if (breathTimer != null) window.clearTimeout(breathTimer);
+      if (inhaleTimer != null) window.clearInterval(inhaleTimer);
 
-      const delay = msUntilNextKaiBreath();
-      breathTimer = window.setTimeout(() => {
-        breathTimer = null;
-
-        if (document.visibilityState !== "visible") {
-          scheduleNextBreath();
-          return;
-        }
-        if (!isOnline()) {
-          scheduleNextBreath();
-          return;
-        }
-
-        void syncOnce("pulse");
-        scheduleNextBreath();
-      }, delay);
+      inhaleTimer = window.setInterval(() => {
+        if (document.visibilityState !== "visible") return;
+        if (!isOnline()) return;
+        void inhaleOnce("pulse");
+      }, INHALE_INTERVAL_MS);
     };
 
-    const resnapBreath = (): void => scheduleNextBreath();
+    const scheduleExhale = (): void => {
+      if (!hasWindow) return;
+      if (unmounted.current) return;
+      if (exhaleTimer != null) window.clearInterval(exhaleTimer);
 
-    scheduleNextBreath();
+      exhaleTimer = window.setInterval(() => {
+        if (document.visibilityState !== "visible") return;
+        if (!isOnline()) return;
+        void exhaleOnce("pulse");
+      }, EXHALE_INTERVAL_MS);
+    };
+
+    const resnapBreath = (): void => {
+      scheduleInhale();
+      scheduleExhale();
+    };
+
+    resnapBreath();
 
     const onVis = () => {
       if (document.visibilityState === "visible") {
         resnapBreath();
-        void syncOnce("visible");
+        void inhaleOnce("visible");
+        void exhaleOnce("visible");
       }
     };
     document.addEventListener("visibilitychange", onVis);
 
     const onFocus = () => {
       resnapBreath();
-      void syncOnce("focus");
+      void inhaleOnce("focus");
+      void exhaleOnce("focus");
     };
 
     const onOnline = () => {
       resnapBreath();
-      void syncOnce("online");
+      void inhaleOnce("online");
+      void exhaleOnce("online");
     };
 
     window.addEventListener("focus", onFocus);
@@ -1260,8 +1277,10 @@ const SigilExplorer: React.FC = () => {
       if (flushTimerRef.current != null) window.clearTimeout(flushTimerRef.current);
       flushTimerRef.current = null;
 
-      if (breathTimer != null) window.clearTimeout(breathTimer);
-      breathTimer = null;
+      if (inhaleTimer != null) window.clearInterval(inhaleTimer);
+      inhaleTimer = null;
+      if (exhaleTimer != null) window.clearInterval(exhaleTimer);
+      exhaleTimer = null;
 
       ac.abort();
       syncNowRef.current = null;

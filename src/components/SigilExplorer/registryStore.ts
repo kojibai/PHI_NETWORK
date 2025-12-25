@@ -129,6 +129,23 @@ function mergeDerivedContext(payload: SigilSharePayloadLoose, ctx: WitnessCtx): 
   return next;
 }
 
+function mergePayloadLineage(payload: SigilSharePayloadLoose): SigilSharePayloadLoose {
+  const record = payload as Record<string, unknown>;
+  let parentUrl = payload.parentUrl;
+  let originUrl = payload.originUrl;
+
+  const parentHash = readStringField(record, "parentHash") ?? readStringField(record, "parentCanonical");
+  if (!parentUrl && parentHash) parentUrl = canonicalizeUrl(`/s/${parentHash}`);
+
+  const originHash = readStringField(record, "originHash") ?? readStringField(record, "originCanonical");
+  if (!originUrl && originHash) originUrl = canonicalizeUrl(`/s/${originHash}`);
+
+  if (!originUrl && parentUrl) originUrl = parentUrl;
+
+  if (parentUrl === payload.parentUrl && originUrl === payload.originUrl) return payload;
+  return { ...payload, parentUrl, originUrl };
+}
+
 /* ─────────────────────────────────────────────────────────────────────
  *  Registry helpers
  *  ─────────────────────────────────────────────────────────────────── */
@@ -338,7 +355,7 @@ export function addUrl(url: string, opts?: AddUrlOptions): boolean {
   let changed = false;
 
   const ctx = deriveWitnessContext(abs);
-  const mergedLeaf = mergeDerivedContext(extracted, ctx);
+  const mergedLeaf = mergeDerivedContext(mergePayloadLineage(extracted), ctx);
   changed = upsertRegistryPayload(abs, mergedLeaf) || changed;
 
   if (includeAncestry && ctx.chain.length > 0) {
