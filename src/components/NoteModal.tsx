@@ -806,15 +806,6 @@ const NoteModal: FC<NoteModalProps> = ({ pulse, initialText, onSave, onClose }) 
           <div className="note-modal__actions">
             <button
               type="button"
-              className="btn-ghost"
-              onClick={() => {
-                textareaRef.current?.blur();
-              }}
-            >
-              Dismiss keyboard
-            </button>
-            <button
-              type="button"
               className="btn-primary"
               disabled={!text.trim() || saving}
               onClick={commitSave}
