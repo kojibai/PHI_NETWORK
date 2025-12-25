@@ -98,6 +98,8 @@ function computeLocalKai(now: Date): LocalKai {
 
 /* ══════════════ Pretty helpers ══════════════ */
 const pad2 = (n: number) => String(n).padStart(2, "0");
+const noteIdForPulse = (pulse: number, beat: number, step: number): string =>
+  `kai_note_${pulse}_${beat}_${step}`;
 
 type NoteDraft = {
   text: string;
@@ -453,7 +455,7 @@ const NoteModal: FC<NoteModalProps> = ({ pulse, initialText, onSave, onClose }) 
     const nowKai = computeLocalKai(new Date());
     const livePulse = Math.max(0, nowKai.livePulseApprox ?? Math.round(pulse));
     const note: Note = {
-      id: `${livePulse}-${Date.now()}`,
+      id: noteIdForPulse(livePulse, nowKai.beat, nowKai.step),
       pulse: livePulse,
       text: trimmed,
       title: title.trim() || undefined,
