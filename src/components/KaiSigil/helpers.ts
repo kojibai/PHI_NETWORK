@@ -88,13 +88,19 @@ function bytesFromBase64(b64: string): Uint8Array {
   for (let i = 0; i < s.length; i += 4) {
     const c0 = B64.indexOf(s[i]);
     const c1 = B64.indexOf(s[i + 1]);
-    const c2 = s[i + 2] === "=" ? -1 : B64.indexOf(s[i + 2]);
-    const c3 = s[i + 3] === "=" ? -1 : B64.indexOf(s[i + 3]);
+    const pad2 = s[i + 2] === "=";
+    const pad3 = s[i + 3] === "=";
+    const c2 = pad2 ? 0 : B64.indexOf(s[i + 2]);
+    const c3 = pad3 ? 0 : B64.indexOf(s[i + 3]);
 
-    const n = (c0 << 18) | (c1 << 12) | ((c2 & 63) << 6) | (c3 & 63);
+    if (c0 < 0 || c1 < 0 || (!pad2 && c2 < 0) || (!pad3 && c3 < 0)) {
+      return new Uint8Array(0);
+    }
+
+    const n = (c0 << 18) | (c1 << 12) | (c2 << 6) | c3;
     out[o++] = (n >>> 16) & 0xff;
-    if (c2 >= 0 && o < outLen) out[o++] = (n >>> 8) & 0xff;
-    if (c3 >= 0 && o < outLen) out[o++] = n & 0xff;
+    if (!pad2 && o < outLen) out[o++] = (n >>> 8) & 0xff;
+    if (!pad3 && o < outLen) out[o++] = n & 0xff;
   }
   return out;
 }
