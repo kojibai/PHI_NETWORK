@@ -210,10 +210,12 @@ export function beginUpgradeClaim(
     // Non-fatal: router may be unavailable; fall back to hard navigation.
     void err;
     try {
-      window.location.href = out.url;
-    } catch (err2) {
+      if (typeof window !== "undefined") {
+        window.history.pushState(null, "", out.url);
+        window.dispatchEvent(new PopStateEvent("popstate"));
+      }
+    } catch {
       // Ignore final failure (e.g., sandboxed/blocked navigation).
-      void err2;
     }
   }
 
