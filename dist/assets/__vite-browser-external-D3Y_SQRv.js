@@ -1,0 +1,1 @@
+import{vr as e}from"./index-BYfnz9Db.js";var t=e(((e,t)=>{t.exports={}}));export default t();

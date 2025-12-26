@@ -72,6 +72,18 @@ test("extractEmbeddedMetaFromSvg falls back to text scan", () => {
   assert.equal(embedded.kaiSignature, "fallback");
 });
 
+test("extractEmbeddedMetaFromSvg falls back to nearby JSON block", () => {
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg">
+      <text>{"pulse":1}</text>
+      <text>noise {"pulse":2,"kaiSignature":"nearby-sig","chakraDay":"Root"} tail</text>
+    </svg>
+  `;
+  const embedded = extractEmbeddedMetaFromSvg(svg);
+  assert.equal(embedded.pulse, 2);
+  assert.equal(embedded.kaiSignature, "nearby-sig");
+});
+
 test("extractEmbeddedMetaFromSvg ignores unquoted kaiSignature labels", () => {
   const svg = `
     <svg xmlns="http://www.w3.org/2000/svg">
@@ -82,4 +94,26 @@ test("extractEmbeddedMetaFromSvg ignores unquoted kaiSignature labels", () => {
   const embedded = extractEmbeddedMetaFromSvg(svg);
   assert.equal(embedded.pulse, 88);
   assert.equal(embedded.kaiSignature, "real-sig");
+});
+
+test("extractEmbeddedMetaFromSvg ignores unquoted kaiSignature JSON", () => {
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg">
+      <text>{kaiSignature:"nope","pulse":55}</text>
+    </svg>
+  `;
+  const embedded = extractEmbeddedMetaFromSvg(svg);
+  assert.equal(embedded.kaiSignature, undefined);
+  assert.equal(embedded.pulse, undefined);
+});
+
+test("extractEmbeddedMetaFromSvg prefers outer block when kaiSignature is nested", () => {
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg">
+      <text>{"meta":{"kaiSignature":"INNER"},"pulse":123,"kaiSignature":"OUTER"}</text>
+    </svg>
+  `;
+  const embedded = extractEmbeddedMetaFromSvg(svg);
+  assert.equal(embedded.kaiSignature, "OUTER");
+  assert.equal(embedded.pulse, 123);
 });
