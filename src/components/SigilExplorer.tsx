@@ -104,7 +104,13 @@ type WitnessCtx = {
 
 type AddSource = "local" | "remote" | "hydrate";
 
-type ApiSealResponse = { seal: string };
+type ApiSealResponse = {
+  seal: string;
+  pulse?: number;
+  latestPulse?: number;
+  latest_pulse?: number;
+  total?: number;
+};
 
 type ApiUrlsPageResponse = {
   status: "ok";
@@ -128,6 +134,22 @@ type ApiInhaleResponse = {
 };
 
 type SyncReason = "open" | "pulse" | "visible" | "focus" | "online" | "import";
+
+function getLatestPulseFromRegistry(registry: Registry): number | undefined {
+  let latest: number | undefined;
+  for (const [, payload] of registry) {
+    const pulse = (payload as { pulse?: unknown }).pulse;
+    if (typeof pulse !== "number" || !Number.isFinite(pulse)) continue;
+    if (latest == null || pulse > latest) latest = pulse;
+  }
+  return latest;
+}
+
+function readRemotePulse(body: ApiSealResponse): number | undefined {
+  const pulse = body?.pulse ?? body?.latestPulse ?? body?.latest_pulse;
+  if (typeof pulse !== "number" || !Number.isFinite(pulse)) return undefined;
+  return pulse;
+}
 
 /* ─────────────────────────────────────────────────────────────────────
  *  Chakra tint system (per node)
@@ -1709,10 +1731,11 @@ function hydrateRegistryFromStorage(): boolean {
  *  ───────────────────────────────────────────────────────────────────── */
 async function pullAndImportRemoteUrls(
   signal: AbortSignal,
-): Promise<{ imported: number; remoteSeal?: string; remoteTotal?: number }> {
+): Promise<{ imported: number; remoteSeal?: string; remoteTotal?: number; pulled: boolean }> {
   let imported = 0;
   let remoteSeal: string | undefined;
   let remoteTotal: number | undefined;
+  let pulled = false;
 
   for (let page = 0; page < URLS_MAX_PAGES_PER_SYNC; page++) {
     const offset = page * URLS_PAGE_LIMIT;
@@ -1729,6 +1752,7 @@ async function pullAndImportRemoteUrls(
 
     if (!r.ok) break;
 
+    pulled = true;
     remoteSeal = r.value.state_seal;
     remoteTotal = r.value.total;
 
@@ -1756,7 +1780,7 @@ async function pullAndImportRemoteUrls(
   }
 
   if (imported > 0) persistRegistryToStorage();
-  return { imported, remoteSeal, remoteTotal };
+  return { imported, remoteSeal, remoteTotal, pulled };
 }
 
 /* ─────────────────────────────────────────────────────────────────────
@@ -3214,15 +3238,21 @@ const SigilExplorer: React.FC = () => {
         if (!res.ok) return;
 
         let nextSeal = "";
+        let remotePulse: number | undefined;
         try {
           const body = (await res.json()) as ApiSealResponse;
           nextSeal = typeof body?.seal === "string" ? body.seal : "";
+          remotePulse = readRemotePulse(body);
         } catch {
           // Soft-fail: if seal payload is weird, just stop this cycle.
           return;
         }
 
-        if (prevSeal && nextSeal && prevSeal === nextSeal) {
+        const localLatestPulse = remotePulse != null ? getLatestPulseFromRegistry(memoryRegistry) : undefined;
+        const hasNewerPulse =
+          remotePulse != null && (localLatestPulse == null || remotePulse > localLatestPulse);
+
+        if (prevSeal && nextSeal && prevSeal === nextSeal && !hasNewerPulse) {
           remoteSealRef.current = nextSeal;
           return;
         }
@@ -3230,7 +3260,9 @@ const SigilExplorer: React.FC = () => {
         // (C) EXHALE — pull urls + import
         const importedRes = await pullAndImportRemoteUrls(ac.signal);
 
-        remoteSealRef.current = importedRes.remoteSeal ?? nextSeal ?? prevSeal ?? null;
+        if (importedRes.pulled) {
+          remoteSealRef.current = importedRes.remoteSeal ?? nextSeal ?? prevSeal ?? null;
+        }
 
         if (importedRes.imported > 0) {
           // defer UI bumps if user is actively reading
