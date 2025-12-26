@@ -125,3 +125,27 @@ test("verifySigilSvg fails when slug pulse mismatches embedded pulse", async () 
   assert.equal(result.status, "error");
   assert.equal(result.checks?.slugPulseMatches, false);
 });
+
+test("verifySigilSvg passes for fixture sigils", async () => {
+  const fixtures = [
+    {
+      file: new URL("./fixtures/sigils/golden-root.svg", import.meta.url),
+      pulse: 111,
+      kaiSignature: "ROOTSIG1234",
+    },
+    {
+      file: new URL("./fixtures/sigils/golden-desc.svg", import.meta.url),
+      pulse: 222,
+      kaiSignature: "DESCSIG5678",
+    },
+  ];
+
+  for (const fixture of fixtures) {
+    const svg = readFileSync(fixture.file, "utf8");
+    const slug = parseSlug(`${fixture.pulse}-${fixture.kaiSignature.slice(0, 4)}`);
+    const result = await verifySigilSvg(slug, svg);
+    assert.equal(result.status, "ok");
+    assert.equal(result.checks?.slugPulseMatches, true);
+    assert.equal(result.checks?.slugShortSigMatches, true);
+  }
+});

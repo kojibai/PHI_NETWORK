@@ -82,17 +82,68 @@ function collectText(node: unknown, texts: string[]): void {
   }
 }
 
+function extractNearbyJsonBlocks(text: string, matchIndex: number, window = 2000): string[] {
+  const start = Math.max(0, matchIndex - window);
+  const end = Math.min(text.length, matchIndex + window);
+  const slice = text.slice(start, end);
+  const targetIndex = matchIndex - start;
+
+  const blocks: Array<{ start: number; end: number }> = [];
+  const stack: number[] = [];
+  let inString = false;
+  let escaping = false;
+
+  for (let i = 0; i < slice.length; i += 1) {
+    const ch = slice[i];
+
+    if (inString) {
+      if (escaping) {
+        escaping = false;
+        continue;
+      }
+      if (ch === "\\") {
+        escaping = true;
+        continue;
+      }
+      if (ch === "\"") {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (ch === "\"") {
+      inString = true;
+      continue;
+    }
+
+    if (ch === "{") {
+      stack.push(i);
+      continue;
+    }
+
+    if (ch === "}") {
+      const blockStart = stack.pop();
+      if (blockStart == null) continue;
+      if (blockStart <= targetIndex && i >= targetIndex) {
+        blocks.push({ start: blockStart, end: i });
+      }
+    }
+  }
+
+  blocks.sort((a, b) => (a.end - a.start) - (b.end - b.start));
+  return blocks.map(({ start: s, end: e }) => slice.slice(s, e + 1));
+}
+
 function findJsonInText(text: string): EmbeddedMeta | null {
   const parsed = safeJsonParse(text);
   if (parsed) return toEmbeddedMetaFromUnknown(parsed);
 
-  const matches = [...text.matchAll(/"kaiSignature"/g)];
+  const matches = [...text.matchAll(/"kaiSignature"\s*:/g)];
   if (!matches.length) return null;
 
   for (const match of matches) {
     const idx = match.index ?? 0;
-    const slice = text.slice(Math.max(0, idx - 800), Math.min(text.length, idx + 2000));
-    const blocks = slice.match(/\{[\s\S]*\}/g) ?? [];
+    const blocks = extractNearbyJsonBlocks(text, idx);
     for (const block of blocks) {
       if (!block.includes('"kaiSignature"')) continue;
       const blobParsed = safeJsonParse(block);
