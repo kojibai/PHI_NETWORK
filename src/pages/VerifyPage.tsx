@@ -4,67 +4,7 @@ import React, { useCallback, useMemo, useState, type ReactElement } from "react"
 import "./VerifyPage.css";
 
 import VerifierFrame from "../components/KaiVoh/VerifierFrame";
-import { derivePhiKeyFromSig } from "../components/VerifierStamper/sigilUtils";
-
-type SlugInfo = {
-  raw: string;
-  pulse: number | null;
-  shortSig: string | null;
-};
-
-type EmbeddedMeta = {
-  pulse?: number;
-  chakraDay?: string;
-  kaiSignature?: string;
-  phiKey?: string;
-  timestamp?: string;
-  verifierUrl?: string;
-  raw?: unknown;
-};
-
-
-type VerifyChecks = {
-  hasSignature: boolean;
-  slugPulseMatches: boolean | null;
-  slugShortSigMatches: boolean | null;
-  derivedPhiKeyMatchesEmbedded: boolean | null;
-};
-
-type VerifyResult =
-  | {
-      status: "idle";
-    }
-  | {
-      status: "error";
-      message: string;
-      slug: SlugInfo;
-      embedded?: EmbeddedMeta;
-      derivedPhiKey?: string;
-      checks?: VerifyChecks;
-    }
-  | {
-      status: "ok";
-      slug: SlugInfo;
-      embedded: EmbeddedMeta;
-      derivedPhiKey: string;
-      checks: VerifyChecks;
-    };
-
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null;
-}
-
-function parseSlug(rawSlug: string): SlugInfo {
-  const raw = decodeURIComponent(rawSlug || "").trim();
-  const m = raw.match(/^(\d+)-([A-Za-z0-9]+)$/);
-  if (!m) return { raw, pulse: null, shortSig: null };
-
-  const pulseNum = Number(m[1]);
-  const pulse = Number.isFinite(pulseNum) && pulseNum > 0 ? pulseNum : null;
-  const shortSig = m[2] ? String(m[2]) : null;
-
-  return { raw, pulse, shortSig };
-}
+import { parseSlug, verifySigilSvg, type VerifyResult } from "../utils/verifySigil";
 
 function readSlugFromLocation(): string {
   if (typeof window === "undefined") return "";
@@ -84,88 +24,6 @@ function readSlugFromLocation(): string {
   return "";
 }
 
-function extractMetadataBlock(svgText: string): string | null {
-  // grabs inner text of first <metadata>…</metadata>
-  const m = svgText.match(/<metadata[^>]*>([\s\S]*?)<\/metadata>/i);
-  if (!m) return null;
-  return (m[1] ?? "").trim();
-}
-
-function safeJsonParse(s: string): unknown | null {
-  const t = s.trim();
-  if (!t) return null;
-  try {
-    return JSON.parse(t);
-  } catch {
-    return null;
-  }
-}
-
-function toEmbeddedMetaFromUnknown(raw: unknown): EmbeddedMeta {
-  if (!isRecord(raw)) return { raw };
-
-  const kaiSignature =
-    typeof raw.kaiSignature === "string" ? raw.kaiSignature : undefined;
-
-  const pulse =
-    typeof raw.pulse === "number" && Number.isFinite(raw.pulse) ? raw.pulse : undefined;
-
-  const chakraDay =
-    typeof raw.chakraDay === "string" ? raw.chakraDay : undefined;
-
-  const timestamp =
-    typeof raw.timestamp === "string" ? raw.timestamp : undefined;
-
-    const phiKeyRaw = typeof raw.phiKey === "string" ? raw.phiKey : undefined;
-const userPhiKey = typeof raw.userPhiKey === "string" ? raw.userPhiKey : undefined;
-
-// If phiKey looks like a short label, prefer userPhiKey
-const phiKey =
-  phiKeyRaw && !phiKeyRaw.startsWith("φK-") ? phiKeyRaw : userPhiKey;
-
-const verifierUrl =
-  typeof raw.verifierUrl === "string" ? raw.verifierUrl : undefined;
-
-return {
-  pulse,
-  chakraDay,
-  kaiSignature,
-  phiKey,
-  timestamp,
-  verifierUrl,
-  raw,
-};
-
-}
-
-function extractEmbeddedMeta(svgText: string): EmbeddedMeta {
-  // 1) preferred: <metadata>{JSON}</metadata>
-  const metaBlock = extractMetadataBlock(svgText);
-  if (metaBlock) {
-    const parsed = safeJsonParse(metaBlock);
-    if (parsed) return toEmbeddedMetaFromUnknown(parsed);
-  }
-
-  // 2) fallback: try to find a JSON object containing "kaiSignature"
-  // (handles cases where metadata was embedded differently)
-  const idx = svgText.indexOf('"kaiSignature"');
-  if (idx >= 0) {
-    // attempt to capture a nearby {...} blob
-    const slice = svgText.slice(Math.max(0, idx - 800), Math.min(svgText.length, idx + 2000));
-    const m = slice.match(/\{[\s\S]*\}/);
-    if (m && m[0]) {
-      const parsed = safeJsonParse(m[0]);
-      if (parsed) return toEmbeddedMetaFromUnknown(parsed);
-    }
-  }
-
-  return {};
-}
-
-function firstN(s: string, n: number): string {
-  if (s.length <= n) return s;
-  return s.slice(0, n);
-}
 
 async function readFileText(file: File): Promise<string> {
   return await new Promise((resolve, reject) => {
@@ -205,75 +63,8 @@ export default function VerifyPage(): ReactElement {
 
     setBusy(true);
     try {
-      const embedded = extractEmbeddedMeta(raw);
-
-      const sig = (embedded.kaiSignature ?? "").trim();
-      if (!sig) {
-        setResult({
-          status: "error",
-          message: "No kaiSignature found in the SVG metadata.",
-          slug,
-          embedded,
-        });
-        return;
-      }
-
-      const derivedPhiKey = await derivePhiKeyFromSig(sig);
-
-      const embeddedPhiKey = (embedded.phiKey ?? "").trim();
-      const embeddedPulse = embedded.pulse;
-
-      const slugPulseMatches =
-        slug.pulse == null || embeddedPulse == null ? null : slug.pulse === embeddedPulse;
-
-      const slugShortSigMatches =
-        slug.shortSig == null ? null : slug.shortSig === firstN(sig, slug.shortSig.length);
-
-      const derivedPhiKeyMatchesEmbedded =
-        embeddedPhiKey.length === 0 ? null : derivedPhiKey === embeddedPhiKey;
-
-      const checks: VerifyChecks = {
-        hasSignature: true,
-        slugPulseMatches,
-        slugShortSigMatches,
-        derivedPhiKeyMatchesEmbedded,
-      };
-
-      // Decide pass/fail:
-      // - Must have signature
-      // - If slug contains pulse/shortSig, they must match if embedded provides pulse
-      // - If embedded includes phiKey, derived must match it
-      const hardFail =
-        (checks.slugPulseMatches === false) ||
-        (checks.slugShortSigMatches === false) ||
-        (checks.derivedPhiKeyMatchesEmbedded === false);
-
-      if (hardFail) {
-        setResult({
-          status: "error",
-          message: "Verification failed: one or more checks did not match.",
-          slug,
-          embedded,
-          derivedPhiKey,
-          checks,
-        });
-        return;
-      }
-
-      setResult({
-        status: "ok",
-        slug,
-        embedded: {
-          ...embedded,
-          // normalize to show the sealing Φ-Key even if embed omitted it
-          phiKey: embeddedPhiKey.length > 0 ? embeddedPhiKey : derivedPhiKey,
-        },
-        derivedPhiKey,
-        checks,
-      });
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "Verification failed.";
-      setResult({ status: "error", message: msg, slug });
+      const next = await verifySigilSvg(slug, raw);
+      setResult(next);
     } finally {
       setBusy(false);
     }
