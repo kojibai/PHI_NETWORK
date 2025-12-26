@@ -730,6 +730,7 @@ const KaiSigil = forwardRef<KaiSigilHandle, KaiSigilProps>((props, ref) => {
     frequencyHz,
     canon.pulse,
     canon.beat,
+    displayStepIndex,
     zkPoseidonHash
   );
 
