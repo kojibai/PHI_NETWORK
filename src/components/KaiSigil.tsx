@@ -48,10 +48,10 @@ import {
 } from "./KaiSigil/utils";
 import { base58CheckEncode, bytesToHex, mulberry32, sha256 } from "./KaiSigil/crypto";
 import {
-  stepIndexFromPulseExact,
   percentIntoStepFromPulseExact,
-  STEPS_SAFE,
-} from "./KaiSigil/step";
+  stepIndexFromPulseExact,
+  STEPS_BEAT,
+} from "../utils/kai_pulse";
 import { deriveCreatorIdentity } from "./KaiSigil/identity";
 import { useKaiData, useMediaPrefs, useSeed } from "./KaiSigil/hooks";
 import { useStableSha256 } from "./KaiSigil/valuationBridge";
@@ -80,6 +80,9 @@ import {
   makeOuterRingText,
   phaseColorFrom,
 } from "./KaiSigil/helpers";
+
+const STEPS_SAFE =
+  Number.isFinite(STEPS_BEAT) && STEPS_BEAT > 0 ? Math.trunc(STEPS_BEAT) : 6;
 
 /**
  * In φ-order: compute a single canonical step per render, snapshot it,

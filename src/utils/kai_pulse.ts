@@ -453,6 +453,27 @@ export function latticeFromMicroPulses(pμ: bigint): {
   return { beat: Number(beatBI), stepIndex: Number(stepBI), percentIntoStep };
 }
 
+/** Exact lattice breakdown from a (possibly fractional) pulse count. */
+export function latticeFromPulse(pulse: number): {
+  beat: number;
+  stepIndex: number;
+  percentIntoStep: number; // [0,1)
+} {
+  const safePulse = Number.isFinite(pulse) ? pulse : 0;
+  const pμ = BigInt(Math.floor(safePulse * 1_000_000));
+  return latticeFromMicroPulses(pμ);
+}
+
+/** Exact integer step index derived from pulse count (0..43). */
+export function stepIndexFromPulseExact(pulse: number): number {
+  return latticeFromPulse(pulse).stepIndex;
+}
+
+/** Fractional percent into the current step [0,1). */
+export function percentIntoStepFromPulseExact(pulse: number): number {
+  return normalizePercentIntoStep(latticeFromPulse(pulse).percentIntoStep);
+}
+
 /** Full KaiMoment from any UTC input (string/Date/bigint). */
 export function momentFromUTC(
   utc?: string | Date | bigint,

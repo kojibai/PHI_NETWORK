@@ -28,7 +28,10 @@ import KaiSigil, {
   type KaiSigilProps,
   type KaiSigilHandle,
 } from "./KaiSigil";
-import { percentIntoStepFromPulseExact, stepIndexFromPulseExact } from "./KaiSigil/step";
+import {
+  percentIntoStepFromPulseExact,
+  stepIndexFromPulseExact,
+} from "../utils/kai_pulse";
 
 import SealMomentModal from "./SealMomentModal";
 import { makeSigilUrl, type SigilSharePayload } from "../utils/sigilUrl";
