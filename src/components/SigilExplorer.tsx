@@ -649,10 +649,23 @@ function formatUsd(value: number): string {
   return USD_FORMATTER.format(value);
 }
 
+function isStandaloneDisplayMode(): boolean {
+  if (!hasWindow) return false;
+  const w = window as unknown as {
+    matchMedia?: (query: string) => { matches: boolean };
+  };
+  const standaloneMatch =
+    typeof w.matchMedia === "function" ? w.matchMedia("(display-mode: standalone)").matches : false;
+  const iosStandalone = Boolean((navigator as { standalone?: boolean } | undefined)?.standalone);
+  return standaloneMatch || iosStandalone;
+}
+
 function isOnline(): boolean {
   if (!hasWindow) return false;
   if (typeof navigator === "undefined") return true;
-  return navigator.onLine;
+  if (navigator.onLine) return true;
+  // iOS PWAs (and some standalone shells) can report false negatives for onLine.
+  return isStandaloneDisplayMode();
 }
 
 function randId(): string {
