@@ -28,6 +28,7 @@ import KaiSigil, {
   type KaiSigilProps,
   type KaiSigilHandle,
 } from "./KaiSigil";
+import { percentIntoStepFromPulseExact, stepIndexFromPulseExact } from "./KaiSigil/step";
 
 import SealMomentModal from "./SealMomentModal";
 import { makeSigilUrl, type SigilSharePayload } from "../utils/sigilUrl";
@@ -883,12 +884,14 @@ function makeInitState(initialPulse?: number): InitState {
       : new Date(GENESIS_TS);
 
   const local = computeLocalKai(dt);
+  const stepIdx = stepIndexFromPulseExact(local.pulse);
+  const stepPct = percentIntoStepFromPulseExact(local.pulse);
 
   return {
     pulse: local.pulse,
     beat: local.beat,
-    stepPct: local.stepPct,
-    stepIdx: local.step,
+    stepPct,
+    stepIdx,
     chakraDay: local.chakraDay,
     kairos: buildLocalKairosLike(dt),
   };
@@ -1016,10 +1019,12 @@ const SigilModal: FC<Props> = ({ initialPulse = 0, onClose }) => {
   const applyKaiFromDate = useCallback(
     (dt: Date, nowMsForCss?: number) => {
       const local = computeLocalKai(dt);
+      const stepIdx = stepIndexFromPulseExact(local.pulse);
+      const stepPct = percentIntoStepFromPulseExact(local.pulse);
       setPulse(local.pulse);
       setBeat(local.beat);
-      setStepPct(local.stepPct);
-      setStepIdx(local.step);
+      setStepPct(stepPct);
+      setStepIdx(stepIdx);
       setChakraDay(local.chakraDay);
       setKairos(buildLocalKairosLike(dt));
 
