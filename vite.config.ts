@@ -11,26 +11,41 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
-        manualChunks: {
-          react: ["react", "react-dom", "react-router-dom"],
-          three: ["three", "@react-three/fiber", "@react-three/drei"],
-          stripe: ["@stripe/react-stripe-js", "@stripe/stripe-js"],
-          charts: ["recharts"],
-          qr: ["qrcode", "qrcode-generator", "react-qr-code"],
-          motion: ["framer-motion"],
-          utils: [
-            "blakejs",
-            "buffer",
-            "decimal.js",
-            "fast-xml-parser",
-            "fflate",
-            "hash-wasm",
-            "html2canvas",
-            "jszip",
-            "lucide-react",
-            "pako",
-            "peerjs",
-          ],
+        manualChunks(id) {
+          if (!id.includes("node_modules")) {
+            return;
+          }
+
+          if (/[\\/]node_modules[\\/](react|react-dom|react-router-dom)[\\/]/.test(id)) {
+            return "react";
+          }
+
+          if (/[\\/]node_modules[\\/](three|@react-three)[\\/]/.test(id)) {
+            return "three";
+          }
+
+          if (/[\\/]node_modules[\\/]@stripe[\\/]/.test(id)) {
+            return "stripe";
+          }
+
+          if (/[\\/]node_modules[\\/]recharts[\\/]/.test(id)) {
+            return "charts";
+          }
+
+          if (/[\\/]node_modules[\\/](qrcode|qrcode-generator|react-qr-code)[\\/]/.test(id)) {
+            return "qr";
+          }
+
+          if (/[\\/]node_modules[\\/]framer-motion[\\/]/.test(id)) {
+            return "motion";
+          }
+
+          if (
+            /[\\/]node_modules[\\/](blakejs|buffer|decimal\\.js|fast-xml-parser|fflate|hash-wasm|html2canvas|jszip|lucide-react|pako|peerjs)[\\/]/
+              .test(id)
+          ) {
+            return "utils";
+          }
         },
       },
     },
