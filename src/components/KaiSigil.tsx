@@ -723,6 +723,7 @@ const KaiSigil = forwardRef<KaiSigilHandle, KaiSigilProps>((props, ref) => {
     );
 
   const stateKeyOk = Boolean(built?.createdFor.stateKey === stateKey);
+  const outerRingStepIndex = Math.max(0, displayStepIndex - 1);
   const outerRingText = makeOuterRingText(
     payloadHashHex,
     stateKeyOk,
@@ -730,6 +731,7 @@ const KaiSigil = forwardRef<KaiSigilHandle, KaiSigilProps>((props, ref) => {
     frequencyHz,
     canon.pulse,
     canon.beat,
+    outerRingStepIndex,
     zkPoseidonHash
   );
 
