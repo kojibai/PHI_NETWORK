@@ -1,5 +1,3 @@
-/* eslint-disable */
-
 // src/components/verifier/VerifierStamper.tsx
 // VerifierStamper.tsx · Divine Sovereign Transfer Gate (mobile-first)
 // v25.1 — NO-ZOOM SEND INPUT (iOS Safari-safe wrapper + hooks)
@@ -11,6 +9,15 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./VerifierStamper.css";
 import SendPhiAmountField from "./SendPhiAmountField";
+import useRollingChartSeries from "./hooks/useRollingChartSeries";
+import { KV, ValueChip, IconBtn } from "./ui";
+import { S } from "./styles";
+import {
+  getSigilZkBridge,
+  getSigilZkVkey,
+  setSigilZkVkey,
+  setVerifierBridge,
+} from "./window";
 
 /* ───────── μΦ parity helpers (shared with ValuationModal) ───────── */
 import {
@@ -67,14 +74,9 @@ import StatusChips from "../verifier/ui/StatusChips";
 /* Existing flows kept */
 import SealMomentModal from "../SealMomentModalTransfer";
 import ValuationModal from "../ValuationModal";
-import {
-  buildValueSeal,
-  attachValuation,
-  type SigilMetadataLite,
-  type ValueSeal,
-} from "../../utils/valuation";
+import { buildValueSeal, attachValuation, type ValueSeal } from "../../utils/valuation";
 import NotePrinter from "../ExhaleNote";
-import type { VerifierBridge, BanknoteInputs as NoteBanknoteInputs } from "../exhale-note/types";
+import type { BanknoteInputs as NoteBanknoteInputs, VerifierBridge } from "../exhale-note/types";
 
 import { kaiPulseNow, SIGIL_CTX, SIGIL_TYPE, SEGMENT_SIZE } from "./constants";
 import { sha256Hex, phiFromPublicKey } from "./crypto";
@@ -101,108 +103,8 @@ import { recordSigilTransferMovement } from "../../utils/sigilTransferRegistry";
 
 /* Live chart popover (stay inside Verifier modal) */
 import LiveChart from "../valuation/chart/LiveChart";
-import type { ChartPoint } from "../valuation/series";
 import InhaleUploadIcon from "../InhaleUploadIcon";
-
-/* ───────── Event typing for Φ movement success ───────── */
-type PhiMoveMode = "send" | "receive";
-
-type PhiMoveSuccessDetail = {
-  mode: PhiMoveMode;
-  /** e.g. "Φ 1.2345" for display */
-  amountPhiDisplay?: string;
-  /** optional generic formatted amount string */
-  amountDisplay?: string;
-  /** raw numeric Φ amount (optional) */
-  amountPhi?: number;
-  /** optional download URL for a receipt/sigil */
-  downloadUrl?: string;
-  downloadLabel?: string;
-  /** optional human-readable message */
-  message?: string;
-};
-/* ─────────── Shared inline styles / tiny components to shrink markup ─────────── */
-const S = {
-  full: {
-    width: "100vw",
-    maxWidth: "100vw",
-    height: "100dvh",
-    maxHeight: "100dvh",
-    margin: 0,
-    padding: 0,
-    overflow: "hidden",
-  } as const,
-  viewport: {
-    display: "flex",
-    flexDirection: "column",
-    width: "100%",
-    height: "100%",
-    maxWidth: "100vw",
-    overflow: "hidden",
-  } as const,
-  gridBar: { display: "grid", gridTemplateColumns: "1fr auto", alignItems: "center" } as const,
-  stickyTabs: { position: "sticky", top: 48, zIndex: 2 } as const,
-  mono: { overflowWrap: "anywhere" } as const,
-  iconBtn: {
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    width: 44,
-    height: 44,
-    padding: 0,
-    flex: "0 0 auto",
-  } as const,
-  iconBtnSm: {
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    width: 40,
-    height: 40,
-    padding: 0,
-    flex: "0 0 auto",
-  } as const,
-  modalBody: { flex: "1 1 auto", minHeight: 0, overflowY: "auto", overflowX: "hidden", paddingBottom: 80 } as const,
-  headerImg: { maxWidth: "64px", height: "auto", flex: "0 0 auto" } as const,
-  valueStrip: { overflowX: "auto", whiteSpace: "nowrap" } as const,
-
-  /* Minimal inline popover safety (we’ll replace with CSS next) */
-  popBg: {
-    position: "fixed" as const,
-    inset: 0,
-    zIndex: 9999,
-    background: "rgba(0,0,0,.55)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 14,
-  },
-  popCard: {
-    width: "min(980px, 100%)",
-    maxHeight: "min(680px, calc(100dvh - 28px))",
-    borderRadius: 18,
-    overflow: "hidden",
-    background: "rgba(8,10,16,.92)",
-    border: "1px solid rgba(255,255,255,.12)",
-    boxShadow: "0 24px 70px rgba(0,0,0,.6)",
-    display: "flex",
-    flexDirection: "column" as const,
-  },
-  popHead: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 10,
-    padding: "12px 12px 10px 14px",
-    borderBottom: "1px solid rgba(255,255,255,.08)",
-  },
-  popBody: {
-    flex: "1 1 auto",
-    minHeight: 0,
-    overflow: "auto",
-    padding: 10,
-  },
-  popTitle: { fontSize: 12, color: "rgba(255,255,255,.82)", letterSpacing: ".02em" },
-};
+import type { PhiMoveSuccessDetail, SigilMetadataLiteExtended } from "./types";
 
 function readPhiAmountFromMeta(meta: SigilMetadataWithOptionals): string | undefined {
   const candidate =
@@ -251,133 +153,14 @@ function readExhaleInfoFromTransfer(
   return { amountUsd, sentPulse };
 }
 
-// Auto-shrink text to fit inside its container (down to a floor scale)
-function useAutoShrink<T extends HTMLElement>(
-  deps: React.DependencyList = [],
-  paddingPx = 16, // visual padding inside the pill
-  minScale = 0.65 // smallest allowed scale
-) {
-  const boxRef = useRef<HTMLDivElement | null>(null);
-  const textRef = useRef<T | null>(null);
-  const [scale, setScale] = useState(1);
-
-  useEffect(() => {
-    const box = boxRef.current;
-    const txt = textRef.current;
-    if (!box || !txt) return;
-
-    const recompute = () => {
-      // available width inside the pill minus padding
-      const boxW = Math.max(0, box.clientWidth - paddingPx);
-      const textW = txt.scrollWidth;
-      if (boxW <= 0 || textW <= 0) return setScale(1);
-
-      const next = Math.min(1, Math.max(minScale, boxW / textW));
-      setScale(next);
-    };
-
-    // First compute + observe future changes
-    recompute();
-    const ro = new ResizeObserver(recompute);
-    ro.observe(box);
-    ro.observe(txt);
-
-    // Also adjust on font load / viewport changes
-    window.addEventListener("resize", recompute);
-    const id = window.setInterval(recompute, 250); // cheap safety net
-
-    return () => {
-      ro.disconnect();
-      window.removeEventListener("resize", recompute);
-      window.clearInterval(id);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps);
-
-  return { boxRef, textRef, scale };
+function dispatchPhiMoveSuccess(detail: PhiMoveSuccessDetail) {
+  try {
+    window.dispatchEvent(new CustomEvent<PhiMoveSuccessDetail>("phi:move", { detail }));
+  } catch (err) {
+    logError("dispatch(phi:move)", err);
+  }
 }
 
-const KV: React.FC<{ k: React.ReactNode; v: React.ReactNode; wide?: boolean; mono?: boolean }> = ({
-  k,
-  v,
-  wide,
-  mono,
-}) => (
-  <div className={`kv${wide ? " wide" : ""}`}>
-    <span className="k">{k}</span>
-    <span className={`v${mono ? " mono" : ""}`} style={mono ? S.mono : undefined}>
-      {v}
-    </span>
-  </div>
-);
-
-const ValueChip: React.FC<{
-  kind: "phi" | "usd";
-  trend: "up" | "down" | "flat";
-  flash: boolean;
-  title: string;
-  children: React.ReactNode;
-  onClick?: () => void;
-  ariaLabel?: string;
-}> = ({ kind, trend, flash, title, children, onClick, ariaLabel }) => {
-  const { boxRef, textRef, scale } = useAutoShrink<HTMLSpanElement>([children, trend, flash], 16, 0.65);
-
-  const clickable = typeof onClick === "function";
-
-  const onKeyDown = (e: React.KeyboardEvent) => {
-    if (!clickable) return;
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      onClick?.();
-    }
-  };
-
-  return (
-    <div
-      ref={boxRef}
-      className={`value-chip ${kind} ${trend}${flash ? " is-flashing" : ""}${clickable ? " is-clickable" : ""}`}
-      data-trend={trend}
-      title={title}
-      role={clickable ? "button" : undefined}
-      tabIndex={clickable ? 0 : undefined}
-      aria-label={clickable ? ariaLabel || title : undefined}
-      onClick={onClick}
-      onKeyDown={onKeyDown}
-      style={clickable ? ({ cursor: "pointer", userSelect: "none" } as any) : undefined}
-    >
-      <span
-        ref={textRef}
-        className="amount"
-        style={{
-          display: "inline-block",
-          whiteSpace: "nowrap",
-          lineHeight: 1,
-          transform: `scale(${scale})`,
-          transformOrigin: "left center",
-          willChange: "transform",
-        }}
-      >
-        {children}
-      </span>
-    </div>
-  );
-};
-
-const IconBtn: React.FC<
-  React.ButtonHTMLAttributes<HTMLButtonElement> & { small?: boolean; aria?: string; titleText?: string; path: string }
-> = ({ small, aria, titleText, path, ...rest }) => (
-  <button
-    {...rest}
-    className={rest.className || "secondary"}
-    aria-label={aria}
-    title={titleText}
-    style={small ? S.iconBtnSm : S.iconBtn}
-  >
-    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false" className="ico">
-      <path d={path} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-    </svg>
-  </button>
-);
 function registerUrlForExplorer(url: string) {
   registerSigilUrl(url);
 }
@@ -455,7 +238,7 @@ const VerifierStamperInner: React.FC = () => {
         if (!res.ok) return;
         const vkey: unknown = await res.json();
         if (!alive) return;
-        (window as any).SIGIL_ZK_VKEY = vkey;
+        setSigilZkVkey(vkey);
       } catch (err) {
         logError("fetch(/verification_key.json)", err);
       }
@@ -510,7 +293,7 @@ const VerifierStamperInner: React.FC = () => {
         pulseNow,
       });
       const bridge: VerifierBridge = { getNoteData: async () => p };
-      (window as any).KKVerifier = bridge;
+      setVerifierBridge(bridge);
       try {
         window.dispatchEvent(new CustomEvent<NoteBanknoteInputs>("kk:note-data", { detail: p }));
       } catch (err) {
@@ -1024,14 +807,14 @@ const VerifierStamperInner: React.FC = () => {
   );
 
   // ⬇️ add deps: canonicalContext, sourceFilename
-  const metaLiteForNote = useMemo<SigilMetadataLite | null>(() => {
+  const metaLiteForNote = useMemo<SigilMetadataLiteExtended | null>(() => {
     if (!meta) return null;
     const mOpt = meta as SigilMetadataWithOptionals;
     const steps: number = typeof mOpt.stepsPerBeat === "number" ? mOpt.stepsPerBeat : 12;
     const twr = mOpt.transfersWindowRoot ?? mOpt.transfersWindowRootV14 ?? "";
 
     // ⬇️ include derivative hints + exact child value fields (strings or numbers both OK)
-    const out = {
+    const out: SigilMetadataLiteExtended = {
       pulse: meta.pulse as number,
       beat: meta.beat as number,
       stepIndex: meta.stepIndex as number,
@@ -1043,19 +826,19 @@ const VerifierStamperInner: React.FC = () => {
 
       // NEW: minimal hints so ValuationModal can detect & resolve child value
       canonicalContext: canonicalContext ?? undefined,
-      childOfHash: (mOpt.childOfHash ?? undefined) as any,
-      sendLock: (mOpt.sendLock ?? undefined) as any,
-      childClaim: (mOpt.childClaim ?? undefined) as any,
-      childAllocationPhi: (mOpt.childAllocationPhi ?? undefined) as any,
-      branchBasePhi: (mOpt.branchBasePhi ?? undefined) as any,
+      childOfHash: mOpt.childOfHash ?? undefined,
+      sendLock: mOpt.sendLock ?? undefined,
+      childClaim: mOpt.childClaim ?? undefined,
+      childAllocationPhi: mOpt.childAllocationPhi ?? undefined,
+      branchBasePhi: mOpt.branchBasePhi ?? undefined,
 
-      // if you carry these in meta, pass through (typed as-any to keep SigilMetadataLite)
-      valuationSource: (mOpt as any).valuationSource,
-      stats: (mOpt as any).stats,
+      // if you carry these in meta, pass through for valuation consumers
+      valuationSource: mOpt.valuationSource,
+      stats: mOpt.stats,
 
       // filename helps the “sigil_send” heuristic
       fileName: sourceFilename ?? undefined,
-    } as SigilMetadataLite as any;
+    };
 
     return out;
   }, [meta, canonicalContext, sourceFilename]);
@@ -1073,7 +856,7 @@ const VerifierStamperInner: React.FC = () => {
     return cleaned || raw;
   }, [meta]);
 
-  type InitialGlyph = { hash: string; value: number; pulseCreated: number; meta: SigilMetadataLite };
+  type InitialGlyph = { hash: string; value: number; pulseCreated: number; meta: SigilMetadataLiteExtended };
   const [initialGlyph, setInitialGlyph] = useState<InitialGlyph | null>(null);
 
   useEffect(() => {
@@ -1131,7 +914,7 @@ const VerifierStamperInner: React.FC = () => {
   const { usdPerPhi } = useMemo(() => {
     try {
       const nowKai = pulseNow;
-      const metaLiteSafe: SigilMetadataLite =
+      const metaLiteSafe: SigilMetadataLiteExtended =
         metaLiteForNote ?? {
           pulse: 0,
           beat: 0,
@@ -1563,9 +1346,10 @@ const VerifierStamperInner: React.FC = () => {
           transferLeafHashSend,
         };
 
-        if ((window as any).SIGIL_ZK?.provideSendProof) {
+        const sigilZk = getSigilZkBridge();
+        if (sigilZk?.provideSendProof) {
           try {
-            const proofObj = await (window as any).SIGIL_ZK.provideSendProof({
+            const proofObj = await sigilZk.provideSendProof({
               meta: updated,
               leafHash: transferLeafHashSend,
               previousHeadRoot: prevHeadV14,
@@ -1582,7 +1366,7 @@ const VerifierStamperInner: React.FC = () => {
               (hardened as SigilMetadataWithOptionals).zkSendBundle = bundle;
               const publicHash = await mod.hashAny(proofObj.publicSignals);
               const proofHash = await mod.hashAny(proofObj.proof);
-              const vkey = proofObj.vkey ?? (updated as SigilMetadataWithOptionals).zkVerifyingKey ?? (window as any).SIGIL_ZK_VKEY;
+              const vkey = proofObj.vkey ?? (updated as SigilMetadataWithOptionals).zkVerifyingKey ?? getSigilZkVkey();
               const vkeyHash = vkey ? await mod.hashAny(vkey) : undefined;
               const ref: ZkRef = { scheme: "groth16", curve: "BLS12-381", publicHash, proofHash, vkeyHash };
               (hardened as SigilMetadataWithOptionals).zkSend = ref;
@@ -1655,6 +1439,16 @@ const VerifierStamperInner: React.FC = () => {
     const childDataUrl = await embedMetadata(svgURL, childMeta);
     const sigilPulse = updated.pulse ?? 0;
     download(childDataUrl, `${pulseFilename("sigil_send", sigilPulse, nowPulse)}.svg`);
+    const phiAmountNumber = Number(validPhi6);
+    dispatchPhiMoveSuccess({
+      mode: "send",
+      amountPhiDisplay: `Φ ${fmtPhiFixed4(validPhi6)}`,
+      amountDisplay: `Φ ${fmtPhiFixed4(validPhi6)}`,
+      amountPhi: Number.isFinite(phiAmountNumber) ? phiAmountNumber : undefined,
+      downloadUrl: childDataUrl,
+      downloadLabel: "Sigil Send",
+      message: "Transfer sealed.",
+    });
 
     // Optional: seal segment after cap
     const windowSize = (updated.transfers ?? []).length;
@@ -1745,9 +1539,10 @@ const VerifierStamperInner: React.FC = () => {
             transferLeafHashReceive,
           };
 
-          if ((window as any).SIGIL_ZK?.provideReceiveProof) {
+          const sigilZk = getSigilZkBridge();
+          if (sigilZk?.provideReceiveProof) {
             try {
-              const proofObj = await (window as any).SIGIL_ZK.provideReceiveProof({
+              const proofObj = await sigilZk.provideReceiveProof({
                 meta: updated,
                 leafHash: transferLeafHashReceive,
                 previousHeadRoot: hLast.previousHeadRoot,
@@ -1764,7 +1559,7 @@ const VerifierStamperInner: React.FC = () => {
                 (newHLast as SigilMetadataWithOptionals).zkReceiveBundle = bundle;
                 const publicHash = await mod.hashAny(proofObj.publicSignals);
                 const proofHash = await mod.hashAny(proofObj.proof);
-                const vkey = proofObj.vkey ?? (updated as SigilMetadataWithOptionals).zkVerifyingKey ?? (window as any).SIGIL_ZK_VKEY;
+                const vkey = proofObj.vkey ?? (updated as SigilMetadataWithOptionals).zkVerifyingKey ?? getSigilZkVkey();
                 const vkeyHash = vkey ? await mod.hashAny(vkey) : undefined;
                 const ref: ZkRef = { scheme: "groth16", curve: "BLS12-381", publicHash, proofHash, vkeyHash };
                 (newHLast as SigilMetadataWithOptionals).zkReceive = ref;
@@ -1818,6 +1613,17 @@ const VerifierStamperInner: React.FC = () => {
     const durl = await embedMetadata(svgURL, updated);
     const sigilPulse = updated.pulse ?? 0;
     download(durl, `${pulseFilename("sigil_receive", sigilPulse, nowPulse)}.svg`);
+    const receivedPhi = readPhiAmountFromMeta(updated);
+    const receivedPhiNumber = receivedPhi ? Number(receivedPhi) : NaN;
+    dispatchPhiMoveSuccess({
+      mode: "receive",
+      amountPhiDisplay: receivedPhi ? `Φ ${fmtPhiFixed4(receivedPhi)}` : undefined,
+      amountDisplay: receivedPhi ? `Φ ${fmtPhiFixed4(receivedPhi)}` : undefined,
+      amountPhi: Number.isFinite(receivedPhiNumber) ? receivedPhiNumber : undefined,
+      downloadUrl: durl,
+      downloadLabel: "Sigil Receive",
+      message: "Transfer received.",
+    });
     const updated2 = await refreshHeadWindow(updated);
     await syncMetaAndUi(updated2);
     setError(null);
@@ -1865,110 +1671,6 @@ const VerifierStamperInner: React.FC = () => {
 
   const { used: childUsed, expired: childExpired } = useMemo(() => getChildLockInfo(meta, pulseNow), [meta, pulseNow]);
   const parentOpenExp = useMemo(() => getParentOpenExpiry(meta, pulseNow).expired, [meta, pulseNow]);
-
-  function useRollingChartSeries({
-    seriesKey,
-    sampleMs,
-    valuePhi,
-    usdPerPhi,
-    maxPoints = 2048,
-    snapKey,
-  }: {
-    seriesKey: string;
-    sampleMs: number;
-    valuePhi: number;
-    usdPerPhi: number;
-    maxPoints?: number;
-    snapKey?: number;
-  }) {
-    const [data, setData] = React.useState<ChartPoint[]>([]);
-    const dataRef = React.useRef<ChartPoint[]>([]);
-    const vRef = React.useRef(valuePhi);
-    const fxRef = React.useRef(usdPerPhi);
-
-    // keep latest values in refs
-    React.useEffect(() => {
-      if (Number.isFinite(valuePhi)) vRef.current = valuePhi;
-    }, [valuePhi]);
-
-    React.useEffect(() => {
-      if (Number.isFinite(usdPerPhi) && usdPerPhi > 0) fxRef.current = usdPerPhi;
-    }, [usdPerPhi]);
-
-    const snapNow = React.useCallback(() => {
-      const p = kaiPulseNow();
-      const val = Number.isFinite(vRef.current) ? vRef.current : 0;
-      const fx = Number.isFinite(fxRef.current) && fxRef.current > 0 ? fxRef.current : 0;
-
-      const prev = dataRef.current;
-      if (!prev.length) {
-        const seed: ChartPoint[] = [
-          { i: p - 1, value: val, fx } as any,
-          { i: p, value: val, fx } as any,
-        ];
-        dataRef.current = seed;
-        setData(seed);
-        return;
-      }
-
-      const last = prev[prev.length - 1] as any;
-      let next: ChartPoint[];
-
-      if (last?.i === p) {
-        // update current pulse point immediately
-        next = [...prev.slice(0, -1), { ...last, value: val, fx } as any];
-      } else if (typeof last?.i === "number" && last.i < p) {
-        // pulse advanced: append
-        next = [...prev, { i: p, value: val, fx } as any];
-      } else {
-        // weird ordering: just replace last
-        next = [...prev.slice(0, -1), { ...last, value: val, fx } as any];
-      }
-
-      if (next.length > maxPoints) next.splice(0, next.length - maxPoints);
-
-      dataRef.current = next;
-      setData(next);
-    }, [maxPoints]);
-
-    // Reset when a new glyph/canonical is loaded (seed with *current* value immediately)
-    React.useEffect(() => {
-      dataRef.current = [];
-      setData([]);
-      snapNow();
-    }, [seriesKey, snapNow]);
-
-    // SNAP IMMEDIATELY on value changes (so you don’t wait for next BREATH tick)
-    React.useEffect(() => {
-      snapNow();
-    }, [valuePhi, usdPerPhi, snapNow]);
-
-    // SNAP when opening / switching focus (use snapKey from your chartReflowKey)
-    React.useEffect(() => {
-      if (typeof snapKey === "number") snapNow();
-    }, [snapKey, snapNow]);
-
-    // Continue appending at breath cadence
-    React.useEffect(() => {
-      const id = window.setInterval(() => {
-        const p = kaiPulseNow();
-        const prev = dataRef.current;
-        const last = prev[prev.length - 1] as any;
-        if (last?.i === p) return;
-
-        const nextPoint = { i: p, value: vRef.current, fx: fxRef.current } as any;
-        const next = prev.length ? [...prev, nextPoint] : [nextPoint];
-        if (next.length > maxPoints) next.splice(0, next.length - maxPoints);
-
-        dataRef.current = next;
-        setData(next);
-      }, sampleMs);
-
-      return () => window.clearInterval(id);
-    }, [sampleMs, maxPoints]);
-
-    return data;
-  }
 
   const seriesKey = useMemo(() => {
     // canonical is best; fallback to core tuple so it still resets correctly

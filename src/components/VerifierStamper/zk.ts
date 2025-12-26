@@ -1,5 +1,6 @@
-import type { SigilMetadata } from "./types";
+import type { SigilMetadata, SigilZkBridge } from "./types";
 import { hashAny } from "./sigilUtils";
+import { logError } from "../verifier/utils/log";
 
 /* ═════════════ OPTIONAL ZK: lightweight glue (no hard dep) ═════════════
    • If you have snarkjs installed, we’ll try to import it at runtime.
@@ -10,22 +11,7 @@ import { hashAny } from "./sigilUtils";
 declare global {
   interface Window {
     SIGIL_ZK_VKEY?: unknown;
-    SIGIL_ZK?: {
-      /** Return a Groth16 proof object for SEND (free shape; we hash it). */
-      provideSendProof?: (ctx: {
-        meta: SigilMetadata;
-        leafHash: string; // sender-side leaf hash
-        previousHeadRoot: string;
-        nonce: string;
-      }) => Promise<{ proof: unknown; publicSignals: unknown; vkey?: unknown } | null>;
-      /** Return a Groth16 proof object for RECEIVE (free shape; we hash it). */
-      provideReceiveProof?: (ctx: {
-        meta: SigilMetadata;
-        leafHash: string; // full leaf hash
-        previousHeadRoot: string;
-        linkSig: string; // senderSig from hardened entry
-      }) => Promise<{ proof: unknown; publicSignals: unknown; vkey?: unknown } | null>;
-    };
+    SIGIL_ZK?: SigilZkBridge;
     snarkjs?: { groth16?: Groth16 };
   }
 }
@@ -75,8 +61,8 @@ async function loadGroth16(): Promise<Groth16 | null> {
     const mod = (await import(/* @vite-ignore */ spec)) as unknown as SnarkjsDynamic;
     const candidate = mod.groth16 ?? mod.default?.groth16;
     if (isGroth16(candidate)) return candidate;
-  } catch {
-    /* optional */
+  } catch (err) {
+    logError("loadGroth16", err);
   }
   return null;
 }
