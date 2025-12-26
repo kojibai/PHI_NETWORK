@@ -86,12 +86,21 @@ function findJsonInText(text: string): EmbeddedMeta | null {
   const parsed = safeJsonParse(text);
   if (parsed) return toEmbeddedMetaFromUnknown(parsed);
 
-  if (!text.includes("kaiSignature")) return null;
-  const slice = text.slice(Math.max(0, text.indexOf("kaiSignature") - 800), Math.min(text.length, text.indexOf("kaiSignature") + 2000));
-  const m = slice.match(/\{[\s\S]*\}/);
-  if (!m || !m[0]) return null;
-  const blobParsed = safeJsonParse(m[0]);
-  return blobParsed ? toEmbeddedMetaFromUnknown(blobParsed) : null;
+  const matches = [...text.matchAll(/"kaiSignature"/g)];
+  if (!matches.length) return null;
+
+  for (const match of matches) {
+    const idx = match.index ?? 0;
+    const slice = text.slice(Math.max(0, idx - 800), Math.min(text.length, idx + 2000));
+    const blocks = slice.match(/\{[\s\S]*\}/g) ?? [];
+    for (const block of blocks) {
+      if (!block.includes('"kaiSignature"')) continue;
+      const blobParsed = safeJsonParse(block);
+      if (blobParsed) return toEmbeddedMetaFromUnknown(blobParsed);
+    }
+  }
+
+  return null;
 }
 
 function extractFromParsedSvg(parsed: Record<string, unknown>): EmbeddedMeta | null {
