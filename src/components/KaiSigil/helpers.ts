@@ -204,7 +204,7 @@ export function makeOuterRingText(
   frequencyHz: number,
   pulse: number,
   beat: number,
-  stepIndex: number,
+  stepIndexZeroBased: number,
   zkPoseidonHash?: string
 ): string {
   const dayToken = String(chakraDayKey).replace(/\s+/g, "_");
@@ -212,7 +212,8 @@ export function makeOuterRingText(
   const parts = [
     `sig=${sig}`,
     `pulse=${pulse}`,
-    `beat=${beat}:${stepIndex}`,
+    `beat=${beat}`,
+    `step=${stepIndexZeroBased}`,
     `day=${dayToken}`,
     `hz=${frequencyHz}`,
   ];
