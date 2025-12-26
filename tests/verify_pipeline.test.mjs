@@ -111,6 +111,34 @@ test("verifySigilSvg passes for matching slug + embedded metadata", async () => 
   assert.equal(result.checks?.derivedPhiKeyMatchesEmbedded, true);
 });
 
+test("verifySigilSvg accepts legacy data-attribute metadata", async () => {
+  const pulse = 456;
+  const kaiSignature = "LEGACYsig";
+  const phiKey = await derivePhiKeyFromSig(kaiSignature);
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg"
+      data-pulse="${pulse}"
+      data-beat="7"
+      data-step-index="2"
+      data-frequency-hz="528"
+      data-chakra-day="Root"
+      data-chakra-gate="Gate-A"
+      data-kai-signature="${kaiSignature}"
+      data-phi-key="${phiKey}">
+    </svg>
+  `;
+  const slug = parseSlug(`${pulse}-${kaiSignature.slice(0, 4)}`);
+  const result = await verifySigilSvg(slug, svg);
+  assert.equal(result.status, "ok");
+  assert.equal(result.checks?.slugPulseMatches, true);
+  assert.equal(result.checks?.slugShortSigMatches, true);
+  assert.equal(result.embedded?.beat, 7);
+  assert.equal(result.embedded?.stepIndex, 2);
+  assert.equal(result.embedded?.frequencyHz, 528);
+  assert.equal(result.embedded?.chakraDay, "Root");
+  assert.equal(result.embedded?.chakraGate, "Gate-A");
+});
+
 test("verifySigilSvg fails when slug pulse mismatches embedded pulse", async () => {
   const pulse = 321;
   const kaiSignature = "sigXYZ";

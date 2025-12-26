@@ -2,7 +2,11 @@ import { XMLParser } from "fast-xml-parser";
 
 export type EmbeddedMeta = {
   pulse?: number;
+  beat?: number;
+  stepIndex?: number;
+  frequencyHz?: number;
   chakraDay?: string;
+  chakraGate?: string;
   kaiSignature?: string;
   phiKey?: string;
   timestamp?: string;
@@ -40,8 +44,22 @@ function toEmbeddedMetaFromUnknown(raw: unknown): EmbeddedMeta {
   const pulse =
     typeof raw.pulse === "number" && Number.isFinite(raw.pulse) ? raw.pulse : undefined;
 
+  const beat =
+    typeof raw.beat === "number" && Number.isFinite(raw.beat) ? raw.beat : undefined;
+
+  const stepIndex =
+    typeof raw.stepIndex === "number" && Number.isFinite(raw.stepIndex) ? raw.stepIndex : undefined;
+
+  const frequencyHz =
+    typeof raw.frequencyHz === "number" && Number.isFinite(raw.frequencyHz)
+      ? raw.frequencyHz
+      : undefined;
+
   const chakraDay =
     typeof raw.chakraDay === "string" ? raw.chakraDay : undefined;
+
+  const chakraGate =
+    typeof raw.chakraGate === "string" ? raw.chakraGate : undefined;
 
   const timestamp =
     typeof raw.timestamp === "string" ? raw.timestamp : undefined;
@@ -57,7 +75,11 @@ function toEmbeddedMetaFromUnknown(raw: unknown): EmbeddedMeta {
 
   return {
     pulse,
+    beat,
+    stepIndex,
+    frequencyHz,
     chakraDay,
+    chakraGate,
     kaiSignature,
     phiKey,
     timestamp,
@@ -183,17 +205,67 @@ function extractFromParsedSvg(parsed: Record<string, unknown>): EmbeddedMeta | n
   return null;
 }
 
+function getAttr(svg: string, key: string): string | undefined {
+  const pattern = `${key}\\s*=\\s*(\"([^\"]*)\"|'([^']*)')`;
+  const match = svg.match(new RegExp(pattern, "i"));
+  if (!match) return undefined;
+  return match[2] ?? match[3];
+}
+
+function getNumberAttr(svg: string, key: string): number | undefined {
+  const raw = getAttr(svg, key);
+  if (!raw) return undefined;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function extractAttrFallback(svgText: string): EmbeddedMeta {
+  const pulse = getNumberAttr(svgText, "data-pulse");
+  const beat = getNumberAttr(svgText, "data-beat");
+  const stepIndex = getNumberAttr(svgText, "data-step-index");
+  const frequencyHz = getNumberAttr(svgText, "data-frequency-hz");
+  const chakraGate = getAttr(svgText, "data-chakra-gate");
+  const chakraDay = getAttr(svgText, "data-harmonic-day") ?? getAttr(svgText, "data-chakra-day");
+  const kaiSignature = getAttr(svgText, "data-kai-signature");
+  const phiKey = getAttr(svgText, "data-phi-key");
+
+  return {
+    pulse,
+    beat,
+    stepIndex,
+    frequencyHz,
+    chakraDay,
+    chakraGate,
+    kaiSignature,
+    phiKey,
+  };
+}
+
+function mergeEmbeddedMeta(primary: EmbeddedMeta, fallback: EmbeddedMeta): EmbeddedMeta {
+  const merged: EmbeddedMeta = { ...primary };
+  for (const [key, value] of Object.entries(fallback)) {
+    if (value === undefined) continue;
+    const current = (merged as Record<string, unknown>)[key];
+    if (current === undefined || current === null) {
+      (merged as Record<string, unknown>)[key] = value;
+    }
+  }
+  return merged;
+}
+
 export function extractEmbeddedMetaFromSvg(svgText: string): EmbeddedMeta {
+  const attrFallback = extractAttrFallback(svgText);
   try {
     const parsed = XML_PARSER.parse(svgText);
     if (isRecord(parsed)) {
       const meta = extractFromParsedSvg(parsed);
-      if (meta) return meta;
+      if (meta) return mergeEmbeddedMeta(meta, attrFallback);
     }
   } catch (err) {
     console.warn("sigilMetadata: failed to parse SVG", err);
   }
 
   const fallback = findJsonInText(svgText);
-  return fallback ?? {};
+  if (fallback) return mergeEmbeddedMeta(fallback, attrFallback);
+  return attrFallback;
 }
