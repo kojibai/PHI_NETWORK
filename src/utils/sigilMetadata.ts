@@ -125,8 +125,8 @@ export function extractEmbeddedMetaFromSvg(svgText: string): EmbeddedMeta {
       const meta = extractFromParsedSvg(parsed);
       if (meta) return meta;
     }
-  } catch {
-    // fall back to text scanning
+  } catch (err) {
+    console.warn("sigilMetadata: failed to parse SVG", err);
   }
 
   const fallback = findJsonInText(svgText);

@@ -47,8 +47,8 @@ export type SigilZkReceiveInput = {
 };
 
 export type SigilZkBridge = {
-  provideSendProof?: (input: SigilZkSendInput) => Promise<SigilZkProof>;
-  provideReceiveProof?: (input: SigilZkReceiveInput) => Promise<SigilZkProof>;
+  provideSendProof?: (input: SigilZkSendInput) => Promise<SigilZkProof | null>;
+  provideReceiveProof?: (input: SigilZkReceiveInput) => Promise<SigilZkProof | null>;
 };
 
 export type PhiMoveMode = "send" | "receive";
