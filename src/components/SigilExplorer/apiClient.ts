@@ -1,7 +1,13 @@
 // src/components/SigilExplorer/apiClient.ts
 "use client";
 
-export type ApiSealResponse = { seal: string };
+export type ApiSealResponse = {
+  seal: string;
+  pulse?: number;
+  latestPulse?: number;
+  latest_pulse?: number;
+  total?: number;
+};
 
 const hasWindow = typeof window !== "undefined";
 const canStorage = hasWindow && typeof window.localStorage !== "undefined";

@@ -4,6 +4,7 @@ import {
   addUrl,
   hydrateRegistryFromStorage,
   isOnline,
+  memoryRegistry,
 } from "../components/SigilExplorer/registryStore";
 import {
   enqueueInhaleRawKrystal,
@@ -64,6 +65,22 @@ function hashFromSendRecord(record: Record<string, unknown>): string | undefined
     readStringField(record, "canonicalHash") ||
     readStringField(record, "hash")
   );
+}
+
+function getLatestPulseFromRegistry(): number | undefined {
+  let latest: number | undefined;
+  for (const [, payload] of memoryRegistry) {
+    const pulse = (payload as { pulse?: unknown }).pulse;
+    if (typeof pulse !== "number" || !Number.isFinite(pulse)) continue;
+    if (latest == null || pulse > latest) latest = pulse;
+  }
+  return latest;
+}
+
+function readRemotePulse(body: ApiSealResponse): number | undefined {
+  const pulse = body?.pulse ?? body?.latestPulse ?? body?.latest_pulse;
+  if (typeof pulse !== "number" || !Number.isFinite(pulse)) return undefined;
+  return pulse;
 }
 
 export function startSigilExplorerSync(): () => void {
@@ -154,20 +171,28 @@ export function startSigilExplorerSync(): () => void {
       if (!res.ok) return;
 
       let nextSeal = "";
+      let remotePulse: number | undefined;
       try {
         const body = (await res.json()) as ApiSealResponse;
         nextSeal = typeof body?.seal === "string" ? body.seal : "";
+        remotePulse = readRemotePulse(body);
       } catch {
         return;
       }
 
-      if (prevSeal && nextSeal && prevSeal === nextSeal) {
+      const localLatestPulse = remotePulse != null ? getLatestPulseFromRegistry() : undefined;
+      const hasNewerPulse =
+        remotePulse != null && (localLatestPulse == null || remotePulse > localLatestPulse);
+
+      if (prevSeal && nextSeal && prevSeal === nextSeal && !hasNewerPulse) {
         remoteSeal = nextSeal;
         return;
       }
 
       const importedRes = await pullAndImportRemoteUrls(ac.signal);
-      remoteSeal = importedRes.remoteSeal ?? nextSeal ?? prevSeal ?? null;
+      if (importedRes.pulled) {
+        remoteSeal = importedRes.remoteSeal ?? nextSeal ?? prevSeal ?? null;
+      }
 
       const sealNow = remoteSeal;
       const shouldFullSeed = reason === "open" || (sealNow && sealNow !== lastFullSeedSeal);

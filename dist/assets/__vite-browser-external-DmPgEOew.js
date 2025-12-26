@@ -1,0 +1,1 @@
+import{vr as e}from"./index-CWn23Cpo.js";var t=e(((e,t)=>{t.exports={}}));export default t();

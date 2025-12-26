@@ -19,10 +19,11 @@ type ApiUrlsPageResponse = {
 
 export async function pullAndImportRemoteUrls(
   signal: AbortSignal,
-): Promise<{ imported: number; remoteSeal?: string; remoteTotal?: number }> {
+): Promise<{ imported: number; remoteSeal?: string; remoteTotal?: number; pulled: boolean }> {
   let imported = 0;
   let remoteSeal: string | undefined;
   let remoteTotal: number | undefined;
+  let pulled = false;
 
   for (let page = 0; page < URLS_MAX_PAGES_PER_SYNC; page++) {
     const offset = page * URLS_PAGE_LIMIT;
@@ -39,6 +40,7 @@ export async function pullAndImportRemoteUrls(
 
     if (!r.ok) break;
 
+    pulled = true;
     remoteSeal = r.value.state_seal;
     remoteTotal = r.value.total;
 
@@ -66,5 +68,5 @@ export async function pullAndImportRemoteUrls(
   }
 
   if (imported > 0) persistRegistryToStorage();
-  return { imported, remoteSeal, remoteTotal };
+  return { imported, remoteSeal, remoteTotal, pulled };
 }

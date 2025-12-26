@@ -119,6 +119,22 @@ const URL_PROBE_MAX_PER_REFRESH = 18;
 const INHALE_INTERVAL_MS = 3236;
 const EXHALE_INTERVAL_MS = 2000;
 
+function getLatestPulseFromRegistry(): number | undefined {
+  let latest: number | undefined;
+  for (const [, payload] of memoryRegistry) {
+    const pulse = (payload as { pulse?: unknown }).pulse;
+    if (typeof pulse !== "number" || !Number.isFinite(pulse)) continue;
+    if (latest == null || pulse > latest) latest = pulse;
+  }
+  return latest;
+}
+
+function readRemotePulse(body: ApiSealResponse): number | undefined {
+  const pulse = body?.pulse ?? body?.latestPulse ?? body?.latest_pulse;
+  if (typeof pulse !== "number" || !Number.isFinite(pulse)) return undefined;
+  return pulse;
+}
+
 const PHI_MARK_SRC = "/phi.svg";
 
 function nowMs(): number {
@@ -1149,21 +1165,29 @@ const SigilExplorer: React.FC = () => {
         if (!res.ok) return;
 
         let nextSeal = "";
+        let remotePulse: number | undefined;
         try {
           const body = (await res.json()) as ApiSealResponse;
           nextSeal = typeof body?.seal === "string" ? body.seal : "";
+          remotePulse = readRemotePulse(body);
         } catch {
           return;
         }
 
-        if (prevSeal && nextSeal && prevSeal === nextSeal) {
+        const localLatestPulse = remotePulse != null ? getLatestPulseFromRegistry() : undefined;
+        const hasNewerPulse =
+          remotePulse != null && (localLatestPulse == null || remotePulse > localLatestPulse);
+
+        if (prevSeal && nextSeal && prevSeal === nextSeal && !hasNewerPulse) {
           remoteSealRef.current = nextSeal;
           return;
         }
 
         const importedRes = await pullAndImportRemoteUrls(ac.signal);
 
-        remoteSealRef.current = importedRes.remoteSeal ?? nextSeal ?? prevSeal ?? null;
+        if (importedRes.pulled) {
+          remoteSealRef.current = importedRes.remoteSeal ?? nextSeal ?? prevSeal ?? null;
+        }
 
         if (importedRes.imported > 0) {
           setLastAddedSafe(undefined);
