@@ -1,1 +1,0 @@
-import{B as e}from"./index-BECIPfta.js";export default e();
