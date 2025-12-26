@@ -71,3 +71,15 @@ test("extractEmbeddedMetaFromSvg falls back to text scan", () => {
   assert.equal(embedded.pulse, 9);
   assert.equal(embedded.kaiSignature, "fallback");
 });
+
+test("extractEmbeddedMetaFromSvg ignores unquoted kaiSignature labels", () => {
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg">
+      <text>kaiSignature</text>
+      <metadata>{"pulse":88,"kaiSignature":"real-sig","userPhiKey":"φK-REAL"}</metadata>
+    </svg>
+  `;
+  const embedded = extractEmbeddedMetaFromSvg(svg);
+  assert.equal(embedded.pulse, 88);
+  assert.equal(embedded.kaiSignature, "real-sig");
+});
