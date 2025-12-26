@@ -86,15 +86,16 @@
   .btn-primary--xl {
     color: #f6fffe;
     background:
-      linear-gradient(160deg, rgba(255,255,255,.32), rgba(255,255,255,.08) 55%, rgba(0,0,0,.06) 100%),
-      radial-gradient(120% 120% at 12% -10%, rgba(120,255,240,.35), transparent 60%),
-      linear-gradient(180deg, rgba(20,120,110,.32), rgba(20,60,58,.24));
-    border: 1px solid rgba(140,255,240,.45);
+      linear-gradient(160deg, rgba(255,255,255,.38), rgba(255,255,255,.08) 56%, rgba(0,0,0,.05) 100%),
+      radial-gradient(130% 120% at 10% -12%, rgba(140,255,246,.45), transparent 62%),
+      radial-gradient(120% 120% at 85% 120%, rgba(120,170,255,.22), transparent 60%),
+      linear-gradient(180deg, rgba(18,108,100,.4), rgba(10,36,34,.28));
+    border: 1px solid rgba(170,255,248,.55);
     box-shadow:
-      0 0 0 1px rgba(255,255,255,.12) inset,
-      0 18px 44px rgba(10, 255, 222, .18),
-      0 0 36px rgba(92,225,255,.28);
-    text-shadow: 0 0 16px rgba(140,255,240,.55), 0 0 6px rgba(0,0,0,.45);
+      0 0 0 1px rgba(255,255,255,.16) inset,
+      0 22px 56px rgba(10, 255, 222, .24),
+      0 0 42px rgba(92,225,255,.32);
+    text-shadow: 0 0 18px rgba(140,255,240,.6), 0 0 6px rgba(0,0,0,.45);
   }
 
   .btn-primary--xl:hover {

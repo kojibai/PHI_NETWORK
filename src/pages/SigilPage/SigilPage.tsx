@@ -1465,8 +1465,7 @@ current.searchParams.forEach((v, k) => {
             navigate(u);
           } catch {
             try {
-              window.history.pushState(null, "", u);
-              window.dispatchEvent(new PopStateEvent("popstate"));
+              window.location.href = u;
             } catch {}
           }
         },

@@ -386,14 +386,21 @@ body.bp-open :where(.sigilpage, .sp-viewport, .sp-shell, .sp-veil, .sp-veil-star
   text-shadow: 0 0 18px rgba(120,255,240,.38), 0 0 6px rgba(0,0,0,.55);
   transition: transform .06s ease, box-shadow .2s ease, border-color .2s ease, background .2s ease, opacity .12s ease;
 }
- .btn-primary{
-   --btn-bg: rgba(55,230,212,.22);
-   color:#f4fffe;
+.btn-primary{
+   --btn-bg: rgba(55,230,212,.18);
+   color:#f6fffe;
+   border-color: rgba(160,255,246,.48);
+   background:
+     linear-gradient(160deg, rgba(255,255,255,.34), rgba(255,255,255,.08) 56%, rgba(0,0,0,.06) 100%),
+     radial-gradient(120% 140% at 12% -12%, rgba(130,255,240,.42), transparent 60%),
+     radial-gradient(120% 120% at 85% 120%, rgba(120,160,255,.22), transparent 62%),
+     linear-gradient(180deg, rgba(20,120,110,.38), rgba(8,36,34,.28)),
+     var(--btn-bg);
    box-shadow:
-     0 0 0 1px color-mix(in oklab, var(--crystal-accent), transparent 62%) inset,
-     0 18px 44px rgba(10, 255, 222, .18),
-     0 0 34px rgba(92,225,255,.28);
- }
+     0 0 0 1px rgba(255,255,255,.16) inset,
+     0 20px 54px rgba(10, 255, 222, .22),
+     0 0 40px rgba(92,225,255,.3);
+}
  .btn-secondary{ --btn-bg: rgba(92,225,255,.18); }
  .btn-ghost[data-remembered]{
    --btn-bg: rgba(55,230,212,.18);
