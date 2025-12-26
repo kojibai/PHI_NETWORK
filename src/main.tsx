@@ -8,6 +8,8 @@ import "./App.css";
 import AppRouter from "./router/AppRouter";
 import { APP_VERSION, SW_VERSION_EVENT } from "./version";
 import ErrorBoundary from "./components/ErrorBoundary";
+import type { Groth16 } from "./components/VerifierStamper/zk";
+import * as snarkjs from "snarkjs";
 
 // ✅ REPLACE scheduler impl with your utils cadence file
 import { startKaiCadence, startKaiFibBackoff } from "./utils/kai_cadence";
@@ -17,7 +19,6 @@ const isProduction = import.meta.env.MODE === "production";
 declare global {
   interface Window {
     kairosSwVersion?: string;
-    snarkjs?: unknown;
   }
 }
 
@@ -53,13 +54,10 @@ async function loadSnarkjsGlobal(): Promise<void> {
   if (window.snarkjs) return;
 
   try {
-    const mod = await import("snarkjs");
-    if (mod?.groth16) {
-      window.snarkjs = mod;
-      return;
-    }
-    if (mod?.default?.groth16) {
-      window.snarkjs = mod.default;
+    const mod = snarkjs as unknown as { groth16?: Groth16; default?: { groth16?: Groth16 } };
+    const groth16 = mod.groth16 ?? mod.default?.groth16;
+    if (groth16) {
+      window.snarkjs = { groth16 };
     }
   } catch (err) {
     console.error("Failed to load snarkjs", err);
