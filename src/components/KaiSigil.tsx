@@ -723,7 +723,7 @@ const KaiSigil = forwardRef<KaiSigilHandle, KaiSigilProps>((props, ref) => {
     );
 
   const stateKeyOk = Boolean(built?.createdFor.stateKey === stateKey);
-  const outerRingStepIndex = Math.max(0, displayStepIndex - 2);
+  const outerRingStepIndex = displayStepIndex;
   const outerRingText = makeOuterRingText(
     payloadHashHex,
     stateKeyOk,
