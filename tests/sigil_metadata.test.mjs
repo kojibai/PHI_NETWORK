@@ -106,3 +106,14 @@ test("extractEmbeddedMetaFromSvg ignores unquoted kaiSignature JSON", () => {
   assert.equal(embedded.kaiSignature, undefined);
   assert.equal(embedded.pulse, undefined);
 });
+
+test("extractEmbeddedMetaFromSvg prefers outer block when kaiSignature is nested", () => {
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg">
+      <text>{"meta":{"kaiSignature":"INNER"},"pulse":123,"kaiSignature":"OUTER"}</text>
+    </svg>
+  `;
+  const embedded = extractEmbeddedMetaFromSvg(svg);
+  assert.equal(embedded.kaiSignature, "OUTER");
+  assert.equal(embedded.pulse, 123);
+});

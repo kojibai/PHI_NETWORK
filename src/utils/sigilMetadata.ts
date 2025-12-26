@@ -130,13 +130,16 @@ function extractNearbyJsonBlocks(text: string, matchIndex: number, window = 2000
     }
   }
 
-  blocks.sort((a, b) => (a.end - a.start) - (b.end - b.start));
+  blocks.sort((a, b) => (b.end - b.start) - (a.end - a.start));
   return blocks.map(({ start: s, end: e }) => slice.slice(s, e + 1));
 }
 
 function findJsonInText(text: string): EmbeddedMeta | null {
   const parsed = safeJsonParse(text);
-  if (parsed) return toEmbeddedMetaFromUnknown(parsed);
+  if (parsed) {
+    const parsedMeta = toEmbeddedMetaFromUnknown(parsed);
+    if (parsedMeta.kaiSignature) return parsedMeta;
+  }
 
   const matches = [...text.matchAll(/"kaiSignature"\s*:/g)];
   if (!matches.length) return null;
@@ -147,7 +150,9 @@ function findJsonInText(text: string): EmbeddedMeta | null {
     for (const block of blocks) {
       if (!block.includes('"kaiSignature"')) continue;
       const blobParsed = safeJsonParse(block);
-      if (blobParsed) return toEmbeddedMetaFromUnknown(blobParsed);
+      if (!blobParsed) continue;
+      const meta = toEmbeddedMetaFromUnknown(blobParsed);
+      if (meta.kaiSignature) return meta;
     }
   }
 
