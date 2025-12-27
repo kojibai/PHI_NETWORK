@@ -2,11 +2,16 @@
 // Engine: exact integers in μpulses + φ bridge via decimal.js (no drift; no float rounding in core)
 
 import Decimal from "decimal.js";
+import {
+  GENESIS_TS,
+  N_DAY_MICRO,
+  SOLAR_GENESIS_UTC_TS,
+} from "./utils/kai_pulse";
 
 // ──────────────────────────────────────────────────────────────
 // Canon constants (Kai-Klok KKS-1.0)
 // ──────────────────────────────────────────────────────────────
-export const HARMONIC_DAY_PULSES = 17491.270421 as const; // pulses per day (closure-true)
+export const HARMONIC_DAY_PULSES = Number(N_DAY_MICRO) / 1_000_000; // pulses per day (closure-true)
 export const ETERNAL_BEATS_PER_DAY = 36 as const;
 export const ETERNAL_STEPS_PER_BEAT = 44 as const;
 
@@ -17,10 +22,10 @@ export const BREATH_SEC_DEC = new Decimal(3).plus(SQRT5); // 3 + √5 (exact in 
 export const BREATH_SEC = Number(BREATH_SEC_DEC);         // convenience for display-only comments
 
 // Genesis epoch (Sun-origin anchor) in Unix ms (UTC).
-export const GENESIS_TS = 1715323541888 as const; // 2024-05-10T06:45:41.888Z
+export { GENESIS_TS };
 
 // (Informative) Greenwich sunrise after the flare; NOT used by engine logic.
-export const SOLAR_GENESIS_UTC_TS = 1715400806000 as const; // 2024-05-11T04:13:26.000Z
+export { SOLAR_GENESIS_UTC_TS };
 
 // Labels
 export const SOLAR_DAY_NAMES = [

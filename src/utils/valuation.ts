@@ -143,6 +143,9 @@ export interface ValueSeal {
 /* ----------------------------- φ tunables (POLICY) -------------------------- */
 
 const PHI = (1 + Math.sqrt(5)) / 2;
+const QUANTIZE_SCALE = 1e12;
+const quantize = (value: number) =>
+  Math.round(value * QUANTIZE_SCALE) / QUANTIZE_SCALE;
 
 // Canon rhythm (constants)
 const DEFAULT_STEPS_PER_BEAT = 44 as const;
@@ -829,19 +832,23 @@ export function computeIntrinsicUnsigned(
   /* --------------------------- live oscillations (φ) ------------------------- */
 
   // Breath wave
-  const breathPhase01 = pulsesPerBeat > 0 ? ((nowPulse % pulsesPerBeat) / pulsesPerBeat) : 0;
+  const breathPhase01 = quantize(
+    pulsesPerBeat > 0 ? ((nowPulse % pulsesPerBeat) / pulsesPerBeat) : 0,
+  );
   const breathAmp = BREATH_WAVE_GAIN * (0.5 + 0.5 * cadenceRegularity);
-  const breathWave = 1 + breathAmp * Math.sin(2 * Math.PI * breathPhase01);
+  const breathWave = quantize(1 + breathAmp * Math.sin(2 * Math.PI * breathPhase01));
 
   // Kai-day wave (claim-day ↔ now-day alignment)
-  const dayPhase01 = frac(nowPulse / PULSES_PER_DAY_EXACT);
-  const claimDayPhase01 = frac(claimPulse / PULSES_PER_DAY_EXACT);
+  const dayPhase01 = quantize(frac(nowPulse / PULSES_PER_DAY_EXACT));
+  const claimDayPhase01 = quantize(frac(claimPulse / PULSES_PER_DAY_EXACT));
   const daySim = 1 - Math.abs(((dayPhase01 - claimDayPhase01 + 1) % 1) - 0.5) * 2;
   const dayAmp = DAY_WAVE_GAIN * (0.5 + 0.5 * resonancePhi) * (0.5 + 0.5 * cadenceRegularity);
-  const dayWave = 1 + dayAmp * (2 * daySim - 1);
+  const dayWave = quantize(1 + dayAmp * (2 * daySim - 1));
 
   // φ-Beatty strobe (no RNG)
-  const { phase01: strobePhase01, wave: strobeWaveVal } = strobeWave(claimPulse, nowPulse);
+  const { phase01, wave } = strobeWave(claimPulse, nowPulse);
+  const strobePhase01 = quantize(phase01);
+  const strobeWaveVal = quantize(wave);
 
   // Moment Affinity (use resolved claim step)
   const claimStep = claimStepResolved;
@@ -866,17 +873,19 @@ export function computeIntrinsicUnsigned(
 
   const w_step = 0.30, w_breath = 0.30, w_phi = 0.20, w_digit = 0.20;
   const digitBlend = (MOMENT_AFFINITY_DIGIT_WEIGHT * motifSim + (1 - MOMENT_AFFINITY_DIGIT_WEIGHT) * rareSim);
-  const momentAffinitySim01 = w_step * stepSim + w_breath * breathSim + w_phi * phiFracSim + w_digit * digitBlend;
+  const momentAffinitySim01 = quantize(
+    w_step * stepSim + w_breath * breathSim + w_phi * phiFracSim + w_digit * digitBlend,
+  );
 
   const momentAffinityAmp =
     MOMENT_AFFINITY_GAIN_BASE *
     (0.5 + 0.5 * claimRareScore) *
     (0.5 + 0.5 * resonancePhi);
 
-  const momentAffinityOsc = 1 + momentAffinityAmp * (2 * momentAffinitySim01 - 1);
+  const momentAffinityOsc = quantize(1 + momentAffinityAmp * (2 * momentAffinitySim01 - 1));
 
   // Combine waves (strictly positive; preserves floor)
-  const combinedOsc = breathWave * dayWave * strobeWaveVal * momentAffinityOsc;
+  const combinedOsc = quantize(breathWave * dayWave * strobeWaveVal * momentAffinityOsc);
 
   /* ----------------------- compose premium with living band ------------------ */
 

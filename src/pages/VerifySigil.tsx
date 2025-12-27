@@ -125,6 +125,37 @@ export default function VerifySigil(): React.JSX.Element {
     [payload]
   );
 
+  const zkSummary = useMemo(() => {
+    if (!payload) return null;
+    const poseidon =
+      typeof payload.zkPoseidonHash === "string"
+        ? payload.zkPoseidonHash.trim()
+        : "";
+    const proof = payload.zkProof as
+      | { pi_a?: string[]; pi_b?: string[][]; pi_c?: string[] }
+      | undefined;
+    const hasProof =
+      Array.isArray(proof?.pi_a) &&
+      Array.isArray(proof?.pi_b) &&
+      Array.isArray(proof?.pi_c);
+    const hasPoseidon = Boolean(poseidon) && poseidon !== "0x";
+    const scheme =
+      typeof payload.proofHints?.scheme === "string"
+        ? payload.proofHints.scheme
+        : null;
+
+    if (!hasProof && !hasPoseidon) return null;
+
+    return {
+      scheme,
+      poseidon: hasPoseidon ? poseidon : null,
+      status: hasProof ? "present" : "missing",
+      verification: hasProof
+        ? "present (verification requires public signals + vkey)"
+        : "missing",
+    };
+  }, [payload]);
+
   // Align dependencies with React Compiler: depend on `payload` not `payload?.canonicalHash`
   const shortHash = useMemo(
     () =>
@@ -590,6 +621,38 @@ export default function VerifySigil(): React.JSX.Element {
                     </li>
                   </ul>
                 </div>
+
+                {zkSummary && (
+                  <div className="verify-proof-block">
+                    <h3>ZK · Proof Status</h3>
+                    <ul>
+                      <li>
+                        <span className="label">Scheme</span>
+                        <span className="value">
+                          {zkSummary.scheme ?? "—"}
+                        </span>
+                      </li>
+                      <li>
+                        <span className="label">Poseidon hash</span>
+                        <span className="value mono">
+                          {zkSummary.poseidon ?? "missing"}
+                        </span>
+                      </li>
+                      <li>
+                        <span className="label">Proof bundle</span>
+                        <span className="value">
+                          {zkSummary.status}
+                        </span>
+                      </li>
+                      <li>
+                        <span className="label">Verification</span>
+                        <span className="value">
+                          {zkSummary.verification}
+                        </span>
+                      </li>
+                    </ul>
+                  </div>
+                )}
               </div>
             )}
 
