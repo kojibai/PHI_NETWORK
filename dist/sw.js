@@ -9,7 +9,11 @@
 
 // Update this version string manually to keep the app + cache versions in sync.
 // The value is forwarded to the UI via the service worker "SW_ACTIVATED" message.
+<<<<<<< Updated upstream
 const APP_VERSION = "34.1.6"; // update on release
+=======
+const APP_VERSION = "34.2.1"; // update on release
+>>>>>>> Stashed changes
 const VERSION = new URL(self.location.href).searchParams.get("v") || APP_VERSION; // derived from build
 const PREFIX  = "PHINETWORK";
 const PRECACHE = `${PREFIX}-precache-${VERSION}`;
