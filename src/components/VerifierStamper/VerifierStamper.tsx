@@ -304,10 +304,10 @@ const VerifierStamperInner: React.FC = () => {
       buildNotePayload({
         meta,
         sigilSvgRaw,
-        verifyUrl: sealUrl || (typeof window !== "undefined" ? window.location.href : ""),
+        verifyUrl: sendQrUrl || (typeof window !== "undefined" ? window.location.href : ""),
         pulseNow,
       }),
-    [meta, sigilSvgRaw, sealUrl, pulseNow]
+    [meta, sigilSvgRaw, sendQrUrl, pulseNow]
   );
 
   const openNote = () =>
@@ -317,7 +317,7 @@ const VerifierStamperInner: React.FC = () => {
       const p = buildNotePayload({
         meta,
         sigilSvgRaw,
-        verifyUrl: sealUrl || (typeof window !== "undefined" ? window.location.href : ""),
+        verifyUrl: sendQrUrl || (typeof window !== "undefined" ? window.location.href : ""),
         pulseNow,
       });
       const bridge: VerifierBridge = { getNoteData: async () => p };
