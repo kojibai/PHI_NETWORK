@@ -70,6 +70,15 @@ import { useSigilPayload } from "../../utils/useSigilPayload";
 /** constants.ts */
 import { DEFAULT_UPGRADE_BREATHS } from "./constants";
 
+const stepIndexFromPulse = (pulse: number, stepsPerBeat: number) => {
+  const steps = Number.isFinite(stepsPerBeat) && stepsPerBeat > 0
+    ? Math.floor(stepsPerBeat)
+    : STEPS_PER_BEAT;
+  const pμ = BigInt(Math.trunc(pulse)) * 1_000_000n;
+  const { stepIndex } = latticeFromMicroPulses(pμ);
+  return Math.max(0, Math.min(steps - 1, stepIndex));
+};
+
 /** utils.ts */
 import { currency, b64, signal, ensureHPrefixLocal } from "./utils";
 

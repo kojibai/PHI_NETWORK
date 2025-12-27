@@ -72,6 +72,15 @@ type BreathProof = {
 
 type SourceKind = "none" | "query" | "upload";
 
+const stepIndexFromPulse = (pulse: number, stepsPerBeat: number) => {
+  const steps = Number.isFinite(stepsPerBeat) && stepsPerBeat > 0
+    ? Math.floor(stepsPerBeat)
+    : STEPS_PER_BEAT;
+  const pμ = BigInt(Math.trunc(pulse)) * 1_000_000n;
+  const { stepIndex } = latticeFromMicroPulses(pμ);
+  return Math.max(0, Math.min(steps - 1, stepIndex));
+};
+
 /* ──────────────────────────────────────────────────────────────
    Page
    ───────────────────────────────────────────────────────────── */
