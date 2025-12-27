@@ -1,6 +1,7 @@
 // src/utils/payload.ts
 import { decodeSigilPayload } from "./sigilUrl";
 import { STEPS_BEAT as STEPS_PER_BEAT } from "./kai_pulse";
+import { percentIntoStepFromPulse } from "../SovereignSolar";
 import type {
   ExpiryUnit,
   SigilPayload,
@@ -110,6 +111,9 @@ export function decodePayloadFromQuery(search: string): SigilPayload | null {
         ? Math.max(1, Math.floor(Number(stepsRaw)))
         : STEPS_PER_BEAT;
 
+    const pulseNum =
+      raw.pulse != null && !Number.isNaN(Number(raw.pulse)) ? Number(raw.pulse) : 0;
+
     const rawStepIndex = raw.stepIndex;
     const stepIndex =
       rawStepIndex != null && !Number.isNaN(Number(rawStepIndex))
@@ -119,8 +123,8 @@ export function decodePayloadFromQuery(search: string): SigilPayload | null {
     const derivedPct =
       typeof raw.stepPct === "number"
         ? Math.max(0, Math.min(1, raw.stepPct))
-        : stepIndex != null
-        ? (stepIndex + 1e-9) / steps
+        : Number.isFinite(pulseNum)
+        ? percentIntoStepFromPulse(pulseNum)
         : 0;
 
     // expiry/exported
@@ -171,7 +175,7 @@ export function decodePayloadFromQuery(search: string): SigilPayload | null {
     // Build with known fields, then include extras when present.
     // Cast at the end so we don't fight local repo-required fields.
     const payload = {
-      pulse: Number(raw.pulse) || 0,
+      pulse: pulseNum,
       beat: Number(raw.beat) || 0,
       chakraDay: raw.chakraDay as SigilPayload["chakraDay"],
       stepIndex,

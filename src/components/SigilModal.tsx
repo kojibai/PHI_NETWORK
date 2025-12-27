@@ -50,6 +50,7 @@ import {
   type Weekday,
   type ChakraDay,
 } from "../utils/kai_pulse";
+import { getKaiPulseToday } from "../SovereignSolar";
 
 /* ────────────────────────────────────────────────────────────────
    Strict browser timer handle types
@@ -956,31 +957,19 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
   }, [pulse]);
 
   /**
-   * ✅ Solar day percent (0..100), sunrise-aligned using kai_pulse.ts solar_day_start_iso
-   * This uses the real solar boundary (Greenwich sunrise) coming from buildKaiKlockResponse(),
-   * and then measures μpulses since that sunrise (φ-exact bridge) against N_DAY_MICRO.
+   * ✅ Solar day percent (0..100), sunrise-aligned using SovereignSolar
+   * Matches EternalKlock's sunrise window + overrides for determinism.
    */
   const solarDayPct = useMemo(() => {
     try {
-      if (!kairos) return dayPct;
-
-      const startIso = readString(kairos, "solar_day_start_iso");
-      if (!startIso) return dayPct;
-
-      const pμ_total = pulse * ONE_PULSE_MICRO;
-      const pμ_sunrise = microPulsesSinceGenesis(startIso); // φ-exact μpulses at sunrise boundary
-      const delta = pμ_total - pμ_sunrise;
-
-      const inSolar = delta < 0n ? 0n : delta;
-      const scaled = (inSolar * 100_000_000n) / N_DAY_MICRO;
-      const pct = Number(scaled) / 1_000_000;
-
-      // UI clamp
-      return pct < 0 ? 0 : pct > 100 ? 100 : pct;
+      const ms = epochMsFromPulse(pulse);
+      const when = new Date(biToSafeNumber(ms));
+      const { dayPercent } = getKaiPulseToday(when);
+      return Math.max(0, Math.min(100, dayPercent));
     } catch {
       return dayPct;
     }
-  }, [kairos, pulse, dayPct]);
+  }, [pulse, dayPct]);
 
   /* Derive KaiKlock “response” for current pulse */
   useEffect(() => {

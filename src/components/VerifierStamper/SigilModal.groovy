@@ -232,6 +232,7 @@ const SigilModal: FC<Props> = ({ initialPulse = 0, onClose }) => {
   /* ── primitive props for KaiSigil (derived from SSOT) ───── */
   const [pulse, setPulse] = useState(initialPulse);
   const [beat, setBeat] = useState(0);
+  const [stepIndex, setStepIndex] = useState(0);
   const [stepPct, setStepPct] = useState(0);
   const [chakraDay, setChakraDay] = useState<KaiSigilProps["chakraDay"]>("Root");
 
@@ -312,14 +313,14 @@ const SigilModal: FC<Props> = ({ initialPulse = 0, onClose }) => {
     const beatIdx = kd.SpiralBeat.beatIndex | 0;
     const stepIdx = kd.SpiralStep.stepIndex | 0;
     const pctIntoStep = clamp01(kd.SpiralStep.percentIntoStep ?? 0);
-    const stepPctAcrossBeat = clamp01((stepIdx + pctIntoStep) / STEPS_BEAT);
 
     const day = (kd.harmonicDay ?? "Solhara") as Weekday;
     const chakra: KaiSigilProps["chakraDay"] = DAY_TO_CHAKRA[day] ?? "Root";
 
     setKlock(kd);
     setBeat(clamp(beatIdx, 0, 35));
-    setStepPct(stepPctAcrossBeat);
+    setStepIndex(clamp(stepIdx, 0, STEPS_BEAT - 1));
+    setStepPct(pctIntoStep);
     setChakraDay(chakra);
     setSigilCrashed(false);
     anchorRef.current = Date.now();
@@ -600,8 +601,7 @@ const SigilModal: FC<Props> = ({ initialPulse = 0, onClose }) => {
   };
 
   /* ── derived strings for display & seal ────────────────── */
-  const stepIdxLocal =
-    Math.floor(clamp01OpenTop(stepPct) * STEPS_BEAT) % STEPS_BEAT;
+  const stepIdxLocal = clamp(stepIndex, 0, STEPS_BEAT - 1);
   const localBeatStep = fmtSealKairos(beat, stepIdxLocal);
 
   const showServerKairosInfo = !STRICT_CANONICAL && !!serverSealDayMonth;
@@ -764,6 +764,7 @@ const SigilModal: FC<Props> = ({ initialPulse = 0, onClose }) => {
                 ref={sigilRef}
                 pulse={pulse}
                 beat={clamp(beat, 0, 35)}
+                stepIndex={stepIdxLocal}
                 stepPct={clamp01OpenTop(stepPct)}
                 chakraDay={chakraDay}
                 size={canvasSize}
@@ -899,8 +900,7 @@ const SigilModal: FC<Props> = ({ initialPulse = 0, onClose }) => {
                 } = {
                   pulse,
                   beat,
-                  stepIndex:
-                    Math.floor(clamp01OpenTop(stepPct) * STEPS_BEAT) % STEPS_BEAT,
+                  stepIndex: stepIdxLocal,
                   chakraDay,
                   stepsPerBeat: STEPS_BEAT,
                   // sovereign fields can be added later in the verifier flow

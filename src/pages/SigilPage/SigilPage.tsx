@@ -1198,10 +1198,7 @@ useEffect(() => {
   const chakraDay = (payload?.chakraDay ?? "Throat") as SigilPayload["chakraDay"];
   const steps: number = (payload?.stepsPerBeat ?? STEPS_PER_BEAT) as number;
   const stepIndex = stepIndexFromPulse(payload?.pulse ?? 0, steps);
-  const stepPct =
-    typeof payload?.stepPct === "number"
-      ? Math.max(0, Math.min(1, payload.stepPct))
-      : percentIntoStepFromPulse(payload?.pulse ?? 0);
+  const stepPct = percentIntoStepFromPulse(payload?.pulse ?? 0);
 
   const qrAccent = useMemo(() => {
     const baseHue = CHAKRA_THEME[chakraDay as keyof typeof CHAKRA_THEME]?.hue ?? 180;

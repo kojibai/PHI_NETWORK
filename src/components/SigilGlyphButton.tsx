@@ -10,54 +10,14 @@ import KaiSigil, { type KaiSigilProps, type KaiSigilHandle } from "./KaiSigil";
 import SigilModal from "./SigilModal";
 import "./SigilGlyphButton.css";
 
-/* ═════════════ Canon (identical to SigilModal) ═════════════ */
-const GENESIS_TS = Date.UTC(2024, 4, 10, 6, 45, 41, 888); // 2024-05-10 06:45:41.888 UTC
-const KAI_PULSE_SEC = 3 + Math.sqrt(5);                   // φ-exact breath
-const PULSE_MS = KAI_PULSE_SEC * 1000;
-
-/* μ-pulse fixed point */
-const ONE_PULSE_MICRO = 1_000_000n;         // 1 pulse = 1e6 μpulses
-const N_DAY_MICRO = 17_491_270_421n;        // 17,491.270421 pulses/day exact (μpulses)
-const PULSES_PER_STEP_MICRO = 11_000_000n;  // 11 pulses per step
-
-/* exact μpulses-per-beat for Eternal day (rounded like in modal) */
-const MU_PER_BEAT_EXACT = (N_DAY_MICRO + 18n) / 36n; // 485,868,623 μpulses
-
-type HarmonicDay = "Solhara" | "Aquaris" | "Flamora" | "Verdari" | "Sonari" | "Kaelith";
-const WEEKDAY: readonly HarmonicDay[] = ["Solhara","Aquaris","Flamora","Verdari","Sonari","Kaelith"] as const;
-
-const DAY_TO_CHAKRA: Record<HarmonicDay, KaiSigilProps["chakraDay"]> = {
-  Solhara: "Root",
-  Aquaris: "Sacral",
-  Flamora: "Solar Plexus",
-  Verdari: "Heart",
-  Sonari: "Throat",
-  Kaelith: "Crown",
-};
-
-/* helpers (copied semantics) */
-const imod = (n: bigint, m: bigint) => ((n % m) + m) % m;
-function floorDiv(n: bigint, d: bigint): bigint {
-  const q = n / d;
-  const r = n % d;
-  return (r !== 0n && (r > 0n) !== (d > 0n)) ? q - 1n : q;
-}
-function roundTiesToEvenBigInt(x: number): bigint {
-  if (!Number.isFinite(x)) return 0n;
-  const s = x < 0 ? -1 : 1;
-  const ax = Math.abs(x);
-  const i = Math.trunc(ax);
-  const frac = ax - i;
-  if (frac < 0.5) return BigInt(s * i);
-  if (frac > 0.5) return BigInt(s * (i + 1));
-  return BigInt(s * (i % 2 === 0 ? i : i + 1)); // .5 -> to even
-}
-function microPulsesSinceGenesis(date: Date): bigint {
-  const deltaSec = (date.getTime() - GENESIS_TS) / 1000;
-  const pulses = deltaSec / KAI_PULSE_SEC;
-  const micro = pulses * 1_000_000;
-  return roundTiesToEvenBigInt(micro);
-}
+import {
+  GENESIS_TS,
+  PULSE_MS,
+  latticeFromMicroPulses,
+  microPulsesSinceGenesis,
+  momentFromUTC,
+  normalizePercentIntoStep,
+} from "../utils/kai_pulse";
 
 /* compute the exact render state the modal uses */
 function computeLocalKai(now: Date): {
@@ -66,25 +26,10 @@ function computeLocalKai(now: Date): {
   stepPct: number;                 // 0..1
   chakraDay: KaiSigilProps["chakraDay"];
 } {
-  const pμ_total = microPulsesSinceGenesis(now);
-
-  // position within day
-  const pμ_in_day = imod(pμ_total, N_DAY_MICRO);
-  const dayIndex = floorDiv(pμ_total, N_DAY_MICRO);
-
-  // beat within day (0..35) and μpulses inside that beat
-  const beat = Number(floorDiv(pμ_in_day, MU_PER_BEAT_EXACT));
-  const pμ_in_beat = pμ_in_day - BigInt(beat) * MU_PER_BEAT_EXACT;
-
-  // step within beat (0..43) and fractional progress in step
-  const step = pμ_in_beat / PULSES_PER_STEP_MICRO;             // 0..43 (bigint)
-  const pμ_in_step = pμ_in_beat - step * PULSES_PER_STEP_MICRO;
-  const stepPct = Number(pμ_in_step) / Number(PULSES_PER_STEP_MICRO);
-
-  // whole-pulse index + harmonic day → chakra
-  const pulse = Number(floorDiv(pμ_total, ONE_PULSE_MICRO));
-  const harmonicDay = WEEKDAY[Number(imod(dayIndex, 6n))];
-  const chakraDay = DAY_TO_CHAKRA[harmonicDay];
+  const pμ = microPulsesSinceGenesis(now);
+  const { beat, percentIntoStep } = latticeFromMicroPulses(pμ);
+  const { pulse, chakraDay } = momentFromUTC(now);
+  const stepPct = normalizePercentIntoStep(percentIntoStep);
 
   return { pulse, beat, stepPct, chakraDay };
 }
