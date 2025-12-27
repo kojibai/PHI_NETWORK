@@ -594,11 +594,13 @@ const KaiSigil = forwardRef<KaiSigilHandle, KaiSigilProps>((props, ref) => {
     quality,
   ]);
 
-  /* Prefer the built snapshot for display (DOM/summary), otherwise use live canon */
+  /* Prefer caller-provided step (when present) for display text; else built snapshot; else canon */
   const displayStepIndex = useMemo(() => {
+    const providedStep = coerceInt(stepIndexProp, Number.NaN);
+    if (Number.isFinite(providedStep)) return providedStep;
     const b = built;
     return b && b.createdFor.stateKey === stateKey ? b.createdFor.stepIndex : canon.stepIndex;
-  }, [built, stateKey, canon.stepIndex]);
+  }, [stepIndexProp, built, stateKey, canon.stepIndex]);
 
   const displayFrequencyHz = useMemo(() => {
     const b = built;
