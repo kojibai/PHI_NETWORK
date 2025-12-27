@@ -149,6 +149,85 @@ input[type="number"]::-webkit-inner-spin-button{
   font-size:.78rem; margin-top:4px; color: var(--seal-text-dim); opacity:.9;
 }
 
+/* ========================= SCAN DISPLAY ====================== */
+.sigil-scan-card{
+  margin: 10px 0 14px;
+  padding: 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(7,12,20,.75);
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 10px;
+}
+
+.sigil-scan-preview{
+  width: 100%;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,.12);
+  background: radial-gradient(circle at 50% 30%, rgba(55,255,228,.08), transparent 60%),
+    rgba(4,10,16,.75);
+  min-height: 220px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+.sigil-scan-preview img{
+  width: min(280px, 75%);
+  height: auto;
+  filter: drop-shadow(0 0 22px rgba(55,255,228,.18));
+}
+
+.sigil-scan-placeholder{
+  color: var(--seal-text-dim);
+  font-size: .9rem;
+}
+
+.sigil-scan-actions{
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.sigil-action-btn{
+  border: 1px solid rgba(255,255,255,.18);
+  background: linear-gradient(180deg, rgba(55,255,228,.18), rgba(55,255,228,.08));
+  color: var(--seal-text);
+  padding: 8px 12px;
+  border-radius: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform .08s ease, filter .16s ease, border-color .16s ease;
+}
+
+.sigil-action-btn:hover{ filter: brightness(1.05); border-color: rgba(55,255,228,.4); }
+.sigil-action-btn:active{ transform: translateY(1px); }
+.sigil-action-btn:disabled{ opacity: .6; cursor: not-allowed; }
+
+.sigil-action-btn--ghost{
+  background: rgba(255,255,255,.06);
+  border-color: rgba(255,255,255,.22);
+}
+
+.sigil-scan-hint{
+  font-size: .82rem;
+  color: var(--seal-text-dim);
+  margin: 0;
+}
+
+.sigil-scan-link{
+  font-size: .75rem;
+  color: rgba(232,251,248,.8);
+  word-break: break-all;
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: rgba(0,0,0,.25);
+  border: 1px solid rgba(255,255,255,.08);
+  margin: 0;
+}
+
 /* Errors */
 .error-msg{
   color: var(--error); font-size:.9rem; margin-top:.5rem;

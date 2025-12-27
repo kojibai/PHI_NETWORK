@@ -1,10 +1,11 @@
 "use client";
 
-import React, { useCallback, useMemo, useState, type ReactElement } from "react";
+import React, { useCallback, useEffect, useMemo, useState, type ReactElement } from "react";
 import "./VerifyPage.css";
 
 import VerifierFrame from "../components/KaiVoh/VerifierFrame";
 import { parseSlug, verifySigilSvg, type VerifyResult } from "../utils/verifySigil";
+import { extractPhiTransferFromSvg, type PhiTransferExtractResult } from "../utils/sigilTransfer";
 
 function readSlugFromLocation(): string {
   if (typeof window === "undefined") return "";
@@ -41,6 +42,18 @@ export default function VerifyPage(): ReactElement {
   const [svgText, setSvgText] = useState<string>("");
   const [result, setResult] = useState<VerifyResult>({ status: "idle" });
   const [busy, setBusy] = useState<boolean>(false);
+  const [transferResult, setTransferResult] = useState<PhiTransferExtractResult | null>(null);
+  const [downloadName, setDownloadName] = useState<string>("sigil_transfer.svg");
+
+  useEffect(() => {
+    const raw = svgText.trim();
+    if (!raw) {
+      setTransferResult(null);
+      return;
+    }
+    const next = extractPhiTransferFromSvg(raw);
+    setTransferResult(next);
+  }, [svgText]);
 
   const verifierFrameProps = useMemo(() => {
     // If we only have the slug, we can still render the capsule.
@@ -83,7 +96,22 @@ export default function VerifyPage(): ReactElement {
     const text = await readFileText(file);
     setSvgText(text);
     setResult({ status: "idle" });
+    setDownloadName(file.name || "sigil_transfer.svg");
   }, [slug]);
+
+  const onDownloadSvg = useCallback((): void => {
+    if (!svgText.trim()) return;
+    const blob = new Blob([svgText], { type: "image/svg+xml" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = downloadName || "sigil_transfer.svg";
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  }, [downloadName, svgText]);
 
   return (
     <div className="verify-page">
@@ -214,6 +242,57 @@ export default function VerifyPage(): ReactElement {
               </div>
             )}
           </div>
+        </section>
+
+        <section className="verify-card">
+          <h2 className="verify-card-title">3) Transfer sigil scanner</h2>
+          <p className="verify-muted">
+            Upload a transfer sigil SVG and we will decode the embedded phi-transfer payload
+            so the receiver can download the exact SVG.
+          </p>
+
+          {transferResult?.ok ? (
+            <div className="verify-transfer">
+              <div className="verify-transfer-grid">
+                <div>
+                  <div className="verify-transfer-label">Amount Φ</div>
+                  <div className="verify-transfer-value">
+                    {transferResult.payload.amountPhi ?? "—"}
+                  </div>
+                </div>
+                <div>
+                  <div className="verify-transfer-label">Recipient</div>
+                  <div className="verify-transfer-value">
+                    {transferResult.payload.recipient ?? "—"}
+                  </div>
+                </div>
+                <div>
+                  <div className="verify-transfer-label">Message</div>
+                  <div className="verify-transfer-value">
+                    {transferResult.payload.message ?? "—"}
+                  </div>
+                </div>
+                <div>
+                  <div className="verify-transfer-label">Share URL</div>
+                  <div className="verify-transfer-value verify-transfer-link">
+                    {transferResult.payload.shareUrl ?? "—"}
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                className="verify-btn verify-btn--ghost"
+                onClick={onDownloadSvg}
+              >
+                Download transfer SVG
+              </button>
+            </div>
+          ) : svgText.trim() ? (
+            <p className="verify-muted">{transferResult?.error ?? "No transfer metadata found yet."}</p>
+          ) : (
+            <p className="verify-muted">No transfer sigil loaded yet.</p>
+          )}
         </section>
       </main>
     </div>

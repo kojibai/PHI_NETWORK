@@ -1,7 +1,7 @@
 // src/components/SendSigilModal.tsx
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./SendSigilModal.css";
 import type { Glyph } from "../glyph/types";
 import { sendGlyphFromSource } from "../glyph/glyphUtils";
@@ -401,6 +401,14 @@ export default function SendSigilModal({
   const [message, setMessage] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [sentPack, setSentPack] = useState<{
+    svgBlob: Blob;
+    baseName: string;
+    shareUrl: string | null;
+    canonicalUrl: string | null;
+  } | null>(null);
+  const [sentSvgUrl, setSentSvgUrl] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   // Hidden renderer (we mint the art + metadata offscreen)
   const sigilRef = useRef<KaiSigilHandle>(null);
@@ -417,6 +425,34 @@ export default function SendSigilModal({
       ),
     [sourceGlyph]
   );
+
+  useEffect(() => {
+    if (!sentPack?.svgBlob) {
+      setSentSvgUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(sentPack.svgBlob);
+    setSentSvgUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [sentPack?.svgBlob]);
+
+  useEffect(() => {
+    if (!copied) return;
+    const t = window.setTimeout(() => setCopied(false), 1800);
+    return () => window.clearTimeout(t);
+  }, [copied]);
+
+  const downloadBlob = useCallback((blob: Blob, filename: string): void => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  }, []);
 
   const seed = useMemo(() => extractSeedFromGlyph(sourceGlyph), [sourceGlyph]);
   const stepPct = Math.min(Math.max(seed.stepIndex / seed.stepsPerBeat, 0), 1);
@@ -605,7 +641,12 @@ export default function SendSigilModal({
       onSend(newGlyph);
 
       setBusy(false);
-      onClose();
+      setSentPack({
+        svgBlob: enhancedSvg,
+        baseName: base,
+        shareUrl: rotatedUrl,
+        canonicalUrl,
+      });
     } catch (err) {
       setBusy(false);
       setError(
@@ -615,10 +656,28 @@ export default function SendSigilModal({
     }
   };
 
+  const handleCopyLink = useCallback(async (): Promise<void> => {
+    if (!sentPack?.shareUrl) return;
+    try {
+      await navigator.clipboard.writeText(sentPack.shareUrl);
+      setCopied(true);
+    } catch {
+      setCopied(false);
+    }
+  }, [sentPack?.shareUrl]);
+
+  const handleClose = useCallback(() => {
+    setSentPack(null);
+    setSentSvgUrl(null);
+    setError(null);
+    setCopied(false);
+    onClose();
+  }, [onClose]);
+
   return (
     <div className="modal-overlay">
       <dialog className="send-sigil-modal" open>
-        <button className="close-btn" onClick={onClose} aria-label="Close">
+        <button className="close-btn" onClick={handleClose} aria-label="Close">
           <XCircle size={22} />
         </button>
         <h2>Exhale Composite Derivative Breath</h2>
@@ -667,6 +726,44 @@ export default function SendSigilModal({
             }}
           />
         </div>
+
+        {sentPack ? (
+          <section className="sigil-scan-card" aria-live="polite">
+            <div className="sigil-scan-preview">
+              {sentSvgUrl ? (
+                <img src={sentSvgUrl} alt="Sent sigil ready for scan" />
+              ) : (
+                <div className="sigil-scan-placeholder">Rendering sigil…</div>
+              )}
+            </div>
+            <div className="sigil-scan-actions">
+              <button
+                type="button"
+                className="sigil-action-btn"
+                onClick={() =>
+                  downloadBlob(sentPack.svgBlob, `${sentPack.baseName}.svg`)
+                }
+              >
+                Download SVG
+              </button>
+              <button
+                type="button"
+                className="sigil-action-btn sigil-action-btn--ghost"
+                onClick={handleCopyLink}
+                disabled={!sentPack.shareUrl}
+              >
+                {copied ? "Copied link" : "Copy share link"}
+              </button>
+            </div>
+            <p className="sigil-scan-hint">
+              Display this sigil so another device can scan, or send the SVG
+              directly. The share link preserves the same payload.
+            </p>
+            {sentPack.shareUrl ? (
+              <p className="sigil-scan-link">{sentPack.shareUrl}</p>
+            ) : null}
+          </section>
+        ) : null}
 
         <div className="field-group">
           <label>Recipient Hash (optional)</label>
