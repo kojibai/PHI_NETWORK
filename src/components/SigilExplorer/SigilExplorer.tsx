@@ -23,7 +23,7 @@ import "../SigilExplorer.css";
 import {
   memoryRegistry,
   addUrl,
-  hydrateRegistryFromStorage,
+  ensureRegistryHydrated,
   persistRegistryToStorage,
   parseImportedJson,
   REGISTRY_LS_KEY,
@@ -96,6 +96,7 @@ import {
   type TransferMove,
 } from "./transfers";
 import { registerSigilUrl as registerSigilUrlGlobal } from "../../utils/sigilRegistry";
+import { stepIndexFromPulse } from "../../utils/kaiMath";
 
 /** Tree build */
 import { buildForest, resolveCanonicalHashFromNode } from "./tree/buildForest";
@@ -114,6 +115,7 @@ const SIGIL_EXPLORER_CHANNEL_NAME = "sigil:explorer:bc:v1";
 const UI_SCROLL_INTERACT_MS = 520;
 const UI_TOGGLE_INTERACT_MS = 900;
 const UI_FLUSH_PAD_MS = 80;
+const IMPORT_BATCH_SIZE = 80;
 
 const URL_PROBE_MAX_PER_REFRESH = 18;
 const INHALE_INTERVAL_MS = 3236;
@@ -139,6 +141,17 @@ const PHI_MARK_SRC = "/phi.svg";
 
 function nowMs(): number {
   return Date.now();
+}
+
+function yieldToMain(): Promise<void> {
+  if (!hasWindow) return Promise.resolve();
+  return new Promise((resolve) => {
+    if (typeof window.requestAnimationFrame === "function") {
+      window.requestAnimationFrame(() => resolve());
+      return;
+    }
+    window.setTimeout(resolve, 0);
+  });
 }
 
 function cssEscape(s: string): string {
@@ -335,10 +348,16 @@ async function prefetchViewUrl(u: string): Promise<void> {
 /* ─────────────────────────────────────────────────────────────────────
  *  UI components (CSS class contract)
  *  ───────────────────────────────────────────────────────────────────── */
-function KaiStamp({ p }: { p: { pulse?: number; beat?: number; stepIndex?: number } }) {
+function KaiStamp({ p }: { p: { pulse?: number; beat?: number; stepIndex?: number; stepsPerBeat?: number } }) {
   const pulse = typeof p.pulse === "number" ? p.pulse : 0;
+  const stepsPerBeat = typeof p.stepsPerBeat === "number" && p.stepsPerBeat > 0 ? p.stepsPerBeat : 44;
+  const step =
+    typeof p.pulse === "number"
+      ? stepIndexFromPulse(p.pulse, stepsPerBeat)
+      : typeof p.stepIndex === "number"
+        ? p.stepIndex
+        : 0;
   const beat = typeof p.beat === "number" ? p.beat : 0;
-  const step = typeof p.stepIndex === "number" ? p.stepIndex : 0;
 
   return (
     <span className="k-stamp" title={`pulse ${pulse} • beat ${beat} • step ${step}`}>
@@ -653,7 +672,7 @@ function ExplorerToolbar({
  *  Main Page — Layout matches CSS: .sigil-explorer + ONLY .explorer-scroll scrolls
  *  ───────────────────────────────────────────────────────────────────── */
 const SigilExplorer: React.FC = () => {
-  const [registryRev, setRegistryRev] = useState(0);
+  const [registryRev, setRegistryRev] = useState(() => (ensureRegistryHydrated() ? 1 : 0));
   const [transferRev, setTransferRev] = useState(0);
   const [lastAdded, setLastAdded] = useState<string | undefined>(undefined);
   const [usernameClaims, setUsernameClaims] = useState<UsernameClaimRegistry>(() => getUsernameClaimRegistry());
@@ -979,7 +998,7 @@ const SigilExplorer: React.FC = () => {
     loadUrlHealthFromStorage();
     loadInhaleQueueFromStorage();
 
-    const hydrated = hydrateRegistryFromStorage();
+    const hydrated = ensureRegistryHydrated();
     if (hydrated) bump();
 
     // Inhale current URL if it contains a payload
@@ -1493,33 +1512,50 @@ const SigilExplorer: React.FC = () => {
 
   const handleImport = useCallback(
     async (file: File) => {
-      markInteracting(UI_TOGGLE_INTERACT_MS);
+      markInteracting(0);
 
       const text = await file.text();
-      const parsed = JSON.parse(text) as unknown;
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(text) as unknown;
+      } catch {
+        return;
+      }
 
       const { urls, rawKrystals } = parseImportedJson(parsed);
       if (urls.length === 0 && rawKrystals.length === 0) return;
 
       let changed = false;
 
-      for (const k of rawKrystals) {
-        enqueueInhaleRawKrystal(k);
+      for (let i = 0; i < rawKrystals.length; i += IMPORT_BATCH_SIZE) {
+        for (const k of rawKrystals.slice(i, i + IMPORT_BATCH_SIZE)) {
+          enqueueInhaleRawKrystal(k);
+        }
+        if (i + IMPORT_BATCH_SIZE < rawKrystals.length) await yieldToMain();
       }
 
-      for (const u of urls) {
-        if (
-          addUrl(u, {
-            includeAncestry: true,
-            broadcast: true,
-            persist: true,
-            source: "import",
-            enqueueToApi: true,
-          })
-        ) {
-          changed = true;
+      for (let i = 0; i < urls.length; i += IMPORT_BATCH_SIZE) {
+        for (const u of urls.slice(i, i + IMPORT_BATCH_SIZE)) {
+          if (
+            addUrl(u, {
+              includeAncestry: true,
+              broadcast: true,
+              persist: true,
+              source: "import",
+              enqueueToApi: true,
+            })
+          ) {
+            changed = true;
+          }
+          // addUrl already enqueues when requested
         }
-        // addUrl already enqueues when requested
+
+        if (changed) {
+          setLastAddedSafe(undefined);
+          bump();
+        }
+
+        if (i + IMPORT_BATCH_SIZE < urls.length) await yieldToMain();
       }
 
       // If import had explicit urls, push them immediately (fast UX)

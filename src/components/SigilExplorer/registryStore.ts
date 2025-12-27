@@ -27,6 +27,7 @@ const WITNESS_ADD_MAX = 512;
 
 const hasWindow = typeof window !== "undefined";
 const canStorage = hasWindow && typeof window.localStorage !== "undefined";
+let registryHydrated = false;
 
 export const memoryRegistry: Registry = new Map();
 const channel = hasWindow && "BroadcastChannel" in window ? new BroadcastChannel(BC_NAME) : null;
@@ -336,6 +337,12 @@ export function hydrateRegistryFromStorage(): boolean {
 
   if (changedA || changedB || changedC) persistRegistryToStorage();
   return changedA || changedB || changedC;
+}
+
+export function ensureRegistryHydrated(): boolean {
+  if (registryHydrated) return false;
+  registryHydrated = true;
+  return hydrateRegistryFromStorage();
 }
 
 /* ─────────────────────────────────────────────────────────────────────

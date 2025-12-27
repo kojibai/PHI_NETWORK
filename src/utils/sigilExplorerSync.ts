@@ -2,7 +2,7 @@
 
 import {
   addUrl,
-  hydrateRegistryFromStorage,
+  ensureRegistryHydrated,
   isOnline,
   memoryRegistry,
 } from "../components/SigilExplorer/registryStore";
@@ -101,7 +101,7 @@ export function startSigilExplorerSync(): () => void {
   loadApiBaseHint();
   loadInhaleQueueFromStorage();
 
-  const hydrated = hydrateRegistryFromStorage();
+  const hydrated = ensureRegistryHydrated();
   if (hydrated) seedInhaleFromRegistry();
 
   const applyUrl = (url: string): void => {

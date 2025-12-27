@@ -1,0 +1,1 @@
+import{B as e}from"./index-BUOThiBr.js";export default e();
