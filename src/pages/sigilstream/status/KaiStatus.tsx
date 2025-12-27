@@ -16,7 +16,8 @@
 
 import * as React from "react";
 import { createPortal } from "react-dom";
-import { useAlignedKaiTicker, useKaiPulseCountdown } from "../core/ticker";
+import { useAlignedKaiTicker } from "../core/ticker";
+import { GENESIS_TS, PULSE_MS } from "../core/kai_time";
 import { pad2 } from "../core/utils";
 import {
   epochMsFromPulse,
@@ -284,7 +285,6 @@ const KaiKlock = KaiKlockRaw as unknown as React.ComponentType<KaiKlockProps>;
 
 export function KaiStatus(): React.JSX.Element {
   const kaiNow = useAlignedKaiTicker();
-  const secsLeft = useKaiPulseCountdown(true);
 
   const [dialOpen, setDialOpen] = React.useState<boolean>(false);
   const openDial = React.useCallback(() => setDialOpen(true), []);
@@ -316,29 +316,66 @@ export function KaiStatus(): React.JSX.Element {
 
   // Boundary flash when anchor wraps (0 → dur).
   const [flash, setFlash] = React.useState<boolean>(false);
-  const prevAnchorRef = React.useRef<number | null>(null);
+  const prevPulseRef = React.useRef<number | null>(null);
 
   React.useEffect(() => {
-    const prev = prevAnchorRef.current;
-    prevAnchorRef.current = secsLeft;
+    const prev = prevPulseRef.current;
+    prevPulseRef.current = kaiNow.pulse;
 
-    if (prev != null && secsLeft != null && secsLeft > prev + 0.25) {
+    if (prev != null && kaiNow.pulse !== prev) {
       setFlash(true);
       const t = window.setTimeout(() => setFlash(false), 180);
       return () => window.clearTimeout(t);
     }
     return;
-  }, [secsLeft]);
+  }, [kaiNow.pulse]);
+
+  const countdownValueRef = React.useRef<HTMLSpanElement | null>(null);
+  const countdownLabelRef = React.useRef<HTMLSpanElement | null>(null);
+  const [microCyclePercent, setMicroCyclePercent] = React.useState<number>(0);
+
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+    let raf = 0;
+
+    const tick = (): void => {
+      const now = Date.now();
+      const elapsed = now - GENESIS_TS;
+      const into = ((elapsed % PULSE_MS) + PULSE_MS) % PULSE_MS;
+      const remainingMs = PULSE_MS - into;
+      const secsLeft = remainingMs / 1000;
+      const progress = clamp01(1 - remainingMs / PULSE_MS);
+
+      if (rootRef.current) {
+        rootRef.current.style.setProperty("--kai-progress", String(progress));
+      }
+
+      if (countdownValueRef.current) {
+        const text = secsLeft.toFixed(6);
+        if (countdownValueRef.current.textContent !== text) {
+          countdownValueRef.current.textContent = text;
+        }
+        if (countdownLabelRef.current) {
+          countdownLabelRef.current.title = text;
+          countdownLabelRef.current.setAttribute("aria-label", `Next pulse in ${text} seconds`);
+        }
+      }
+
+      if (dialOpen) {
+        setMicroCyclePercent(progress * 100);
+      }
+
+      raf = window.requestAnimationFrame(tick);
+    };
+
+    raf = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(raf);
+  }, [dialOpen]);
 
   const beatStepDisp = `${kaiNow.beat}:${pad2(kaiNow.step)}`;
 
-  const progress = React.useMemo<number>(() => {
-    if (secsLeft == null) return 0;
-    return clamp01(1 - secsLeft / pulseDur);
-  }, [secsLeft, pulseDur]);
-
-  const secsTextFull = secsLeft !== null ? secsLeft.toFixed(6) : "—";
-  const secsText = secsLeft !== null ? secsLeft.toFixed(6) : "—";
+  const secsTextFull = "—";
+  const secsText = "—";
 
   const dayNameFull = String(kaiNow.harmonicDay);
 
@@ -371,16 +408,15 @@ export function KaiStatus(): React.JSX.Element {
 
   const styleVars: KaiStatusVars = React.useMemo(() => {
     return {
-      "--kai-progress": progress,
       "--kai-ui-scale": uiScaleFor(layout),
     };
-  }, [progress, layout]);
+  }, [layout]);
 
   // KaiKlock props derived from Beat/Step (stable + deterministic)
   const stepsPerDay = 36 * 44; // 1584
   const stepOfDay = Math.max(0, Math.min(stepsPerDay - 1, beatNum * 44 + stepNum));
   const harmonicDayPercent = (stepOfDay / stepsPerDay) * 100;
-  const microCyclePercent = progress * 100;
+  const liveMicroCyclePercent = dialOpen ? microCyclePercent : Number.NaN;
 
   // If your dial expects hue degrees, keep it a string degrees payload.
   // If it expects a color, change to `hsl(${...} 100% 55%)`.
@@ -412,8 +448,12 @@ export function KaiStatus(): React.JSX.Element {
         className="kai-status__nVal"
         title={secsTextFull}
         aria-label={`Next pulse in ${secsTextFull} seconds`}
+        ref={countdownLabelRef}
       >
-        {secsText} <span className="kai-status__nUnit">s</span>
+        <span className="kai-status__nNum" ref={countdownValueRef}>
+          {secsText}
+        </span>{" "}
+        <span className="kai-status__nUnit">s</span>
       </span>
     </div>
   );
@@ -532,7 +572,7 @@ export function KaiStatus(): React.JSX.Element {
                       hue={hue}
                       pulse={pulseNum}
                       harmonicDayPercent={harmonicDayPercent}
-                      microCyclePercent={microCyclePercent}
+                      microCyclePercent={liveMicroCyclePercent}
                       dayLabel={dayNameFull}
                       monthLabel={monthName}
                       monthDay={dmy.day}

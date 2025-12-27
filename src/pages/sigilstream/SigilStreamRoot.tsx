@@ -1698,9 +1698,28 @@ function SigilStreamInner(): React.JSX.Element {
   }, [sources, ms2IngestMany]);
 
   /** ---------- Payload (decoded from token) ---------- */
-  const [activeToken, setActiveToken] = useState<string | null>(null);
-  const [payload, setPayload] = useState<FeedPostPayload | null>(null);
-  const [payloadError, setPayloadError] = useState<string | null>(null);
+  const initialPayloadState = useMemo(() => {
+    if (typeof window === "undefined") {
+      return { token: null as string | null, payload: null as FeedPostPayload | null, error: null as string | null };
+    }
+
+    const raw = extractPayloadTokenFromLocation();
+    if (!raw) {
+      return { token: null as string | null, payload: null as FeedPostPayload | null, error: null as string | null };
+    }
+
+    const token = normalizeIncomingToken(raw);
+    const decoded = decodeFeedPayload(token) || (raw !== token ? decodeFeedPayload(raw) : null);
+    return {
+      token,
+      payload: decoded,
+      error: decoded ? null : "Invalid or unreadable payload token.",
+    };
+  }, []);
+
+  const [activeToken, setActiveToken] = useState<string | null>(initialPayloadState.token);
+  const [payload, setPayload] = useState<FeedPostPayload | null>(initialPayloadState.payload);
+  const [payloadError, setPayloadError] = useState<string | null>(initialPayloadState.error);
 
   const autoAddGuardRef = useRef<string | null>(null);
 
