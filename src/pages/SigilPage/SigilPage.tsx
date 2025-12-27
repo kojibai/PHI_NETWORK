@@ -677,12 +677,12 @@ useEffect(() => {
 const histKey = urlQs.get("h") ?? "";
 useEffect(() => {
   if (!histKey) {
-    setHistoryLite((prev) => (prev === null ? prev : null));
+    setHistoryLite((prev: SigilTransferLite[] | null) => (prev === null ? prev : null));
     return;
   }
   try {
     const next = decodeSigilHistory(ensureHPrefixLocal(histKey.trim()));
-    setHistoryLite((prev) => {
+    setHistoryLite((prev: SigilTransferLite[] | null) => {
       // avoid churn on equal arrays
       const same =
         Array.isArray(prev) &&
@@ -692,7 +692,7 @@ useEffect(() => {
       return same ? prev : next;
     });
   } catch {
-    setHistoryLite((prev) => (prev === null ? prev : null));
+    setHistoryLite((prev: SigilTransferLite[] | null) => (prev === null ? prev : null));
   }
 }, [histKey]);
 
@@ -980,7 +980,7 @@ useEffect(() => {
       ? (pruned.debits as unknown as DebitLoose[])
       : undefined;
 
-    setPayload((prev) => {
+    setPayload((prev: SigilPayload | null) => {
       if (!prev) return prev;
       const prevWithDebits = prev as SigilPayloadWithDebits;
 
@@ -1020,7 +1020,7 @@ useEffect(() => {
       ? (pruned.debits as unknown as DebitLoose[])
       : undefined;
 
-    setPayload((prev) => {
+    setPayload((prev: SigilPayload | null) => {
       if (!prev) return prev;
       const prevWithDebits = prev as SigilPayloadWithDebits;
 
@@ -1126,7 +1126,7 @@ useEffect(() => {
       if (!debitQSEqualLocal(currentQS, merged)) {
         updateDebitsEverywhere(merged, h, myTok, { broadcast: false });
 
-        setPayload((prev) => {
+        setPayload((prev: SigilPayload | null) => {
           if (!prev) return prev;
           const base = { ...(prev as SigilPayload) };
           const next = base as SigilPayloadWithDebits;
@@ -2379,7 +2379,7 @@ const ensureParentTokenActive = useCallback(
         return;
       }
   
-      setPayload((prev) => {
+      setPayload((prev: SigilPayload | null) => {
         if (!prev) return prev;
         const base = { ...(prev as SigilPayload) };
         const next = base as SigilPayloadWithDebits;
@@ -3098,7 +3098,7 @@ useEffect(() => {
                 <>
                   <h3 className="sp-lineage__title">Ansestry Path</h3>
                   <ol className="sp-lineage__path" aria-label="Ancestor lineage path">
-                    {payloadLineage.map((node, idx) => (
+                    {payloadLineage.map((node: LineageNode, idx: number) => (
                       <li className="sp-lineage__node" key={`${node.token}-${idx}`}>
                         <span className="sp-lineage__badge" title={`Depth ${node.depth}`}>{node.depth}</span>
                         <code className="sp-lineage__token" title={`Token ${node.token}`}>{node.token.slice(0, 10)}…</code>
