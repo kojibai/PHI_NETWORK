@@ -116,6 +116,7 @@ const UI_SCROLL_INTERACT_MS = 520;
 const UI_TOGGLE_INTERACT_MS = 900;
 const UI_FLUSH_PAD_MS = 80;
 const IMPORT_BATCH_SIZE = 80;
+const IMPORT_WORKER_THRESHOLD = 250_000;
 
 const URL_PROBE_MAX_PER_REFRESH = 18;
 const INHALE_INTERVAL_MS = 3236;
@@ -167,6 +168,55 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 
 function hasStringProp<T extends string>(obj: unknown, key: T): obj is Record<T, string> {
   return isRecord(obj) && typeof obj[key] === "string";
+}
+
+function parseJsonAsync(text: string): Promise<unknown> {
+  if (!hasWindow || typeof Worker === "undefined" || text.length < IMPORT_WORKER_THRESHOLD) {
+    return Promise.resolve(JSON.parse(text) as unknown);
+  }
+
+  const workerSrc = `
+    self.onmessage = (event) => {
+      try {
+        const parsed = JSON.parse(event.data);
+        self.postMessage({ ok: true, value: parsed });
+      } catch (err) {
+        self.postMessage({ ok: false, error: err && err.message ? err.message : "parse-failed" });
+      }
+    };
+  `;
+
+  let worker: Worker | null = null;
+  let workerUrl = "";
+  try {
+    const blob = new Blob([workerSrc], { type: "text/javascript" });
+    workerUrl = URL.createObjectURL(blob);
+    worker = new Worker(workerUrl);
+  } catch {
+    if (workerUrl) URL.revokeObjectURL(workerUrl);
+    return Promise.resolve(JSON.parse(text) as unknown);
+  }
+
+  return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      worker?.terminate();
+      if (workerUrl) URL.revokeObjectURL(workerUrl);
+    };
+
+    worker.onmessage = (event) => {
+      const data = event.data as { ok?: boolean; value?: unknown; error?: string } | undefined;
+      cleanup();
+      if (data?.ok) resolve(data.value);
+      else reject(new Error(data?.error ?? "parse-failed"));
+    };
+
+    worker.onerror = () => {
+      cleanup();
+      reject(new Error("parse-failed"));
+    };
+
+    worker.postMessage(text);
+  });
 }
 
 /* ─────────────────────────────────────────────────────────────────────
@@ -1517,7 +1567,7 @@ const SigilExplorer: React.FC = () => {
       const text = await file.text();
       let parsed: unknown;
       try {
-        parsed = JSON.parse(text) as unknown;
+        parsed = await parseJsonAsync(text);
       } catch {
         return;
       }
