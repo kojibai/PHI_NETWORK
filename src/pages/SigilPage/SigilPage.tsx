@@ -790,7 +790,7 @@ useEffect(() => {
     const t = `Kai Sigil — ${hash ? hash.slice(0, 16) : "—"}`;
     const d = deferredPayload
       ? `Sealed Sigil-Glyph • Pulse ${pulseStr} • Beat ${deferredPayload.beat}/36 • Step ${
-          stepIdx + 1
+          stepIdx
         }/${stepsNum} • ${chakra}${ownerShort ? ` • Owner ${ownerShort}…` : ""}.`
       : `Sealed Sigil-Glyph`;
     return { title: t, desc: d };
@@ -1198,10 +1198,7 @@ useEffect(() => {
   const chakraDay = (payload?.chakraDay ?? "Throat") as SigilPayload["chakraDay"];
   const steps: number = (payload?.stepsPerBeat ?? STEPS_PER_BEAT) as number;
   const stepIndex = stepIndexFromPulse(payload?.pulse ?? 0, steps);
-  const stepPct =
-    typeof payload?.stepPct === "number"
-      ? Math.max(0, Math.min(1, payload.stepPct))
-      : percentIntoStepFromPulse(payload?.pulse ?? 0);
+  const stepPct = percentIntoStepFromPulse(payload?.pulse ?? 0);
 
   const qrAccent = useMemo(() => {
     const baseHue = CHAKRA_THEME[chakraDay as keyof typeof CHAKRA_THEME]?.hue ?? 180;
@@ -1640,7 +1637,7 @@ const onReady = useCallback(
   const showError = verified === "notfound" || verified === "error";
 
   const pulse = payload?.pulse ?? 0;
-  const beat = payload?.beat ?? 0;
+  const beatForSigil = beatIndexFromPulse(pulse);
 
   const nextPulseSeconds = (((msToNextPulse ?? 0) / 1000) as number).toFixed(3);
 
@@ -2473,8 +2470,7 @@ return () => document.body.classList.remove(cls);
         >
           <KaiSigil
             pulse={pulse}
-            beat={beat}
-            stepPct={stepPct}
+            beat={beatForSigil}
             chakraDay={chakraDay}
             size={sigilSize}
             hashMode="deterministic"

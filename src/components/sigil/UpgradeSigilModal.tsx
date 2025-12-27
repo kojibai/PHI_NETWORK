@@ -397,7 +397,7 @@ useEffect(() => {
               <b>Moment</b>
               <div>
                 {uploaded
-                  ? `Pulse ${uploaded.pulse.toLocaleString()} • Beat ${uploaded.beat}/36 • Step ${((stepIdx ?? 0) + 1)}/${uploaded.stepsPerBeat ?? STEPS_PER_BEAT} • ${uploaded.chakraDay}`
+                  ? `Pulse ${uploaded.pulse.toLocaleString()} • Beat ${uploaded.beat}/36 • Step ${stepIdx ?? 0}/${uploaded.stepsPerBeat ?? STEPS_PER_BEAT} • ${uploaded.chakraDay}`
                   : "—"}
               </div>
             </div>
