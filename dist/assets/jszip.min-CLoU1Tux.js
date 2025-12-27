@@ -1,1 +1,0 @@
-import{B as e}from"./index-CaLcFsxo.js";export default e();
