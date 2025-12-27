@@ -44,7 +44,6 @@ import {
   epochMsFromPulse,
   microPulsesSinceGenesis,
   utcFromBreathSlot,
-  latticeFromMicroPulses,
   normalizePercentIntoStep,
   buildKaiKlockResponse,
   type Weekday,
@@ -78,6 +77,14 @@ type KaiKlock = Readonly<Record<string, unknown>>;
 ────────────────────────────────────────────────────────────────── */
 const ONE_PULSE_MICRO = 1_000_000n;
 const MAX_SAFE_BI = BigInt(Number.MAX_SAFE_INTEGER);
+const HARMONIC_DAY_PULSES_EXACT = 17_491.270421; // exact
+const CHAKRA_BEATS_PER_DAY = 36;
+const PULSES_PER_STEP = 11;
+const UPULSES_PER_PULSE = 1_000_000;
+const MU_PER_BEAT = Math.round(
+  (HARMONIC_DAY_PULSES_EXACT / CHAKRA_BEATS_PER_DAY) * UPULSES_PER_PULSE
+);
+const MU_PER_STEP = PULSES_PER_STEP * UPULSES_PER_PULSE;
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
 
@@ -204,6 +211,22 @@ const isoFromPulse = (pulse: bigint): string => {
   } catch {
     return "";
   }
+};
+
+const exactBeatStepFromPulse = (pulseValue: bigint) => {
+  const muPosInDay = Number(modE(pulseValue * ONE_PULSE_MICRO, N_DAY_MICRO));
+  const beat = Math.min(
+    CHAKRA_BEATS_PER_DAY - 1,
+    Math.max(0, Math.floor(muPosInDay / MU_PER_BEAT))
+  );
+  const muPosInBeat = muPosInDay % MU_PER_BEAT;
+  const stepIndex = Math.min(
+    STEPS_BEAT - 1,
+    Math.max(0, Math.floor(muPosInBeat / MU_PER_STEP))
+  );
+  const muPosInStep = muPosInBeat % MU_PER_STEP;
+  const stepPct = normalizePercentIntoStep(muPosInStep / MU_PER_STEP);
+  return { beat, stepIndex, stepPct };
 };
 
 /* deterministic datetime-local parsing */
@@ -991,10 +1014,7 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
 
   /* KKS v1.0 derived ONLY from pulse (BIGINT) */
   const kks = useMemo(() => {
-    const pμ = pulse * ONE_PULSE_MICRO;
-    const { beat, stepIndex, percentIntoStep } = latticeFromMicroPulses(pμ);
-    const stepPct = normalizePercentIntoStep(percentIntoStep);
-    return { beat, stepIndex, stepPct };
+    return exactBeatStepFromPulse(pulse);
   }, [pulse]);
 
   /* ChakraDay for visuals */
