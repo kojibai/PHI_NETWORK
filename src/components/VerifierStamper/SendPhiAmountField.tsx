@@ -1,8 +1,7 @@
 // src/components/VerifierStamper/SendPhiAmountField.tsx
-import React, { useEffect, useId, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import "./SendPhiAmountField.css";
-import KaiQR from "../sigil/KaiQR";
 
 export type Props = {
   amountMode: "USD" | "PHI";
@@ -166,115 +165,6 @@ const PhiMoveSuccessPopup: React.FC<{
   );
 };
 
-const PhiMoveQrPopup: React.FC<{
-  state: PhiMoveSuccessState;
-  onClose: () => void;
-}> = ({ state, onClose }) => {
-  const qrId = useId();
-  const qrUrl = useMemo(() => {
-    if (!state.downloadUrl) return null;
-    if (state.downloadUrl.startsWith("blob:")) return null;
-    return state.downloadUrl;
-  }, [state.downloadUrl]);
-
-  return (
-    <div
-      className="phi-send-success-overlay phi-qr-overlay"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Sigil transfer QR"
-      onClick={onClose}
-    >
-      <div
-        className="phi-send-success-card phi-qr-card"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="phi-success-orb" aria-hidden="true">
-          <div className="phi-success-orb-inner" />
-        </div>
-
-        <div className="phi-success-header">
-          <span className="phi-success-pill">SENT</span>
-          <button
-            type="button"
-            className="phi-success-close"
-            onClick={onClose}
-            aria-label="Close QR"
-          >
-            ✕
-          </button>
-        </div>
-
-        <h2 className="phi-success-title">Sigil QR Ready</h2>
-
-        {state.amountDisplay && (
-          <p className="phi-success-amount phi-qr-amount">
-            <span className="mono">{state.amountDisplay}</span>
-          </p>
-        )}
-
-        <p className="phi-success-body">
-          Scan this QR on another device to download the sigil glyph SVG offline.
-        </p>
-
-        {qrUrl ? (
-          <div className="phi-qr-frame" aria-live="polite">
-            <KaiQR
-              uid={`sigil-qr-${qrId}`}
-              url={qrUrl}
-              size={240}
-              minModulePx={4}
-              moduleOpacity={0.7}
-              showHalo={false}
-              showLattice={false}
-              showGlyphRays={false}
-              showTempleCorners={false}
-              showCornerFlares={false}
-              showChakraRing={false}
-              showSeal
-              polarity="dark-on-light"
-            />
-          </div>
-        ) : (
-          <p className="phi-success-body phi-qr-fallback">
-            QR unavailable for this transfer. Use the download button instead.
-          </p>
-        )}
-
-        <div className="phi-qr-actions">
-          {state.downloadUrl && (
-            <a
-              className="phi-send-success-download"
-              href={state.downloadUrl}
-              download={state.downloadLabel || "sigil-send"}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <span
-                className="phi-send-success-download-icon"
-                aria-hidden="true"
-              >
-                ⬇︎
-              </span>
-              <span className="phi-send-success-download-text">
-                Download sigil SVG
-              </span>
-            </a>
-          )}
-
-          <button
-            type="button"
-            className="phi-success-ok"
-            onClick={onClose}
-          >
-            Done
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
 const SendPhiAmountField: React.FC<Props> = ({
   amountMode,
   setAmountMode,
@@ -316,6 +206,8 @@ const SendPhiAmountField: React.FC<Props> = ({
 
       const mode: PhiMoveMode =
         detail.mode === "receive" ? "receive" : "send";
+
+      if (mode !== "receive") return;
 
       triggerHeartbeatHaptic();
 
@@ -412,18 +304,12 @@ const SendPhiAmountField: React.FC<Props> = ({
     return (
       <>
         <ErrorToast msg={toast} />
-        {success &&
-          (success.mode === "send" ? (
-            <PhiMoveQrPopup
-              state={success}
-              onClose={() => setSuccess(null)}
-            />
-          ) : (
-            <PhiMoveSuccessPopup
-              state={success}
-              onClose={() => setSuccess(null)}
-            />
-          ))}
+        {success && (
+          <PhiMoveSuccessPopup
+            state={success}
+            onClose={() => setSuccess(null)}
+          />
+        )}
       </>
     );
   }
@@ -539,18 +425,12 @@ const SendPhiAmountField: React.FC<Props> = ({
 
       <ErrorToast msg={toast} />
 
-      {success &&
-        (success.mode === "send" ? (
-          <PhiMoveQrPopup
-            state={success}
-            onClose={() => setSuccess(null)}
-          />
-        ) : (
-          <PhiMoveSuccessPopup
-            state={success}
-            onClose={() => setSuccess(null)}
-          />
-        ))}
+      {success && (
+        <PhiMoveSuccessPopup
+          state={success}
+          onClose={() => setSuccess(null)}
+        />
+      )}
     </>
   );
 };

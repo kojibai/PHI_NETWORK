@@ -72,7 +72,7 @@ import JsonTree from "../verifier/ui/JsonTree";
 import StatusChips from "../verifier/ui/StatusChips";
 
 /* Existing flows kept */
-import SealMomentModal from "../SealMomentModalTransfer";
+import SigilSendQrModal from "./SigilSendQrModal";
 import ValuationModal from "../ValuationModal";
 import { buildValueSeal, attachValuation, type ValueSeal } from "../../utils/valuation";
 import NotePrinter from "../ExhaleNote";
@@ -162,6 +162,13 @@ function dispatchPhiMoveSuccess(detail: PhiMoveSuccessDetail) {
   }
 }
 
+type SendQrDetail = {
+  url: string;
+  amountDisplay?: string;
+  hash?: string;
+  downloadUrl?: string | null;
+};
+
 function registerUrlForExplorer(url: string) {
   registerSigilUrl(url);
 }
@@ -205,9 +212,11 @@ const VerifierStamperInner: React.FC = () => {
 
   const [headProof, setHeadProof] = useState<{ ok: boolean; index: number; root: string } | null>(null);
 
-  const [sealOpen, setSealOpen] = useState<boolean>(false);
-  const [sealUrl, setSealUrl] = useState<string>("");
-  const [sealHash, setSealHash] = useState<string>("");
+  const [sendQrOpen, setSendQrOpen] = useState<boolean>(false);
+  const [sendQrUrl, setSendQrUrl] = useState<string>("");
+  const [sendQrHash, setSendQrHash] = useState<string>("");
+  const [sendQrAmount, setSendQrAmount] = useState<string>("");
+  const [sendQrDownloadUrl, setSendQrDownloadUrl] = useState<string | null>(null);
   const [valuationOpen, setValuationOpen] = useState<boolean>(false);
   const [noteOpen, setNoteOpen] = useState<boolean>(false);
   const [sigilSvgRaw, setSigilSvgRaw] = useState<string | null>(null);
@@ -219,6 +228,24 @@ const VerifierStamperInner: React.FC = () => {
     if (rotateOut) d.setAttribute("data-rotate", "true");
     else d.removeAttribute("data-rotate");
   }, [rotateOut]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handleSendQr = (event: Event): void => {
+      const customEvent = event as CustomEvent<SendQrDetail>;
+      const detail = customEvent.detail;
+      if (!detail?.url) return;
+      setSendQrUrl(detail.url);
+      setSendQrHash(detail.hash ?? "");
+      setSendQrAmount(detail.amountDisplay ?? "");
+      setSendQrDownloadUrl(detail.downloadUrl ?? null);
+      setSendQrOpen(true);
+    };
+    window.addEventListener("sigil:send-qr", handleSendQr);
+    return () => {
+      window.removeEventListener("sigil:send-qr", handleSendQr);
+    };
+  }, []);
 
   const [me, setMe] = useState<Keypair | null>(null);
   useEffect(() => {
@@ -700,12 +727,13 @@ const VerifierStamperInner: React.FC = () => {
     }
 
     const url = rewriteUrlPayload(base, enriched, token, historyParam);
-    setSealUrl(url);
-    setSealHash(childHash);
+    setSendQrUrl(url);
+    setSendQrHash(childHash);
+    setSendQrAmount(transferAmountPhi ? `Φ ${fmtPhiFixed4(transferAmountPhi)}` : "");
     setRotateOut(true);
     if (parentUrl) registerUrlForExplorer(parentUrl);
     registerUrlForExplorer(url);
-    switchModal(dlgRef.current, () => setSealOpen(true));
+    setSendQrOpen(true);
     try {
       publishRotation([parentCanonical], token);
     } catch (err) {
@@ -1438,6 +1466,7 @@ const VerifierStamperInner: React.FC = () => {
       issuedPulse: nowPulse,
     });
     const childDataUrl = await embedMetadata(svgURL, childMeta);
+    setSendQrDownloadUrl(childDataUrl);
     const sigilPulse = updated.pulse ?? 0;
     download(childDataUrl, `${pulseFilename("sigil_send", sigilPulse, nowPulse)}.svg`);
     const phiAmountNumber = Number(validPhi6);
@@ -2280,17 +2309,20 @@ const VerifierStamperInner: React.FC = () => {
         </div>
       </dialog>
 
-      {/* Seal moment dialog (share link after SEND) */}
-      <SealMomentModal
-        open={sealOpen}
-        url={sealUrl}
-        hash={sealHash}
+      {/* Sigil send QR modal */}
+      <SigilSendQrModal
+        open={sendQrOpen}
+        url={sendQrUrl}
+        hash={sendQrHash}
+        amountDisplay={sendQrAmount}
+        downloadUrl={sendQrDownloadUrl}
+        downloadLabel="Sigil Send"
         onClose={() => {
-          setSealOpen(false);
+          setSendQrOpen(false);
           setRotateOut(false);
+          setSendQrDownloadUrl(null);
           openVerifier();
         }}
-        onDownloadZip={downloadZip}
       />
 
       {/* Valuation */}

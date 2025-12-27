@@ -672,58 +672,6 @@
   transform: translateY(0.5px) scale(0.99);
 }
 
-/* ─────────────────────────────────────────────
-   Sigil QR overlay (send flow)
-   ───────────────────────────────────────────── */
-
-.phi-qr-overlay {
-  background:
-    radial-gradient(circle at 10% 0%, rgba(0, 255, 255, 0.18), transparent 65%),
-    radial-gradient(circle at 90% 100%, rgba(155, 82, 255, 0.25), rgba(0, 0, 0, 0.9));
-}
-
-.phi-qr-card {
-  max-width: min(460px, 100%);
-  padding-bottom: 18px;
-}
-
-.phi-qr-amount {
-  margin-bottom: 6px;
-}
-
-.phi-qr-frame {
-  position: relative;
-  display: grid;
-  place-items: center;
-  margin: 12px auto 14px;
-  padding: 14px;
-  border-radius: 16px;
-  background:
-    radial-gradient(circle at 20% 0%, rgba(0, 255, 255, 0.18), transparent 60%),
-    linear-gradient(180deg, rgba(6, 12, 18, 0.96), rgba(0, 0, 0, 0.92));
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  box-shadow:
-    0 12px 32px rgba(0, 0, 0, 0.7),
-    0 0 24px rgba(0, 255, 255, 0.2);
-}
-
-.phi-qr-frame svg {
-  max-width: 100%;
-  height: auto;
-}
-
-.phi-qr-fallback {
-  margin-top: 8px;
-  font-size: 0.78rem;
-  opacity: 0.82;
-}
-
-.phi-qr-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
 /* Animations */
 
 @keyframes phiSuccessIn {

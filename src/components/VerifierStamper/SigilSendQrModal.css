@@ -1,0 +1,72 @@
+.phi-qr-overlay {
+  background:
+    radial-gradient(circle at 10% 0%, rgba(0, 255, 255, 0.18), transparent 65%),
+    radial-gradient(circle at 90% 100%, rgba(155, 82, 255, 0.25), rgba(0, 0, 0, 0.9));
+}
+
+.phi-qr-card {
+  max-width: min(480px, 100%);
+  padding-bottom: 18px;
+}
+
+.phi-qr-amount {
+  margin-bottom: 6px;
+}
+
+.phi-qr-frame {
+  position: relative;
+  display: grid;
+  place-items: center;
+  margin: 12px auto 14px;
+  padding: 14px;
+  border-radius: 16px;
+  background:
+    radial-gradient(circle at 20% 0%, rgba(0, 255, 255, 0.18), transparent 60%),
+    linear-gradient(180deg, rgba(6, 12, 18, 0.96), rgba(0, 0, 0, 0.92));
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow:
+    0 12px 32px rgba(0, 0, 0, 0.7),
+    0 0 24px rgba(0, 255, 255, 0.2);
+}
+
+.phi-qr-frame svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.phi-qr-hash {
+  margin: 0 0 12px;
+  font-size: 0.72rem;
+  opacity: 0.8;
+  word-break: break-all;
+}
+
+.phi-qr-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.phi-qr-copy {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  padding: 8px 12px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+
+  background:
+    linear-gradient(135deg, rgba(0, 0, 0, 0.9), rgba(0, 0, 0, 0.7));
+  color: var(--ink, #fdfdfd);
+
+  box-shadow:
+    0 2px 10px rgba(0, 0, 0, 0.6),
+    0 0 16px rgba(0, 255, 255, 0.28);
+}
+
+.phi-qr-copy:active {
+  transform: translateY(0.5px) scale(0.99);
+}
