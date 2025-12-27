@@ -25,9 +25,8 @@ export interface KaiSigilProps {
   id?: string;
 
   pulse: number;
-  beat: number;
-
   /** Caller may provide these; if omitted we derive from pulse for full backward-compat. */
+  beat?: number;
   stepIndex?: number;
   stepPct?: number;
 
