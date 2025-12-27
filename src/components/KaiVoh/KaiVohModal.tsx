@@ -146,6 +146,17 @@ function isEditableElement(el: Element | null): boolean {
   return false;
 }
 
+function shouldSuppressEnter(el: Element | null): boolean {
+  if (!el) return false;
+  if (el instanceof HTMLTextAreaElement) return false;
+  if (el instanceof HTMLSelectElement) return true;
+  if (el instanceof HTMLInputElement) {
+    const type = el.type.toLowerCase();
+    return !["button", "submit", "reset", "checkbox", "radio", "file", "range", "color"].includes(type);
+  }
+  return false;
+}
+
 export default function KaiVohModal({ open, onClose }: KaiVohModalProps) {
   // Hooks MUST run unconditionally (rules-of-hooks)
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -317,6 +328,13 @@ export default function KaiVohModal({ open, onClose }: KaiVohModalProps) {
         return;
       }
 
+      if (e.key === "Enter") {
+        const target = e.target as Element | null;
+        if (shouldSuppressEnter(target) && rootRef.current?.contains(target)) {
+          e.preventDefault();
+        }
+      }
+
       if (e.key !== "Tab") return;
 
       const root = rootRef.current;
@@ -368,6 +386,15 @@ export default function KaiVohModal({ open, onClose }: KaiVohModalProps) {
       signal: ac.signal,
     } as AddEventListenerOptions);
     document.addEventListener("gestureend", onGesture, { passive: false, signal: ac.signal } as AddEventListenerOptions);
+
+    const onSubmit = (e: Event): void => {
+      const target = e.target as Element | null;
+      if (target && rootRef.current?.contains(target)) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+    document.addEventListener("submit", onSubmit, { capture: true, signal: ac.signal } as AddEventListenerOptions);
 
     return () => {
       // Remove listeners
