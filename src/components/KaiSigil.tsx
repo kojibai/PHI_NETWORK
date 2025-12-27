@@ -185,7 +185,7 @@ const KaiSigil = forwardRef<KaiSigilHandle, KaiSigilProps>((props, ref) => {
     ? chakraDay
     : undefined;
 
-  /* Strict validation: if caller provides beat/stepIndex/stepPct, they MUST match pulse-derived values. */
+  /* Strict validation: if caller provides beat, it must match pulse-derived value. */
   useEffect(() => {
     if (!strict) return;
 
@@ -198,21 +198,6 @@ const KaiSigil = forwardRef<KaiSigilHandle, KaiSigilProps>((props, ref) => {
       }
     }
 
-    if (stepIndexProp != null) {
-      const callerStep = coerceInt(stepIndexProp);
-      if (callerStep !== kks.stepIndex) {
-        problems.push(`stepIndexProp(${callerStep}) != pulseStepIndex(${kks.stepIndex})`);
-      }
-    }
-
-    if (stepPctProp != null) {
-      const callerPct = normalizePercentIntoStep(coercePct(stepPctProp, Number.NaN));
-      const d = Math.abs(callerPct - kks.stepPct);
-      if (!Number.isFinite(callerPct) || d > 1e-9) {
-        problems.push(`stepPctProp(${String(stepPctProp)}) != pulseStepPct(${kks.stepPct})`);
-      }
-    }
-
     if (problems.length) {
       const err = new Error(
         `[KaiSigil] KKS v1.0 determinism invariant violation → ${problems.join("; ")}`
@@ -220,33 +205,41 @@ const KaiSigil = forwardRef<KaiSigilHandle, KaiSigilProps>((props, ref) => {
       onError?.(err);
       throw err;
     }
-  }, [
-    strict,
-    beatProp,
-    stepIndexProp,
-    stepPctProp,
-    kks.beat,
-    kks.stepIndex,
-    kks.stepPct,
-    onError,
-  ]);
+  }, [strict, beatProp, kks.beat, onError]);
 
   // Canonical render state (used for DOM attrs, metadata, exports).
   // ✅ Everything here is pulse-derived (beat/stepIndex/stepPct).
-  const canon = useMemo(
-    () => ({
+  const canon = useMemo(() => {
+    const providedStep = coerceInt(stepIndexProp, Number.NaN);
+    const resolvedStepIndex = Number.isFinite(providedStep)
+      ? providedStep
+      : kks.stepIndex;
+    const providedPct = Number.isFinite(stepPctProp)
+      ? normalizePercentIntoStep(coercePct(stepPctProp, Number.NaN))
+      : kks.stepPct;
+    const stepPctToNext = 1 - providedPct;
+
+    return {
       pulse,
       beat: kks.beat,
-      stepIndex: kks.stepIndex,
+      stepIndex: resolvedStepIndex,
       stepsPerBeat: kks.stepsPerBeat,
       chakraDayKey,
       // stepPct is percentIntoStep; used for visuals only.
-      visualClamped: kks.stepPct,
+      visualClamped: providedPct,
       // optionally useful for UI/debugging
-      stepPctToNext: kks.stepPctToNext,
-    }),
-    [pulse, kks.beat, kks.stepIndex, kks.stepsPerBeat, chakraDayKey, kks.stepPct, kks.stepPctToNext]
-  );
+      stepPctToNext,
+    };
+  }, [
+    pulse,
+    kks.beat,
+    kks.stepIndex,
+    kks.stepsPerBeat,
+    kks.stepPct,
+    stepIndexProp,
+    stepPctProp,
+    chakraDayKey,
+  ]);
 
   const { prefersReduce, prefersContrast } = useMediaPrefs();
   const { kaiData, kaiDataRef } = useKaiData(hashMode);

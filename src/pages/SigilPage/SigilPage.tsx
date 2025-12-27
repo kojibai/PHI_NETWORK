@@ -1209,6 +1209,9 @@ useEffect(() => {
   const chakraDay = (payload?.chakraDay ?? "Throat") as SigilPayload["chakraDay"];
   const steps: number = (payload?.stepsPerBeat ?? STEPS_PER_BEAT) as number;
   const stepIndex = useMemo(() => {
+    if (payload && Number.isFinite(payload.stepIndex)) {
+      return Math.max(0, Math.min(steps - 1, payload.stepIndex as number));
+    }
     const p = payload?.pulse ?? 0;
     const pμ = BigInt(Math.trunc(p)) * 1_000_000n;
     const { stepIndex: idx } = latticeFromMicroPulses(pμ);
