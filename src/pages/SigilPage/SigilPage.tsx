@@ -34,11 +34,13 @@ import { useValueHistory } from "../../hooks/useValueHistory";
 /* ——— App-level Kai math ——— */
 import {
   ETERNAL_STEPS_PER_BEAT as STEPS_PER_BEAT,
-  stepIndexFromPulse,
-  percentIntoStepFromPulse,
   getKaiPulseEternalInt,
   beatIndexFromPulse,
 } from "../../SovereignSolar";
+import {
+  latticeFromMicroPulses,
+  normalizePercentIntoStep,
+} from "../../utils/kai_pulse";
 import { DEFAULT_ISSUANCE_POLICY, quotePhiForUsd } from "../../utils/phi-issuance";
 import { usd as fmtUsd } from "../../components/valuation/display";
 import type { SigilMetadataLite } from "../../utils/valuation";
@@ -1197,8 +1199,18 @@ useEffect(() => {
   /* === QR theming for exports only === */
   const chakraDay = (payload?.chakraDay ?? "Throat") as SigilPayload["chakraDay"];
   const steps: number = (payload?.stepsPerBeat ?? STEPS_PER_BEAT) as number;
-  const stepIndex = stepIndexFromPulse(payload?.pulse ?? 0, steps);
-  const stepPct = percentIntoStepFromPulse(payload?.pulse ?? 0);
+  const stepIndex = useMemo(() => {
+    const p = payload?.pulse ?? 0;
+    const pμ = BigInt(Math.trunc(p)) * 1_000_000n;
+    const { stepIndex: idx } = latticeFromMicroPulses(pμ);
+    return Math.max(0, Math.min(steps - 1, idx));
+  }, [payload, steps]);
+  const stepPct = useMemo(() => {
+    const p = payload?.pulse ?? 0;
+    const pμ = BigInt(Math.trunc(p)) * 1_000_000n;
+    const { percentIntoStep } = latticeFromMicroPulses(pμ);
+    return normalizePercentIntoStep(percentIntoStep);
+  }, [payload]);
 
   const qrAccent = useMemo(() => {
     const baseHue = CHAKRA_THEME[chakraDay as keyof typeof CHAKRA_THEME]?.hue ?? 180;
@@ -2468,6 +2480,8 @@ return () => document.body.classList.remove(cls);
         >
           <KaiSigil
             pulse={pulse}
+            stepIndex={stepIndex}
+            stepPct={stepPct}
             chakraDay={chakraDay}
             size={sigilSize}
             hashMode="deterministic"

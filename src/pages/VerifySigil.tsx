@@ -23,11 +23,11 @@ import KaiSigil from "../components/KaiSigil";
 import "./SigilPage/SigilPage.css";
 
 /* Kai math */
+import { ETERNAL_STEPS_PER_BEAT as STEPS_PER_BEAT } from "../SovereignSolar";
 import {
-  ETERNAL_STEPS_PER_BEAT as STEPS_PER_BEAT,
-  stepIndexFromPulse,
-  percentIntoStepFromPulse,
-} from "../SovereignSolar";
+  latticeFromMicroPulses,
+  normalizePercentIntoStep,
+} from "../utils/kai_pulse";
 
 /* Chakra theming (for subtle accent + info) */
 import { CHAKRA_THEME } from "../components/sigil/theme";
@@ -112,16 +112,23 @@ export default function VerifySigil(): React.JSX.Element {
   const chakraDay = (payload?.chakraDay ?? "Throat") as SigilPayload["chakraDay"];
   const steps: number = (payload?.stepsPerBeat ?? STEPS_PER_BEAT) as number;
 
-  const stepIndex = useMemo(
-    () => (payload ? stepIndexFromPulse(payload.pulse, steps) : 0),
-    [payload, steps]
-  );
+  const stepIndex = useMemo(() => {
+    if (!payload) return 0;
+    const pμ = BigInt(Math.trunc(payload.pulse)) * 1_000_000n;
+    const { stepIndex: idx } = latticeFromMicroPulses(pμ);
+    return Math.max(0, Math.min(steps - 1, idx));
+  }, [payload, steps]);
 
   const stepPct = useMemo(
     () =>
       typeof payload?.stepPct === "number"
         ? Math.max(0, Math.min(1, payload.stepPct))
-        : percentIntoStepFromPulse(payload?.pulse ?? 0),
+        : (() => {
+            const p = payload?.pulse ?? 0;
+            const pμ = BigInt(Math.trunc(p)) * 1_000_000n;
+            const { percentIntoStep } = latticeFromMicroPulses(pμ);
+            return normalizePercentIntoStep(percentIntoStep);
+          })(),
     [payload]
   );
 
@@ -483,6 +490,7 @@ export default function VerifySigil(): React.JSX.Element {
                   <KaiSigil
                     pulse={payload.pulse}
                     beat={payload.beat}
+                    stepIndex={stepIndex}
                     stepPct={stepPct}
                     chakraDay={chakraDay}
                     size={sigilSize}
