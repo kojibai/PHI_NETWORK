@@ -796,7 +796,7 @@ const KaiSigil = forwardRef<KaiSigilHandle, KaiSigilProps>((props, ref) => {
       </g>
     );
 
-  const outerRingStepIndex = Math.max(0, displayStepIndex - 1);
+  const outerRingStepIndex = Math.max(0, displayStepIndex);
 
   const outerRingText = makeOuterRingText(
     payloadHashHex,
