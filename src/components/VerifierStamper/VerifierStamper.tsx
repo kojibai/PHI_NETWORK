@@ -100,6 +100,7 @@ import { DEFAULT_ISSUANCE_POLICY, quotePhiForUsd } from "../../utils/phi-issuanc
 import { BREATH_MS } from "../valuation/constants";
 import { recordSend, getSpentScaledFor, markConfirmedByLeaf } from "../../utils/sendLedger";
 import { recordSigilTransferMovement } from "../../utils/sigilTransferRegistry";
+import { shortenToken } from "../../utils/shortener";
 
 /* Live chart popover (stay inside Verifier modal) */
 import LiveChart from "../valuation/chart/LiveChart";
@@ -163,7 +164,9 @@ function dispatchPhiMoveSuccess(detail: PhiMoveSuccessDetail) {
 }
 
 type SendQrDetail = {
-  url: string;
+  qrUrl: string;
+  url?: string;
+  copyUrl?: string;
   amountDisplay?: string;
   hash?: string;
   downloadUrl?: string | null;
@@ -216,6 +219,7 @@ const VerifierStamperInner: React.FC = () => {
   const [sendQrUrl, setSendQrUrl] = useState<string>("");
   const [sendQrHash, setSendQrHash] = useState<string>("");
   const [sendQrAmount, setSendQrAmount] = useState<string>("");
+  const [sendQrCopyUrl, setSendQrCopyUrl] = useState<string>("");
   const [sendQrDownloadUrl, setSendQrDownloadUrl] = useState<string | null>(null);
   const [valuationOpen, setValuationOpen] = useState<boolean>(false);
   const [noteOpen, setNoteOpen] = useState<boolean>(false);
@@ -234,8 +238,10 @@ const VerifierStamperInner: React.FC = () => {
     const handleSendQr = (event: Event): void => {
       const customEvent = event as CustomEvent<SendQrDetail>;
       const detail = customEvent.detail;
-      if (!detail?.url) return;
-      setSendQrUrl(detail.url);
+      const resolvedQr = detail?.qrUrl ?? detail?.url;
+      if (!resolvedQr) return;
+      setSendQrUrl(resolvedQr);
+      setSendQrCopyUrl(detail.copyUrl ?? resolvedQr);
       setSendQrHash(detail.hash ?? "");
       setSendQrAmount(detail.amountDisplay ?? "");
       setSendQrDownloadUrl(detail.downloadUrl ?? null);
@@ -304,10 +310,10 @@ const VerifierStamperInner: React.FC = () => {
       buildNotePayload({
         meta,
         sigilSvgRaw,
-        verifyUrl: sendQrUrl || (typeof window !== "undefined" ? window.location.href : ""),
+        verifyUrl: sendQrCopyUrl || (typeof window !== "undefined" ? window.location.href : ""),
         pulseNow,
       }),
-    [meta, sigilSvgRaw, sendQrUrl, pulseNow]
+    [meta, sigilSvgRaw, sendQrCopyUrl, pulseNow]
   );
 
   const openNote = () =>
@@ -317,7 +323,7 @@ const VerifierStamperInner: React.FC = () => {
       const p = buildNotePayload({
         meta,
         sigilSvgRaw,
-        verifyUrl: sendQrUrl || (typeof window !== "undefined" ? window.location.href : ""),
+        verifyUrl: sendQrCopyUrl || (typeof window !== "undefined" ? window.location.href : ""),
         pulseNow,
       });
       const bridge: VerifierBridge = { getNoteData: async () => p };
@@ -727,7 +733,14 @@ const VerifierStamperInner: React.FC = () => {
     }
 
     const url = rewriteUrlPayload(base, enriched, token, historyParam);
-    setSendQrUrl(url);
+    let shortUrl = url;
+    try {
+      shortUrl = await shortenToken(token, parentCanonical);
+    } catch (err) {
+      logError("shareTransferLink.shortenToken", err);
+    }
+    setSendQrUrl(shortUrl);
+    setSendQrCopyUrl(url);
     setSendQrHash(childHash);
     setSendQrAmount(transferAmountPhi ? `Φ ${fmtPhiFixed4(transferAmountPhi)}` : "");
     setRotateOut(true);
@@ -2312,7 +2325,8 @@ const VerifierStamperInner: React.FC = () => {
       {/* Sigil send QR modal */}
       <SigilSendQrModal
         open={sendQrOpen}
-        url={sendQrUrl}
+        qrUrl={sendQrUrl}
+        copyUrl={sendQrCopyUrl}
         hash={sendQrHash}
         amountDisplay={sendQrAmount}
         downloadUrl={sendQrDownloadUrl}
@@ -2320,6 +2334,7 @@ const VerifierStamperInner: React.FC = () => {
         onClose={() => {
           setSendQrOpen(false);
           setRotateOut(false);
+          setSendQrCopyUrl("");
           setSendQrDownloadUrl(null);
           openVerifier();
         }}

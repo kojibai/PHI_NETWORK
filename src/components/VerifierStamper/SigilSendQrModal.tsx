@@ -2,11 +2,12 @@ import React, { useMemo, useState } from "react";
 import KaiQR from "../sigil/KaiQR";
 import "./SigilSendQrModal.css";
 
-const MAX_QR_PAYLOAD = 1400;
+const MAX_QR_PAYLOAD = 4096;
 
 type Props = {
   open: boolean;
-  url: string;
+  qrUrl: string;
+  copyUrl?: string;
   amountDisplay?: string;
   hash?: string;
   downloadUrl?: string | null;
@@ -16,7 +17,8 @@ type Props = {
 
 const SigilSendQrModal: React.FC<Props> = ({
   open,
-  url,
+  qrUrl,
+  copyUrl,
   amountDisplay,
   hash,
   downloadUrl,
@@ -24,18 +26,19 @@ const SigilSendQrModal: React.FC<Props> = ({
   onClose,
 }) => {
   const [copied, setCopied] = useState(false);
-  const qrUrl = useMemo(() => {
-    if (!url) return null;
-    if (url.length > MAX_QR_PAYLOAD) return null;
-    return url;
-  }, [url]);
+  const qrUrlSafe = useMemo(() => {
+    if (!qrUrl) return null;
+    if (qrUrl.length > MAX_QR_PAYLOAD) return null;
+    return qrUrl;
+  }, [qrUrl]);
+  const copyTarget = copyUrl || qrUrl;
 
   if (!open) return null;
 
   const handleCopy = async () => {
-    if (!url || typeof navigator === "undefined") return;
+    if (!copyTarget || typeof navigator === "undefined") return;
     try {
-      await navigator.clipboard?.writeText(url);
+      await navigator.clipboard?.writeText(copyTarget);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1600);
     } catch {
@@ -79,23 +82,22 @@ const SigilSendQrModal: React.FC<Props> = ({
           </p>
         )}
 
-        {qrUrl ? (
+        {qrUrlSafe ? (
           <p className="phi-success-body">
             Scan this QR to open the transfer link and download the sigil glyph
             SVG on another device.
           </p>
         ) : (
           <p className="phi-success-body">
-            QR payload is too large to render safely. Use the transfer link
-            instead.
+            QR link is still preparing. Use the transfer link below if needed.
           </p>
         )}
 
-        {qrUrl && (
+        {qrUrlSafe && (
           <div className="phi-qr-frame" aria-live="polite">
             <KaiQR
               uid={`sigil-qr-${hash ?? "send"}`}
-              url={qrUrl}
+              url={qrUrlSafe}
               size={240}
               minModulePx={4}
               moduleOpacity={0.7}
