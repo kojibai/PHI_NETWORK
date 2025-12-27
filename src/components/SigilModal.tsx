@@ -1240,7 +1240,7 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
     const solarStepIdx = solarStep ? readNumber(solarStep, "stepIndex") : undefined;
     const solarBeatStep =
       solarStepString ||
-      (Number.isFinite(solarBeatIdx) && Number.isFinite(solarStepIdx)
+      (typeof solarBeatIdx === "number" && typeof solarStepIdx === "number"
         ? `${solarBeatIdx}:${pad2(solarStepIdx)}`
         : null);
     return canonicalizeSealText(raw, pulse, kks.beat, kks.stepIndex, solarBeatStep);
