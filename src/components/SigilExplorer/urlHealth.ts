@@ -90,7 +90,7 @@ export async function probeUrl(u: string): Promise<"ok" | "bad" | "unknown"> {
         cache: "no-store",
         signal: ac.signal,
         redirect: "follow",
-        mode: "cors",
+        mode: "same-origin",
       });
 
     let res: Response;

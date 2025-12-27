@@ -391,7 +391,7 @@ async function copyText(text: string): Promise<void> {
 async function prefetchViewUrl(u: string): Promise<void> {
   if (!hasWindow) return;
   try {
-    await fetch(u, { method: "GET", cache: "force-cache", mode: "cors", credentials: "omit", redirect: "follow" });
+    await fetch(u, { method: "GET", cache: "force-cache", mode: "same-origin", credentials: "omit", redirect: "follow" });
   } catch {}
 }
 
