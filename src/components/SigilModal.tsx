@@ -1433,7 +1433,7 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
           {/* ✅ Pulse calculator (infinite bigint) */}
           <div className="sigil-pulse-row">
             <label className="sigil-label sigil-pulse-label">
-              <span className="sigil-label__text">Pulse</span>
+              <span className="sigil-label__text">☤KAI:</span>
               <input
                 className="sigil-input sigil-pulse-input"
                 type="text"
@@ -1482,8 +1482,8 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
 
           <div className="sigil-meta-block">
             <p>
-              <strong>Kairos:</strong>&nbsp;
-              {beatStepDisp}
+              <strong>☤KAI:</strong>&nbsp;
+              {pulse}
               <button className="copy-btn" onClick={() => copy(beatStepDisp)}>
                 💠
               </button>
