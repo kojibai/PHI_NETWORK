@@ -144,7 +144,7 @@ const toSafeNumber = (x: bigint): number => {
 const microPulsesFromPulse = (pulse: number | bigint): bigint => {
   if (typeof pulse === "bigint") return pulse * 1_000_000n;
   if (!Number.isFinite(pulse)) return 0n;
-  const approx = Math.trunc(pulse * 1_000_000);
+  const approx = Math.floor(pulse * 1_000_000);
   const LIM = Number.MAX_SAFE_INTEGER;
   const clamped = Math.max(-LIM, Math.min(LIM, approx));
   return BigInt(clamped);
@@ -501,9 +501,8 @@ export function stepIndexFromPulseExact(
   const steps = Number.isFinite(stepsPerBeat) && stepsPerBeat > 0 ? Math.floor(stepsPerBeat) : STEPS_BEAT;
   const pμ = microPulsesFromPulse(pulse);
   const pulsesInDay = modE(pμ, N_DAY_MICRO);
-  const pulsesInGrid = pulsesInDay % BASE_DAY_MICRO;
-  const pulsesPerBeat = PULSES_PER_STEP_MICRO * BigInt(steps);
-  const pulsesInBeat = pulsesInGrid % pulsesPerBeat;
+  const muBeat = BigInt(Math.round(Number(N_DAY_MICRO) / BEATS_DAY));
+  const pulsesInBeat = pulsesInDay % muBeat;
   const stepBI = pulsesInBeat / PULSES_PER_STEP_MICRO;
   const step = toSafeNumber(stepBI);
   return Math.max(0, Math.min(steps - 1, step));
