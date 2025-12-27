@@ -27,13 +27,14 @@ import React, {
 } from "react";
 
 import KaiSigil from "../components/KaiSigil";
-import { percentIntoStepFromPulseExact } from "../components/KaiSigil/step";
 import { decodeSigilUrl } from "../utils/sigilDecode";
 import {
   STEPS_BEAT,
   momentFromPulse,
   epochMsFromPulse,
   microPulsesSinceGenesis,
+  latticeFromMicroPulses,
+  normalizePercentIntoStep,
   N_DAY_MICRO,
   DAYS_PER_MONTH,
   DAYS_PER_YEAR,
@@ -2696,7 +2697,9 @@ function beatStepFromPulseKKS(pulse: number): { beatZ: number; stepZ: number } {
   const shareNote = displayManualAsProof(share?.note);
 
   const kai = buildKaiMetaLineZero(pulse, beatZ, stepZ, day, month, year);
-  const stepPct = percentIntoStepFromPulseExact(pulse);
+  const stepPct = normalizePercentIntoStep(
+    latticeFromMicroPulses(microFromPulseIndex(pulse)).percentIntoStep,
+  );
 const ARC_RGB = {
   Ignite: [255, 92, 72],        // red
   Integrate: [255, 160, 72],    // orange
