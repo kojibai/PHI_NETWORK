@@ -141,6 +141,15 @@ const toSafeNumber = (x: bigint): number => {
   return Number(x);
 };
 
+const microPulsesFromPulse = (pulse: number | bigint): bigint => {
+  if (typeof pulse === "bigint") return pulse * 1_000_000n;
+  if (!Number.isFinite(pulse)) return 0n;
+  const approx = Math.floor(pulse * 1_000_000);
+  const LIM = Number.MAX_SAFE_INTEGER;
+  const clamped = Math.max(-LIM, Math.min(LIM, approx));
+  return BigInt(clamped);
+};
+
 /** Bankers rounding on BigInt ratio: round(x * num / den) ties-to-even. */
 const mulDivRoundHalfEven = (x: bigint, num: bigint, den: bigint): bigint => {
   if (den <= 0n) throw new Error("Denominator must be positive.");
@@ -482,6 +491,21 @@ export function momentFromUTC(
 export function momentFromPulse(pulse: number | bigint): KaiMoment {
   const msEpoch = epochMsFromPulse(pulse);
   return momentFromUTC(msEpoch);
+}
+
+/** Exact step index from pulse using KKSv1.0 μpulse math (closure-aware). */
+export function stepIndexFromPulseExact(
+  pulse: number | bigint,
+  stepsPerBeat: number = STEPS_BEAT,
+): number {
+  const steps = Number.isFinite(stepsPerBeat) && stepsPerBeat > 0 ? Math.floor(stepsPerBeat) : STEPS_BEAT;
+  const pμ = microPulsesFromPulse(pulse);
+  const pulsesInDay = modE(pμ, N_DAY_MICRO);
+  const muBeat = BigInt(Math.round(Number(N_DAY_MICRO) / BEATS_DAY));
+  const pulsesInBeat = pulsesInDay % muBeat;
+  const stepBI = pulsesInBeat / PULSES_PER_STEP_MICRO;
+  const step = toSafeNumber(stepBI);
+  return Math.max(0, Math.min(steps - 1, step));
 }
 
 /**

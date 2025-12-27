@@ -1,0 +1,1 @@
+import{B as e}from"./index-0FiGcbS7.js";export default e();

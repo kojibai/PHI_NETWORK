@@ -96,7 +96,7 @@ import {
   type TransferMove,
 } from "./transfers";
 import { registerSigilUrl as registerSigilUrlGlobal } from "../../utils/sigilRegistry";
-import { stepIndexFromPulse } from "../../utils/kaiMath";
+import { stepIndexFromPulseExact } from "../../utils/kai_pulse";
 
 /** Tree build */
 import { buildForest, resolveCanonicalHashFromNode } from "./tree/buildForest";
@@ -353,7 +353,7 @@ function KaiStamp({ p }: { p: { pulse?: number; beat?: number; stepIndex?: numbe
   const stepsPerBeat = typeof p.stepsPerBeat === "number" && p.stepsPerBeat > 0 ? p.stepsPerBeat : 44;
   const step =
     typeof p.pulse === "number"
-      ? stepIndexFromPulse(p.pulse, stepsPerBeat)
+      ? stepIndexFromPulseExact(p.pulse, stepsPerBeat)
       : typeof p.stepIndex === "number"
         ? p.stepIndex
         : 0;
