@@ -50,7 +50,7 @@ import {
   type Weekday,
   type ChakraDay,
 } from "../utils/kai_pulse";
-import { getKaiPulseToday } from "../SovereignSolar";
+import { getKaiPulseToday, getSolarAlignedCounters, SOLAR_DAY_NAMES } from "../SovereignSolar";
 
 /* ────────────────────────────────────────────────────────────────
    Strict browser timer handle types
@@ -135,6 +135,62 @@ const fmtSeal = (raw: string) =>
     .trim()
     .replace(/^(\d+):(\d+)/, (_m, b, s) => `${+b}:${String(s).padStart(2, "0")}`)
     .replace(/D\s*(\d+)/, (_m, d) => `D${+d}`);
+
+const fmtSealKairos = (beat: number, stepIdx: number) => `${beat}:${pad2(stepIdx)}`;
+
+const fmtPulse = (pulseValue: bigint) =>
+  pulseValue <= MAX_SAFE_BI ? Number(pulseValue).toLocaleString() : pulseValue.toString();
+
+type SolarSealContext = {
+  weekday: string;
+  dayOfMonth: number;
+  monthIndex: number;
+};
+
+const getSolarSealContext = (pulseValue: bigint): SolarSealContext | null => {
+  try {
+    const msAtPulse = epochMsFromPulse(pulseValue);
+    const when = new Date(biToSafeNumber(msAtPulse));
+    const counters = getSolarAlignedCounters(when);
+    const fallbackWeekday =
+      SOLAR_DAY_NAMES[((counters.solarAlignedWeekDayIndex ?? 0) + 6) % 6];
+    const weekday = counters.dayName ?? fallbackWeekday;
+    const dayOfMonth =
+      counters.solarAlignedDayInMonth1 ?? (counters.solarAlignedDayInMonth + 1);
+    const monthIndex = counters.solarAlignedMonth;
+    return { weekday, dayOfMonth, monthIndex };
+  } catch {
+    return null;
+  }
+};
+
+const canonicalizeSealText = (
+  seal: string | undefined | null,
+  canonicalPulse: bigint,
+  beat: number,
+  stepIdx: number
+): string => {
+  if (!seal) return "";
+  let s = seal;
+  const solarCtx = getSolarSealContext(canonicalPulse);
+
+  s = s.replace(/Kairos:\s*\d{1,2}:\d{1,2}/i, `Kairos:${fmtSealKairos(beat, stepIdx)}`);
+  s = s.replace(/Eternal\s*Pulse:\s*[\d,]+/i, `Eternal Pulse:${fmtPulse(canonicalPulse)}`);
+  s = s.replace(/Step:\s*\d{1,2}\s*\/\s*44/i, `Step:${stepIdx}/44`);
+  s = s.replace(/Beat:\s*\d{1,2}\s*\/\s*36(?:\([^)]+\))?/i, `Beat:${beat}/36`);
+
+  if (solarCtx) {
+    s = s.replace(
+      /Solar Kairos \(UTC-aligned\):\s*\d{1,2}:\d{1,2}\s+\w+\s+D\d+\/M\d+/i,
+      `Solar Kairos (UTC-aligned): ${fmtSealKairos(beat, stepIdx)} ${solarCtx.weekday} D${solarCtx.dayOfMonth}/M${solarCtx.monthIndex}`
+    );
+  }
+
+  return s;
+};
+
+const clampStepIndex = (idx: number) =>
+  Math.max(0, Math.min(Math.trunc(idx), STEPS_BEAT - 1));
 
 /* Deterministic ISO for a pulse (formatting only) */
 const isoFromPulse = (pulse: bigint): string => {
@@ -992,17 +1048,17 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
   }, [pulse]);
 
   /* UI strings */
-  const localBeatStep = `${kks.beat}:${pad2(kks.stepIndex)}`;
+  const displayStepIndex = useMemo(() => clampStepIndex(kks.stepIndex - 1), [kks.stepIndex]);
+  const localBeatStep = `${kks.beat}:${pad2(displayStepIndex)}`;
 
-  const chakraStepString = kairos ? readString(kairos, "chakraStepString") : undefined;
-  const beatStepDisp = chakraStepString ? chakraStepString : localBeatStep;
+  const beatStepDisp = localBeatStep;
 
   const dayOfMonth = kairos ? readNumber(kairos, "dayOfMonth") : undefined;
   const eternalMonthIndex = kairos ? readNumber(kairos, "eternalMonthIndex") : undefined;
 
   const kairosDayMonth =
-    chakraStepString && typeof dayOfMonth === "number" && typeof eternalMonthIndex === "number"
-      ? `${chakraStepString} — D${dayOfMonth}/M${eternalMonthIndex + 1}`
+    typeof dayOfMonth === "number" && typeof eternalMonthIndex === "number"
+      ? `${beatStepDisp} — D${dayOfMonth}/M${eternalMonthIndex + 1}`
       : beatStepDisp;
 
   const kairosDisp = fmtSeal(kairosDayMonth);
@@ -1178,8 +1234,9 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
   // Meta display helpers
   const sealText = useMemo(() => {
     if (!kairos) return "";
-    return readString(kairos, "eternalSeal") ?? readString(kairos, "seal") ?? "";
-  }, [kairos]);
+    const raw = readString(kairos, "eternalSeal") ?? readString(kairos, "seal") ?? "";
+    return canonicalizeSealText(raw, pulse, kks.beat, displayStepIndex);
+  }, [kairos, kks.beat, displayStepIndex, pulse]);
 
   const harmonicDayText = useMemo(() => {
     if (!kairos) return "";
@@ -1207,7 +1264,6 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
   const chakraStep = kairos ? readRecord(kairos, "chakraStep") : undefined;
   const chakraBeat = kairos ? readRecord(kairos, "chakraBeat") : undefined;
 
-  const chakraStepStepIndex = chakraStep ? readNumber(chakraStep, "stepIndex") : undefined;
   const chakraStepPct = chakraStep ? readNumber(chakraStep, "percentIntoStep") : undefined;
 
   const chakraBeatBeatIndex = chakraBeat ? readNumber(chakraBeat, "beatIndex") : undefined;
@@ -1441,7 +1497,7 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
                 </div>
                 <div>
                   <code>chakraStep.stepIndex</code>
-                  <span>{chakraStepStepIndex ?? 0}</span>
+                  <span>{displayStepIndex}</span>
                 </div>
                 <div>
                   <code>chakraStep.percentIntoStep</code>
