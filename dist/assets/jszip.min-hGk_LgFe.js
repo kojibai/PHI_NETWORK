@@ -1,0 +1,1 @@
+import{B as e}from"./index-mexyfXam.js";export default e();
