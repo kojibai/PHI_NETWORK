@@ -228,11 +228,9 @@ const SendPhiAmountField: React.FC<Props> = ({
     };
 
     window.addEventListener("phi:move", handlePhiMoveSuccess);
-    window.addEventListener("kk:phi-move-success", handlePhiMoveSuccess);
 
     return () => {
       window.removeEventListener("phi:move", handlePhiMoveSuccess);
-      window.removeEventListener("kk:phi-move-success", handlePhiMoveSuccess);
     };
   }, []);
 
