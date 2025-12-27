@@ -168,11 +168,13 @@ const canonicalizeSealText = (
   seal: string | undefined | null,
   canonicalPulse: bigint,
   beat: number,
-  stepIdx: number
+  stepIdx: number,
+  solarBeatStep: string | null
 ): string => {
   if (!seal) return "";
   let s = seal;
   const solarCtx = getSolarSealContext(canonicalPulse);
+  const solarKairos = solarBeatStep ?? fmtSealKairos(beat, stepIdx);
 
   s = s.replace(/Kairos:\s*\d{1,2}:\d{1,2}/i, `Kairos:${fmtSealKairos(beat, stepIdx)}`);
   s = s.replace(/Eternal\s*Pulse:\s*[\d,]+/i, `Eternal Pulse:${fmtPulse(canonicalPulse)}`);
@@ -182,7 +184,7 @@ const canonicalizeSealText = (
   if (solarCtx) {
     s = s.replace(
       /Solar Kairos \(UTC-aligned\):\s*\d{1,2}:\d{1,2}\s+\w+\s+D\d+\/M\d+/i,
-      `Solar Kairos (UTC-aligned): ${fmtSealKairos(beat, stepIdx)} ${solarCtx.weekday} D${solarCtx.dayOfMonth}/M${solarCtx.monthIndex}`
+      `Solar Kairos (UTC-aligned): ${solarKairos} ${solarCtx.weekday} D${solarCtx.dayOfMonth}/M${solarCtx.monthIndex}`
     );
   }
 
@@ -1232,7 +1234,16 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
   const sealText = useMemo(() => {
     if (!kairos) return "";
     const raw = readString(kairos, "eternalSeal") ?? readString(kairos, "seal") ?? "";
-    return canonicalizeSealText(raw, pulse, kks.beat, kks.stepIndex);
+    const solarStepString = readString(kairos, "solarChakraStepString");
+    const solarStep = readRecord(kairos, "solarChakraStep");
+    const solarBeatIdx = solarStep ? readNumber(solarStep, "beatIndex") : undefined;
+    const solarStepIdx = solarStep ? readNumber(solarStep, "stepIndex") : undefined;
+    const solarBeatStep =
+      solarStepString ||
+      (Number.isFinite(solarBeatIdx) && Number.isFinite(solarStepIdx)
+        ? `${solarBeatIdx}:${pad2(solarStepIdx)}`
+        : null);
+    return canonicalizeSealText(raw, pulse, kks.beat, kks.stepIndex, solarBeatStep);
   }, [kairos, kks.beat, kks.stepIndex, pulse]);
 
   const harmonicDayText = useMemo(() => {
