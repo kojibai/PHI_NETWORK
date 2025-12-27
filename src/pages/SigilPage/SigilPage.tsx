@@ -1637,8 +1637,6 @@ const onReady = useCallback(
   const showError = verified === "notfound" || verified === "error";
 
   const pulse = payload?.pulse ?? 0;
-  const beatForSigil = beatIndexFromPulse(pulse);
-
   const nextPulseSeconds = (((msToNextPulse ?? 0) / 1000) as number).toFixed(3);
 
   const isArchived = linkStatus === "archived";
@@ -2470,7 +2468,6 @@ return () => document.body.classList.remove(cls);
         >
           <KaiSigil
             pulse={pulse}
-            beat={beatForSigil}
             chakraDay={chakraDay}
             size={sigilSize}
             hashMode="deterministic"
