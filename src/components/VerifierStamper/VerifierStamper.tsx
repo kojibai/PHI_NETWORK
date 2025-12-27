@@ -156,6 +156,7 @@ function readExhaleInfoFromTransfer(
 function dispatchPhiMoveSuccess(detail: PhiMoveSuccessDetail) {
   try {
     window.dispatchEvent(new CustomEvent<PhiMoveSuccessDetail>("phi:move", { detail }));
+    window.dispatchEvent(new CustomEvent<PhiMoveSuccessDetail>("kk:phi-move-success", { detail }));
   } catch (err) {
     logError("dispatch(phi:move)", err);
   }
