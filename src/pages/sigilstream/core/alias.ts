@@ -90,10 +90,10 @@ export function isLikelySigilUrl(u: string): boolean {
 
 /**
  * Expand any short alias into the canonical form:
- *   /p~<token>        →  /stream/p/<token>[?add=...]
- *   /p#t=<token>      →  /stream/p/<token>[?add=...]
- *   /p?t=<token>      →  /stream/p/<token>[?add=...]
- * Preserves/normalizes ?add= by recursively expanding if it's a short alias.
+ *   /p~<token>        →  /stream/p/<token>[#add=...]
+ *   /p#t=<token>      →  /stream/p/<token>[#add=...]
+ *   /p?t=<token>      →  /stream/p/<token>[#add=...]
+ * Preserves/normalizes add= by recursively expanding if it's a short alias.
  */
 export function expandShortAliasToCanonical(hrefLike: string): string {
   try {
@@ -111,7 +111,11 @@ export function expandShortAliasToCanonical(hrefLike: string): string {
         (u.hash.startsWith("#add=")
           ? new URLSearchParams(u.hash.slice(1)).get("add")
           : null);
-      if (add) dest.searchParams.set("add", normalizeAddParam(add));
+      if (add) {
+        const h = new URLSearchParams(dest.hash.startsWith("#") ? dest.hash.slice(1) : dest.hash);
+        h.set("add", normalizeAddParam(add));
+        dest.hash = h.toString() ? `#${h.toString()}` : "";
+      }
       return dest.toString();
     }
 
@@ -129,7 +133,11 @@ export function expandShortAliasToCanonical(hrefLike: string): string {
       const addHash = qpHash.get("add");
       const addQuery = u.searchParams.get("add");
       const add = addHash || addQuery;
-      if (add) dest.searchParams.set("add", normalizeAddParam(add));
+      if (add) {
+        const h = new URLSearchParams(dest.hash.startsWith("#") ? dest.hash.slice(1) : dest.hash);
+        h.set("add", normalizeAddParam(add));
+        dest.hash = h.toString() ? `#${h.toString()}` : "";
+      }
       return dest.toString();
     }
 

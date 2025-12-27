@@ -39,8 +39,8 @@
  * ✅ Browser-canonical load (unchanged):
  *    - On entry, normalizes address bar to canonical:
  *        • short:  /stream/p/<token>
- *        • huge:   /stream?<...>&add=...#t=<token>
- *      while preserving existing add= reply chain params.
+ *        • huge:   /stream#t=<token>
+ *      while preserving existing add= reply chain params in the hash.
  *
  * ✅ Infinite replies (unchanged):
  *    - Ingests add= links from:
@@ -485,14 +485,13 @@ function canonicalizeLocationRel(token: string): string {
     if (k === "add") continue;
     keepSearch.append(k, v);
   }
-  for (const a of addsNorm) keepSearch.append("add", a);
-
   const keepHash = new URLSearchParams();
   for (const [k, v] of hashNow.entries()) {
     if (k === "p" || k === "t" || k === "token" || k === "capsule") continue;
     if (k === "add") continue;
     keepHash.append(k, v);
   }
+  for (const a of addsNorm) keepHash.append("add", a);
 
   const short = token.length <= TOKEN_HARD_LIMIT;
   const pathname = short ? `/stream/p/${encodeURIComponent(token)}` : "/stream";
