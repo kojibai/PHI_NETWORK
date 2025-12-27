@@ -1955,4 +1955,168 @@ details.rich-data[open] > summary::after{
   .mint-btn::before,
   .mint-btn__icon::after,
   .mint-btn__title{ animation:none; }
+}/* ─────────────────────────────────────────────────────────────
+   15) PULSE TOP ROW + LIVE CHIP (SLIM INLINE)
+   - One-line bar: Pulse + input (left) | LIVE (right)
+   - Slimmer height + tighter padding
+   - Works on mobile (no stacking)
+   - Grid min-width fixes so input can shrink instead of pushing LIVE down
+   ───────────────────────────────────────────────────────────── */
+
+.sigil-pulse-row{
+  margin: 8px 0 12px;
+
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+
+  /* slimmer shell */
+  padding: 8px 10px;
+  border-radius: 16px;
+  border: 1px solid rgba(0,255,224,.20);
+
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02)),
+    radial-gradient(120% 160% at 14% 0%, rgba(0,255,224,.08), transparent 62%),
+    radial-gradient(120% 160% at 90% 100%, rgba(167,139,250,.07), transparent 66%);
+
+  box-shadow:
+    0 14px 34px rgba(0,0,0,.32),
+    inset 0 1px 0 rgba(255,255,255,.05);
+
+  -webkit-backdrop-filter: blur(10px) saturate(145%);
+  backdrop-filter: blur(10px) saturate(145%);
+}
+
+/* CRITICAL: allow grid children to shrink (prevents pushing LIVE to a new line/row) */
+.sigil-pulse-row > *{ min-width: 0; }
+
+.sigil-pulse-label{
+  /* force Pulse + input to stay inline */
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+
+  width: 100%;
+  min-width: 0; /* allow shrink */
+}
+
+.sigil-pulse-row .sigil-label__text{
+  font-family: 'Orbitron','Segoe UI',system-ui;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  font-size: .78rem;
+  opacity: .86;
+
+  /* keeps label stable but not huge */
+  min-width: 62px;
+}
+
+/* override the base .sigil-input min-width:18ch so it can shrink on mobile */
+.sigil-pulse-input{
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+
+  font-variant-numeric: tabular-nums;
+}
+
+/* LIVE / STATIC chip: slimmer + perfectly inline (centered in the row) */
+.sigil-live-chip{
+  justify-self: end;
+  align-self: center;
+
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+
+  padding: 6px 10px;
+  min-height: 30px;
+  border-radius: 999px;
+
+  font: 900 .72rem/1 "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+
+  color: rgba(233,255,255,.92);
+  white-space: nowrap;
+  user-select: none;
+  pointer-events: none;
+
+  border: 1px solid rgba(0,255,224,.24);
+  background: linear-gradient(180deg, rgba(255,255,255,.09), rgba(255,255,255,.03));
+  box-shadow:
+    0 10px 22px rgba(0,0,0,.34),
+    inset 0 0 0 1px rgba(255,255,255,.05);
+}
+
+.sigil-live-chip::before{
+  content:"";
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: rgba(233,255,255,.60);
+  box-shadow: 0 0 10px rgba(0,255,224,.22);
+}
+
+/* live emphasis */
+.sigil-live-chip.is-live{
+  color: #ffffff;
+  border-color: rgba(0,255,224,.46);
+  background:
+    radial-gradient(110% 160% at 20% 0%, rgba(0,255,224,.16), transparent 58%),
+    linear-gradient(180deg, rgba(255,255,255,.11), rgba(255,255,255,.04));
+  box-shadow:
+    0 12px 26px rgba(0,255,224,.12),
+    0 12px 26px rgba(0,0,0,.38),
+    inset 0 0 0 1px rgba(255,255,255,.06);
+}
+
+.sigil-live-chip.is-live::before{
+  background: rgba(0,255,224,.95);
+  box-shadow:
+    0 0 14px rgba(0,255,224,.55),
+    0 0 24px rgba(17,215,255,.20);
+  animation: sigilLiveDot var(--kai-pulse) ease-out infinite;
+}
+
+@keyframes sigilLiveDot{
+  0%{ transform: scale(.72); opacity:.65; }
+  35%{ transform: scale(1); opacity:1; }
+  100%{ transform: scale(1.45); opacity:.25; }
+}
+
+/* static vibe */
+.sigil-live-chip.is-static{
+  border-color: rgba(255,64,255,.24);
+}
+.sigil-live-chip.is-static::before{
+  background: rgba(167,139,250,.92);
+  box-shadow: 0 0 12px rgba(167,139,250,.38);
+  animation: none;
+}
+
+/* Mobile: keep it INLINE (no stacking), just tighten spacing */
+@media (max-width: 520px){
+  .sigil-pulse-row{
+    gap: 10px;
+    padding: 8px 10px;
+  }
+
+  .sigil-pulse-row .sigil-label__text{
+    min-width: 54px;
+    font-size: .74rem;
+  }
+
+  .sigil-live-chip{
+    padding: 6px 9px;
+    min-height: 28px;
+    font-size: .70rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce){
+  .sigil-live-chip.is-live::before{ animation: none !important; }
 }

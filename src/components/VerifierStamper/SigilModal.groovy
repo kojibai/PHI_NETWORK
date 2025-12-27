@@ -48,6 +48,7 @@ import {
 /* 🧱 Typed SSOT + adapter */
 import type { KlockData } from "../types/klockTypes";
 import { toKlockData } from "../utils/klock_adapters";
+import { getSolarAlignedCounters, SOLAR_DAY_NAMES } from "../SovereignSolar";
 
 /* ═════════════ external props ═════════════ */
 interface Props {
@@ -97,6 +98,29 @@ const fmt = (n: number) => (Number.isFinite(n) ? n.toLocaleString() : String(n))
 
 const fmtSealKairos = (beat: number, stepIdx: number) => `${beat}:${pad2(stepIdx)}`;
 
+type SolarSealContext = {
+  weekday: string;
+  dayOfMonth: number;
+  monthIndex: number;
+};
+
+const getSolarSealContext = (pulse: number): SolarSealContext | null => {
+  try {
+    const msAtPulse = epochMsFromPulse(pulse);
+    const when = new Date(Number(msAtPulse));
+    const counters = getSolarAlignedCounters(when);
+    const fallbackWeekday =
+      SOLAR_DAY_NAMES[((counters.solarAlignedWeekDayIndex ?? 0) + 6) % 6];
+    const weekday = counters.dayName ?? fallbackWeekday;
+    const dayOfMonth =
+      counters.solarAlignedDayInMonth1 ?? (counters.solarAlignedDayInMonth + 1);
+    const monthIndex = counters.solarAlignedMonth;
+    return { weekday, dayOfMonth, monthIndex };
+  } catch {
+    return null;
+  }
+};
+
 /** Rewrites any numeric fields inside a server seal string so they match glyph */
 function canonicalizeSealText(
   seal: string | undefined | null,
@@ -106,6 +130,7 @@ function canonicalizeSealText(
 ): string {
   if (!seal) return "";
   let s = seal;
+  const solarCtx = getSolarSealContext(canonicalPulse);
 
   s = s.replace(
     /Kairos:\s*\d{1,2}:\d{1,2}/i,
@@ -119,6 +144,15 @@ function canonicalizeSealText(
 
   s = s.replace(/Step:\s*\d{1,2}\s*\/\s*44/i, `Step:${stepIdx}/44`);
   s = s.replace(/Beat:\s*\d{1,2}\s*\/\s*36(?:\([^)]+\))?/i, `Beat:${beat}/36`);
+
+  if (solarCtx) {
+    s = s.replace(
+      /Solar Kairos \(UTC-aligned\):\s*\d{1,2}:\d{1,2}\s+\w+\s+D\d+\/M\d+/i,
+      `Solar Kairos (UTC-aligned): ${fmtSealKairos(beat, stepIdx)} ${
+        solarCtx.weekday
+      } D${solarCtx.dayOfMonth}/M${solarCtx.monthIndex}`
+    );
+  }
 
   return s;
 }
@@ -232,6 +266,7 @@ const SigilModal: FC<Props> = ({ initialPulse = 0, onClose }) => {
   /* ── primitive props for KaiSigil (derived from SSOT) ───── */
   const [pulse, setPulse] = useState(initialPulse);
   const [beat, setBeat] = useState(0);
+  const [stepIndex, setStepIndex] = useState(0);
   const [stepPct, setStepPct] = useState(0);
   const [chakraDay, setChakraDay] = useState<KaiSigilProps["chakraDay"]>("Root");
 
@@ -312,14 +347,14 @@ const SigilModal: FC<Props> = ({ initialPulse = 0, onClose }) => {
     const beatIdx = kd.SpiralBeat.beatIndex | 0;
     const stepIdx = kd.SpiralStep.stepIndex | 0;
     const pctIntoStep = clamp01(kd.SpiralStep.percentIntoStep ?? 0);
-    const stepPctAcrossBeat = clamp01((stepIdx + pctIntoStep) / STEPS_BEAT);
 
     const day = (kd.harmonicDay ?? "Solhara") as Weekday;
     const chakra: KaiSigilProps["chakraDay"] = DAY_TO_CHAKRA[day] ?? "Root";
 
     setKlock(kd);
     setBeat(clamp(beatIdx, 0, 35));
-    setStepPct(stepPctAcrossBeat);
+    setStepIndex(clamp(stepIdx, 0, STEPS_BEAT - 1));
+    setStepPct(pctIntoStep);
     setChakraDay(chakra);
     setSigilCrashed(false);
     anchorRef.current = Date.now();
@@ -600,8 +635,7 @@ const SigilModal: FC<Props> = ({ initialPulse = 0, onClose }) => {
   };
 
   /* ── derived strings for display & seal ────────────────── */
-  const stepIdxLocal =
-    Math.floor(clamp01OpenTop(stepPct) * STEPS_BEAT) % STEPS_BEAT;
+  const stepIdxLocal = clamp(stepIndex, 0, STEPS_BEAT - 1);
   const localBeatStep = fmtSealKairos(beat, stepIdxLocal);
 
   const showServerKairosInfo = !STRICT_CANONICAL && !!serverSealDayMonth;
@@ -764,6 +798,7 @@ const SigilModal: FC<Props> = ({ initialPulse = 0, onClose }) => {
                 ref={sigilRef}
                 pulse={pulse}
                 beat={clamp(beat, 0, 35)}
+                stepIndex={stepIdxLocal}
                 stepPct={clamp01OpenTop(stepPct)}
                 chakraDay={chakraDay}
                 size={canvasSize}
@@ -899,8 +934,7 @@ const SigilModal: FC<Props> = ({ initialPulse = 0, onClose }) => {
                 } = {
                   pulse,
                   beat,
-                  stepIndex:
-                    Math.floor(clamp01OpenTop(stepPct) * STEPS_BEAT) % STEPS_BEAT,
+                  stepIndex: stepIdxLocal,
                   chakraDay,
                   stepsPerBeat: STEPS_BEAT,
                   // sovereign fields can be added later in the verifier flow
