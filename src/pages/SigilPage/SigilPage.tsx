@@ -790,7 +790,7 @@ useEffect(() => {
     const t = `Kai Sigil — ${hash ? hash.slice(0, 16) : "—"}`;
     const d = deferredPayload
       ? `Sealed Sigil-Glyph • Pulse ${pulseStr} • Beat ${deferredPayload.beat}/36 • Step ${
-          stepIdx + 1
+          stepIdx
         }/${stepsNum} • ${chakra}${ownerShort ? ` • Owner ${ownerShort}…` : ""}.`
       : `Sealed Sigil-Glyph`;
     return { title: t, desc: d };
