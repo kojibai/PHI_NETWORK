@@ -168,7 +168,10 @@ const canonicalizeSealText = (
   seal: string | undefined | null,
   canonicalPulse: bigint,
   beat: number,
-  stepIdx: number
+  stepIdx: number,
+  solarBeat: number,
+  solarStepIdx: number,
+  yearLabel?: string
 ): string => {
   if (!seal) return "";
   let s = seal;
@@ -182,8 +185,12 @@ const canonicalizeSealText = (
   if (solarCtx) {
     s = s.replace(
       /Solar Kairos \(UTC-aligned\):\s*\d{1,2}:\d{1,2}\s+\w+\s+D\d+\/M\d+/i,
-      `Solar Kairos (UTC-aligned): ${fmtSealKairos(beat, stepIdx)} ${solarCtx.weekday} D${solarCtx.dayOfMonth}/M${solarCtx.monthIndex}`
+      `Solar Kairos (UTC-aligned): ${fmtSealKairos(solarBeat, solarStepIdx)} ${solarCtx.weekday} D${solarCtx.dayOfMonth}/M${solarCtx.monthIndex}`
     );
+  }
+
+  if (yearLabel) {
+    s = s.replace(/Y\d+/i, yearLabel);
   }
 
   return s;
@@ -1024,6 +1031,17 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
     }
   }, [pulse, dayPct]);
 
+  const solarBeatStep = useMemo(() => {
+    try {
+      const ms = epochMsFromPulse(pulse);
+      const when = new Date(biToSafeNumber(ms));
+      const { beatIndex, stepIndex } = getKaiPulseToday(when);
+      return { beat: beatIndex, stepIndex };
+    } catch {
+      return { beat: kks.beat, stepIndex: kks.stepIndex };
+    }
+  }, [pulse, kks.beat, kks.stepIndex]);
+
   /* Derive KaiKlock “response” for current pulse */
   useEffect(() => {
     let cancelled = false;
@@ -1048,14 +1066,14 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
   const localBeatStep = `${kks.beat}:${pad2(kks.stepIndex)}`;
 
   const chakraStepString = kairos ? readString(kairos, "chakraStepString") : undefined;
-  const beatStepDisp = chakraStepString ? chakraStepString : localBeatStep;
+  const beatStepDisp = localBeatStep;
 
   const dayOfMonth = kairos ? readNumber(kairos, "dayOfMonth") : undefined;
   const eternalMonthIndex = kairos ? readNumber(kairos, "eternalMonthIndex") : undefined;
 
   const kairosDayMonth =
-    chakraStepString && typeof dayOfMonth === "number" && typeof eternalMonthIndex === "number"
-      ? `${chakraStepString} — D${dayOfMonth}/M${eternalMonthIndex + 1}`
+    typeof dayOfMonth === "number" && typeof eternalMonthIndex === "number"
+      ? `${localBeatStep} — D${dayOfMonth}/M${eternalMonthIndex + 1}`
       : beatStepDisp;
 
   const kairosDisp = fmtSeal(kairosDayMonth);
@@ -1229,12 +1247,6 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
   const handleClose = () => onClose();
 
   // Meta display helpers
-  const sealText = useMemo(() => {
-    if (!kairos) return "";
-    const raw = readString(kairos, "eternalSeal") ?? readString(kairos, "seal") ?? "";
-    return canonicalizeSealText(raw, pulse, kks.beat, kks.stepIndex);
-  }, [kairos, kks.beat, kks.stepIndex, pulse]);
-
   const harmonicDayText = useMemo(() => {
     if (!kairos) return "";
     const hd = readWeekday(kairos, "harmonicDay");
@@ -1245,14 +1257,33 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
     () => (kairos ? readString(kairos, "eternalMonth") ?? "" : ""),
     [kairos]
   );
-  const eternalYearText = useMemo(
-    () => (kairos ? readString(kairos, "eternalYearName") ?? "" : ""),
-    [kairos]
-  );
+  const eternalYearText = useMemo(() => {
+    if (!kairos) return "";
+    const raw = readString(kairos, "eternalYearName") ?? "";
+    const match = raw.match(/Y(\d+)/i);
+    if (!match) return raw;
+    const yearNum = Number(match[1]);
+    if (!Number.isFinite(yearNum)) return raw;
+    return `Y${Math.max(0, yearNum - 1)}`;
+  }, [kairos]);
   const kaiTurahText = useMemo(
     () => (kairos ? readString(kairos, "kaiTurahPhrase") ?? "" : ""),
     [kairos]
   );
+
+  const sealText = useMemo(() => {
+    if (!kairos) return "";
+    const raw = readString(kairos, "eternalSeal") ?? readString(kairos, "seal") ?? "";
+    return canonicalizeSealText(
+      raw,
+      pulse,
+      kks.beat,
+      kks.stepIndex,
+      solarBeatStep.beat,
+      solarBeatStep.stepIndex,
+      eternalYearText || undefined
+    );
+  }, [kairos, kks.beat, kks.stepIndex, pulse, solarBeatStep, eternalYearText]);
 
   // Memory display helpers
   const kaiPulseEternalNum = kairos ? readNumber(kairos, "kaiPulseEternal") : undefined;
