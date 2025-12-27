@@ -27,6 +27,7 @@ import React, {
 } from "react";
 
 import KaiSigil from "../components/KaiSigil";
+import { percentIntoStepFromPulseExact } from "../components/KaiSigil/step";
 import { decodeSigilUrl } from "../utils/sigilDecode";
 import {
   STEPS_BEAT,
@@ -742,12 +743,6 @@ function buildKaiMetaLineZero(
   const y = Math.floor(year);
   const line = `☤KAI:${pulse} • ${label} D${d}/M${m}/Y${y}`;
   return { arc, label, line };
-}
-
-function stepPctFromIndex(stepZ: number): number {
-  const s = Math.max(0, Math.min(STEPS_BEAT - 1, Math.floor(stepZ)));
-  const pct = s / STEPS_BEAT;
-  return pct >= 1 ? 1 - 1e-12 : pct;
 }
 
 const CHAKRA_RGB: Record<string, readonly [number, number, number]> = {
@@ -2701,7 +2696,7 @@ function beatStepFromPulseKKS(pulse: number): { beatZ: number; stepZ: number } {
   const shareNote = displayManualAsProof(share?.note);
 
   const kai = buildKaiMetaLineZero(pulse, beatZ, stepZ, day, month, year);
-  const stepPct = stepPctFromIndex(stepZ);
+  const stepPct = percentIntoStepFromPulseExact(pulse);
 const ARC_RGB = {
   Ignite: [255, 92, 72],        // red
   Integrate: [255, 160, 72],    // orange
