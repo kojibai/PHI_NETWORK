@@ -47,9 +47,11 @@ import {
   latticeFromMicroPulses,
   normalizePercentIntoStep,
   buildKaiKlockResponse,
+  momentFromPulse,
   type Weekday,
   type ChakraDay,
 } from "../utils/kai_pulse";
+import { generateKaiTurah } from "../utils/kai_turah";
 import { getKaiPulseToday, getSolarAlignedCounters, SOLAR_DAY_NAMES } from "../SovereignSolar";
 
 /* ────────────────────────────────────────────────────────────────
@@ -1096,9 +1098,21 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
   const dayOfMonth = kairos ? readNumber(kairos, "dayOfMonth") : undefined;
   const eternalMonthIndex = kairos ? readNumber(kairos, "eternalMonthIndex") : undefined;
 
+  const eternalYearText = useMemo(() => {
+    if (!kairos) return "";
+    const raw = readString(kairos, "eternalYearName") ?? "";
+    const match = raw.match(/Y(\d+)/i);
+    if (!match) return raw;
+    const yearNum = Number(match[1]);
+    if (!Number.isFinite(yearNum)) return raw;
+    return `Y${Math.max(0, yearNum - 1)}`;
+  }, [kairos]);
+
   const kairosDayMonth =
-    typeof dayOfMonth === "number" && typeof eternalMonthIndex === "number"
-      ? `${localBeatStep} — D${dayOfMonth}/M${eternalMonthIndex + 1}`
+    typeof dayOfMonth === "number" &&
+    typeof eternalMonthIndex === "number" &&
+    eternalYearText
+      ? `${localBeatStep} — D${dayOfMonth}/M${eternalMonthIndex + 1}/${eternalYearText}`
       : beatStepDisp;
 
   const kairosDisp = fmtSeal(kairosDayMonth);
@@ -1282,19 +1296,14 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
     () => (kairos ? readString(kairos, "eternalMonth") ?? "" : ""),
     [kairos]
   );
-  const eternalYearText = useMemo(() => {
-    if (!kairos) return "";
-    const raw = readString(kairos, "eternalYearName") ?? "";
-    const match = raw.match(/Y(\d+)/i);
-    if (!match) return raw;
-    const yearNum = Number(match[1]);
-    if (!Number.isFinite(yearNum)) return raw;
-    return `Y${Math.max(0, yearNum - 1)}`;
-  }, [kairos]);
-  const kaiTurahText = useMemo(
-    () => (kairos ? readString(kairos, "kaiTurahPhrase") ?? "" : ""),
-    [kairos]
-  );
+  const kaiTurahText = useMemo(() => {
+    try {
+      const moment = momentFromPulse(pulse);
+      return generateKaiTurah(moment).line;
+    } catch {
+      return "";
+    }
+  }, [pulse]);
 
   const sealText = useMemo(() => {
     if (!kairos) return "";
@@ -1506,9 +1515,6 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
                 </p>
                 <p>
                   <strong>Arc:</strong> {eternalArkLabel}
-                </p>
-                <p>
-                  <strong>Year:</strong> {eternalYearText}
                 </p>
 
                 <p>
