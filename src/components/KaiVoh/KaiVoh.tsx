@@ -41,6 +41,7 @@ import {
   preparePayloadForLink,
   encodeTokenWithBudgets,
 } from "../../utils/feedPayload";
+import { ingestKsfpFile } from "../../lib/ksfp1";
 
 import { epochMsFromPulse } from "../../utils/kai_pulse";
 import { useAlignedKaiTicker } from "../../pages/sigilstream/core/ticker";
@@ -798,7 +799,9 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
         );
       } else {
         const sha = await sha256FileHex(f);
-        const url = await cachePutAndUrl(sha, f, { cacheName: "sigil-attachments-v1", pathPrefix: "/att/" });
+        const ksfp = await ingestKsfpFile(f);
+        const url =
+          ksfp?.originUrl ?? (await cachePutAndUrl(sha, f, { cacheName: "sigil-attachments-v1", pathPrefix: "/att/" }));
         items.push(
           makeFileRefAttachment({
             sha256: sha,
@@ -867,7 +870,9 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
       return;
     }
 
-    const videoUrl = await cachePutAndUrl(s.sha256, s.file, { cacheName: "sigil-attachments-v1", pathPrefix: "/att/" });
+    const ksfp = await ingestKsfpFile(s.file);
+    const videoUrl =
+      ksfp?.originUrl ?? (await cachePutAndUrl(s.sha256, s.file, { cacheName: "sigil-attachments-v1", pathPrefix: "/att/" }));
 
     const videoRef = makeFileRefAttachment({
       sha256: s.sha256,
