@@ -169,9 +169,11 @@ export function retagSvgIdsForStep(
 
     // Human hint text (if present)
     const hintRe = new RegExp(`(Day\\s+Seal:\\s*${beat}\\s*:)\\s*\\d+`);
+    const ringStepRe = /\bstep=\d+\b/g;
     svgEl.querySelectorAll("text").forEach((t) => {
       const s = t.textContent || "";
-      const r = s.replace(hintRe, `$1${stepIndex}`);
+      let r = s.replace(hintRe, `$1${stepIndex}`);
+      r = r.replace(ringStepRe, `step=${stepIndex}`);
       if (r !== s) t.textContent = r;
     });
 
