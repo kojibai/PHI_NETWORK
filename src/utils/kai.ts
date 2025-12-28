@@ -128,3 +128,16 @@ export const computeKaiSignature = async (
   const poseidonHex = await poseidonHashHex(pulse, intention);
   return blake3HashHex(poseidonHex);
 };
+
+/**
+ * Computes a deterministic Poseidon hash (decimal string) from a 64-char hex.
+ * Used for per-payload ZK stamps without circular dependency on the payload.
+ */
+export const computeZkPoseidonHash = async (hashHex: string): Promise<string> => {
+  const poseidon = await getPoseidon();
+  const clean = hashHex.startsWith("0x") ? hashHex.slice(2) : hashHex;
+  const hi = clean.slice(0, 32).padStart(32, "0");
+  const lo = clean.slice(32).padEnd(32, "0");
+  const out = poseidon([BigInt(`0x${hi}`), BigInt(`0x${lo}`)]);
+  return out.toString();
+};

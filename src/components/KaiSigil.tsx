@@ -338,15 +338,14 @@ const KaiSigil = forwardRef<KaiSigilHandle, KaiSigilProps>((props, ref) => {
 
   /* valuation */
   const hasher = useStableSha256();
-  const mintPulseRef = useRef<number>(canon.pulse);
   const [liveValuePhi, setLiveValuePhi] = useState<number | null>(null);
   const [mintSeal, setMintSeal] = useState<ValueSeal | null>(null);
   const valuationMetaRef = useRef<SigilMetadataLite | null>(null);
 
   useEffect(() => {
     valuationMetaRef.current = {
-      pulse: mintPulseRef.current,
-      kaiPulse: mintPulseRef.current,
+      pulse: canon.pulse,
+      kaiPulse: canon.pulse,
       kaiSignature: kaiSignature ?? undefined,
       userPhiKey: userPhiKey ?? undefined,
       beat: canon.beat,
@@ -367,6 +366,7 @@ const KaiSigil = forwardRef<KaiSigilHandle, KaiSigilProps>((props, ref) => {
     frequencyHzCurrent,
     canon.chakraDayKey,
     chakraGate,
+    canon.pulse,
   ]);
 
   const stateKey: SnapshotKey = useMemo(
@@ -415,8 +415,8 @@ const KaiSigil = forwardRef<KaiSigilHandle, KaiSigilProps>((props, ref) => {
           `Kairos HarmoniK Sigil • ${day0} • Beat ${beat0} • Step ${step0}`;
 
         const valuationSource: SigilMetadataLite = {
-          pulse: mintPulseRef.current,
-          kaiPulse: mintPulseRef.current,
+          pulse: pulse0,
+          kaiPulse: pulse0,
           kaiSignature: kaiSignature ?? undefined,
           userPhiKey: userPhiKey ?? undefined,
 
@@ -434,11 +434,7 @@ const KaiSigil = forwardRef<KaiSigilHandle, KaiSigilProps>((props, ref) => {
         // Build the seal atomically so embed/export sees the same value used for attrs.
         let sealLocal: ValueSeal | null = null;
         try {
-          const { seal } = await buildValueSeal(
-            valuationSource,
-            mintPulseRef.current,
-            hasher
-          );
+          const { seal } = await buildValueSeal(valuationSource, pulse0, hasher);
           sealLocal = seal;
           if (!cancelled) setMintSeal(seal);
         } catch (e) {
@@ -482,6 +478,7 @@ const KaiSigil = forwardRef<KaiSigilHandle, KaiSigilProps>((props, ref) => {
         let innerRingText = "";
         let sigilUrl = "";
         let hashB58 = "";
+        let zkPoseidonHash = "";
 
         if (isRecord(rawBundle)) {
           const eb = rawBundle["embeddedBase"];
@@ -501,6 +498,9 @@ const KaiSigil = forwardRef<KaiSigilHandle, KaiSigilProps>((props, ref) => {
 
           const hb = rawBundle["hashB58"];
           if (typeof hb === "string") hashB58 = hb;
+
+          const zph = rawBundle["zkPoseidonHash"];
+          if (typeof zph === "string") zkPoseidonHash = zph;
         }
 
         const headerValuationRuntime = {
@@ -539,8 +539,7 @@ const KaiSigil = forwardRef<KaiSigilHandle, KaiSigilProps>((props, ref) => {
           embeddedMetaJson,
           valuationSourceJson: JSON.stringify(valuationSource),
           zkScheme: "groth16-poseidon",
-          zkPoseidonHash:
-            "7110303097080024260800444665787206606103183587082596139871399733998958991511",
+          zkPoseidonHash,
           innerRingText,
           sigilUrl,
           hashB58,

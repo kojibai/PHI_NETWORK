@@ -26,6 +26,7 @@ import { jwkToJSONLike } from "./identity";
 import type { Built, SigilPayloadExtended, ChakraDayKey } from "./types";
 import type { SigilMetadataLite } from "../../utils/valuation";
 import { makeSigilUrl, type SigilSharePayload } from "../../utils/sigilUrl";
+import { computeZkPoseidonHash } from "../../utils/kai";
 
 /* ─────────────────────────────────────────────────────────────
  * STRICT CONVERSION: guarantee ArrayBuffer (not SharedArrayBuffer)
@@ -86,7 +87,7 @@ function getSignParamsForKey(key: CryptoKey): SignParams {
  * ───────────────────────────────────────────────────────────── */
 export type EmbeddedBundleResult = Pick<
   Built,
-  "payloadHashHex" | "sigilUrl" | "hashB58" | "innerRingText"
+  "payloadHashHex" | "sigilUrl" | "hashB58" | "innerRingText" | "zkPoseidonHash"
 > & {
   parityUrl: string;
   embeddedBase: unknown;
@@ -167,7 +168,8 @@ export async function buildEmbeddedBundle(args: {
     clean(title, 300) ??
     `Day Seal: ${canon.beat}:${canon.stepIndex} • Kai-Pulse ${canon.pulse}`;
 
-  const payloadObj: SigilPayloadExtended = {
+  let zkPoseidonHash = "0x";
+  let payloadObj: SigilPayloadExtended = {
     v: "1.0",
     kaiSignature: kaiSignature ?? "",
     phikey: userPhiKey ?? "",
@@ -187,8 +189,7 @@ export async function buildEmbeddedBundle(args: {
       api: "/api/proof/sigil",
       explorer: `/keystream/hash/<hash>`,
     },
-    zkPoseidonHash:
-      "7110303097080024260800444665787206606103183587082596139871399733998958991511",
+    zkPoseidonHash,
     zkProof: {
       pi_a: [
         "19856134890912647180646267915828904326160277174078581619567068747845749027250",
@@ -213,6 +214,35 @@ export async function buildEmbeddedBundle(args: {
       ],
     },
   };
+
+  const canonicalPayloadBase: JSONDict = {
+    v: payloadObj.v,
+    kaiSignature: payloadObj.kaiSignature,
+    phikey: payloadObj.phikey,
+    pulse: payloadObj.pulse,
+    beat: payloadObj.beat,
+    stepIndex: payloadObj.stepIndex,
+    chakraDay: payloadObj.chakraDay,
+    chakraGate: payloadObj.chakraGate,
+    kaiPulse: payloadObj.kaiPulse,
+    stepsPerBeat: payloadObj.stepsPerBeat,
+    timestamp: payloadObj.timestamp,
+    eternalRecord: payloadObj.eternalRecord,
+    creatorResolved: payloadObj.creatorResolved,
+    origin: payloadObj.origin,
+    proofHints: payloadObj.proofHints,
+    zkPoseidonHash,
+    zkProof: payloadObj.zkProof,
+    ownerPubKey: payloadObj.ownerPubKey
+      ? jwkToJSONLike(payloadObj.ownerPubKey)
+      : undefined,
+    ownerSig: payloadObj.ownerSig,
+  };
+
+  const canonicalBaseBytes = canonicalize(canonicalPayloadBase);
+  const hashHexBase = await blake3Hex(canonicalBaseBytes);
+  zkPoseidonHash = await computeZkPoseidonHash(hashHexBase);
+  payloadObj = { ...payloadObj, zkPoseidonHash };
 
   const canonicalPayload: JSONDict = {
     v: payloadObj.v,
@@ -389,6 +419,7 @@ export async function buildEmbeddedBundle(args: {
     innerRingText: inner,
     sigilUrl: manifestUrl,
     hashB58,
+    zkPoseidonHash: payloadObj.zkPoseidonHash,
     embeddedBase: meta,
   };
 }
