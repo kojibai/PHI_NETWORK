@@ -511,10 +511,10 @@ const KaiSigil = forwardRef<KaiSigilHandle, KaiSigilProps>((props, ref) => {
           version: "1",
         };
 
-        const valuationLiveAtExport = computeIntrinsicUnsigned(
-          valuationSource,
-          pulse0
-        ).unsigned.valuePhi;
+        const valuationLiveAtExport =
+          typeof liveValuePhi === "number"
+            ? liveValuePhi
+            : computeIntrinsicUnsigned(valuationSource, pulse0).unsigned.valuePhi;
 
         const embedded = {
           ...embeddedBase,
