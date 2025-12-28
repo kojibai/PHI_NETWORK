@@ -123,24 +123,15 @@ export default function VerifySigil(): React.JSX.Element {
 
   const stepIndex = useMemo(() => {
     if (!payload) return 0;
-    if (Number.isFinite(payload.stepIndex)) {
-      return Math.max(0, Math.min(steps - 1, payload.stepIndex as number));
-    }
     return stepIndexFromPulse(payload.pulse, steps);
   }, [payload, steps]);
 
-  const stepPct = useMemo(
-    () =>
-      typeof payload?.stepPct === "number"
-        ? Math.max(0, Math.min(1, payload.stepPct))
-        : (() => {
-            const p = payload?.pulse ?? 0;
-            const pμ = BigInt(Math.trunc(p)) * 1_000_000n;
-            const { percentIntoStep } = latticeFromMicroPulses(pμ);
-            return normalizePercentIntoStep(percentIntoStep);
-          })(),
-    [payload]
-  );
+  const stepPct = useMemo(() => {
+    const p = payload?.pulse ?? 0;
+    const pμ = BigInt(Math.trunc(p)) * 1_000_000n;
+    const { percentIntoStep } = latticeFromMicroPulses(pμ);
+    return normalizePercentIntoStep(percentIntoStep);
+  }, [payload]);
 
   const zkSummary = useMemo(() => {
     if (!payload) return null;

@@ -570,13 +570,8 @@ const KaiSigil = forwardRef<KaiSigilHandle, KaiSigilProps>((props, ref) => {
     quality,
   ]);
 
-  /* Prefer caller-provided step (when present) for display text; else built snapshot; else canon */
-  const displayStepIndex = useMemo(() => {
-    const providedStep = coerceInt(stepIndexProp, Number.NaN);
-    if (Number.isFinite(providedStep)) return providedStep;
-    const b = built;
-    return b && b.createdFor.stateKey === stateKey ? b.createdFor.stepIndex : canon.stepIndex;
-  }, [stepIndexProp, built, stateKey, canon.stepIndex]);
+  /* Display step is canonical pulse-derived (single source of truth). */
+  const displayStepIndex = canon.stepIndex;
 
   const displayFrequencyHz = useMemo(() => {
     const b = built;
@@ -772,7 +767,7 @@ const KaiSigil = forwardRef<KaiSigilHandle, KaiSigilProps>((props, ref) => {
       </g>
     );
 
-  const outerRingStepIndex = Math.max(0, displayStepIndex);
+  const outerRingStepIndex = Math.max(0, canon.stepIndex);
 
   const outerRingText = makeOuterRingText(
     payloadHashHex,
