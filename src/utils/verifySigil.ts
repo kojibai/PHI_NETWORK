@@ -66,7 +66,11 @@ export async function verifySigilSvg(slug: SlugInfo, svgText: string): Promise<V
 
     const derivedPhiKey = await derivePhiKeyFromSig(sig);
     const embeddedPhiKey = (embedded.phiKey ?? "").trim();
-    const embeddedPulse = embedded.pulse;
+    const embeddedPulseExact = embedded.pulseExact;
+    const embeddedPulse =
+      embeddedPulseExact && Number.isFinite(Number(embeddedPulseExact))
+        ? Number(embeddedPulseExact)
+        : embedded.pulse;
 
     const slugPulseMatches =
       slug.pulse == null || embeddedPulse == null ? null : slug.pulse === embeddedPulse;
@@ -100,11 +104,16 @@ export async function verifySigilSvg(slug: SlugInfo, svgText: string): Promise<V
       };
     }
 
+    const normalizedEmbedded: EmbeddedMeta = {
+      ...embedded,
+      pulse: embeddedPulse ?? embedded.pulse,
+    };
+
     return {
       status: "ok",
       slug,
       embedded: {
-        ...embedded,
+        ...normalizedEmbedded,
         phiKey: embeddedPhiKey.length > 0 ? embeddedPhiKey : derivedPhiKey,
       },
       derivedPhiKey,
