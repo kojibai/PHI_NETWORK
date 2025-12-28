@@ -1129,51 +1129,61 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
     authorSig: AuthorSig | null;
   };
 
-  const makeSharePayload = (canonicalHash: string): SigilSharePayloadExtended => {
+  const makeSharePayload = (
+    canonicalHash: string,
+    pulseSnapshot: bigint,
+    chakraSnapshot: ChakraDay
+  ): SigilSharePayloadExtended => {
     const stepsPerBeat = STEPS_BEAT;
 
-    const s = Number.isFinite(kksDisplay.stepIndex)
-      ? Math.max(0, Math.min(Math.trunc(kksDisplay.stepIndex), stepsPerBeat - 1))
-      : 0;
-
-    const b = Number.isFinite(kksDisplay.beat)
-      ? Math.max(0, Math.min(Math.trunc(kksDisplay.beat), BEATS_DAY - 1))
-      : 0;
-
-    const pulsePixel = biToSafeNumber(pulse);
+    const { beat, stepIndex } = exactBeatStepFromPulse(pulseSnapshot);
+    const s = Math.max(0, Math.min(Math.trunc(stepIndex), stepsPerBeat - 1));
+    const b = Math.max(0, Math.min(Math.trunc(beat), BEATS_DAY - 1));
+    const pulsePixel = biToSafeNumber(pulseSnapshot);
 
     return {
       pulse: pulsePixel,
       beat: b,
       stepIndex: s,
-      chakraDay,
+      chakraDay: chakraSnapshot,
       stepsPerBeat,
       canonicalHash,
-      exportedAt: isoFromPulse(pulse),
-      expiresAtPulse: (pulse + 11n).toString(),
-      pulseExact: pulse.toString(),
+      exportedAt: isoFromPulse(pulseSnapshot),
+      expiresAtPulse: (pulseSnapshot + 11n).toString(),
+      pulseExact: pulseSnapshot.toString(),
     };
   };
 
+  const [sealPayload, setSealPayload] = useState<SigilSharePayload | null>(null);
+
   const mintMoment = async () => {
-    const canTrustChildHash = pulse <= MAX_SAFE_BI;
+    const mintPulse = mode === "live" ? getNowPulseBI() : pulse;
+    if (mode === "live") {
+      applyPulse(mintPulse, true);
+    }
+
+    const moment = momentFromPulse(mintPulse);
+    const chakraSnapshot = normalizeChakraDay(moment.chakraDay) ?? chakraDay;
+    const canTrustChildHash = mintPulse <= MAX_SAFE_BI;
 
     let hash = (canTrustChildHash ? lastHash : "").toLowerCase();
 
     if (!hash) {
+      const mintKks = exactBeatStepFromPulse(mintPulse);
       const svg = getSVGElement();
       const svgStr = svg ? new XMLSerializer().serializeToString(svg) : "";
       const basis =
         (svgStr || "no-svg") +
-        `|pulseExact=${pulse.toString()}` +
-        `|beat=${kksDisplay.beat}|step=${kksDisplay.stepIndex}|chakra=${chakraDay}`;
+        `|pulseExact=${mintPulse.toString()}` +
+        `|beat=${mintKks.beat}|step=${mintKks.stepIndex}|chakra=${chakraSnapshot}`;
       hash = (await sha256Hex(basis)).toLowerCase();
     }
 
-    const payload = makeSharePayload(hash);
+    const payload = makeSharePayload(hash, mintPulse, chakraSnapshot);
     const url = makeSigilUrl(hash, payload);
 
     setSealHash(hash);
+    setSealPayload(payload);
     setSealUrl(url);
     setSealOpen(true);
   };
@@ -1201,12 +1211,16 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
       const phiKeyAttr = svgEl.getAttribute("data-phi-key") ?? "";
       const payloadHashAttr = svgEl.getAttribute("data-payload-hash") ?? "";
 
-      const payloadPulse = Number(payloadFromUrl?.pulse);
-      const payloadBeat = Number(payloadFromUrl?.beat);
-      const payloadStep = Number(payloadFromUrl?.stepIndex);
-      const payloadStepsPerBeat = Number(payloadFromUrl?.stepsPerBeat);
+      const payloadPulse = Number(sealPayload?.pulse ?? payloadFromUrl?.pulse);
+      const payloadBeat = Number(sealPayload?.beat ?? payloadFromUrl?.beat);
+      const payloadStep = Number(sealPayload?.stepIndex ?? payloadFromUrl?.stepIndex);
+      const payloadStepsPerBeat = Number(
+        sealPayload?.stepsPerBeat ?? payloadFromUrl?.stepsPerBeat
+      );
       const payloadChakra = normalizeChakraDay(
-        typeof payloadFromUrl?.chakraDay === "string"
+        typeof sealPayload?.chakraDay === "string"
+          ? sealPayload.chakraDay
+          : typeof payloadFromUrl?.chakraDay === "string"
           ? payloadFromUrl.chakraDay
           : undefined
       );
