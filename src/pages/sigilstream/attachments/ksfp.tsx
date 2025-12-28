@@ -32,6 +32,10 @@ function fromBase64Url(token: string): Uint8Array {
   return out;
 }
 
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+}
+
 async function waitForUpdateEnd(sourceBuffer: SourceBuffer): Promise<void> {
   if (!sourceBuffer.updating) return;
   await new Promise<void>((resolve, reject) => {
@@ -90,7 +94,7 @@ async function streamKsfpToMediaSource(
     const entry = map.get(`${chunk.tier}:${chunk.index}`);
     if (!entry) continue;
     const bytes = fromBase64Url(entry.payload.data_b64url);
-    sourceBuffer.appendBuffer(bytes);
+    sourceBuffer.appendBuffer(toArrayBuffer(bytes));
     await waitForUpdateEnd(sourceBuffer);
   }
 
@@ -100,11 +104,11 @@ async function streamKsfpToMediaSource(
 
 async function buildKsfpBlob(origin: KsfpOriginManifest, lineage: KsfpLineageKey[]): Promise<Blob | null> {
   const map = lineageByKey(lineage);
-  const parts: Uint8Array[] = [];
+  const parts: ArrayBuffer[] = [];
   for (const chunk of listKsfpChunks(origin)) {
     const entry = map.get(`${chunk.tier}:${chunk.index}`);
     if (!entry) return null;
-    parts.push(fromBase64Url(entry.payload.data_b64url));
+    parts.push(toArrayBuffer(fromBase64Url(entry.payload.data_b64url)));
   }
   return new Blob(parts, { type: origin.mime || "application/octet-stream" });
 }
