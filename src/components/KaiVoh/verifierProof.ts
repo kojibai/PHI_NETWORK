@@ -13,10 +13,13 @@
  */
 
 import type { ChakraDay } from "../../utils/kai_pulse";
+import { jcsCanonicalize } from "../../utils/jcs";
+import { sha256Hex } from "../../utils/sha256";
+import { svgCanonicalForHash } from "../../utils/svgProof";
 
 export const PROOF_HASH_ALG = "sha256" as const;
 export const PROOF_CANON = "JCS" as const;
-export const PROOF_METADATA_ID = "kai-proof" as const;
+export const PROOF_METADATA_ID = "kai-voh-proof" as const;
 
 /* -------------------------------------------------------------------------- */
 /*                                 Base URL                                   */
@@ -133,21 +136,6 @@ export type ProofCapsuleV1 = Readonly<{
   verifierSlug: string;
 }>;
 
-function bytesToHex(bytes: Uint8Array): string {
-  let out = "";
-  for (const b of bytes) out += b.toString(16).padStart(2, "0");
-  return out;
-}
-
-async function sha256HexUtf8(input: string): Promise<string> {
-  if (typeof crypto === "undefined" || !crypto.subtle) {
-    throw new Error("crypto.subtle unavailable; cannot compute proofHash.");
-  }
-  const data = new TextEncoder().encode(input);
-  const digest = await crypto.subtle.digest("SHA-256", data);
-  return bytesToHex(new Uint8Array(digest));
-}
-
 /**
  * Deterministic canonical JSON (sorted keys; UTF-8; no whitespace).
  * This prevents “same data, different JSON order” from changing the hash.
@@ -161,7 +149,7 @@ export function stableStringify(v: unknown): string {
 }
 
 export function canonicalizeProofCapsuleV1(c: ProofCapsuleV1): string {
-  return stableStringify({
+  return jcsCanonicalize({
     v: c.v,
     pulse: c.pulse,
     chakraDay: c.chakraDay,
@@ -173,27 +161,15 @@ export function canonicalizeProofCapsuleV1(c: ProofCapsuleV1): string {
 
 /** Compute the integrity hash for the proof capsule. */
 export async function hashProofCapsuleV1(c: ProofCapsuleV1): Promise<string> {
-  return await sha256HexUtf8(canonicalizeProofCapsuleV1(c));
-}
-
-export function stripProofMetadata(svgText: string): string {
-  const re = new RegExp(
-    `<metadata[^>]*id=["']${PROOF_METADATA_ID}["'][^>]*>[\\s\\S]*?<\\/metadata>`,
-    "gi",
-  );
-  return svgText.replace(re, "");
-}
-
-export function normalizeSvgForHash(svgText: string): string {
-  return stripProofMetadata(svgText).replace(/\r\n?/g, "\n");
+  return await sha256Hex(canonicalizeProofCapsuleV1(c));
 }
 
 export async function hashSvgText(svgText: string): Promise<string> {
-  return await sha256HexUtf8(normalizeSvgForHash(svgText));
+  return await sha256Hex(svgCanonicalForHash(svgText));
 }
 
 export async function hashBundle(capsuleHash: string, svgHash: string): Promise<string> {
-  return await sha256HexUtf8(`${capsuleHash}${svgHash}`);
+  return await sha256Hex(jcsCanonicalize({ capsuleHash, svgHash }));
 }
 
 /** Convenience short display for hashes. */

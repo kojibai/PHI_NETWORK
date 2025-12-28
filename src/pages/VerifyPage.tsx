@@ -393,7 +393,7 @@ export default function VerifyPage(): ReactElement {
                         </li>
                       </ul>
                     ) : (
-                      <p className="verify-proof-note">No embedded proof bundle detected in &lt;metadata id="kai-proof"&gt;.</p>
+                      <p className="verify-proof-note">No embedded proof bundle detected in &lt;metadata id="kai-voh-proof"&gt;.</p>
                     )}
                     {copyNotice ? <p className="verify-proof-note">{copyNotice}</p> : null}
                   </div>
