@@ -85,9 +85,6 @@ async function streamKsfpToMediaSource(
   const codec = origin.specialization?.codec;
   const mimeBase = origin.mime || "video/mp4";
   const mime = codec ? `${mimeBase}; codecs="${codec}"` : mimeBase;
-  if (!MediaSource.isTypeSupported(mime)) {
-    throw new Error(`Unsupported media type: ${mime}`);
-  }
 
   const sourceBuffer = mediaSource.addSourceBuffer(mime);
   const map = lineageByKey(lineage);
@@ -120,16 +117,53 @@ export function KsfpInlineCard({ item }: { item: AttachmentKsfpInline }): React.
   const [status, setStatus] = useState<KsfpStatus>("idle");
   const [error, setError] = useState<string | null>(null);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
+  const [playbackUrl, setPlaybackUrl] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
   const isVideo = (origin.mime || item.type || "").startsWith("video/");
 
   useEffect(() => {
     if (!videoRef.current) return;
-    if (!isVideo || !canUseMediaSource()) return;
+    if (!isVideo) return;
     let cleanup: (() => void) | null = null;
     let cancelled = false;
     setStatus("loading");
+
+    const fallbackToBlob = async (): Promise<void> => {
+      const blob = await buildKsfpBlob(origin, lineage);
+      if (!blob) {
+        throw new Error("Unable to reconstruct inline payload.");
+      }
+      const url = URL.createObjectURL(blob);
+      setPlaybackUrl(url);
+      setStatus("ready");
+    };
+
+    if (!canUseMediaSource()) {
+      fallbackToBlob().catch((err) => {
+        if (cancelled) return;
+        setStatus("error");
+        setError(err instanceof Error ? err.message : "KSFP playback failed.");
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const codec = origin.specialization?.codec;
+    const mimeBase = origin.mime || "video/mp4";
+    const mime = codec ? `${mimeBase}; codecs="${codec}"` : mimeBase;
+    if (!MediaSource.isTypeSupported(mime)) {
+      fallbackToBlob().catch((err) => {
+        if (cancelled) return;
+        setStatus("error");
+        setError(err instanceof Error ? err.message : "KSFP playback failed.");
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
+
     streamKsfpToMediaSource(origin, lineage, videoRef.current)
       .then((c) => {
         if (cancelled) return;
@@ -138,14 +172,22 @@ export function KsfpInlineCard({ item }: { item: AttachmentKsfpInline }): React.
       })
       .catch((err) => {
         if (cancelled) return;
-        setStatus("error");
-        setError(err instanceof Error ? err.message : "KSFP stream failed.");
+        fallbackToBlob().catch(() => {
+          setStatus("error");
+          setError(err instanceof Error ? err.message : "KSFP stream failed.");
+        });
       });
     return () => {
       cancelled = true;
       cleanup?.();
     };
   }, [origin, lineage, isVideo]);
+
+  useEffect(() => {
+    return () => {
+      if (playbackUrl) URL.revokeObjectURL(playbackUrl);
+    };
+  }, [playbackUrl]);
 
   const handlePrepareDownload = async (): Promise<void> => {
     setStatus("loading");
@@ -178,10 +220,10 @@ export function KsfpInlineCard({ item }: { item: AttachmentKsfpInline }): React.
 
       {isVideo ? (
         <div className="sf-media sf-media--video sf-ksfp-media">
-          {canUseMediaSource() ? (
-            <video ref={videoRef} controls playsInline preload="metadata" />
+          {playbackUrl ? (
+            <video src={playbackUrl} controls playsInline preload="metadata" />
           ) : (
-            <div className="sf-note">MediaSource not available. Use download to play.</div>
+            <video ref={videoRef} controls playsInline preload="metadata" />
           )}
         </div>
       ) : null}
