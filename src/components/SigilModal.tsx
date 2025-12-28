@@ -1365,7 +1365,9 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
       }
 
       const verifierUrl =
-        sealUrl || (typeof window !== "undefined" ? window.location.href : "");
+        svgEl.getAttribute("data-share-url") ||
+        sealUrl ||
+        (typeof window !== "undefined" ? window.location.href : "");
       if (!verifierUrl) return "Export failed: verifier URL is unavailable.";
 
       const proofBundle: ProofBundle = {
