@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { AttachmentKsfpInline } from "./types";
 import { listKsfpChunks, type KsfpLineageKey, type KsfpOriginManifest } from "../../../lib/ksfp1";
+import { decodeFeedPayload, extractPayloadTokenFromUrlString } from "../../../utils/feedPayload";
 
 type KsfpStatus = "idle" | "loading" | "ready" | "error";
 
@@ -64,6 +65,49 @@ function lineageByKey(lineage: KsfpLineageKey[]): Map<string, KsfpLineageKey> {
   return map;
 }
 
+function mergeLineage(base: KsfpLineageKey[], incoming: KsfpLineageKey[]): KsfpLineageKey[] {
+  const map = lineageByKey(base);
+  for (const item of incoming) {
+    map.set(`${item.tier}:${item.chunkIndex}`, item);
+  }
+  return Array.from(map.values()).sort((a, b) => {
+    if (a.tier !== b.tier) return a.tier - b.tier;
+    return a.chunkIndex - b.chunkIndex;
+  });
+}
+
+function collectAddTokens(): string[] {
+  if (typeof window === "undefined") return [];
+  const hashStr = window.location.hash.startsWith("#") ? window.location.hash.slice(1) : window.location.hash;
+  const hashParams = new URLSearchParams(hashStr);
+  const searchParams = new URLSearchParams(window.location.search);
+  const addsRaw = [...hashParams.getAll("add"), ...searchParams.getAll("add")];
+  const tokens: string[] = [];
+  for (const raw of addsRaw) {
+    const tok = extractPayloadTokenFromUrlString(raw);
+    if (tok && !tokens.includes(tok)) tokens.push(tok);
+  }
+  return tokens;
+}
+
+function collectLineageFromAdds(originHash: string, base: KsfpLineageKey[]): KsfpLineageKey[] {
+  const tokens = collectAddTokens();
+  if (tokens.length === 0) return base;
+  const incoming: KsfpLineageKey[] = [];
+
+  for (const tok of tokens) {
+    const payload = decodeFeedPayload(tok);
+    if (!payload?.attachments || !Array.isArray(payload.attachments.items)) continue;
+    for (const item of payload.attachments.items) {
+      if (item.kind !== "ksfp-inline") continue;
+      if (item.bundle.origin.fileHash !== originHash) continue;
+      incoming.push(...item.bundle.lineage);
+    }
+  }
+
+  return incoming.length > 0 ? mergeLineage(base, incoming) : base;
+}
+
 async function streamKsfpToMediaSource(
   origin: KsfpOriginManifest,
   lineage: KsfpLineageKey[],
@@ -118,9 +162,14 @@ export function KsfpInlineCard({ item }: { item: AttachmentKsfpInline }): React.
   const [error, setError] = useState<string | null>(null);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const [playbackUrl, setPlaybackUrl] = useState<string | null>(null);
+  const [mergedLineage, setMergedLineage] = useState<KsfpLineageKey[]>(lineage);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
   const isVideo = (origin.mime || item.type || "").startsWith("video/");
+
+  useEffect(() => {
+    setMergedLineage(collectLineageFromAdds(origin.fileHash, lineage));
+  }, [origin.fileHash, lineage]);
 
   useEffect(() => {
     if (!videoRef.current) return;
@@ -130,7 +179,7 @@ export function KsfpInlineCard({ item }: { item: AttachmentKsfpInline }): React.
     setStatus("loading");
 
     const fallbackToBlob = async (): Promise<void> => {
-      const blob = await buildKsfpBlob(origin, lineage);
+      const blob = await buildKsfpBlob(origin, mergedLineage);
       if (!blob) {
         throw new Error("Unable to reconstruct inline payload.");
       }
@@ -164,7 +213,7 @@ export function KsfpInlineCard({ item }: { item: AttachmentKsfpInline }): React.
       };
     }
 
-    streamKsfpToMediaSource(origin, lineage, videoRef.current)
+    streamKsfpToMediaSource(origin, mergedLineage, videoRef.current)
       .then((c) => {
         if (cancelled) return;
         cleanup = c;
@@ -181,7 +230,7 @@ export function KsfpInlineCard({ item }: { item: AttachmentKsfpInline }): React.
       cancelled = true;
       cleanup?.();
     };
-  }, [origin, lineage, isVideo]);
+  }, [origin, mergedLineage, isVideo]);
 
   useEffect(() => {
     return () => {
@@ -191,7 +240,7 @@ export function KsfpInlineCard({ item }: { item: AttachmentKsfpInline }): React.
 
   const handlePrepareDownload = async (): Promise<void> => {
     setStatus("loading");
-    const blob = await buildKsfpBlob(origin, lineage);
+    const blob = await buildKsfpBlob(origin, mergedLineage);
     if (!blob) {
       setStatus("error");
       setError("Unable to reconstruct from inline payload.");
