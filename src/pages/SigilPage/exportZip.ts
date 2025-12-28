@@ -207,8 +207,16 @@ export async function exportZIP(ctx: {
       return Math.max(0, Math.min(stepIndex, steps - 1));
     };
 
-    // KKS: sealed step is derived strictly from the sealed pulse and steps/beat
-    const sealedStepIndex = stepIndexFromPulseKks(payload.pulse, stepsNum);
+    const readSvgStepIndex = (): number | null => {
+      const raw = svgEl.getAttribute("data-step-index");
+      const parsed = raw ? Number(raw) : NaN;
+      if (!Number.isFinite(parsed)) return null;
+      const clamped = Math.max(0, Math.min(Math.floor(parsed), stepsNum - 1));
+      return clamped;
+    };
+
+    // KKS: sealed step should match the rendered sigil exactly.
+    const sealedStepIndex = readSvgStepIndex() ?? stepIndexFromPulseKks(payload.pulse, stepsNum);
 
     // KKS: claim step is derived from "now" (for manifest bookkeeping only)
     const nowPulse = getKaiPulseEternalInt(new Date());
