@@ -1335,7 +1335,9 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
       if (!kaiSignature) return "Export failed: kaiSignature missing from SVG.";
       if (!phiKey) return "Export failed: Φ-Key missing from SVG.";
 
-      const pulseNum = pulseForSigil;
+      const pulseAttr = svgEl.getAttribute("data-pulse");
+      const pulseParsed = pulseAttr ? Number.parseInt(pulseAttr, 10) : NaN;
+      const pulseNum = Number.isFinite(pulseParsed) ? pulseParsed : pulseForSigil;
       const kaiSignatureShort = kaiSignature.slice(0, 10);
       const proofCapsule: ProofCapsule = {
         v: "KPV-1",
