@@ -2226,19 +2226,19 @@ const VerifierStamperInner: React.FC = () => {
                         aria="Exhale (send)"
                         titleText={canShare ? "Exhale (seal & share)" : "Exhale (seal & copy link)"}
                         disabled={!canExhale}
+                        small
                         path="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"
                       />
+                      <IconBtn
+                        onClick={() => fileInput.current?.click()}
+                        aria="Attach a file"
+                        titleText="Attach a file"
+                        small
+                        path="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.2a2 2 0 01-2.83-2.83l8.49-8.49"
+                      />
+                      <input ref={fileInput} type="file" hidden onChange={handleAttach} />
                     </div>
                   )}
-
-                  <IconBtn
-                    onClick={() => fileInput.current?.click()}
-                    aria="Attach a file"
-                    titleText="Attach a file"
-                    small
-                    path="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.2a2 2 0 01-2.83-2.83l8.49-8.49"
-                  />
-                  <input ref={fileInput} type="file" hidden onChange={handleAttach} />
 
                   {uiState === "readyReceive" && (
                     <IconBtn
