@@ -21,6 +21,7 @@ export async function exportPosterPNG(params: {
   if (!stageEl) return onToast("No stage found");
 
   try {
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     const html2canvas = (await import("html2canvas")).default;
 
     // Transparent capture of the stage
@@ -153,13 +154,24 @@ export async function exportPosterPNG(params: {
       img.src = qrObjUrl;
     });
 
-    const outUrl = canvas.toDataURL("image/png"); // PNG preserves alpha
+    const outBlob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob((blob) => {
+        if (!blob) {
+          reject(new Error("No PNG blob created"));
+          return;
+        }
+        resolve(blob);
+      }, "image/png");
+    });
+
+    const outUrl = URL.createObjectURL(outBlob);
     const a = document.createElement("a");
     a.href = outUrl;
     a.download = `sigil_poster_${(localHash || routeHash || "mint").slice(0, 16)}.png`;
     document.body.appendChild(a);
     a.click();
     a.remove();
+    requestAnimationFrame(() => URL.revokeObjectURL(outUrl));
     onToast("Public key PNG saved");
   } catch (e) {
     // eslint-disable-next-line no-console
