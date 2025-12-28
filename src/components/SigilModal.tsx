@@ -1381,14 +1381,11 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
 
       const sealedSvg = embedProofMetadata(svgString, proofBundle);
       const baseName = `kai-voh_pulse-${pulseNum}_${kaiSignatureShort}`;
-      downloadBlob(
-        new Blob([sealedSvg], { type: "image/svg+xml;charset=utf-8" }),
-        `${baseName}.svg`
-      );
-      downloadBlob(
-        new Blob([JSON.stringify(proofBundle)], { type: "application/json;charset=utf-8" }),
-        `${baseName}_proof_bundle.json`
-      );
+      const zip = new JSZip();
+      zip.file(`${baseName}.svg`, sealedSvg);
+      zip.file(`${baseName}_proof_bundle.json`, JSON.stringify(proofBundle, null, 2));
+      const zipBlob = await zip.generateAsync({ type: "blob" });
+      downloadBlob(zipBlob, `${baseName}_proof_bundle.zip`);
 
       return warning;
     } catch (err) {
