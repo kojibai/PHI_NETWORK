@@ -165,7 +165,7 @@ export async function exportZIP(ctx: {
   routeHash: string | null;
   transferToken: string | null;
   getKaiPulseEternalInt: (d: Date) => number;
-  stepIndexFromPulse: (p: number, steps: number) => number;
+  getPulseLattice: (pulse: number) => { stepIndex: number; stepPct: number };
   STEPS_PER_BEAT: number;
 }) {
   const {
@@ -183,7 +183,7 @@ export async function exportZIP(ctx: {
     routeHash,
     transferToken,
     getKaiPulseEternalInt,
-    stepIndexFromPulse,
+    getPulseLattice,
     STEPS_PER_BEAT,
   } = ctx;
 
@@ -201,11 +201,11 @@ export async function exportZIP(ctx: {
     const stepsNum = (payload.stepsPerBeat ?? STEPS_PER_BEAT) as number;
 
     // KKS: sealed step is derived strictly from the sealed pulse and steps/beat
-    const sealedStepIndex = stepIndexFromPulse(payload.pulse, stepsNum);
+    const sealedStepIndex = getPulseLattice(payload.pulse).stepIndex;
 
     // KKS: claim step is derived from "now" (for manifest bookkeeping only)
     const nowPulse = getKaiPulseEternalInt(new Date());
-    const claimStepIndex = stepIndexFromPulse(nowPulse, stepsNum);
+    const claimStepIndex = getPulseLattice(nowPulse).stepIndex;
 
     // Build a strict SigilPayload for provenance computation
     const payloadForProv = toSigilPayloadStrict(payload, sealedStepIndex);

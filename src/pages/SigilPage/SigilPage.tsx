@@ -35,13 +35,13 @@ import { useValueHistory } from "../../hooks/useValueHistory";
 import {
   ETERNAL_STEPS_PER_BEAT as STEPS_PER_BEAT,
   stepIndexFromPulse,
-  percentIntoStepFromPulse,
   getKaiPulseEternalInt,
   beatIndexFromPulse,
 } from "../../SovereignSolar";
 import { DEFAULT_ISSUANCE_POLICY, quotePhiForUsd } from "../../utils/phi-issuance";
 import { usd as fmtUsd } from "../../components/valuation/display";
 import type { SigilMetadataLite } from "../../utils/valuation";
+import { latticeFromMicroPulses, normalizePercentIntoStep } from "../../utils/kai_pulse";
 /* pulses/breaths conversion (expiry math) */
 import { stepsToPulses, breathsToPulses } from "../../utils/kaiMath";
 import type { VerifyUIState } from "./types";
@@ -188,6 +188,18 @@ const toAbsUrl = (pathOrUrl: string): string => {
   } catch {
     return pathOrUrl;
   }
+};
+
+const ONE_PULSE_MICRO = 1_000_000n;
+
+const latticeFromPulse = (
+  pulse: number
+): { beat: number; stepIndex: number; stepPct: number } => {
+  const safePulse = Number.isFinite(pulse) ? Math.trunc(pulse) : 0;
+  const pμ = BigInt(safePulse) * ONE_PULSE_MICRO;
+  const { beat, stepIndex, percentIntoStep } = latticeFromMicroPulses(pμ);
+  const stepPct = normalizePercentIntoStep(percentIntoStep);
+  return { beat, stepIndex, stepPct };
 };
 
 const acquireSendLock = (
@@ -783,7 +795,7 @@ useEffect(() => {
 
   const seoStrings = useMemo(() => {
     const stepsNum: number = (deferredPayload?.stepsPerBeat ?? STEPS_PER_BEAT) as number;
-    const stepIdx = deferredPayload ? stepIndexFromPulse(deferredPayload.pulse, stepsNum) : 0;
+    const stepIdx = latticeFromPulse(deferredPayload?.pulse ?? 0).stepIndex;
     const chakra = (deferredPayload?.chakraDay ?? "Throat") as SigilPayload["chakraDay"];
     const ownerShort = (deferredPayload?.userPhiKey ?? "").slice(0, 12);
     const pulseStr = (deferredPayload?.pulse ?? 0).toLocaleString();
@@ -818,7 +830,7 @@ useEffect(() => {
     setMeta("property", "og:site_name", "Kairos Harmonik Kingdom");
 
     const stepsNum: number = (payload?.stepsPerBeat ?? STEPS_PER_BEAT) as number;
-    const stepIdx = payload ? stepIndexFromPulse(payload.pulse, stepsNum) : 0;
+    const stepIdx = latticeFromPulse(payload?.pulse ?? 0).stepIndex;
     const withLineage = payload as PayloadWithLineage | null;
 
     const pExtras = (payload ?? {}) as Partial<{
@@ -1197,8 +1209,10 @@ useEffect(() => {
   /* === QR theming for exports only === */
   const chakraDay = (payload?.chakraDay ?? "Throat") as SigilPayload["chakraDay"];
   const steps: number = (payload?.stepsPerBeat ?? STEPS_PER_BEAT) as number;
-  const stepIndex = stepIndexFromPulse(payload?.pulse ?? 0, steps);
-  const stepPct = percentIntoStepFromPulse(payload?.pulse ?? 0);
+  const { stepIndex, stepPct } = useMemo(
+    () => latticeFromPulse(payload?.pulse ?? 0),
+    [payload?.pulse]
+  );
 
   const qrAccent = useMemo(() => {
     const baseHue = CHAKRA_THEME[chakraDay as keyof typeof CHAKRA_THEME]?.hue ?? 180;
@@ -1301,7 +1315,7 @@ useEffect(() => {
     try {
       await exportPosterPNG({
         stageEl,
-        payload,
+        payload: payload ? { ...payload, stepPct } : null,
         localHash,
         routeHash,
         qr: { uid: qrUid, url: absUrl, hue: qrHue, accent: qrAccent },
@@ -1618,7 +1632,7 @@ current.searchParams.forEach((v, k) => {
       routeHash,
       transferToken: transferToken ?? null,
       getKaiPulseEternalInt,
-      stepIndexFromPulse,
+      getPulseLattice: latticeFromPulse,
       STEPS_PER_BEAT,
     });
   });
