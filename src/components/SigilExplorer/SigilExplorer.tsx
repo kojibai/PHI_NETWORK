@@ -402,10 +402,10 @@ function KaiStamp({ p }: { p: { pulse?: number; beat?: number; stepIndex?: numbe
   const pulse = typeof p.pulse === "number" ? p.pulse : 0;
   const stepsPerBeat = typeof p.stepsPerBeat === "number" && p.stepsPerBeat > 0 ? p.stepsPerBeat : 44;
   const step =
-    typeof p.pulse === "number"
-      ? stepIndexFromPulseExact(p.pulse, stepsPerBeat)
-      : typeof p.stepIndex === "number"
-        ? p.stepIndex
+    typeof p.stepIndex === "number"
+      ? p.stepIndex
+      : typeof p.pulse === "number"
+        ? stepIndexFromPulseExact(p.pulse, stepsPerBeat)
         : 0;
   const beat = typeof p.beat === "number" ? p.beat : 0;
 
