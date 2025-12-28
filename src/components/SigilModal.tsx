@@ -29,7 +29,11 @@ import SigilMomentRow from "./SigilMomentRow";
 import KaiSigil, { type KaiSigilProps, type KaiSigilHandle } from "./KaiSigil";
 
 import SealMomentModal from "./SealMomentModal";
-import { makeSigilUrl, type SigilSharePayload } from "../utils/sigilUrl";
+import {
+  extractPayloadFromUrl,
+  makeSigilUrl,
+  type SigilSharePayload,
+} from "../utils/sigilUrl";
 import "./SigilModal.css";
 import { downloadBlob } from "../lib/download";
 import { jcsCanonicalize } from "../utils/jcs";
@@ -1179,40 +1183,68 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
       const svgEl = getSVGElement();
       if (!svgEl) return "Export failed: sigil SVG is not available.";
 
-      const svgString = new XMLSerializer().serializeToString(svgEl);
-      const kaiSignature = svgEl.getAttribute("data-kai-signature") ?? "";
-      const phiKey = svgEl.getAttribute("data-phi-key") ?? "";
-      const payloadHashHex = svgEl.getAttribute("data-payload-hash") ?? "";
+      const payloadFromUrl = sealUrl ? extractPayloadFromUrl(sealUrl) : null;
+      const svgPulseAttr = svgEl.getAttribute("data-pulse");
+      const svgPulseParsed = svgPulseAttr ? Number.parseInt(svgPulseAttr, 10) : NaN;
+      const svgBeatAttr = svgEl.getAttribute("data-beat");
+      const svgBeatParsed = svgBeatAttr ? Number.parseInt(svgBeatAttr, 10) : NaN;
+      const svgStepAttr = svgEl.getAttribute("data-step-index");
+      const svgStepParsed = svgStepAttr ? Number.parseInt(svgStepAttr, 10) : NaN;
+      const svgChakraAttr = svgEl.getAttribute("data-chakra-day");
+      const svgChakraNormalized = normalizeChakraDay(svgChakraAttr ?? undefined);
+      const svgStepsPerBeatAttr = svgEl.getAttribute("data-steps-per-beat");
+      const svgStepsPerBeatParsed = svgStepsPerBeatAttr
+        ? Number.parseInt(svgStepsPerBeatAttr, 10)
+        : NaN;
+
+      const kaiSignatureAttr = svgEl.getAttribute("data-kai-signature") ?? "";
+      const phiKeyAttr = svgEl.getAttribute("data-phi-key") ?? "";
+      const payloadHashAttr = svgEl.getAttribute("data-payload-hash") ?? "";
+
+      const payloadPulse = Number(payloadFromUrl?.pulse);
+      const payloadBeat = Number(payloadFromUrl?.beat);
+      const payloadStep = Number(payloadFromUrl?.stepIndex);
+      const payloadStepsPerBeat = Number(payloadFromUrl?.stepsPerBeat);
+      const payloadChakra = normalizeChakraDay(
+        typeof payloadFromUrl?.chakraDay === "string"
+          ? payloadFromUrl.chakraDay
+          : undefined
+      );
+
+      const pulseNum = Number.isFinite(payloadPulse) ? payloadPulse : svgPulseParsed;
+      const beatNum = Number.isFinite(payloadBeat) ? payloadBeat : svgBeatParsed;
+      const stepNum = Number.isFinite(payloadStep) ? payloadStep : svgStepParsed;
+      const stepsPerBeat = Number.isFinite(payloadStepsPerBeat)
+        ? payloadStepsPerBeat
+        : Number.isFinite(svgStepsPerBeatParsed)
+        ? svgStepsPerBeatParsed
+        : STEPS_BEAT;
+
+      const chakraNormalized = payloadChakra ?? svgChakraNormalized;
+      const kaiSignature =
+        typeof payloadFromUrl?.kaiSignature === "string"
+          ? payloadFromUrl.kaiSignature
+          : kaiSignatureAttr;
+      const phiKey =
+        typeof payloadFromUrl?.userPhiKey === "string"
+          ? payloadFromUrl.userPhiKey
+          : phiKeyAttr;
+      const payloadHashHex = sealHash || payloadHashAttr;
 
       if (!kaiSignature) return "Export failed: kaiSignature missing from SVG.";
       if (!phiKey) return "Export failed: Φ-Key missing from SVG.";
       if (!payloadHashHex) return "Export failed: payload hash missing from SVG.";
 
-      const pulseAttr = svgEl.getAttribute("data-pulse");
-      const pulseParsed = pulseAttr ? Number.parseInt(pulseAttr, 10) : NaN;
-      if (!Number.isFinite(pulseParsed)) return "Export failed: pulse missing from SVG.";
-      const pulseNum = pulseParsed;
-
-      const beatAttr = svgEl.getAttribute("data-beat");
-      const beatParsed = beatAttr ? Number.parseInt(beatAttr, 10) : NaN;
-      if (!Number.isFinite(beatParsed)) return "Export failed: beat missing from SVG.";
-
-      const stepAttr = svgEl.getAttribute("data-step-index");
-      const stepParsed = stepAttr ? Number.parseInt(stepAttr, 10) : NaN;
-      if (!Number.isFinite(stepParsed)) return "Export failed: step index missing from SVG.";
-
-      const chakraAttr = svgEl.getAttribute("data-chakra-day");
-      const chakraNormalized = normalizeChakraDay(chakraAttr ?? undefined);
       if (!chakraNormalized) return "Export failed: chakra day missing from SVG.";
 
-      const stepsPerBeatAttr = svgEl.getAttribute("data-steps-per-beat");
-      const stepsPerBeatParsed = stepsPerBeatAttr ? Number.parseInt(stepsPerBeatAttr, 10) : NaN;
-      const stepsPerBeat = Number.isFinite(stepsPerBeatParsed) ? stepsPerBeatParsed : STEPS_BEAT;
+      if (!Number.isFinite(pulseNum)) return "Export failed: pulse missing from SVG.";
+      if (!Number.isFinite(beatNum)) return "Export failed: beat missing from SVG.";
+      if (!Number.isFinite(stepNum)) return "Export failed: step index missing from SVG.";
 
       const sharePayload: SigilSharePayload = {
         pulse: pulseNum,
-        beat: beatParsed,
-        stepIndex: stepParsed,
+        beat: beatNum,
+        stepIndex: stepNum,
         chakraDay: chakraNormalized,
         stepsPerBeat,
         kaiSignature,
@@ -1231,6 +1263,17 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
       };
 
       const capsuleHash = await sha256HexStrict(jcsCanonicalize(proofCapsule));
+      const svgClone = svgEl.cloneNode(true) as SVGElement;
+      svgClone.setAttribute("data-pulse", String(pulseNum));
+      svgClone.setAttribute("data-beat", String(beatNum));
+      svgClone.setAttribute("data-step-index", String(stepNum));
+      svgClone.setAttribute("data-chakra-day", chakraNormalized);
+      svgClone.setAttribute("data-steps-per-beat", String(stepsPerBeat));
+      svgClone.setAttribute("data-kai-signature", kaiSignature);
+      svgClone.setAttribute("data-phi-key", phiKey);
+      svgClone.setAttribute("data-payload-hash", payloadHashHex);
+
+      const svgString = new XMLSerializer().serializeToString(svgClone);
       const svgHash = await sha256HexStrict(svgCanonicalForHash(svgString));
       const bundleHash = await sha256HexStrict(
         jcsCanonicalize({ capsuleHash, svgHash })
