@@ -3,7 +3,7 @@
    v25.3 — Pure-JS Poseidon, ESLint-clean, runtime-robust
 ──────────────────────────────────────────────────────────────────
    ✦ Breath-synchronous Kai-Pulse maths (Genesis: 10 May 2024 06:45:41.888 UTC)
-   ✦ poseidon-lite ⊕ BLAKE3 → deterministic kai_signature
+   ✦ Poseidon ⊕ BLAKE3 → deterministic kai_signature
    ✦ Zero Node shims · Zero `any` · Works in every evergreen browser
 ────────────────────────────────────────────────────────────────── */
 
@@ -45,11 +45,11 @@ let poseidonFn: PoseidonFn | null = null;
 const isPoseidon = (f: unknown): f is PoseidonFn =>
   typeof f === "function";
 
-/** Resolve *whatever* export shape poseidon-lite uses, exactly once. */
+/** Resolve *whatever* export shape snarkjs exposes, exactly once. */
 const getPoseidon = async (): Promise<PoseidonFn> => {
   if (poseidonFn) return poseidonFn;
 
-  const mod: unknown = await import("poseidon-lite");
+  const mod: unknown = await import("snarkjs");
 
   // Shape 1: named export  poseidon(...)
   if (isPoseidon((mod as { poseidon?: unknown }).poseidon)) {
@@ -80,7 +80,7 @@ const getPoseidon = async (): Promise<PoseidonFn> => {
     return poseidonFn;
   }
 
-  throw new Error("poseidon-lite: no callable Poseidon export found");
+  throw new Error("snarkjs: no callable Poseidon export found");
 };
 
 /* — UTF-8 → bigint (field element) — */
