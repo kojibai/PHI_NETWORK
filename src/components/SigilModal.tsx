@@ -1157,7 +1157,8 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
   const [sealPayload, setSealPayload] = useState<SigilSharePayload | null>(null);
 
   const mintMoment = async () => {
-    const mintPulse = mode === "live" ? getNowPulseBI() : pulse;
+    const liveNow = mode === "live" ? getNowPulseBI() : pulse;
+    const mintPulse = mode === "live" ? (liveNow >= pulse ? liveNow : pulse) : pulse;
     if (mode === "live") {
       applyPulse(mintPulse, true);
     }
