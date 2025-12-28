@@ -5,6 +5,11 @@ import { useEffect, useRef, useState } from "react";
 import type { AttachmentKsfpInline } from "./types";
 import { listKsfpChunks, type KsfpLineageKey, type KsfpOriginManifest } from "../../../lib/ksfp1";
 import { decodeFeedPayload, extractPayloadTokenFromUrlString } from "../../../utils/feedPayload";
+import {
+  SIGIL_REGISTRY_FALLBACK_LS_KEY,
+  SIGIL_REGISTRY_LS_KEY,
+  getInMemorySigilUrls,
+} from "../../../utils/sigilRegistry";
 
 type KsfpStatus = "idle" | "loading" | "ready" | "error";
 
@@ -90,11 +95,77 @@ function collectAddTokens(): string[] {
   return tokens;
 }
 
+function readRegistryUrls(): string[] {
+  if (typeof window === "undefined") return [];
+  const urls = new Set<string>(getInMemorySigilUrls());
+  const readList = (key: string) => {
+    try {
+      const raw = window.localStorage.getItem(key);
+      if (!raw) return;
+      const parsed: unknown = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return;
+      for (const v of parsed) {
+        if (typeof v === "string" && v.trim()) urls.add(v.trim());
+      }
+    } catch {
+      // ignore
+    }
+  };
+  readList(SIGIL_REGISTRY_LS_KEY);
+  readList(SIGIL_REGISTRY_FALLBACK_LS_KEY);
+  return Array.from(urls);
+}
+
+function extractAddTokensFromUrl(url: string): string[] {
+  const tokens: string[] = [];
+  try {
+    const u = new URL(url, window.location.origin);
+    const hashStr = u.hash.startsWith("#") ? u.hash.slice(1) : u.hash;
+    const hashParams = new URLSearchParams(hashStr);
+    const addsRaw = [...u.searchParams.getAll("add"), ...hashParams.getAll("add")];
+    for (const raw of addsRaw) {
+      const tok = extractPayloadTokenFromUrlString(raw);
+      if (tok && !tokens.includes(tok)) tokens.push(tok);
+    }
+  } catch {
+    // ignore
+  }
+  return tokens;
+}
+
 function collectLineageFromAdds(originHash: string, base: KsfpLineageKey[]): KsfpLineageKey[] {
   const tokens = collectAddTokens();
   if (tokens.length === 0) return base;
   const incoming: KsfpLineageKey[] = [];
 
+  for (const tok of tokens) {
+    const payload = decodeFeedPayload(tok);
+    if (!payload?.attachments || !Array.isArray(payload.attachments.items)) continue;
+    for (const item of payload.attachments.items) {
+      if (item.kind !== "ksfp-inline") continue;
+      if (item.bundle.origin.fileHash !== originHash) continue;
+      incoming.push(...item.bundle.lineage);
+    }
+  }
+
+  return incoming.length > 0 ? mergeLineage(base, incoming) : base;
+}
+
+function collectLineageFromRegistry(originHash: string, base: KsfpLineageKey[]): KsfpLineageKey[] {
+  const urls = readRegistryUrls();
+  if (urls.length === 0) return base;
+  const tokens: string[] = [];
+  for (const url of urls) {
+    const tok = extractPayloadTokenFromUrlString(url);
+    if (tok && !tokens.includes(tok)) tokens.push(tok);
+    for (const addTok of extractAddTokensFromUrl(url)) {
+      if (!tokens.includes(addTok)) tokens.push(addTok);
+    }
+  }
+
+  if (tokens.length === 0) return base;
+
+  const incoming: KsfpLineageKey[] = [];
   for (const tok of tokens) {
     const payload = decodeFeedPayload(tok);
     if (!payload?.attachments || !Array.isArray(payload.attachments.items)) continue;
@@ -168,7 +239,9 @@ export function KsfpInlineCard({ item }: { item: AttachmentKsfpInline }): React.
   const isVideo = (origin.mime || item.type || "").startsWith("video/");
 
   useEffect(() => {
-    setMergedLineage(collectLineageFromAdds(origin.fileHash, lineage));
+    const withAdds = collectLineageFromAdds(origin.fileHash, lineage);
+    const withRegistry = collectLineageFromRegistry(origin.fileHash, withAdds);
+    setMergedLineage(withRegistry);
   }, [origin.fileHash, lineage]);
 
   useEffect(() => {
