@@ -49,6 +49,7 @@ import {
 /* Central Kai sigil payload type */
 import type { SigilPayload } from "../types/sigil";
 import { tryVerifyGroth16 } from "../components/VerifierStamper/zk";
+import { setSigilZkVkey } from "../components/VerifierStamper/window";
 
 /* ──────────────────────────────────────────────────────────────
    Local types
@@ -300,6 +301,31 @@ export default function VerifySigil(): React.JSX.Element {
   }, [payload]);
 
   /* ──────────────────────────────────────────────────────────
+     Load verifying key (best-effort)
+     ────────────────────────────────────────────────────────── */
+  useEffect(() => {
+    let alive = true;
+    if (typeof window === "undefined") return () => {};
+    if (window.SIGIL_ZK_VKEY) return () => {};
+
+    (async () => {
+      try {
+        const res = await fetch("/sigil.vkey.json", { cache: "no-store" });
+        if (!res.ok) return;
+        const vkey: unknown = await res.json();
+        if (!alive) return;
+        setSigilZkVkey(vkey);
+      } catch {
+        // best-effort only
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  /* ──────────────────────────────────────────────────────────
      Optional ZK proof verification (best-effort)
      ────────────────────────────────────────────────────────── */
   useEffect(() => {
@@ -325,6 +351,20 @@ export default function VerifySigil(): React.JSX.Element {
       try {
         const fallbackVkey =
           typeof window !== "undefined" ? window.SIGIL_ZK_VKEY : undefined;
+
+        if (!fallbackVkey) {
+          if (!cancelled) {
+            setZkStatus({
+              present: true,
+              scheme: zkScheme,
+              poseidonHash: payload.zkPoseidonHash,
+              verified: null,
+              hint: "Verifying key not loaded.",
+            });
+          }
+          return;
+        }
+
         const verified = await tryVerifyGroth16({
           proof: payload.zkProof,
           publicSignals: [payload.zkPoseidonHash],
