@@ -9,12 +9,10 @@ import {
   DAYS_PER_WEEK,
   DAYS_PER_YEAR,
   GENESIS_TS,
-  MONTHS_PER_YEAR,
   N_DAY_MICRO,
   PULSES_STEP,
   SOLAR_GENESIS_UTC_TS,
   STEPS_BEAT,
-  WEEKS_PER_MONTH,
 } from "./utils/kai_pulse";
 
 // ──────────────────────────────────────────────────────────────
@@ -141,8 +139,6 @@ const MU_PER_DAY = N_DAY_MICRO;
 // Semantic grid (36 beats × 44 steps × 11 pulses)
 const GRID_PULSES_PER_STEP = BigInt(PULSES_STEP);                                   // pulses
 const GRID_PULSES_PER_BEAT = GRID_PULSES_PER_STEP * BigInt(ETERNAL_STEPS_PER_BEAT); // 484
-const GRID_PULSES_PER_DAY  = GRID_PULSES_PER_BEAT * BigInt(ETERNAL_BEATS_PER_DAY);  // 17,424
-
 // Micro-pulse versions (exact integers)
 const MU_PER_GRID_STEP = GRID_PULSES_PER_STEP * MU_PER_PULSE; // 11e6
 const MU_PER_GRID_BEAT = GRID_PULSES_PER_BEAT * MU_PER_PULSE; // 484e6
