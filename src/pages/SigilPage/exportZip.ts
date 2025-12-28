@@ -200,8 +200,13 @@ export async function exportZIP(ctx: {
     const base = `sigil_${(localHash || routeHash || "mint").slice(0, 16)}`;
     const stepsNum = (payload.stepsPerBeat ?? STEPS_PER_BEAT) as number;
 
-    // KKS: sealed step is derived strictly from the sealed pulse and steps/beat
-    const sealedStepIndex = stepIndexFromPulse(payload.pulse, stepsNum);
+    // KKS: prefer the live SVG step index so the manifest matches the rendered sigil.
+    const svgStepAttr = svgEl.getAttribute("data-step-index");
+    const svgStepIndex =
+      svgStepAttr != null && svgStepAttr !== "" ? Number(svgStepAttr) : Number.NaN;
+    const sealedStepIndex = Number.isFinite(svgStepIndex)
+      ? svgStepIndex
+      : stepIndexFromPulse(payload.pulse, stepsNum);
 
     // KKS: claim step is derived from "now" (for manifest bookkeeping only)
     const nowPulse = getKaiPulseEternalInt(new Date());
