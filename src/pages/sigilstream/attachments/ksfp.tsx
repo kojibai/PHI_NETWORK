@@ -10,6 +10,7 @@ import {
   SIGIL_REGISTRY_LS_KEY,
   getInMemorySigilUrls,
 } from "../../../utils/sigilRegistry";
+import { LS_KEY, parseStringArray } from "../data/storage";
 
 type KsfpStatus = "idle" | "loading" | "ready" | "error";
 
@@ -111,6 +112,13 @@ function readRegistryUrls(): string[] {
       // ignore
     }
   };
+  try {
+    for (const u of parseStringArray(window.localStorage.getItem(LS_KEY))) {
+      if (u.trim()) urls.add(u.trim());
+    }
+  } catch {
+    // ignore
+  }
   readList(SIGIL_REGISTRY_LS_KEY);
   readList(SIGIL_REGISTRY_FALLBACK_LS_KEY);
   return Array.from(urls);

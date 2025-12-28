@@ -819,6 +819,17 @@ export function extractPayloadTokenFromUrlString(rawUrl: string): string | null 
 
   const path = u.pathname || "";
 
+  {
+    const hashStr = u.hash && u.hash.startsWith("#") ? u.hash.slice(1) : u.hash;
+    const hashParams = new URLSearchParams(hashStr);
+    const searchParams = u.searchParams;
+    const rootRaw = hashParams.get("root") ?? searchParams.get("root");
+    if (rootRaw) {
+      const trimmed = rootRaw.startsWith("j:") ? rootRaw.slice(2) : rootRaw;
+      return normalizePayloadToken(trimmed);
+    }
+  }
+
   // /stream/p/<token> | /feed/p/<token>
   {
     const m = path.match(/\/(?:stream|feed)\/p\/([^/?#]+)/u);
