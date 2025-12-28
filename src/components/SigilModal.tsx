@@ -1092,12 +1092,14 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
     pulse: number;
     beat: number;
     stepIndex: number;
-    chakraDay: string;
+    chakraDay: ChakraDay;
     stepsPerBeat: number;
     kaiSignature: string;
     phiKey: string;
     payloadHashHex: string;
     svgString: string;
+    sharePayload: SigilSharePayloadExtended;
+    shareUrl: string;
   };
 
   type SigilSharePayloadExtended = SigilSharePayload & {
@@ -1138,7 +1140,10 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
     authorSig: AuthorSig | null;
   };
 
-  const captureMomentSnapshot = (): MomentSnapshot => {
+  const captureMomentSnapshot = (): Omit<
+    MomentSnapshot,
+    "sharePayload" | "shareUrl"
+  > => {
     const svgEl = getSVGElement();
     if (!svgEl) {
       throw new Error("Sigil SVG is not available.");
@@ -1195,7 +1200,7 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
       pulse: snapshot.pulse,
       beat: snapshot.beat,
       stepIndex: snapshot.stepIndex,
-      chakraDay: snapshot.chakraDay as SigilSharePayload["chakraDay"],
+      chakraDay: snapshot.chakraDay,
       stepsPerBeat: snapshot.stepsPerBeat,
       canonicalHash,
       exportedAt: isoFromPulse(pulseExact),
@@ -1361,24 +1366,28 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
 
   const mintMoment = async () => {
     try {
-      const snapshot = captureMomentSnapshot();
-      exportSnapshotRef.current = snapshot;
-
-      const pulseExact = BigInt(snapshot.pulse);
+      const snapshotBase = captureMomentSnapshot();
+      const pulseExact = BigInt(snapshotBase.pulse);
       const canTrustChildHash = pulseExact <= MAX_SAFE_BI;
 
       let hash = (canTrustChildHash ? lastHash : "").toLowerCase();
 
       if (!hash) {
         const basis =
-          (snapshot.svgString || "no-svg") +
+          (snapshotBase.svgString || "no-svg") +
           `|pulseExact=${pulseExact.toString()}` +
-          `|beat=${snapshot.beat}|step=${snapshot.stepIndex}|chakra=${snapshot.chakraDay}`;
+          `|beat=${snapshotBase.beat}|step=${snapshotBase.stepIndex}|chakra=${snapshotBase.chakraDay}`;
         hash = (await sha256Hex(basis)).toLowerCase();
       }
 
-      const payload = makeSharePayload(hash, snapshot);
+      const payload = makeSharePayload(hash, snapshotBase);
       const url = makeSigilUrl(hash, payload);
+
+      exportSnapshotRef.current = {
+        ...snapshotBase,
+        sharePayload: payload,
+        shareUrl: url,
+      };
 
       setSealHash(hash);
       setSealUrl(url);
@@ -1409,19 +1418,35 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
         stepIndex: stepParsed,
         chakraDay: chakraNormalized,
         stepsPerBeat,
+        sharePayload,
+        shareUrl,
       } = snapshot;
 
-      const sharePayload: SigilSharePayload = {
-        pulse: pulseNum,
-        beat: beatParsed,
-        stepIndex: stepParsed,
-        chakraDay: chakraNormalized,
-        stepsPerBeat,
-        kaiSignature,
-        userPhiKey: phiKey,
-      };
+      const sealedPayload = shareUrl ? extractPayloadFromUrl(shareUrl) : null;
+      const sealedChakra =
+        normalizeChakraDay(sealedPayload?.chakraDay ?? "") ?? chakraNormalized;
 
-      const verifierUrl = makeSigilUrl(payloadHashHex, sharePayload);
+      const resolvedSharePayload: SigilSharePayload = sealedPayload
+        ? {
+            pulse: sealedPayload.pulse,
+            beat: sealedPayload.beat,
+            stepIndex: sealedPayload.stepIndex,
+            chakraDay: sealedChakra,
+            stepsPerBeat: sealedPayload.stepsPerBeat ?? stepsPerBeat,
+            kaiSignature,
+            userPhiKey: phiKey,
+          }
+        : {
+            pulse: sharePayload.pulse,
+            beat: sharePayload.beat,
+            stepIndex: sharePayload.stepIndex,
+            chakraDay: sharePayload.chakraDay,
+            stepsPerBeat: sharePayload.stepsPerBeat,
+            kaiSignature,
+            userPhiKey: phiKey,
+          };
+
+      const verifierUrl = makeSigilUrl(payloadHashHex, resolvedSharePayload);
       const kaiSignatureShort = kaiSignature.slice(0, 10);
       const proofCapsule: ProofCapsule = {
         v: "KPV-1",
