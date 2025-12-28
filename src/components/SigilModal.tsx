@@ -40,6 +40,7 @@ import {
   isWebAuthnAvailable,
   signBundleHash,
 } from "../utils/webauthnKAS";
+import { normalizeChakraDay } from "./KaiVoh/verifierProof";
 
 /* ✅ SINGLE SOURCE OF TRUTH: src/utils/kai_pulse.ts */
 import {
@@ -1181,18 +1182,49 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
       const svgString = new XMLSerializer().serializeToString(svgEl);
       const kaiSignature = svgEl.getAttribute("data-kai-signature") ?? "";
       const phiKey = svgEl.getAttribute("data-phi-key") ?? "";
+      const payloadHashHex = svgEl.getAttribute("data-payload-hash") ?? "";
 
       if (!kaiSignature) return "Export failed: kaiSignature missing from SVG.";
       if (!phiKey) return "Export failed: Φ-Key missing from SVG.";
+      if (!payloadHashHex) return "Export failed: payload hash missing from SVG.";
 
       const pulseAttr = svgEl.getAttribute("data-pulse");
       const pulseParsed = pulseAttr ? Number.parseInt(pulseAttr, 10) : NaN;
-      const pulseNum = Number.isFinite(pulseParsed) ? pulseParsed : pulseForSigil;
+      if (!Number.isFinite(pulseParsed)) return "Export failed: pulse missing from SVG.";
+      const pulseNum = pulseParsed;
+
+      const beatAttr = svgEl.getAttribute("data-beat");
+      const beatParsed = beatAttr ? Number.parseInt(beatAttr, 10) : NaN;
+      if (!Number.isFinite(beatParsed)) return "Export failed: beat missing from SVG.";
+
+      const stepAttr = svgEl.getAttribute("data-step-index");
+      const stepParsed = stepAttr ? Number.parseInt(stepAttr, 10) : NaN;
+      if (!Number.isFinite(stepParsed)) return "Export failed: step index missing from SVG.";
+
+      const chakraAttr = svgEl.getAttribute("data-chakra-day");
+      const chakraNormalized = normalizeChakraDay(chakraAttr ?? undefined);
+      if (!chakraNormalized) return "Export failed: chakra day missing from SVG.";
+
+      const stepsPerBeatAttr = svgEl.getAttribute("data-steps-per-beat");
+      const stepsPerBeatParsed = stepsPerBeatAttr ? Number.parseInt(stepsPerBeatAttr, 10) : NaN;
+      const stepsPerBeat = Number.isFinite(stepsPerBeatParsed) ? stepsPerBeatParsed : STEPS_BEAT;
+
+      const sharePayload: SigilSharePayload = {
+        pulse: pulseNum,
+        beat: beatParsed,
+        stepIndex: stepParsed,
+        chakraDay: chakraNormalized,
+        stepsPerBeat,
+        kaiSignature,
+        userPhiKey: phiKey,
+      };
+
+      const verifierUrl = makeSigilUrl(payloadHashHex, sharePayload);
       const kaiSignatureShort = kaiSignature.slice(0, 10);
       const proofCapsule: ProofCapsule = {
         v: "KPV-1",
         pulse: pulseNum,
-        chakraDay,
+        chakraDay: chakraNormalized,
         kaiSignature,
         phiKey,
         verifierSlug: `${pulseNum}-${kaiSignatureShort}`,
@@ -1213,12 +1245,6 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
       } else {
         warning = "Warning: WebAuthn unavailable — exporting without author signature.";
       }
-
-      const verifierUrl =
-        svgEl.getAttribute("data-share-url") ||
-        sealUrl ||
-        (typeof window !== "undefined" ? window.location.href : "");
-      if (!verifierUrl) return "Export failed: verifier URL is unavailable.";
 
       const proofBundle: ProofBundle = {
         hashAlg: "sha256",
