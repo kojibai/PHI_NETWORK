@@ -85,7 +85,7 @@
 .phi-send-bar {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: nowrap;          /* never wrap; stay a single breathing row */
   width: 100%;
   min-width: 0;
@@ -111,8 +111,8 @@
     0 12px 24px rgb(0 0 0 / 0.8),
     0 0 24px color-mix(in srgb, var(--accent) 50%, transparent);
 
-  padding: 10px 12px;
-  min-height: 44px;
+  padding: 8px 10px;
+  min-height: 40px;
   min-width: 0;
   flex: 1 1 0%;               /* main flexible element */
 }
@@ -224,7 +224,7 @@
   display: inline-flex;
   flex: 0 0 auto;
   gap: 4px;
-  padding: 3px;
+  padding: 2px;
   border-radius: 999px;
   border: 1px solid var(--border, rgba(255, 255, 255, 0.18));
   background:
@@ -238,9 +238,9 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 28px;
-  min-width: 32px;
-  padding: 0 10px;
+  height: 26px;
+  min-width: 30px;
+  padding: 0 8px;
   border-radius: 999px;
   border: none;
   background: transparent;
@@ -278,8 +278,8 @@
   justify-content: center;
   gap: 4px;
 
-  height: 28px;
-  padding: 0 10px;
+  height: 26px;
+  padding: 0 8px;
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.22);
   background:
@@ -318,7 +318,7 @@
 }
 
 .phi-attach-icon {
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   line-height: 1;
 }
 
