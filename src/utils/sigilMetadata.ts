@@ -387,7 +387,9 @@ export type ProofBundleMeta = {
 };
 
 export function extractProofBundleMetaFromSvg(svgText: string): ProofBundleMeta | null {
-  const match = svgText.match(/<metadata[^>]*id=["']kai-proof["'][^>]*>([\s\S]*?)<\/metadata>/i);
+  const match = svgText.match(
+    /<metadata[^>]*id=["'](?:kai-proof|kai-voh-proof)["'][^>]*>([\s\S]*?)<\/metadata>/i
+  );
   if (match) {
     const rawBlock = match[1]?.trim() ?? "";
     if (rawBlock) {
