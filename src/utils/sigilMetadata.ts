@@ -4,6 +4,7 @@ import type { HarmonicSig } from "../lib/sigil/signature";
 
 export type EmbeddedMeta = {
   pulse?: number;
+  pulseExact?: string;
   beat?: number;
   stepIndex?: number;
   frequencyHz?: number;
@@ -62,6 +63,7 @@ function toEmbeddedMetaFromUnknown(raw: unknown): EmbeddedMeta {
       : typeof capsuleRaw?.pulse === "number" && Number.isFinite(capsuleRaw.pulse)
         ? capsuleRaw.pulse
         : undefined;
+  const pulseExact = typeof raw.pulseExact === "string" ? raw.pulseExact : undefined;
 
   const beat =
     typeof raw.beat === "number" && Number.isFinite(raw.beat) ? raw.beat : undefined;
@@ -120,6 +122,7 @@ function toEmbeddedMetaFromUnknown(raw: unknown): EmbeddedMeta {
 
   return {
     pulse,
+    pulseExact,
     beat,
     stepIndex,
     frequencyHz,
@@ -387,7 +390,9 @@ export type ProofBundleMeta = {
 };
 
 export function extractProofBundleMetaFromSvg(svgText: string): ProofBundleMeta | null {
-  const match = svgText.match(/<metadata[^>]*id=["']kai-proof["'][^>]*>([\s\S]*?)<\/metadata>/i);
+  const match = svgText.match(
+    /<metadata[^>]*id=["'](?:kai-proof|kai-voh-proof)["'][^>]*>([\s\S]*?)<\/metadata>/i
+  );
   if (match) {
     const rawBlock = match[1]?.trim() ?? "";
     if (rawBlock) {

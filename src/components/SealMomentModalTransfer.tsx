@@ -35,7 +35,13 @@ interface Props {
   hash: string;
   onClose: () => void;
   /** Preserved for backward compat; unused now. */
-  onDownloadZip: () => void;
+  onDownloadZip: () =>
+    | void
+    | string
+    | null
+    | undefined
+    | Promise<string | null | undefined>
+    | Promise<void>;
 }
 
 const LS_KEY = "sigil:urls";

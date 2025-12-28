@@ -34,7 +34,13 @@ interface Props {
   url: string;
   hash: string;
   onClose: () => void;
-  onDownloadZip: () => void;
+  onDownloadZip: () =>
+    | void
+    | string
+    | null
+    | undefined
+    | Promise<string | null | undefined>
+    | Promise<void>;
 }
 
 const LS_KEY = "sigil:urls";
@@ -65,6 +71,7 @@ const SealMomentModal: FC<Props> = ({
   url,
   hash,
   onClose,
+  onDownloadZip,
 }) => {
   /* refs & state (Hooks must be unconditionally called) */
   const cardRef = useRef<HTMLDivElement | null>(null);
@@ -215,8 +222,29 @@ const SealMomentModal: FC<Props> = ({
       } else {
         await copy(url, "Link");
       }
-    } catch {
-      /* user canceled; ignore */
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      announce(`Share canceled: ${msg}`);
+    }
+  };
+
+  const [exporting, setExporting] = useState(false);
+
+  const handleExport = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const result = await onDownloadZip?.();
+      if (typeof result === "string" && result.length > 0) {
+        announce(result);
+      } else {
+        announce("Export ready");
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      announce(`Export failed: ${msg}`);
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -348,8 +376,15 @@ const SealMomentModal: FC<Props> = ({
 
             {/* CTAs */}
             <div className="cta-row">
-             
-
+              <button
+                className="primary cta"
+                onClick={handleExport}
+                type="button"
+                disabled={exporting}
+              >
+                <SealGlyph />
+                <span>{exporting ? "Sealing..." : "Export Proof Bundle"}</span>
+              </button>
               <button className="secondary cta" onClick={share} type="button">
                 <ShareGlyph />
                 <span>{canShare ? "Share" : "Remember Link"}</span>
@@ -405,6 +440,20 @@ const ShareGlyph = () => (
       stroke="currentColor"
       strokeWidth="2"
       fill="none"
+    />
+  </svg>
+);
+
+const SealGlyph = () => (
+  <svg viewBox="0 0 24 24" aria-hidden className="ico">
+    <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeWidth="2" />
+    <path
+      d="M8 12.5l2.5 2.5L16 9"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
     />
   </svg>
 );

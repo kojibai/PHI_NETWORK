@@ -32,6 +32,15 @@ import KaiSigil, { type KaiSigilProps, type KaiSigilHandle } from "./KaiSigil";
 import SealMomentModal from "./SealMomentModal";
 import { makeSigilUrl, type SigilSharePayload } from "../utils/sigilUrl";
 import "./SigilModal.css";
+import { downloadBlob } from "../lib/download";
+import { jcsCanonicalize } from "../utils/jcs";
+import { sha256Hex as sha256HexStrict } from "../utils/sha256";
+import { embedProofMetadata, svgCanonicalForHash } from "../utils/svgProof";
+import {
+  ensurePasskey,
+  isWebAuthnAvailable,
+  signBundleHash,
+} from "../utils/webauthnKAS";
 
 /* ✅ SINGLE SOURCE OF TRUTH: src/utils/kai_pulse.ts */
 import {
@@ -1187,6 +1196,37 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
     pulseExact: string; // bigint exact
   };
 
+  type ProofCapsule = {
+    v: "KPV-1";
+    pulse: number;
+    chakraDay: string;
+    kaiSignature: string;
+    phiKey: string;
+    verifierSlug: string;
+  };
+
+  type AuthorSig = {
+    v: "KAS-1";
+    alg: "webauthn-es256";
+    credId: string;
+    pubKeyJwk: JsonWebKey;
+    challenge: string;
+    signature: string;
+    authenticatorData: string;
+    clientDataJSON: string;
+  };
+
+  type ProofBundle = {
+    hashAlg: "sha256";
+    canon: "JCS";
+    proofCapsule: ProofCapsule;
+    capsuleHash: string;
+    svgHash: string;
+    bundleHash: string;
+    verifierUrl: string;
+    authorSig: AuthorSig | null;
+  };
+
   const makeSharePayload = (canonicalHash: string): SigilSharePayloadExtended => {
     const stepsPerBeat = STEPS_BEAT;
 
@@ -1281,6 +1321,80 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
     a.remove();
 
     requestAnimationFrame(() => URL.revokeObjectURL(url));
+  };
+
+  const exportProofBundle = async (): Promise<string | null> => {
+    try {
+      const svgEl = getSVGElement();
+      if (!svgEl) return "Export failed: sigil SVG is not available.";
+
+      const svgString = new XMLSerializer().serializeToString(svgEl);
+      const kaiSignature = svgEl.getAttribute("data-kai-signature") ?? "";
+      const phiKey = svgEl.getAttribute("data-phi-key") ?? "";
+
+      if (!kaiSignature) return "Export failed: kaiSignature missing from SVG.";
+      if (!phiKey) return "Export failed: Φ-Key missing from SVG.";
+
+      const pulseAttr = svgEl.getAttribute("data-pulse");
+      const pulseParsed = pulseAttr ? Number.parseInt(pulseAttr, 10) : NaN;
+      const pulseNum = Number.isFinite(pulseParsed) ? pulseParsed : pulseForSigil;
+      const kaiSignatureShort = kaiSignature.slice(0, 10);
+      const proofCapsule: ProofCapsule = {
+        v: "KPV-1",
+        pulse: pulseNum,
+        chakraDay,
+        kaiSignature,
+        phiKey,
+        verifierSlug: `${pulseNum}-${kaiSignatureShort}`,
+      };
+
+      const capsuleHash = await sha256HexStrict(jcsCanonicalize(proofCapsule));
+      const svgHash = await sha256HexStrict(svgCanonicalForHash(svgString));
+      const bundleHash = await sha256HexStrict(
+        jcsCanonicalize({ capsuleHash, svgHash })
+      );
+
+      let authorSig: AuthorSig | null = null;
+      let warning: string | null = null;
+
+      if (isWebAuthnAvailable()) {
+        await ensurePasskey(phiKey);
+        authorSig = (await signBundleHash(phiKey, bundleHash)) as AuthorSig;
+      } else {
+        warning = "Warning: WebAuthn unavailable — exporting without author signature.";
+      }
+
+      const verifierUrl =
+        sealUrl || (typeof window !== "undefined" ? window.location.href : "");
+      if (!verifierUrl) return "Export failed: verifier URL is unavailable.";
+
+      const proofBundle: ProofBundle = {
+        hashAlg: "sha256",
+        canon: "JCS",
+        proofCapsule,
+        capsuleHash,
+        svgHash,
+        bundleHash,
+        verifierUrl,
+        authorSig,
+      };
+
+      const sealedSvg = embedProofMetadata(svgString, proofBundle);
+      const baseName = `kai-voh_pulse-${pulseNum}_${kaiSignatureShort}`;
+      downloadBlob(
+        new Blob([sealedSvg], { type: "image/svg+xml;charset=utf-8" }),
+        `${baseName}.svg`
+      );
+      downloadBlob(
+        new Blob([JSON.stringify(proofBundle)], { type: "application/json;charset=utf-8" }),
+        `${baseName}_proof_bundle.json`
+      );
+
+      return warning;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return `Export failed: ${msg}`;
+    }
   };
 
   const handleClose = () => onClose();
@@ -1668,7 +1782,7 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
         url={sealUrl}
         hash={sealHash}
         onClose={() => setSealOpen(false)}
-        onDownloadZip={saveZipBundle}
+        onDownloadZip={exportProofBundle}
       />
     </>,
     document.body
