@@ -14,6 +14,7 @@ import {
   readIntentionSigil,
 } from "./verifierCanon";
 import type { SigilPayload } from "../../types/sigil";
+import { latticeFromMicroPulses } from "../../utils/kai_pulse";
 
 /** Chakra day union required by SigilSharePayload */
 type ChakraDay =
@@ -165,7 +166,6 @@ export async function exportZIP(ctx: {
   routeHash: string | null;
   transferToken: string | null;
   getKaiPulseEternalInt: (d: Date) => number;
-  stepIndexFromPulse: (p: number, steps: number) => number;
   STEPS_PER_BEAT: number;
 }) {
   const {
@@ -183,7 +183,6 @@ export async function exportZIP(ctx: {
     routeHash,
     transferToken,
     getKaiPulseEternalInt,
-    stepIndexFromPulse,
     STEPS_PER_BEAT,
   } = ctx;
 
@@ -200,12 +199,20 @@ export async function exportZIP(ctx: {
     const base = `sigil_${(localHash || routeHash || "mint").slice(0, 16)}`;
     const stepsNum = (payload.stepsPerBeat ?? STEPS_PER_BEAT) as number;
 
+    const stepIndexFromPulseKks = (pulseValue: number, stepsPerBeat: number) => {
+      const p = Number.isFinite(pulseValue) ? Math.trunc(pulseValue) : 0;
+      const pMu = BigInt(p) * 1_000_000n;
+      const { stepIndex } = latticeFromMicroPulses(pMu);
+      const steps = Number.isFinite(stepsPerBeat) && stepsPerBeat > 0 ? Math.floor(stepsPerBeat) : 1;
+      return Math.max(0, Math.min(stepIndex, steps - 1));
+    };
+
     // KKS: sealed step is derived strictly from the sealed pulse and steps/beat
-    const sealedStepIndex = stepIndexFromPulse(payload.pulse, stepsNum);
+    const sealedStepIndex = stepIndexFromPulseKks(payload.pulse, stepsNum);
 
     // KKS: claim step is derived from "now" (for manifest bookkeeping only)
     const nowPulse = getKaiPulseEternalInt(new Date());
-    const claimStepIndex = stepIndexFromPulse(nowPulse, stepsNum);
+    const claimStepIndex = stepIndexFromPulseKks(nowPulse, stepsNum);
 
     // Build a strict SigilPayload for provenance computation
     const payloadForProv = toSigilPayloadStrict(payload, sealedStepIndex);

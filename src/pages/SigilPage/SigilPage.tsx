@@ -1618,7 +1618,6 @@ current.searchParams.forEach((v, k) => {
       routeHash,
       transferToken: transferToken ?? null,
       getKaiPulseEternalInt,
-      stepIndexFromPulse,
       STEPS_PER_BEAT,
     });
   });
