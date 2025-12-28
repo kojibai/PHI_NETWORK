@@ -1117,6 +1117,7 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
       const buildKsfpDerivativePack = (): {
         payloads: FeedPostPayload[];
         shareUrl: string;
+        archiveUrls: string[];
         rootToken: string;
         addCount: number;
       } => {
@@ -1155,7 +1156,13 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
         const addTokens = tokens.slice(1);
         const pack = buildSegmentedPack(rootToken, addTokens, "/stream");
 
-        return { payloads, shareUrl: pack.primary.url, rootToken, addCount: addTokens.length };
+        return {
+          payloads,
+          shareUrl: pack.primary.url,
+          archiveUrls: pack.archives.map((a) => a.url),
+          rootToken,
+          addCount: addTokens.length,
+        };
       };
 
       setStage("prepare");
@@ -1194,6 +1201,9 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
         setUrlMode("hash");
         setStage("register");
         registerSigilUrl(ksfpPack.shareUrl);
+        for (const url of ksfpPack.archiveUrls) {
+          registerSigilUrl(url);
+        }
 
         setStage("clipboard");
         try {
