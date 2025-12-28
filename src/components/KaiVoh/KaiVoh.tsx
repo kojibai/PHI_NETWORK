@@ -39,6 +39,7 @@ import {
   makeMarkdownBody,
   makeHtmlBody,
   preparePayloadForLink,
+  encodeFeedPayload,
   encodeTokenWithBudgets,
 } from "../../utils/feedPayload";
 import { buildKsfpInlineBundle } from "../../lib/ksfp1";
@@ -49,6 +50,7 @@ import { useSigilAuth } from "./SigilAuthContext";
 import StoryRecorder, { type CapturedStory } from "./StoryRecorder";
 import { registerSigilUrl } from "../../utils/sigilRegistry";
 import { getOriginUrl } from "../../utils/sigilUrl";
+import { buildSegmentedPack } from "../../pages/sigilstream/data/memoryStreamV2";
 
 /* 🔒 Sealing utilities (new) */
 import { sealEnvelopeV1, makeSealSaltB64Url, type GlyphCredential, type SealedEnvelopeV1 } from "../../utils/postSeal";
@@ -1034,10 +1036,10 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
     // ✅ If payload requires a timestamp field, derive it FROM the pulse (not Date.now)
     const ts = toSafeNumberFromBigInt(epochMsFromPulse(pulse));
 
-    const t0 = nowMs();
+  const t0 = nowMs();
 
-    try {
-      setBusy(true);
+  try {
+    setBusy(true);
       setStage("paint");
       await nextPaint();
       await nextPaint();
@@ -1072,17 +1074,156 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
         originUrl,
       });
 
+      type KsfpInlineAttachment = Extract<AttachmentItem, { kind: "ksfp-inline" }>;
+
+      const buildPayloadWithAttachments = (
+        items: AttachmentItem[],
+        includeContent: boolean,
+      ): FeedPostPayload => ({
+        ...basePayload,
+        caption: includeContent ? basePayload.caption : undefined,
+        body: includeContent ? basePayload.body : undefined,
+        author: includeContent ? basePayload.author : undefined,
+        attachments: items.length > 0 ? makeAttachments(items) : undefined,
+      });
+
+      const splitKsfpInlineAttachment = (att: KsfpInlineAttachment): KsfpInlineAttachment[] => {
+        const pieces: KsfpInlineAttachment[] = [];
+        let current: KsfpInlineAttachment["bundle"]["lineage"] = [];
+
+        for (const entry of att.bundle.lineage) {
+          const next = [...current, entry];
+          const candidate: KsfpInlineAttachment = {
+            ...att,
+            bundle: { origin: att.bundle.origin, lineage: next },
+          };
+          const payload = buildPayloadWithAttachments([candidate], false);
+          const len = encodeFeedPayload(payload).length;
+          if (len > TOKEN_HARD_LIMIT && current.length > 0) {
+            pieces.push({ ...att, bundle: { origin: att.bundle.origin, lineage: current } });
+            current = [entry];
+          } else {
+            current = next;
+          }
+        }
+
+        if (current.length > 0) {
+          pieces.push({ ...att, bundle: { origin: att.bundle.origin, lineage: current } });
+        }
+
+        return pieces;
+      };
+
+      const buildKsfpDerivativePack = (): {
+        payloads: FeedPostPayload[];
+        shareUrl: string;
+        rootToken: string;
+        addCount: number;
+      } => {
+        const pieces: AttachmentItem[] = [];
+        for (const item of mergedItems) {
+          if (item.kind === "ksfp-inline") {
+            pieces.push(...splitKsfpInlineAttachment(item));
+          } else {
+            pieces.push(item);
+          }
+        }
+
+        const payloads: FeedPostPayload[] = [];
+        let current: AttachmentItem[] = [];
+
+        for (const piece of pieces) {
+          const includeContent = payloads.length === 0;
+          const candidateItems = [...current, piece];
+          const payload = buildPayloadWithAttachments(candidateItems, includeContent);
+          const len = encodeFeedPayload(payload).length;
+          if (len > TOKEN_HARD_LIMIT && current.length > 0) {
+            payloads.push(buildPayloadWithAttachments(current, includeContent));
+            current = [piece];
+          } else {
+            current = candidateItems;
+          }
+        }
+
+        if (current.length > 0 || payloads.length === 0) {
+          const includeContent = payloads.length === 0;
+          payloads.push(buildPayloadWithAttachments(current, includeContent));
+        }
+
+        const tokens = payloads.map((p) => encodeFeedPayload(p));
+        const rootToken = tokens[0];
+        const addTokens = tokens.slice(1);
+        const pack = buildSegmentedPack(rootToken, addTokens, "/stream");
+
+        return { payloads, shareUrl: pack.primary.url, rootToken, addCount: addTokens.length };
+      };
+
       setStage("prepare");
       const tPrep0 = nowMs();
 
-      // Prepare attachments for link (inline/url only for private; normal path otherwise)
-      const preparedFull = await withTimeout(
-        preparePayloadForLink(basePayload, { cacheName: "sigil-attachments-v1", pathPrefix: "/att/" }),
-        20_000,
-        "preparePayloadForLink",
-      );
+      let preparedFull: FeedPostPayload | null = null;
+      let ksfpPack: ReturnType<typeof buildKsfpDerivativePack> | null = null;
+
+      try {
+        // Prepare attachments for link (inline/url only for private; normal path otherwise)
+        preparedFull = await withTimeout(
+          preparePayloadForLink(basePayload, { cacheName: "sigil-attachments-v1", pathPrefix: "/att/" }),
+          20_000,
+          "preparePayloadForLink",
+        );
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (!privateOn && msg.includes("KSFP inline attachments exceed safe token size")) {
+          ksfpPack = buildKsfpDerivativePack();
+        } else {
+          throw err;
+        }
+      }
 
       const prepareMs = nowMs() - tPrep0;
+
+      if (ksfpPack) {
+        setStage("encode(derivative)");
+        setTokenLength(ksfpPack.rootToken.length);
+
+        setWarn(
+          `KSFP split into ${ksfpPack.addCount + 1} derivative glyphs. ` +
+            `Lineage is embedded in the stream URL.`,
+        );
+
+        setUrlMode("hash");
+        setStage("register");
+        registerSigilUrl(ksfpPack.shareUrl);
+
+        setStage("clipboard");
+        try {
+          await navigator.clipboard.writeText(ksfpPack.shareUrl);
+          setCopied(true);
+        } catch {
+          setCopied(false);
+        }
+
+        setGeneratedUrl(ksfpPack.shareUrl);
+
+        setDiag({
+          stage: "done",
+          totalMs: nowMs() - t0,
+          prepareMs,
+          encodeMs: 0,
+          tokenLen: ksfpPack.rootToken.length,
+          items: mergedItems.length,
+          inlinedBytes: mergedAttachments?.inlinedBytes,
+          totalBytes: mergedAttachments?.totalBytes,
+          note: `ksfp-derivatives:${ksfpPack.addCount}`,
+        });
+
+        if (onExhale) onExhale({ shareUrl: ksfpPack.shareUrl, token: ksfpPack.rootToken, payload: ksfpPack.payloads[0] });
+        return;
+      }
+
+      if (!preparedFull) {
+        throw new Error("Failed to prepare payload.");
+      }
 
       // 🔒 If private: seal inner content (body + attachments) and remove plaintext from outer payload
       let payloadToEncode: FeedPostPayload = preparedFull;
