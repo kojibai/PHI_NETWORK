@@ -269,7 +269,7 @@ export class KaiTimeSource {
         : options.overridePulse !== undefined
           ? parsePulseNumber(options.overridePulse)
           : readOverridePulse();
-    const snapshot = options.snapshot ?? readSignedSnapshot();
+    const snapshot = options.ignoreOverride ? null : options.snapshot ?? readSignedSnapshot();
 
     const snapshotMicro =
       snapshot?.microPulses ??
