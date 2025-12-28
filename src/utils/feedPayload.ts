@@ -752,6 +752,12 @@ export function extractPayloadTokenFromLocation(loc?: LocationLike): string | nu
     const fromSearch = searchParams.get("t") ?? searchParams.get("p") ?? searchParams.get("token");
     if (fromSearch) return normalizePayloadToken(fromSearch);
 
+    const rootHash = hashParams.get("root") ?? searchParams.get("root");
+    if (rootHash) {
+      const trimmed = rootHash.startsWith("j:") ? rootHash.slice(2) : rootHash;
+      return normalizePayloadToken(trimmed);
+    }
+
     // /stream/p/<token> or /feed/p/<token> (allow trailing slash)
     const m1 = L.pathname.match(/^\/(?:stream|feed)\/p\/([^/?#]+)\/?$/);
     if (m1?.[1]) return normalizePayloadToken(m1[1]);
