@@ -4,8 +4,19 @@ import React, { useCallback, useMemo, useState, type ReactElement } from "react"
 import "./VerifyPage.css";
 
 import VerifierFrame from "../components/KaiVoh/VerifierFrame";
-import { hashAny } from "../components/VerifierStamper/sigilUtils";
 import { parseSlug, verifySigilSvg, type VerifyResult } from "../utils/verifySigil";
+import {
+  buildVerifierSlug,
+  buildVerifierUrl,
+  hashBundle,
+  hashProofCapsuleV1,
+  hashSvgText,
+  normalizeChakraDay,
+  PROOF_CANON,
+  PROOF_HASH_ALG,
+  type ProofCapsuleV1,
+} from "../components/KaiVoh/verifierProof";
+import { extractProofBundleMetaFromSvg, type ProofBundleMeta } from "../utils/sigilMetadata";
 
 function readSlugFromLocation(): string {
   if (typeof window === "undefined") return "";
@@ -35,15 +46,6 @@ async function readFileText(file: File): Promise<string> {
   });
 }
 
-type ProofCapsule = {
-  v: "KPV-1";
-  pulse: number;
-  chakraDay: string;
-  kaiSignature: string;
-  phiKey: string;
-  verifierSlug: string;
-};
-
 export default function VerifyPage(): ReactElement {
   const slugRaw = useMemo(() => readSlugFromLocation(), []);
   const slug = useMemo(() => parseSlug(slugRaw), [slugRaw]);
@@ -51,9 +53,11 @@ export default function VerifyPage(): ReactElement {
   const [svgText, setSvgText] = useState<string>("");
   const [result, setResult] = useState<VerifyResult>({ status: "idle" });
   const [busy, setBusy] = useState<boolean>(false);
-  const [proofCapsule, setProofCapsule] = useState<ProofCapsule | null>(null);
-  const [proofHash, setProofHash] = useState<string>("");
+  const [proofCapsule, setProofCapsule] = useState<ProofCapsuleV1 | null>(null);
+  const [capsuleHash, setCapsuleHash] = useState<string>("");
   const [svgHash, setSvgHash] = useState<string>("");
+  const [bundleHash, setBundleHash] = useState<string>("");
+  const [embeddedProof, setEmbeddedProof] = useState<ProofBundleMeta | null>(null);
   const [copyNotice, setCopyNotice] = useState<string>("");
 
   const verifierFrameProps = useMemo(() => {
@@ -63,6 +67,11 @@ export default function VerifyPage(): ReactElement {
     const kaiSignature = slug.shortSig ?? "unknown-signature";
     return { pulse, kaiSignature, phiKey: "—" };
   }, [slug.pulse, slug.shortSig]);
+
+  const proofVerifierUrl = useMemo(() => {
+    if (!proofCapsule) return "";
+    return buildVerifierUrl(proofCapsule.pulse, proofCapsule.kaiSignature);
+  }, [proofCapsule]);
 
   const runVerify = useCallback(async (): Promise<void> => {
     const raw = svgText.trim();
@@ -104,18 +113,22 @@ export default function VerifyPage(): ReactElement {
     const buildProof = async (): Promise<void> => {
       if (result.status !== "ok") {
         setProofCapsule(null);
-        setProofHash("");
+        setCapsuleHash("");
         setSvgHash("");
+        setBundleHash("");
+        setEmbeddedProof(null);
         setCopyNotice("");
         return;
       }
 
       const kaiSignature = result.embedded.kaiSignature ?? "";
       const pulse = result.embedded.pulse ?? result.slug.pulse ?? 0;
-      const chakraDay = result.embedded.chakraDay ?? "Unknown";
+      const chakraDay =
+        normalizeChakraDay(result.embedded.chakraDay ?? "") ??
+        "Crown";
       const phiKey = result.derivedPhiKey;
-      const verifierSlug = result.slug.raw || "";
-      const capsule: ProofCapsule = {
+      const verifierSlug = buildVerifierSlug(pulse, kaiSignature);
+      const capsule: ProofCapsuleV1 = {
         v: "KPV-1",
         pulse,
         chakraDay,
@@ -124,14 +137,17 @@ export default function VerifyPage(): ReactElement {
         verifierSlug,
       };
 
-      const svgHashNext = await hashAny(svgText.trim());
-      const proofPayload = { ...capsule, svgHash: svgHashNext };
-      const proofHashNext = await hashAny(proofPayload);
+      const svgHashNext = await hashSvgText(svgText);
+      const capsuleHashNext = await hashProofCapsuleV1(capsule);
+      const bundleHashNext = await hashBundle(capsuleHashNext, svgHashNext);
+      const embedded = extractProofBundleMetaFromSvg(svgText);
 
       if (!active) return;
       setProofCapsule(capsule);
       setSvgHash(svgHashNext);
-      setProofHash(proofHashNext);
+      setCapsuleHash(capsuleHashNext);
+      setBundleHash(bundleHashNext);
+      setEmbeddedProof(embedded);
     };
     void buildProof();
     return () => {
@@ -260,10 +276,44 @@ export default function VerifyPage(): ReactElement {
 
                 {proofCapsule ? (
                   <div className="verify-proof">
-                    <h3 className="verify-proof-title">3) Proof stamp (pulse-only)</h3>
+                    <h3 className="verify-proof-title">3) Proof bundle (capsule + SVG)</h3>
                     <p className="verify-proof-note">
-                      Deterministic capsule bound to Kai pulse + sealed SVG hash (no Chronos).
+                      Deterministic capsule hash (capsuleHash) + SVG hash (svgHash) → bundleHash.
                     </p>
+                    <div className="verify-proof-row">
+                      <span className="verify-proof-label">Hash algorithm</span>
+                      <code className="verify-proof-code">{PROOF_HASH_ALG}</code>
+                      <button
+                        type="button"
+                        className="verify-copy-btn"
+                        onClick={() => void copyText(PROOF_HASH_ALG, "Hash algorithm")}
+                      >
+                        Copy
+                      </button>
+                    </div>
+                    <div className="verify-proof-row">
+                      <span className="verify-proof-label">Canonicalization</span>
+                      <code className="verify-proof-code">{PROOF_CANON}</code>
+                      <button
+                        type="button"
+                        className="verify-copy-btn"
+                        onClick={() => void copyText(PROOF_CANON, "Canonicalization")}
+                      >
+                        Copy
+                      </button>
+                    </div>
+                    <div className="verify-proof-row">
+                      <span className="verify-proof-label">Verifier URL</span>
+                      <code className="verify-proof-code">{proofVerifierUrl || "—"}</code>
+                      <button
+                        type="button"
+                        className="verify-copy-btn"
+                        onClick={() => void copyText(proofVerifierUrl, "Verifier URL")}
+                        disabled={!proofVerifierUrl}
+                      >
+                        Copy
+                      </button>
+                    </div>
                     <div className="verify-proof-row">
                       <span className="verify-proof-label">SVG hash</span>
                       <code className="verify-proof-code">{svgHash}</code>
@@ -276,12 +326,23 @@ export default function VerifyPage(): ReactElement {
                       </button>
                     </div>
                     <div className="verify-proof-row">
-                      <span className="verify-proof-label">Proof hash</span>
-                      <code className="verify-proof-code">{proofHash}</code>
+                      <span className="verify-proof-label">Capsule hash</span>
+                      <code className="verify-proof-code">{capsuleHash}</code>
                       <button
                         type="button"
                         className="verify-copy-btn"
-                        onClick={() => void copyText(proofHash, "Proof hash")}
+                        onClick={() => void copyText(capsuleHash, "Capsule hash")}
+                      >
+                        Copy
+                      </button>
+                    </div>
+                    <div className="verify-proof-row">
+                      <span className="verify-proof-label">Bundle hash</span>
+                      <code className="verify-proof-code">{bundleHash}</code>
+                      <button
+                        type="button"
+                        className="verify-copy-btn"
+                        onClick={() => void copyText(bundleHash, "Bundle hash")}
                       >
                         Copy
                       </button>
@@ -289,8 +350,51 @@ export default function VerifyPage(): ReactElement {
                     <textarea
                       className="verify-proof-textarea"
                       readOnly
-                      value={JSON.stringify({ proofCapsule, svgHash, proofHash }, null, 2)}
+                      value={JSON.stringify(
+                        {
+                          hashAlg: PROOF_HASH_ALG,
+                          canon: PROOF_CANON,
+                          proofCapsule,
+                          capsuleHash,
+                          svgHash,
+                          bundleHash,
+                          verifierUrl: proofVerifierUrl,
+                          authorSig: embeddedProof?.authorSig ?? null,
+                        },
+                        null,
+                        2,
+                      )}
                     />
+                    {embeddedProof ? (
+                      <ul className="verify-checks">
+                        <li>
+                          embedded hashAlg match:{" "}
+                          <strong>{embeddedProof.hashAlg ? String(embeddedProof.hashAlg === PROOF_HASH_ALG) : "n/a"}</strong>
+                        </li>
+                        <li>
+                          embedded canon match:{" "}
+                          <strong>{embeddedProof.canon ? String(embeddedProof.canon === PROOF_CANON) : "n/a"}</strong>
+                        </li>
+                        <li>
+                          embedded svgHash match:{" "}
+                          <strong>{embeddedProof.svgHash ? String(embeddedProof.svgHash === svgHash) : "n/a"}</strong>
+                        </li>
+                        <li>
+                          embedded capsuleHash match:{" "}
+                          <strong>{embeddedProof.capsuleHash ? String(embeddedProof.capsuleHash === capsuleHash) : "n/a"}</strong>
+                        </li>
+                        <li>
+                          embedded bundleHash match:{" "}
+                          <strong>{embeddedProof.bundleHash ? String(embeddedProof.bundleHash === bundleHash) : "n/a"}</strong>
+                        </li>
+                        <li>
+                          author signature present:{" "}
+                          <strong>{embeddedProof.authorSig ? "true" : "false"}</strong>
+                        </li>
+                      </ul>
+                    ) : (
+                      <p className="verify-proof-note">No embedded proof bundle detected in &lt;metadata id="kai-proof"&gt;.</p>
+                    )}
                     {copyNotice ? <p className="verify-proof-note">{copyNotice}</p> : null}
                   </div>
                 ) : null}

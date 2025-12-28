@@ -14,6 +14,10 @@
 
 import type { ChakraDay } from "../../utils/kai_pulse";
 
+export const PROOF_HASH_ALG = "sha256" as const;
+export const PROOF_CANON = "JCS" as const;
+export const PROOF_METADATA_ID = "kai-proof" as const;
+
 /* -------------------------------------------------------------------------- */
 /*                                 Base URL                                   */
 /* -------------------------------------------------------------------------- */
@@ -145,11 +149,19 @@ async function sha256HexUtf8(input: string): Promise<string> {
 }
 
 /**
- * Deterministic canonical JSON (fixed key order).
+ * Deterministic canonical JSON (sorted keys; UTF-8; no whitespace).
  * This prevents “same data, different JSON order” from changing the hash.
  */
+export function stableStringify(v: unknown): string {
+  if (v === null || typeof v !== "object") return JSON.stringify(v);
+  if (Array.isArray(v)) return "[" + v.map(stableStringify).join(",") + "]";
+  const o = v as Record<string, unknown>;
+  const keys = Object.keys(o).sort();
+  return "{" + keys.map((k) => JSON.stringify(k) + ":" + stableStringify(o[k])).join(",") + "}";
+}
+
 export function canonicalizeProofCapsuleV1(c: ProofCapsuleV1): string {
-  return JSON.stringify({
+  return stableStringify({
     v: c.v,
     pulse: c.pulse,
     chakraDay: c.chakraDay,
@@ -162,6 +174,26 @@ export function canonicalizeProofCapsuleV1(c: ProofCapsuleV1): string {
 /** Compute the integrity hash for the proof capsule. */
 export async function hashProofCapsuleV1(c: ProofCapsuleV1): Promise<string> {
   return await sha256HexUtf8(canonicalizeProofCapsuleV1(c));
+}
+
+export function stripProofMetadata(svgText: string): string {
+  const re = new RegExp(
+    `<metadata[^>]*id=["']${PROOF_METADATA_ID}["'][^>]*>[\\s\\S]*?<\\/metadata>`,
+    "gi",
+  );
+  return svgText.replace(re, "");
+}
+
+export function normalizeSvgForHash(svgText: string): string {
+  return stripProofMetadata(svgText).replace(/\r\n?/g, "\n");
+}
+
+export async function hashSvgText(svgText: string): Promise<string> {
+  return await sha256HexUtf8(normalizeSvgForHash(svgText));
+}
+
+export async function hashBundle(capsuleHash: string, svgHash: string): Promise<string> {
+  return await sha256HexUtf8(`${capsuleHash}${svgHash}`);
 }
 
 /** Convenience short display for hashes. */

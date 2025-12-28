@@ -13,7 +13,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import blake from "blakejs";
-import { fetchKai, type ChakraDay } from "../../utils/kai_pulse";
+import { fetchKai, KaiTimeSource, type ChakraDay } from "../../utils/kai_pulse";
 import type { ComposedPost } from "./PostComposer";
 import "./styles/BreathSealer.css";
 
@@ -135,7 +135,7 @@ export default function BreathSealer({
       const sig = identityKaiSignature.trim();
       if (!sig) throw new Error("Missing identityKaiSignature (session signature).");
 
-      const kai = await fetchKai();
+      const kai = await fetchKai(undefined, new KaiTimeSource({ ignoreOverride: true }));
       const pulse = Number(kai.pulse ?? 0);
 
       const chakraDay: ChakraDay | null = isChakraDay(kai.chakraDay)

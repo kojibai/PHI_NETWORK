@@ -25,6 +25,14 @@ type ChakraDay =
   | "Third Eye"
   | "Crown";
 
+function stableStringify(v: unknown): string {
+  if (v === null || typeof v !== "object") return JSON.stringify(v);
+  if (Array.isArray(v)) return "[" + v.map(stableStringify).join(",") + "]";
+  const o = v as Record<string, unknown>;
+  const keys = Object.keys(o).sort();
+  return "{" + keys.map((k) => JSON.stringify(k) + ":" + stableStringify(o[k])).join(",") + "}";
+}
+
 /** Narrow interface with only the fields we actually read/write in this module. */
 export type ExportableSigilMeta = {
   pulse: number;
@@ -333,6 +341,8 @@ export async function exportZIP(ctx: {
       desc: "Deterministic sigil-glyph with sovereign metadata. Exported as archived key.",
     });
     const pngBlob = await pngBlobFromSvg(svgBlob, EXPORT_PX);
+    const svgHash = await sha256HexCanon(new Uint8Array(await svgBlob.arrayBuffer()));
+    const pngHash = await sha256HexCanon(new Uint8Array(await pngBlob.arrayBuffer()));
 
     // Build ZIP (add manifest before generate)
     const JSZip = await loadJSZip();
@@ -340,7 +350,9 @@ export async function exportZIP(ctx: {
     zip.file(`${base}.svg`, svgBlob);
     zip.file(`${base}.png`, pngBlob);
 
-    const manifest = {
+    const manifestPayload = {
+      hashAlg: "sha256",
+      canon: "sorted keys + UTF-8 + no whitespace",
       // ids
       hash: localHash || routeHash || "",
       canonicalHash: claimedMetaCanon.canonicalHash ?? null,
@@ -360,6 +372,10 @@ export async function exportZIP(ctx: {
       claimedAtPulse: nowPulse,
       // overlays
       overlays: { qr: false, eternalPulseBar: false },
+      assets: {
+        [`${base}.svg`]: svgHash,
+        [`${base}.png`]: pngHash,
+      },
       // claim controls
       claimExtendUnit: claimedMetaCanon.claimExtendUnit ?? null,
       claimExtendAmount: claimedMetaCanon.claimExtendAmount ?? null,
@@ -368,6 +384,8 @@ export async function exportZIP(ctx: {
       p: pValue,
       urlQuery: { p: pValue, t: tValue },
     };
+    const manifestHash = await sha256HexCanon(stableStringify(manifestPayload));
+    const manifest = { ...manifestPayload, manifestHash };
     zip.file(`${base}.manifest.json`, JSON.stringify(manifest, null, 2));
 
     const zipBlob = await zip.generateAsync({ type: "blob" });

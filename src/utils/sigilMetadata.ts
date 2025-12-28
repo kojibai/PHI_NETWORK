@@ -1,4 +1,6 @@
 import { XMLParser } from "fast-xml-parser";
+import type { ProofCapsuleV1 } from "../components/KaiVoh/verifierProof";
+import type { HarmonicSig } from "../lib/sigil/signature";
 
 export type EmbeddedMeta = {
   pulse?: number;
@@ -11,6 +13,13 @@ export type EmbeddedMeta = {
   phiKey?: string;
   timestamp?: string;
   verifierUrl?: string;
+  proofCapsule?: ProofCapsuleV1;
+  capsuleHash?: string;
+  svgHash?: string;
+  bundleHash?: string;
+  hashAlg?: string;
+  canon?: string;
+  authorSig?: HarmonicSig | null;
   raw?: unknown;
 };
 
@@ -38,11 +47,21 @@ function safeJsonParse(s: string): unknown | null {
 function toEmbeddedMetaFromUnknown(raw: unknown): EmbeddedMeta {
   if (!isRecord(raw)) return { raw };
 
+  const capsuleRaw = isRecord(raw.proofCapsule) ? raw.proofCapsule : undefined;
+
   const kaiSignature =
-    typeof raw.kaiSignature === "string" ? raw.kaiSignature : undefined;
+    typeof raw.kaiSignature === "string"
+      ? raw.kaiSignature
+      : typeof capsuleRaw?.kaiSignature === "string"
+        ? capsuleRaw.kaiSignature
+        : undefined;
 
   const pulse =
-    typeof raw.pulse === "number" && Number.isFinite(raw.pulse) ? raw.pulse : undefined;
+    typeof raw.pulse === "number" && Number.isFinite(raw.pulse)
+      ? raw.pulse
+      : typeof capsuleRaw?.pulse === "number" && Number.isFinite(capsuleRaw.pulse)
+        ? capsuleRaw.pulse
+        : undefined;
 
   const beat =
     typeof raw.beat === "number" && Number.isFinite(raw.beat) ? raw.beat : undefined;
@@ -56,7 +75,11 @@ function toEmbeddedMetaFromUnknown(raw: unknown): EmbeddedMeta {
       : undefined;
 
   const chakraDay =
-    typeof raw.chakraDay === "string" ? raw.chakraDay : undefined;
+    typeof raw.chakraDay === "string"
+      ? raw.chakraDay
+      : typeof capsuleRaw?.chakraDay === "string"
+        ? capsuleRaw.chakraDay
+        : undefined;
 
   const chakraGate =
     typeof raw.chakraGate === "string" ? raw.chakraGate : undefined;
@@ -66,12 +89,34 @@ function toEmbeddedMetaFromUnknown(raw: unknown): EmbeddedMeta {
 
   const phiKeyRaw = typeof raw.phiKey === "string" ? raw.phiKey : undefined;
   const userPhiKey = typeof raw.userPhiKey === "string" ? raw.userPhiKey : undefined;
+  const capsulePhiKey = typeof capsuleRaw?.phiKey === "string" ? capsuleRaw.phiKey : undefined;
 
   const phiKey =
-    phiKeyRaw && !phiKeyRaw.startsWith("φK-") ? phiKeyRaw : userPhiKey;
+    phiKeyRaw && !phiKeyRaw.startsWith("φK-")
+      ? phiKeyRaw
+      : capsulePhiKey ??
+        userPhiKey;
 
   const verifierUrl =
     typeof raw.verifierUrl === "string" ? raw.verifierUrl : undefined;
+
+  const proofCapsule =
+    capsuleRaw &&
+    typeof capsuleRaw.v === "string" &&
+    typeof capsuleRaw.kaiSignature === "string" &&
+    typeof capsuleRaw.phiKey === "string" &&
+    typeof capsuleRaw.verifierSlug === "string" &&
+    typeof capsuleRaw.pulse === "number" &&
+    typeof capsuleRaw.chakraDay === "string"
+      ? (capsuleRaw as ProofCapsuleV1)
+      : undefined;
+
+  const capsuleHash = typeof raw.capsuleHash === "string" ? raw.capsuleHash : undefined;
+  const svgHash = typeof raw.svgHash === "string" ? raw.svgHash : undefined;
+  const bundleHash = typeof raw.bundleHash === "string" ? raw.bundleHash : undefined;
+  const hashAlg = typeof raw.hashAlg === "string" ? raw.hashAlg : undefined;
+  const canon = typeof raw.canon === "string" ? raw.canon : undefined;
+  const authorSig = isRecord(raw.authorSig) ? (raw.authorSig as HarmonicSig) : null;
 
   return {
     pulse,
@@ -84,6 +129,13 @@ function toEmbeddedMetaFromUnknown(raw: unknown): EmbeddedMeta {
     phiKey,
     timestamp,
     verifierUrl,
+    proofCapsule,
+    capsuleHash,
+    svgHash,
+    bundleHash,
+    hashAlg,
+    canon,
+    authorSig,
     raw,
   };
 }
@@ -181,6 +233,58 @@ function findJsonInText(text: string): EmbeddedMeta | null {
   return null;
 }
 
+function isProofBundleMeta(meta: EmbeddedMeta): boolean {
+  return Boolean(meta.bundleHash || (meta.capsuleHash && meta.svgHash));
+}
+
+function findProofBundleInText(text: string): ProofBundleMeta | null {
+  const parsed = safeJsonParse(text);
+  if (parsed) {
+    const meta = toEmbeddedMetaFromUnknown(parsed);
+    if (isProofBundleMeta(meta)) {
+      return {
+        hashAlg: meta.hashAlg,
+        canon: meta.canon,
+        proofCapsule: meta.proofCapsule,
+        capsuleHash: meta.capsuleHash,
+        svgHash: meta.svgHash,
+        bundleHash: meta.bundleHash,
+        verifierUrl: meta.verifierUrl,
+        authorSig: meta.authorSig,
+        raw: parsed,
+      };
+    }
+  }
+
+  const matches = [...text.matchAll(/"(bundleHash|capsuleHash|svgHash)"\s*:/g)];
+  if (!matches.length) return null;
+
+  for (const match of matches) {
+    const idx = match.index ?? 0;
+    const blocks = extractNearbyJsonBlocks(text, idx);
+    for (const block of blocks) {
+      if (!/(bundleHash|capsuleHash|svgHash)/.test(block)) continue;
+      const blobParsed = safeJsonParse(block);
+      if (!blobParsed) continue;
+      const meta = toEmbeddedMetaFromUnknown(blobParsed);
+      if (!isProofBundleMeta(meta)) continue;
+      return {
+        hashAlg: meta.hashAlg,
+        canon: meta.canon,
+        proofCapsule: meta.proofCapsule,
+        capsuleHash: meta.capsuleHash,
+        svgHash: meta.svgHash,
+        bundleHash: meta.bundleHash,
+        verifierUrl: meta.verifierUrl,
+        authorSig: meta.authorSig,
+        raw: blobParsed,
+      };
+    }
+  }
+
+  return null;
+}
+
 function extractFromParsedSvg(parsed: Record<string, unknown>): EmbeddedMeta | null {
   const svg = isRecord(parsed.svg) ? parsed.svg : parsed;
   const candidates: string[] = [];
@@ -268,4 +372,70 @@ export function extractEmbeddedMetaFromSvg(svgText: string): EmbeddedMeta {
   const fallback = findJsonInText(svgText);
   if (fallback) return mergeEmbeddedMeta(fallback, attrFallback);
   return attrFallback;
+}
+
+export type ProofBundleMeta = {
+  hashAlg?: string;
+  canon?: string;
+  proofCapsule?: ProofCapsuleV1;
+  capsuleHash?: string;
+  svgHash?: string;
+  bundleHash?: string;
+  verifierUrl?: string;
+  authorSig?: HarmonicSig | null;
+  raw?: unknown;
+};
+
+export function extractProofBundleMetaFromSvg(svgText: string): ProofBundleMeta | null {
+  const match = svgText.match(/<metadata[^>]*id=["']kai-proof["'][^>]*>([\s\S]*?)<\/metadata>/i);
+  if (match) {
+    const rawBlock = match[1]?.trim() ?? "";
+    if (rawBlock) {
+      const cleaned = rawBlock.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1").trim();
+      const parsed = safeJsonParse(cleaned);
+      if (parsed) {
+        const meta = toEmbeddedMetaFromUnknown(parsed);
+        return {
+          hashAlg: meta.hashAlg,
+          canon: meta.canon,
+          proofCapsule: meta.proofCapsule,
+          capsuleHash: meta.capsuleHash,
+          svgHash: meta.svgHash,
+          bundleHash: meta.bundleHash,
+          verifierUrl: meta.verifierUrl,
+          authorSig: meta.authorSig,
+          raw: parsed,
+        };
+      }
+    }
+  }
+
+  try {
+    const parsedSvg = XML_PARSER.parse(svgText);
+    if (isRecord(parsedSvg)) {
+      const svg = isRecord(parsedSvg.svg) ? parsedSvg.svg : parsedSvg;
+      const candidates: string[] = [];
+
+      if (isRecord(svg.metadata)) {
+        collectText(svg.metadata, candidates);
+      } else if (typeof svg.metadata === "string") {
+        candidates.push(svg.metadata);
+      }
+
+      if (isRecord(svg.desc)) {
+        collectText(svg.desc, candidates);
+      } else if (typeof svg.desc === "string") {
+        candidates.push(svg.desc);
+      }
+
+      for (const text of candidates) {
+        const found = findProofBundleInText(text);
+        if (found) return found;
+      }
+    }
+  } catch (err) {
+    console.warn("sigilMetadata: failed to parse SVG proof bundle", err);
+  }
+
+  return findProofBundleInText(svgText);
 }

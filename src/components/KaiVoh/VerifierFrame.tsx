@@ -3,7 +3,7 @@
 
 /**
  * VerifierFrame — Kai-Sigil Verification Panel
- * v2.4 — KPV-1 Proof Hash (payload-bound proof capsule)
+ * v2.4 — KPV-1 Capsule Hash (payload-bound proof capsule)
  *
  * Guarantees:
  * ✅ Default verifier base is ALWAYS current app origin (+ Vite BASE_URL subpath) + "/verify"
@@ -12,11 +12,11 @@
  *    - canonical chakraDay
  *    - verifierSlug (domain-stable)
  *    - proofCapsule (KPV-1)
- *    - proofHash (SHA-256 over the capsule)
+ *    - capsuleHash (SHA-256 over the capsule)
  *
  * Note:
  * - verifierUrl is convenience/QR and may change across hosts.
- * - proofHash binds the capsule fields (pulse/chakra/signature/phiKey/slug), not the host URL.
+ * - capsuleHash binds the capsule fields (pulse/chakra/signature/phiKey/slug), not the host URL.
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -287,7 +287,7 @@ export default function VerifierFrame({
           ) : null}
 
           <div className="kv-verifier__meta-row">
-            <dt className="kv-verifier__meta-label">🔒 Proof Hash</dt>
+            <dt className="kv-verifier__meta-label">🔒 Capsule Hash</dt>
             <dd className="kv-verifier__meta-value kv-verifier__mono" title={proofHash ?? ""}>
               {hashDisplay}
             </dd>

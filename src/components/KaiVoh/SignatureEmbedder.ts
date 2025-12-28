@@ -2,6 +2,8 @@
 import type { SealedPost } from "./BreathSealer";
 import { momentFromPulse, STEPS_BEAT, type ChakraDay } from "../../utils/kai_pulse";
 import { derivePhiKeyFromSig } from "../VerifierStamper/sigilUtils";
+import type { ProofCapsuleV1 } from "./verifierProof";
+import type { HarmonicSig } from "../../lib/sigil/signature";
 
 export interface KaiSigKksMediaDescriptor {
   kind: "image" | "video";
@@ -62,6 +64,18 @@ export interface KaiSigKksMetadata {
 
   /** Extra app-level description (for clients) */
   post: KaiSigKksPostDescriptor;
+
+  /** Optional verifier proof bundle fields */
+  verifierUrl?: string;
+  verifierSlug?: string;
+  proofCapsule?: ProofCapsuleV1;
+  proofHash?: string;
+  capsuleHash?: string;
+  svgHash?: string;
+  bundleHash?: string;
+  hashAlg?: string;
+  canon?: string;
+  authorSig?: HarmonicSig | null;
 }
 
 export interface EmbeddedMediaResult {
