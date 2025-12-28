@@ -295,3 +295,98 @@ export async function addBreathProofMetadata(
     svgEl.appendChild(metadataEl);
   }
 }
+
+/**
+ * Apply canonical share URL + payload hash to an SVG string.
+ * Updates:
+ *  - root data-share-url + data-payload-hash
+ *  - canonical metadata header.shareUrl (if present)
+ *  - proof/verifier metadata verifierUrl (if present)
+ *  - swaps non-canonical wrapper <g role="button"> → <a href=...>
+ */
+export function applyCanonicalShareUrl(
+  svgString: string,
+  canonicalShareUrl: string,
+  payloadHash: string
+): string {
+  if (!svgString || !canonicalShareUrl || !payloadHash) return svgString;
+
+  const dom = new DOMParser().parseFromString(svgString, "image/svg+xml");
+  const svgEl = dom.documentElement as unknown;
+  if (!(svgEl instanceof SVGSVGElement)) return svgString;
+  const svg = svgEl;
+
+  svg.setAttribute("data-share-url", canonicalShareUrl);
+  svg.setAttribute("data-payload-hash", payloadHash);
+
+  const styleAttr = svg.getAttribute("style");
+  if (styleAttr) {
+    const parts = styleAttr
+      .split(";")
+      .map((p) => p.trim())
+      .filter(Boolean);
+    const filtered = parts.filter((p) => !p.toLowerCase().startsWith("cursor:"));
+    filtered.push("cursor: pointer");
+    svg.setAttribute("style", filtered.join("; "));
+  }
+
+  const updateJsonText = (text: string | null): string | null => {
+    if (!text) return text;
+    const parsed = safeJsonParse<Record<string, unknown>>(text.trim());
+    if (!parsed) return text;
+    const next: Record<string, unknown> = { ...parsed };
+
+    const header = next["header"];
+    if (isRecord(header)) {
+      next["header"] = { ...header, shareUrl: canonicalShareUrl };
+    }
+
+    if (typeof next["verifierUrl"] === "string") {
+      next["verifierUrl"] = canonicalShareUrl;
+    }
+
+    const proofCapsule = next["proofCapsule"];
+    if (isRecord(proofCapsule)) {
+      next["proofCapsule"] = { ...proofCapsule, verifierUrl: canonicalShareUrl };
+    }
+
+    const proof = next["proof"];
+    if (isRecord(proof)) {
+      next["proof"] = { ...proof, verifierUrl: canonicalShareUrl };
+    }
+
+    return JSON.stringify(next);
+  };
+
+  const metas = Array.from(svg.querySelectorAll("metadata"));
+  metas.forEach((meta) => {
+    const updated = updateJsonText(meta.textContent);
+    if (typeof updated === "string") {
+      meta.textContent = updated;
+    }
+  });
+
+  const wrapper = svg.querySelector(
+    'g[role="button"][aria-label="Sigil not yet canonicalized"]'
+  );
+  if (wrapper) {
+    const anchor = dom.createElementNS("http://www.w3.org/2000/svg", "a");
+    anchor.setAttribute("href", canonicalShareUrl);
+    anchor.setAttribute("target", "_self");
+    anchor.setAttribute("aria-label", `Open canonical sigil ${payloadHash}`);
+    while (wrapper.firstChild) {
+      anchor.appendChild(wrapper.firstChild);
+    }
+    wrapper.replaceWith(anchor);
+  } else {
+    const anchor = svg.querySelector("a[aria-label^=\"Open canonical sigil\"]");
+    if (anchor) {
+      anchor.setAttribute("href", canonicalShareUrl);
+      anchor.setAttribute("target", "_self");
+      anchor.setAttribute("aria-label", `Open canonical sigil ${payloadHash}`);
+    }
+  }
+
+  const xml = new XMLSerializer().serializeToString(svg);
+  return xml.startsWith("<?xml") ? xml : `<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n${xml}`;
+}

@@ -718,6 +718,7 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
   const [sealOpen, setSealOpen] = useState(false);
   const [sealUrl, setSealUrl] = useState("");
   const [sealHash, setSealHash] = useState("");
+  const sealModeRef = useRef<"live" | "static-date" | "static-pulse" | null>(null);
 
   // canonical child hash from KaiSigil.onReady()
   const [lastHash, setLastHash] = useState("");
@@ -1159,7 +1160,9 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
   const mintMoment = async () => {
     const liveNow = mode === "live" ? getNowPulseBI() : pulse;
     const mintPulse = mode === "live" ? (liveNow >= pulse ? liveNow : pulse) : pulse;
+    sealModeRef.current = mode;
     if (mode === "live") {
+      setMode("static-pulse");
       applyPulse(mintPulse, true);
     }
 
@@ -1335,6 +1338,14 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
   };
 
   const handleClose = () => onClose();
+  const handleSealClose = () => {
+    setSealOpen(false);
+    const prevMode = sealModeRef.current;
+    sealModeRef.current = null;
+    if (prevMode === "live") {
+      resetToLive();
+    }
+  };
 
   // Meta display helpers
   const harmonicDayText = useMemo(() => {
@@ -1718,7 +1729,7 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
         open={sealOpen}
         url={sealUrl}
         hash={sealHash}
-        onClose={() => setSealOpen(false)}
+        onClose={handleSealClose}
         onDownloadZip={exportProofBundle}
       />
     </>,

@@ -55,7 +55,7 @@ import {
 } from "../../utils/provenance";
 import { ensureLink, setJsonLd, setMeta } from "../../utils/domHead";
 import { validateSvgForVerifier, putMetadata } from "../../utils/svgMeta";
-import { decodeSigilHistory } from "../../utils/sigilUrl";
+import { decodeSigilHistory, makeSigilUrl } from "../../utils/sigilUrl";
 
 /* ——— Theme ——— */
 import { CHAKRA_THEME} from "../../components/sigil/theme";
@@ -80,7 +80,7 @@ import {
 } from "./verifierCanon";
 
 /** svgOps.ts */
-import { ensureCanonicalMetadataFirst,} from "./svgOps";
+import { ensureCanonicalMetadataFirst } from "./svgOps";
 
 /** styleInject.ts */
 import { injectSigilPageStyles } from "./styleInject";
@@ -1199,6 +1199,22 @@ useEffect(() => {
   const steps: number = (payload?.stepsPerBeat ?? STEPS_PER_BEAT) as number;
   const stepIndex = stepIndexFromPulse(payload?.pulse ?? 0, steps);
   const stepPct = percentIntoStepFromPulse(payload?.pulse ?? 0);
+
+  const canonicalShareUrl = useMemo(() => {
+    if (!payload?.canonicalHash) return null;
+    if (typeof payload.stepIndex !== "number") return null;
+    const stepsNum: number = (payload.stepsPerBeat ?? STEPS_PER_BEAT) as number;
+    const canonical = payload.canonicalHash.toLowerCase();
+    return makeSigilUrl(canonical, {
+      pulse: payload.pulse,
+      beat: payload.beat,
+      stepIndex: payload.stepIndex,
+      chakraDay: payload.chakraDay ?? "Root",
+      stepsPerBeat: stepsNum,
+      kaiSignature: payload.kaiSignature ?? undefined,
+      userPhiKey: payload.userPhiKey ?? undefined,
+    });
+  }, [payload, STEPS_PER_BEAT]);
 
   const qrAccent = useMemo(() => {
     const baseHue = CHAKRA_THEME[chakraDay as keyof typeof CHAKRA_THEME]?.hue ?? 180;
@@ -2468,10 +2484,16 @@ return () => document.body.classList.remove(cls);
         >
           <KaiSigil
             pulse={pulse}
+            beat={payload.beat}
+            stepIndex={typeof payload.stepIndex === "number" ? payload.stepIndex : undefined}
             chakraDay={chakraDay}
             size={sigilSize}
             hashMode="deterministic"
             origin=""
+            kaiSignature={payload.kaiSignature ?? undefined}
+            userPhiKey={payload.userPhiKey ?? undefined}
+            canonicalShareUrl={canonicalShareUrl ?? undefined}
+            canonicalPayloadHash={payload.canonicalHash ? payload.canonicalHash.toLowerCase() : undefined}
             onReady={onReady}
           />
         </div>

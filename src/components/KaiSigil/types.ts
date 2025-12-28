@@ -53,6 +53,11 @@ export interface KaiSigilProps {
 
   showZKBadge?: boolean;
 
+  /** Optional canonical share URL from sealed payload (single source of truth). */
+  canonicalShareUrl?: string;
+  /** Optional canonical payload hash (from sealed payload). */
+  canonicalPayloadHash?: string;
+
   onReady?: (info: { hash: string; url: string; metadataJson: string }) => void;
   onError?: (err: unknown) => void;
 
