@@ -4,6 +4,7 @@ import React, { useCallback, useMemo, useState, type ReactElement } from "react"
 import "./VerifyPage.css";
 
 import VerifierFrame from "../components/KaiVoh/VerifierFrame";
+import { hashAny } from "../components/VerifierStamper/sigilUtils";
 import { parseSlug, verifySigilSvg, type VerifyResult } from "../utils/verifySigil";
 
 function readSlugFromLocation(): string {
@@ -34,6 +35,15 @@ async function readFileText(file: File): Promise<string> {
   });
 }
 
+type ProofCapsule = {
+  v: "KPV-1";
+  pulse: number;
+  chakraDay: string;
+  kaiSignature: string;
+  phiKey: string;
+  verifierSlug: string;
+};
+
 export default function VerifyPage(): ReactElement {
   const slugRaw = useMemo(() => readSlugFromLocation(), []);
   const slug = useMemo(() => parseSlug(slugRaw), [slugRaw]);
@@ -41,6 +51,10 @@ export default function VerifyPage(): ReactElement {
   const [svgText, setSvgText] = useState<string>("");
   const [result, setResult] = useState<VerifyResult>({ status: "idle" });
   const [busy, setBusy] = useState<boolean>(false);
+  const [proofCapsule, setProofCapsule] = useState<ProofCapsule | null>(null);
+  const [proofHash, setProofHash] = useState<string>("");
+  const [svgHash, setSvgHash] = useState<string>("");
+  const [copyNotice, setCopyNotice] = useState<string>("");
 
   const verifierFrameProps = useMemo(() => {
     // If we only have the slug, we can still render the capsule.
@@ -69,6 +83,61 @@ export default function VerifyPage(): ReactElement {
       setBusy(false);
     }
   }, [slug, svgText]);
+
+  const copyText = useCallback(async (text: string, label: string): Promise<void> => {
+    if (!text) return;
+    try {
+      if (!navigator.clipboard?.writeText) {
+        setCopyNotice("Clipboard unavailable. Use manual copy.");
+        return;
+      }
+      await navigator.clipboard.writeText(text);
+      setCopyNotice(`${label} copied.`);
+    } catch (err) {
+      setCopyNotice("Copy failed. Use manual copy.");
+      console.error(err);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    let active = true;
+    const buildProof = async (): Promise<void> => {
+      if (result.status !== "ok") {
+        setProofCapsule(null);
+        setProofHash("");
+        setSvgHash("");
+        setCopyNotice("");
+        return;
+      }
+
+      const kaiSignature = result.embedded.kaiSignature ?? "";
+      const pulse = result.embedded.pulse ?? result.slug.pulse ?? 0;
+      const chakraDay = result.embedded.chakraDay ?? "Unknown";
+      const phiKey = result.derivedPhiKey;
+      const verifierSlug = result.slug.raw || "";
+      const capsule: ProofCapsule = {
+        v: "KPV-1",
+        pulse,
+        chakraDay,
+        kaiSignature,
+        phiKey,
+        verifierSlug,
+      };
+
+      const svgHashNext = await hashAny(svgText.trim());
+      const proofPayload = { ...capsule, svgHash: svgHashNext };
+      const proofHashNext = await hashAny(proofPayload);
+
+      if (!active) return;
+      setProofCapsule(capsule);
+      setSvgHash(svgHashNext);
+      setProofHash(proofHashNext);
+    };
+    void buildProof();
+    return () => {
+      active = false;
+    };
+  }, [result, slug.raw, svgText]);
 
   const onPickFile = useCallback(async (file: File): Promise<void> => {
     // We verify SVG text (offline). If user drops non-SVG, show error.
@@ -130,7 +199,10 @@ export default function VerifyPage(): ReactElement {
           <textarea
             className="verify-textarea"
             value={svgText}
-            onChange={(e) => setSvgText(e.currentTarget.value)}
+            onChange={(e) => {
+              setSvgText(e.currentTarget.value);
+              setResult({ status: "idle" });
+            }}
             placeholder="Or paste the sealed SVG text here (must include <metadata>{...}</metadata> with kaiSignature + pulse + userPhiKey/phiKey)."
             spellCheck={false}
           />
@@ -185,6 +257,43 @@ export default function VerifyPage(): ReactElement {
                     </strong>
                   </li>
                 </ul>
+
+                {proofCapsule ? (
+                  <div className="verify-proof">
+                    <h3 className="verify-proof-title">3) Proof stamp (pulse-only)</h3>
+                    <p className="verify-proof-note">
+                      Deterministic capsule bound to Kai pulse + sealed SVG hash (no Chronos).
+                    </p>
+                    <div className="verify-proof-row">
+                      <span className="verify-proof-label">SVG hash</span>
+                      <code className="verify-proof-code">{svgHash}</code>
+                      <button
+                        type="button"
+                        className="verify-copy-btn"
+                        onClick={() => void copyText(svgHash, "SVG hash")}
+                      >
+                        Copy
+                      </button>
+                    </div>
+                    <div className="verify-proof-row">
+                      <span className="verify-proof-label">Proof hash</span>
+                      <code className="verify-proof-code">{proofHash}</code>
+                      <button
+                        type="button"
+                        className="verify-copy-btn"
+                        onClick={() => void copyText(proofHash, "Proof hash")}
+                      >
+                        Copy
+                      </button>
+                    </div>
+                    <textarea
+                      className="verify-proof-textarea"
+                      readOnly
+                      value={JSON.stringify({ proofCapsule, svgHash, proofHash }, null, 2)}
+                    />
+                    {copyNotice ? <p className="verify-proof-note">{copyNotice}</p> : null}
+                  </div>
+                ) : null}
               </div>
             ) : (
               <div className="verify-fail">
