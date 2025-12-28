@@ -199,7 +199,10 @@ export default function VerifyPage(): ReactElement {
           <textarea
             className="verify-textarea"
             value={svgText}
-            onChange={(e) => setSvgText(e.currentTarget.value)}
+            onChange={(e) => {
+              setSvgText(e.currentTarget.value);
+              setResult({ status: "idle" });
+            }}
             placeholder="Or paste the sealed SVG text here (must include <metadata>{...}</metadata> with kaiSignature + pulse + userPhiKey/phiKey)."
             spellCheck={false}
           />
