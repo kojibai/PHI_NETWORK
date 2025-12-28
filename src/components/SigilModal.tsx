@@ -21,7 +21,6 @@ import {
   type FC,
 } from "react";
 import { createPortal } from "react-dom";
-import html2canvas from "html2canvas";
 import JSZip from "jszip";
 
 /* Moment row (v22.9 UI) */
@@ -68,10 +67,6 @@ import { getKaiPulseToday, getSolarAlignedCounters, SOLAR_DAY_NAMES } from "../S
 ────────────────────────────────────────────────────────────────── */
 type TimeoutHandle = number; // window.setTimeout(...) -> number (browser)
 type IntervalHandle = number; // window.setInterval(...) -> number (browser)
-
-/* html2canvas typing compatibility (no unsafe casts, extra-props allowed) */
-type H2COptions = NonNullable<Parameters<typeof html2canvas>[1]>;
-type Loose<T> = T & Record<string, unknown>;
 
 interface Props {
   initialPulse?: number; // legacy/optional (modal still OPENS in LIVE)
@@ -564,67 +559,6 @@ const MintIcon: FC = () => (
     />
   </svg>
 );
-
-/* ────────────────────────────────────────────────────────────────
-   SVG metadata helpers
-────────────────────────────────────────────────────────────────── */
-const SVG_NS = "http://www.w3.org/2000/svg";
-
-function ensureXmlns(svg: SVGSVGElement) {
-  if (!svg.getAttribute("xmlns")) svg.setAttribute("xmlns", SVG_NS);
-  if (!svg.getAttribute("xmlns:xlink")) {
-    svg.setAttribute("xmlns:xlink", "http://www.w3.org/1999/xlink");
-  }
-}
-
-function ensureMetadata(svg: SVGSVGElement): SVGMetadataElement {
-  const doc = svg.ownerDocument || document;
-  const existing = svg.querySelector("metadata");
-  if (existing) return existing as SVGMetadataElement;
-  const created = doc.createElementNS(SVG_NS, "metadata") as SVGMetadataElement;
-  svg.insertBefore(created, svg.firstChild);
-  return created;
-}
-
-function ensureDesc(svg: SVGSVGElement): SVGDescElement {
-  const doc = svg.ownerDocument || document;
-  const existing = svg.querySelector("desc");
-  if (existing) return existing as SVGDescElement;
-  const created = doc.createElementNS(SVG_NS, "desc") as SVGDescElement;
-  const meta = svg.querySelector("metadata");
-  if (meta && meta.nextSibling) svg.insertBefore(created, meta.nextSibling);
-  else svg.insertBefore(created, svg.firstChild);
-  return created;
-}
-
-function putMetadata(svg: SVGSVGElement, meta: unknown): string {
-  ensureXmlns(svg);
-
-  const metaEl = ensureMetadata(svg);
-  metaEl.textContent = JSON.stringify(meta);
-
-  const descEl = ensureDesc(svg);
-  const summary =
-    typeof meta === "object" && meta !== null
-      ? (() => {
-          const o = meta as Record<string, unknown>;
-          const p = typeof o.pulse === "number" ? o.pulse : undefined;
-          const px = typeof o.pulseExact === "string" ? o.pulseExact : undefined;
-          const b = typeof o.beat === "number" ? o.beat : undefined;
-          const s = typeof o.stepIndex === "number" ? o.stepIndex : undefined;
-          const c = typeof o.chakraDay === "string" ? o.chakraDay : undefined;
-          return `KaiSigil — pulse:${px ?? p ?? "?"} beat:${b ?? "?"} step:${s ?? "?"} chakra:${
-            c ?? "?"
-          }`;
-        })()
-      : "KaiSigil — exported";
-  descEl.textContent = summary;
-
-  const xml = new XMLSerializer().serializeToString(svg);
-  return xml.startsWith("<?xml")
-    ? xml
-    : `<?xml version="1.0" encoding="UTF-8"?>\n${xml}`;
-}
 
 /* ────────────────────────────────────────────────────────────────
    Clipboard helper
@@ -1151,43 +1085,6 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
 
   const getSVGElement = (): SVGSVGElement | null =>
     document.querySelector<SVGSVGElement>("#sigil-export svg");
-
-  const getSVGStringWithMetadata = (meta: unknown): string | null => {
-    const svg = getSVGElement();
-    if (!svg) return null;
-    return putMetadata(svg, meta);
-  };
-
-  const buildSVGBlob = (meta: unknown): Blob | null => {
-    const xml = getSVGStringWithMetadata(meta);
-    if (!xml) return null;
-    return new Blob([xml], { type: "image/svg+xml;charset=utf-8" });
-  };
-
-  const buildPNGBlob = async (): Promise<Blob | null> => {
-    const el = document.getElementById("sigil-export");
-    if (!el) return null;
-
-    const opts: Loose<H2COptions> = {
-      background: undefined,
-      backgroundColor: null,
-    };
-
-    const canvas = await html2canvas(el, opts);
-
-    const blob = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob((b) => resolve(b), "image/png")
-    );
-    if (blob) return blob;
-
-    const dataUrl = canvas.toDataURL("image/png");
-    const base64 = dataUrl.split(",")[1] ?? "";
-    const byteStr = atob(base64);
-    const buf = new ArrayBuffer(byteStr.length);
-    const view = new Uint8Array(buf);
-    for (let i = 0; i < byteStr.length; i++) view[i] = byteStr.charCodeAt(i);
-    return new Blob([buf], { type: "image/png" });
-  };
 
   type SigilSharePayloadExtended = SigilSharePayload & {
     canonicalHash: string;
