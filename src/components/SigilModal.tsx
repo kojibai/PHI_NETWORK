@@ -29,7 +29,7 @@ import SigilMomentRow from "./SigilMomentRow";
 import KaiSigil, { type KaiSigilProps, type KaiSigilHandle } from "./KaiSigil";
 
 import SealMomentModal from "./SealMomentModal";
-import { makeSigilUrl, type SigilSharePayload } from "../utils/sigilUrl";
+import { extractPayloadFromUrl, makeSigilUrl, type SigilSharePayload } from "../utils/sigilUrl";
 import "./SigilModal.css";
 import { downloadBlob } from "../lib/download";
 import { jcsCanonicalize } from "../utils/jcs";
@@ -724,6 +724,7 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const closeBtnRef = useRef<HTMLButtonElement | null>(null);
   const sigilRef = useRef<KaiSigilHandle | null>(null);
+  const exportSnapshotRef = useRef<MomentSnapshot | null>(null);
 
   // LIVE scheduler handle (pulse boundary aligned)
   const timeoutRef = useRef<TimeoutHandle | null>(null);
@@ -1087,6 +1088,18 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
   const getSVGElement = (): SVGSVGElement | null =>
     document.querySelector<SVGSVGElement>("#sigil-export svg");
 
+  type MomentSnapshot = {
+    pulse: number;
+    beat: number;
+    stepIndex: number;
+    chakraDay: string;
+    stepsPerBeat: number;
+    kaiSignature: string;
+    phiKey: string;
+    payloadHashHex: string;
+    svgString: string;
+  };
+
   type SigilSharePayloadExtended = SigilSharePayload & {
     canonicalHash: string;
     exportedAt: string;
@@ -1125,89 +1138,278 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
     authorSig: AuthorSig | null;
   };
 
-  const makeSharePayload = (canonicalHash: string): SigilSharePayloadExtended => {
-    const stepsPerBeat = STEPS_BEAT;
+  const captureMomentSnapshot = (): MomentSnapshot => {
+    const svgEl = getSVGElement();
+    if (!svgEl) {
+      throw new Error("Sigil SVG is not available.");
+    }
 
-    const s = Number.isFinite(kksDisplay.stepIndex)
-      ? Math.max(0, Math.min(Math.trunc(kksDisplay.stepIndex), stepsPerBeat - 1))
-      : 0;
+    const svgString = new XMLSerializer().serializeToString(svgEl);
+    const kaiSignature = svgEl.getAttribute("data-kai-signature") ?? "";
+    const phiKey = svgEl.getAttribute("data-phi-key") ?? "";
+    const payloadHashHex = svgEl.getAttribute("data-payload-hash") ?? "";
 
-    const b = Number.isFinite(kksDisplay.beat)
-      ? Math.max(0, Math.min(Math.trunc(kksDisplay.beat), BEATS_DAY - 1))
-      : 0;
+    if (!kaiSignature) throw new Error("kaiSignature missing from SVG.");
+    if (!phiKey) throw new Error("Φ-Key missing from SVG.");
+    if (!payloadHashHex) throw new Error("payload hash missing from SVG.");
 
-    const pulsePixel = biToSafeNumber(pulse);
+    const pulseAttr = svgEl.getAttribute("data-pulse");
+    const pulseParsed = pulseAttr ? Number.parseInt(pulseAttr, 10) : Number.NaN;
+    if (!Number.isFinite(pulseParsed)) throw new Error("pulse missing from SVG.");
+
+    const beatAttr = svgEl.getAttribute("data-beat");
+    const beatParsed = beatAttr ? Number.parseInt(beatAttr, 10) : Number.NaN;
+    if (!Number.isFinite(beatParsed)) throw new Error("beat missing from SVG.");
+
+    const stepAttr = svgEl.getAttribute("data-step-index");
+    const stepParsed = stepAttr ? Number.parseInt(stepAttr, 10) : Number.NaN;
+    if (!Number.isFinite(stepParsed)) throw new Error("step index missing from SVG.");
+
+    const chakraAttr = svgEl.getAttribute("data-chakra-day");
+    const chakraNormalized = normalizeChakraDay(chakraAttr ?? undefined);
+    if (!chakraNormalized) throw new Error("chakra day missing from SVG.");
+
+    const stepsPerBeatAttr = svgEl.getAttribute("data-steps-per-beat");
+    const stepsPerBeatParsed = stepsPerBeatAttr ? Number.parseInt(stepsPerBeatAttr, 10) : NaN;
+    const stepsPerBeat = Number.isFinite(stepsPerBeatParsed) ? stepsPerBeatParsed : STEPS_BEAT;
 
     return {
-      pulse: pulsePixel,
-      beat: b,
-      stepIndex: s,
-      chakraDay,
+      pulse: pulseParsed,
+      beat: beatParsed,
+      stepIndex: stepParsed,
+      chakraDay: chakraNormalized,
       stepsPerBeat,
-      canonicalHash,
-      exportedAt: isoFromPulse(pulse),
-      expiresAtPulse: (pulse + 11n).toString(),
-      pulseExact: pulse.toString(),
+      kaiSignature,
+      phiKey,
+      payloadHashHex,
+      svgString,
     };
   };
 
-  const mintMoment = async () => {
-    const canTrustChildHash = pulse <= MAX_SAFE_BI;
+  const makeSharePayload = (
+    canonicalHash: string,
+    snapshot: MomentSnapshot
+  ): SigilSharePayloadExtended => {
+    const pulseExact = BigInt(snapshot.pulse);
+    return {
+      pulse: snapshot.pulse,
+      beat: snapshot.beat,
+      stepIndex: snapshot.stepIndex,
+      chakraDay: snapshot.chakraDay as SigilSharePayload["chakraDay"],
+      stepsPerBeat: snapshot.stepsPerBeat,
+      canonicalHash,
+      exportedAt: isoFromPulse(pulseExact),
+      expiresAtPulse: (pulseExact + 11n).toString(),
+      pulseExact: pulseExact.toString(),
+    };
+  };
 
-    let hash = (canTrustChildHash ? lastHash : "").toLowerCase();
+  const getAttrFromSvgText = (svgText: string, key: string): string | null => {
+    const pattern = new RegExp(`${key}\\s*=\\s*(\"([^\"]*)\"|'([^']*)')`, "i");
+    const match = svgText.match(pattern);
+    if (!match) return null;
+    return match[2] ?? match[3] ?? null;
+  };
 
-    if (!hash) {
-      const svg = getSVGElement();
-      const svgStr = svg ? new XMLSerializer().serializeToString(svg) : "";
-      const basis =
-        (svgStr || "no-svg") +
-        `|pulseExact=${pulse.toString()}` +
-        `|beat=${kksDisplay.beat}|step=${kksDisplay.stepIndex}|chakra=${chakraDay}`;
-      hash = (await sha256Hex(basis)).toLowerCase();
+  const getNumberAttrFromSvgText = (svgText: string, key: string): number | null => {
+    const raw = getAttrFromSvgText(svgText, key);
+    if (!raw) return null;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+
+  const parsePulseValue = (value: unknown): number | null => {
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value === "string" && value.trim() !== "") {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+    return null;
+  };
+
+  const extractMetadataJsonBlocks = (svgText: string): unknown[] => {
+    const blocks: unknown[] = [];
+    const regex = /<metadata[^>]*>([\s\S]*?)<\/metadata>/gi;
+    for (const match of svgText.matchAll(regex)) {
+      const rawBlock = match[1]?.trim() ?? "";
+      if (!rawBlock) continue;
+      const cleaned = rawBlock.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1").trim();
+      if (!cleaned) continue;
+      const lead = cleaned[0];
+      if (lead !== "{" && lead !== "[") continue;
+      try {
+        blocks.push(JSON.parse(cleaned));
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        throw new Error(`Export failed: unable to parse metadata JSON (${msg}).`);
+      }
+    }
+    return blocks;
+  };
+
+  const assertExportPulseInvariant = (
+    svgText: string,
+    proofBundle: ProofBundle,
+    exportPulse: number
+  ) => {
+    const issues: string[] = [];
+
+    const dataPulse = getNumberAttrFromSvgText(svgText, "data-pulse");
+    if (dataPulse !== null && dataPulse !== exportPulse) {
+      issues.push(`data-pulse(${dataPulse}) != ${exportPulse}`);
     }
 
-    const payload = makeSharePayload(hash);
-    const url = makeSigilUrl(hash, payload);
+    const computedAt = getNumberAttrFromSvgText(svgText, "data-valuation-computed-at");
+    if (computedAt !== null && computedAt !== exportPulse) {
+      issues.push(`data-valuation-computed-at(${computedAt}) != ${exportPulse}`);
+    }
 
-    setSealHash(hash);
-    setSealUrl(url);
-    setSealOpen(true);
+    const svgId = getAttrFromSvgText(svgText, "id");
+    if (svgId) {
+      const idMatch = svgId.match(/^ks-(\d+)-/);
+      if (idMatch) {
+        const idPulse = Number(idMatch[1]);
+        if (Number.isFinite(idPulse) && idPulse !== exportPulse) {
+          issues.push(`id pulse(${idPulse}) != ${exportPulse}`);
+        }
+      }
+    }
+
+    const ariaLabel = getAttrFromSvgText(svgText, "aria-label");
+    if (ariaLabel) {
+      const ariaMatch = ariaLabel.match(/pulse\s+(\d+)/i);
+      if (ariaMatch) {
+        const ariaPulse = Number(ariaMatch[1]);
+        if (Number.isFinite(ariaPulse) && ariaPulse !== exportPulse) {
+          issues.push(`aria-label pulse(${ariaPulse}) != ${exportPulse}`);
+        }
+      }
+    }
+
+    const titleMatch = svgText.match(/<title[^>]*>[^<]*Pulse\s*(\d+)/i);
+    if (titleMatch) {
+      const titlePulse = Number(titleMatch[1]);
+      if (Number.isFinite(titlePulse) && titlePulse !== exportPulse) {
+        issues.push(`title pulse(${titlePulse}) != ${exportPulse}`);
+      }
+    }
+
+    const descMatch = svgText.match(/<desc[^>]*>[^<]*?(?:Pulse|Kai-Pulse)\s*(\d+)/i);
+    if (descMatch) {
+      const descPulse = Number(descMatch[1]);
+      if (Number.isFinite(descPulse) && descPulse !== exportPulse) {
+        issues.push(`desc pulse(${descPulse}) != ${exportPulse}`);
+      }
+    }
+
+    const shareUrl = getAttrFromSvgText(svgText, "data-share-url");
+    if (shareUrl) {
+      const payload = extractPayloadFromUrl(shareUrl);
+      if (payload?.pulse != null && payload.pulse !== exportPulse) {
+        issues.push(`shareUrl pulse(${payload.pulse}) != ${exportPulse}`);
+      }
+    }
+
+    const pulseKeys = new Set([
+      "pulse",
+      "kaiPulse",
+      "computedAtPulse",
+      "pulseExact",
+      "exportedAtPulse",
+    ]);
+    const exemptKeys = new Set(["expiresAtPulse"]);
+
+    const walk = (node: unknown, path = "") => {
+      if (Array.isArray(node)) {
+        node.forEach((entry, idx) => walk(entry, `${path}[${idx}]`));
+        return;
+      }
+      if (!isRecord(node)) return;
+      for (const [key, value] of Object.entries(node)) {
+        const nextPath = path ? `${path}.${key}` : key;
+        if (exemptKeys.has(key)) continue;
+        if (pulseKeys.has(key)) {
+          const parsed = parsePulseValue(value);
+          if (parsed !== null && parsed !== exportPulse) {
+            issues.push(`${nextPath}(${parsed}) != ${exportPulse}`);
+          }
+        }
+        if (key === "verifierSlug" && typeof value === "string") {
+          if (!value.startsWith(`${exportPulse}-`)) {
+            issues.push(`${nextPath}(${value}) does not start with ${exportPulse}-`);
+          }
+        }
+        walk(value, nextPath);
+      }
+    };
+
+    const metadataBlocks = extractMetadataJsonBlocks(svgText);
+    metadataBlocks.forEach((block, idx) => walk(block, `metadata[${idx}]`));
+
+    if (proofBundle.proofCapsule.pulse !== exportPulse) {
+      issues.push(`proofCapsule.pulse(${proofBundle.proofCapsule.pulse}) != ${exportPulse}`);
+    }
+
+    if (!proofBundle.proofCapsule.verifierSlug.startsWith(`${exportPulse}-`)) {
+      issues.push(`proofCapsule.verifierSlug(${proofBundle.proofCapsule.verifierSlug}) mismatch`);
+    }
+
+    if (issues.length > 0) {
+      throw new Error(`Export pulse invariant failed: ${issues.join("; ")}`);
+    }
+  };
+
+  const mintMoment = async () => {
+    try {
+      const snapshot = captureMomentSnapshot();
+      exportSnapshotRef.current = snapshot;
+
+      const pulseExact = BigInt(snapshot.pulse);
+      const canTrustChildHash = pulseExact <= MAX_SAFE_BI;
+
+      let hash = (canTrustChildHash ? lastHash : "").toLowerCase();
+
+      if (!hash) {
+        const basis =
+          (snapshot.svgString || "no-svg") +
+          `|pulseExact=${pulseExact.toString()}` +
+          `|beat=${snapshot.beat}|step=${snapshot.stepIndex}|chakra=${snapshot.chakraDay}`;
+        hash = (await sha256Hex(basis)).toLowerCase();
+      }
+
+      const payload = makeSharePayload(hash, snapshot);
+      const url = makeSigilUrl(hash, payload);
+
+      setSealHash(hash);
+      setSealUrl(url);
+      setSealOpen(true);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(msg);
+      setSealHash("");
+      setSealUrl("");
+      setSealOpen(false);
+    }
   };
 
   const exportProofBundle = async (): Promise<string | null> => {
     try {
-      const svgEl = getSVGElement();
-      if (!svgEl) return "Export failed: sigil SVG is not available.";
+      const snapshot = exportSnapshotRef.current;
+      if (!snapshot) {
+        return "Export failed: no sealed snapshot available.";
+      }
 
-      const svgString = new XMLSerializer().serializeToString(svgEl);
-      const kaiSignature = svgEl.getAttribute("data-kai-signature") ?? "";
-      const phiKey = svgEl.getAttribute("data-phi-key") ?? "";
-      const payloadHashHex = svgEl.getAttribute("data-payload-hash") ?? "";
-
-      if (!kaiSignature) return "Export failed: kaiSignature missing from SVG.";
-      if (!phiKey) return "Export failed: Φ-Key missing from SVG.";
-      if (!payloadHashHex) return "Export failed: payload hash missing from SVG.";
-
-      const pulseAttr = svgEl.getAttribute("data-pulse");
-      const pulseParsed = pulseAttr ? Number.parseInt(pulseAttr, 10) : NaN;
-      if (!Number.isFinite(pulseParsed)) return "Export failed: pulse missing from SVG.";
-      const pulseNum = pulseParsed;
-
-      const beatAttr = svgEl.getAttribute("data-beat");
-      const beatParsed = beatAttr ? Number.parseInt(beatAttr, 10) : NaN;
-      if (!Number.isFinite(beatParsed)) return "Export failed: beat missing from SVG.";
-
-      const stepAttr = svgEl.getAttribute("data-step-index");
-      const stepParsed = stepAttr ? Number.parseInt(stepAttr, 10) : NaN;
-      if (!Number.isFinite(stepParsed)) return "Export failed: step index missing from SVG.";
-
-      const chakraAttr = svgEl.getAttribute("data-chakra-day");
-      const chakraNormalized = normalizeChakraDay(chakraAttr ?? undefined);
-      if (!chakraNormalized) return "Export failed: chakra day missing from SVG.";
-
-      const stepsPerBeatAttr = svgEl.getAttribute("data-steps-per-beat");
-      const stepsPerBeatParsed = stepsPerBeatAttr ? Number.parseInt(stepsPerBeatAttr, 10) : NaN;
-      const stepsPerBeat = Number.isFinite(stepsPerBeatParsed) ? stepsPerBeatParsed : STEPS_BEAT;
+      const {
+        svgString,
+        kaiSignature,
+        phiKey,
+        payloadHashHex,
+        pulse: pulseNum,
+        beat: beatParsed,
+        stepIndex: stepParsed,
+        chakraDay: chakraNormalized,
+        stepsPerBeat,
+      } = snapshot;
 
       const sharePayload: SigilSharePayload = {
         pulse: pulseNum,
@@ -1258,6 +1460,7 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
       };
 
       const sealedSvg = embedProofMetadata(svgString, proofBundle);
+      assertExportPulseInvariant(sealedSvg, proofBundle, pulseNum);
       const baseName = `kai-voh_pulse-${pulseNum}_${kaiSignatureShort}`;
       const zip = new JSZip();
       zip.file(`${baseName}.svg`, sealedSvg);

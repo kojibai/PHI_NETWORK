@@ -338,15 +338,14 @@ const KaiSigil = forwardRef<KaiSigilHandle, KaiSigilProps>((props, ref) => {
 
   /* valuation */
   const hasher = useStableSha256();
-  const mintPulseRef = useRef<number>(canon.pulse);
   const [liveValuePhi, setLiveValuePhi] = useState<number | null>(null);
   const [mintSeal, setMintSeal] = useState<ValueSeal | null>(null);
   const valuationMetaRef = useRef<SigilMetadataLite | null>(null);
 
   useEffect(() => {
     valuationMetaRef.current = {
-      pulse: mintPulseRef.current,
-      kaiPulse: mintPulseRef.current,
+      pulse: canon.pulse,
+      kaiPulse: canon.pulse,
       kaiSignature: kaiSignature ?? undefined,
       userPhiKey: userPhiKey ?? undefined,
       beat: canon.beat,
@@ -358,6 +357,7 @@ const KaiSigil = forwardRef<KaiSigilHandle, KaiSigilProps>((props, ref) => {
       chakraGate,
     };
   }, [
+    canon.pulse,
     canon.beat,
     canon.stepIndex,
     canon.stepsPerBeat,
@@ -415,8 +415,8 @@ const KaiSigil = forwardRef<KaiSigilHandle, KaiSigilProps>((props, ref) => {
           `Kairos HarmoniK Sigil • ${day0} • Beat ${beat0} • Step ${step0}`;
 
         const valuationSource: SigilMetadataLite = {
-          pulse: mintPulseRef.current,
-          kaiPulse: mintPulseRef.current,
+          pulse: pulse0,
+          kaiPulse: pulse0,
           kaiSignature: kaiSignature ?? undefined,
           userPhiKey: userPhiKey ?? undefined,
 
@@ -436,7 +436,7 @@ const KaiSigil = forwardRef<KaiSigilHandle, KaiSigilProps>((props, ref) => {
         try {
           const { seal } = await buildValueSeal(
             valuationSource,
-            mintPulseRef.current,
+            pulse0,
             hasher
           );
           sealLocal = seal;
