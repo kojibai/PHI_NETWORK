@@ -160,7 +160,7 @@ export default function VerifySigil(): React.JSX.Element {
     if (!payload) return false;
     if (!payload.zkPoseidonHash || payload.zkPoseidonHash === "0x") return false;
     if (!payload.zkProof || typeof payload.zkProof !== "object") return false;
-    return Object.keys(payload.zkProof as Record<string, unknown>).length > 0;
+    return Object.keys(payload.zkProof as unknown as Record<string, unknown>).length > 0;
   }, [payload]);
 
   // Align dependencies with React Compiler: depend on `payload` not `payload?.canonicalHash`
