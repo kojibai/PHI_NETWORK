@@ -2,13 +2,27 @@
 // Engine: exact integers in μpulses + φ bridge via decimal.js (no drift; no float rounding in core)
 
 import Decimal from "decimal.js";
+import {
+  BASE_DAY_MICRO,
+  BEATS_DAY,
+  DAYS_PER_MONTH,
+  DAYS_PER_WEEK,
+  DAYS_PER_YEAR,
+  GENESIS_TS,
+  MONTHS_PER_YEAR,
+  N_DAY_MICRO,
+  PULSES_STEP,
+  SOLAR_GENESIS_UTC_TS,
+  STEPS_BEAT,
+  WEEKS_PER_MONTH,
+} from "./utils/kai_pulse";
 
 // ──────────────────────────────────────────────────────────────
 // Canon constants (Kai-Klok KKS-1.0)
 // ──────────────────────────────────────────────────────────────
-export const HARMONIC_DAY_PULSES = 17491.270421 as const; // pulses per day (closure-true)
-export const ETERNAL_BEATS_PER_DAY = 36 as const;
-export const ETERNAL_STEPS_PER_BEAT = 44 as const;
+export const HARMONIC_DAY_PULSES = Number(N_DAY_MICRO) / 1_000_000; // pulses per day (closure-true)
+export const ETERNAL_BEATS_PER_DAY = BEATS_DAY;
+export const ETERNAL_STEPS_PER_BEAT = STEPS_BEAT;
 
 // φ-exact breath (arbitrary precision)
 Decimal.set({ precision: 64, rounding: Decimal.ROUND_HALF_EVEN });
@@ -17,10 +31,10 @@ export const BREATH_SEC_DEC = new Decimal(3).plus(SQRT5); // 3 + √5 (exact in 
 export const BREATH_SEC = Number(BREATH_SEC_DEC);         // convenience for display-only comments
 
 // Genesis epoch (Sun-origin anchor) in Unix ms (UTC).
-export const GENESIS_TS = 1715323541888 as const; // 2024-05-10T06:45:41.888Z
+export { GENESIS_TS };
 
 // (Informative) Greenwich sunrise after the flare; NOT used by engine logic.
-export const SOLAR_GENESIS_UTC_TS = 1715400806000 as const; // 2024-05-11T04:13:26.000Z
+export { SOLAR_GENESIS_UTC_TS };
 
 // Labels
 export const SOLAR_DAY_NAMES = [
@@ -99,10 +113,6 @@ export function kaiCalendarFromPulse(pulse: number) {
   const absDayIdxBI = muAbs / MU_PER_DAY;          // 0..∞
   const absDayIdx   = Number(absDayIdxBI) + 1;     // 1..∞
 
-  const DAYS_PER_WEEK = 6, WEEKS_PER_MONTH = 7, MONTHS_PER_YEAR = 8;
-  const DAYS_PER_MONTH = DAYS_PER_WEEK * WEEKS_PER_MONTH; // 42
-  const DAYS_PER_YEAR  = DAYS_PER_MONTH * MONTHS_PER_YEAR; // 336
-
   const dYear = Number(((absDayIdxBI % BigInt(DAYS_PER_YEAR)) + BigInt(DAYS_PER_YEAR)) % BigInt(DAYS_PER_YEAR)); // 0..335
   const yearIdx  = Math.floor(Number(absDayIdxBI) / DAYS_PER_YEAR);
   const monthIdx = Math.floor(dYear / DAYS_PER_MONTH);     // 0..7
@@ -126,17 +136,17 @@ export function phiSpiralLevelFromPulse(pulse: number): number {
 const MU_PER_PULSE = 1_000_000n as const;
 
 // Exact micro-pulses per day (17,491.270421 pulses/day)
-const MU_PER_DAY = 17_491_270_421n as const;
+const MU_PER_DAY = N_DAY_MICRO;
 
 // Semantic grid (36 beats × 44 steps × 11 pulses)
-const GRID_PULSES_PER_STEP = 11n;                                                   // pulses
+const GRID_PULSES_PER_STEP = BigInt(PULSES_STEP);                                   // pulses
 const GRID_PULSES_PER_BEAT = GRID_PULSES_PER_STEP * BigInt(ETERNAL_STEPS_PER_BEAT); // 484
 const GRID_PULSES_PER_DAY  = GRID_PULSES_PER_BEAT * BigInt(ETERNAL_BEATS_PER_DAY);  // 17,424
 
 // Micro-pulse versions (exact integers)
 const MU_PER_GRID_STEP = GRID_PULSES_PER_STEP * MU_PER_PULSE; // 11e6
 const MU_PER_GRID_BEAT = GRID_PULSES_PER_BEAT * MU_PER_PULSE; // 484e6
-const MU_PER_GRID_DAY  = GRID_PULSES_PER_DAY  * MU_PER_PULSE; // 17,424e6
+const MU_PER_GRID_DAY  = BASE_DAY_MICRO; // 17,424e6
 
 // ──────────────────────────────────────────────────────────────
 // Behavior toggle — DAILY anchor vs GENESIS tiling

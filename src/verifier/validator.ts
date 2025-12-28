@@ -1,5 +1,6 @@
 // src/verifier/validator.ts
 import type { SigilMetadataLite } from "../utils/valuation";
+import { sha256HexCanon, verifierSigmaString } from "./canonical";
 
 /* Public constants (kept identical to Verifier) */
 export const SIGIL_CTX = "https://schema.phi.network/sigil/v1" as const;
@@ -48,32 +49,6 @@ export type SigilMetadata = SigilMetadataLite & {
   [k: string]: unknown;
 };
 
-/* ─────────────────────────────────────────────────────────────
- * WebCrypto normalization:
- * crypto.subtle.digest wants BufferSource, but TS may infer Uint8Array<ArrayBufferLike>
- * (SharedArrayBuffer). Always pass a real ArrayBuffer slice.
- * ───────────────────────────────────────────────────────────── */
-function toArrayBuffer(u8: Uint8Array): ArrayBuffer {
-  // Copy to a brand-new ArrayBuffer so TS/DOM types are satisfied across SAB environments.
-  const out = new Uint8Array(u8.byteLength);
-  out.set(u8);
-  return out.buffer;
-}
-
-/* ── tiny crypto helpers ── */
-const bytesToHex = (u8: Uint8Array) =>
-  Array.from(u8)
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-
-export async function sha256Hex(msg: string | Uint8Array): Promise<string> {
-  const data: Uint8Array =
-    typeof msg === "string" ? new TextEncoder().encode(msg) : msg;
-
-  const buf = await crypto.subtle.digest("SHA-256", toArrayBuffer(data));
-  return bytesToHex(new Uint8Array(buf));
-}
-
 /* Producer-compatible Σ (Verifier semantics: uses stepIndex as parsed) */
 async function computeKaiSignature(meta: SigilMetadata): Promise<string | null> {
   const { pulse, beat, stepIndex, chakraDay } = meta;
@@ -86,10 +61,14 @@ async function computeKaiSignature(meta: SigilMetadata): Promise<string | null> 
     return null;
   }
 
-  const base = `${pulse}|${beat}|${stepIndex}|${chakraDay}|${
-    typeof meta.intentionSigil === "string" ? meta.intentionSigil : ""
-  }`;
-  return sha256Hex(base);
+  const base = verifierSigmaString(
+    pulse,
+    beat,
+    stepIndex,
+    chakraDay,
+    typeof meta.intentionSigil === "string" ? meta.intentionSigil : "",
+  );
+  return sha256HexCanon(base);
 }
 
 /* ── SVG parse helpers ── */
@@ -166,7 +145,7 @@ async function canonicalHash(
   const s = `${meta.pulse ?? 0}|${meta.beat ?? 0}|${meta.stepIndex ?? 0}|${
     meta.chakraDay ?? ""
   }`;
-  return (await sha256Hex(s)).toLowerCase();
+  return (await sha256HexCanon(s)).toLowerCase();
 }
 
 /* Public validator API used by GlyphImportModal (and optionally Verifier) */

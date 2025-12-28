@@ -234,13 +234,13 @@ const VerifierStamperInner: React.FC = () => {
     let alive = true;
     (async () => {
       try {
-        const res = await fetch("/verification_key.json", { cache: "no-store" });
+        const res = await fetch("/sigil.vkey.json", { cache: "no-store" });
         if (!res.ok) return;
         const vkey: unknown = await res.json();
         if (!alive) return;
         setSigilZkVkey(vkey);
       } catch (err) {
-        logError("fetch(/verification_key.json)", err);
+        logError("fetch(/sigil.vkey.json)", err);
       }
     })();
     return () => {

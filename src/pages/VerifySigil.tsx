@@ -44,10 +44,12 @@ import {
   derivePhiKeyFromSigCanon,
   verifierSigmaString,
   readIntentionSigil,
-} from "./SigilPage/verifierCanon";
+} from "../verifier/canonical";
 
 /* Central Kai sigil payload type */
 import type { SigilPayload } from "../types/sigil";
+import { tryVerifyGroth16 } from "../components/VerifierStamper/zk";
+import { setSigilZkVkey } from "../components/VerifierStamper/window";
 
 /* ──────────────────────────────────────────────────────────────
    Local types
@@ -71,6 +73,13 @@ type BreathProof = {
 };
 
 type SourceKind = "none" | "query" | "upload";
+type ZkStatus = {
+  present: boolean;
+  scheme?: string;
+  poseidonHash?: string;
+  verified?: boolean | null;
+  hint?: string;
+};
 
 /* ──────────────────────────────────────────────────────────────
    Page
@@ -97,6 +106,7 @@ export default function VerifySigil(): React.JSX.Element {
   const [fileName, setFileName] = useState<string | null>(null);
 
   const [breathProof, setBreathProof] = useState<BreathProof | null>(null);
+  const [zkStatus, setZkStatus] = useState<ZkStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const [sigilSize, setSigilSize] = useState<number>(320);
@@ -124,6 +134,35 @@ export default function VerifySigil(): React.JSX.Element {
         : percentIntoStepFromPulse(payload?.pulse ?? 0),
     [payload]
   );
+
+  const zkHints = useMemo(() => {
+    const hints = (payload as { proofHints?: unknown })?.proofHints;
+    if (Array.isArray(hints)) {
+      const first = hints.find((item) => typeof item === "object" && item !== null);
+      return (first as Record<string, unknown>) ?? null;
+    }
+    if (typeof hints === "object" && hints !== null) return hints as Record<string, unknown>;
+    return null;
+  }, [payload]);
+
+  const zkScheme = useMemo(() => {
+    const scheme = zkHints?.scheme;
+    return typeof scheme === "string" && scheme.trim().length > 0
+      ? scheme
+      : "groth16-poseidon";
+  }, [zkHints]);
+
+  const zkExplorer = useMemo(() => {
+    const explorer = zkHints?.explorer;
+    return typeof explorer === "string" && explorer.trim().length > 0 ? explorer : null;
+  }, [zkHints]);
+
+  const hasZkProof = useMemo(() => {
+    if (!payload) return false;
+    if (!payload.zkPoseidonHash || payload.zkPoseidonHash === "0x") return false;
+    if (!payload.zkProof || typeof payload.zkProof !== "object") return false;
+    return Object.keys(payload.zkProof as unknown as Record<string, unknown>).length > 0;
+  }, [payload]);
 
   // Align dependencies with React Compiler: depend on `payload` not `payload?.canonicalHash`
   const shortHash = useMemo(
@@ -262,6 +301,106 @@ export default function VerifySigil(): React.JSX.Element {
   }, [payload]);
 
   /* ──────────────────────────────────────────────────────────
+     Load verifying key (best-effort)
+     ────────────────────────────────────────────────────────── */
+  useEffect(() => {
+    let alive = true;
+    if (typeof window === "undefined") return () => {};
+    if (window.SIGIL_ZK_VKEY) return () => {};
+
+    (async () => {
+      try {
+        const res = await fetch("/sigil.vkey.json", { cache: "no-store" });
+        if (!res.ok) return;
+        const vkey: unknown = await res.json();
+        if (!alive) return;
+        setSigilZkVkey(vkey);
+      } catch {
+        // best-effort only
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  /* ──────────────────────────────────────────────────────────
+     Optional ZK proof verification (best-effort)
+     ────────────────────────────────────────────────────────── */
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      if (!payload) {
+        if (!cancelled) setZkStatus(null);
+        return;
+      }
+
+      if (!hasZkProof) {
+        if (!cancelled) {
+          setZkStatus({
+            present: false,
+            scheme: zkScheme,
+            poseidonHash: payload.zkPoseidonHash,
+          });
+        }
+        return;
+      }
+
+      try {
+        const fallbackVkey =
+          typeof window !== "undefined" ? window.SIGIL_ZK_VKEY : undefined;
+
+        if (!fallbackVkey) {
+          if (!cancelled) {
+            setZkStatus({
+              present: true,
+              scheme: zkScheme,
+              poseidonHash: payload.zkPoseidonHash,
+              verified: null,
+              hint: "Verifying key not loaded.",
+            });
+          }
+          return;
+        }
+
+        const verified = await tryVerifyGroth16({
+          proof: payload.zkProof,
+          publicSignals: [payload.zkPoseidonHash],
+          fallbackVkey,
+        });
+
+        if (!cancelled) {
+          setZkStatus({
+            present: true,
+            scheme: zkScheme,
+            poseidonHash: payload.zkPoseidonHash,
+            verified,
+            hint: verified === null ? "Groth16 verifier not available." : undefined,
+          });
+        }
+      } catch (err) {
+        if (!cancelled) {
+          const message =
+            err instanceof Error ? err.message : "ZK verification failed.";
+          setZkStatus({
+            present: true,
+            scheme: zkScheme,
+            poseidonHash: payload.zkPoseidonHash,
+            verified: false,
+            hint: message,
+          });
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [payload, hasZkProof, zkScheme]);
+
+  /* ──────────────────────────────────────────────────────────
      Derived verification status (no setState here)
      ────────────────────────────────────────────────────────── */
   const status: VerifyStatus = useMemo(() => {
@@ -361,6 +500,15 @@ export default function VerifySigil(): React.JSX.Element {
     if (source === "query") return "Source · URL payload (?p=…)";
     return "Source · None";
   }, [source, fileName]);
+
+  const zkVerifyLabel = useMemo(() => {
+    if (!zkStatus) return "—";
+    if (!zkStatus.present) return "missing";
+    if (zkStatus.verified === true) return "✓ verified";
+    if (zkStatus.verified === null) return "verification unavailable";
+    if (zkStatus.verified === false) return "✕ invalid";
+    return "pending";
+  }, [zkStatus]);
 
   /* ──────────────────────────────────────────────────────────
      Render
@@ -590,6 +738,46 @@ export default function VerifySigil(): React.JSX.Element {
                     </li>
                   </ul>
                 </div>
+
+                {zkStatus && (
+                  <div className="verify-proof-block">
+                    <h3>ZK · Proof</h3>
+                    <ul>
+                      <li>
+                        <span className="label">Scheme</span>
+                        <span className="value">{zkStatus.scheme ?? "—"}</span>
+                      </li>
+                      <li>
+                        <span className="label">Poseidon hash</span>
+                        <span className="value mono">
+                          {zkStatus.poseidonHash ?? "missing"}
+                        </span>
+                      </li>
+                      <li>
+                        <span className="label">Proof bundle</span>
+                        <span className="value">
+                          {zkStatus.present ? "present" : "missing"}
+                        </span>
+                      </li>
+                      <li>
+                        <span className="label">Verification</span>
+                        <span className="value">{zkVerifyLabel}</span>
+                      </li>
+                      {zkStatus.hint && (
+                        <li>
+                          <span className="label">Note</span>
+                          <span className="value">{zkStatus.hint}</span>
+                        </li>
+                      )}
+                      {zkExplorer && (
+                        <li>
+                          <span className="label">Explorer</span>
+                          <span className="value mono">{zkExplorer}</span>
+                        </li>
+                      )}
+                    </ul>
+                  </div>
+                )}
               </div>
             )}
 

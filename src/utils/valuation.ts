@@ -299,6 +299,11 @@ const POLICY_CHECKSUM = policyChecksum();
 const clamp = (x: number, a: number, b: number) => Math.max(a, Math.min(b, x));
 const log1p = (x: number) => Math.log(1 + Math.max(0, x));
 const frac = (x: number) => x - Math.floor(x);
+const OSC_QUANT = 1_000_000;
+const quantizeOsc = (x: number) => {
+  if (!Number.isFinite(x)) return 0;
+  return Math.round(x * OSC_QUANT) / OSC_QUANT;
+};
 
 function median(arr: number[]): number {
   if (!arr.length) return 0;
@@ -829,19 +834,23 @@ export function computeIntrinsicUnsigned(
   /* --------------------------- live oscillations (φ) ------------------------- */
 
   // Breath wave
-  const breathPhase01 = pulsesPerBeat > 0 ? ((nowPulse % pulsesPerBeat) / pulsesPerBeat) : 0;
+  const breathPhase01 = pulsesPerBeat > 0
+    ? quantizeOsc((nowPulse % pulsesPerBeat) / pulsesPerBeat)
+    : 0;
   const breathAmp = BREATH_WAVE_GAIN * (0.5 + 0.5 * cadenceRegularity);
-  const breathWave = 1 + breathAmp * Math.sin(2 * Math.PI * breathPhase01);
+  const breathWave = quantizeOsc(1 + breathAmp * Math.sin(2 * Math.PI * breathPhase01));
 
   // Kai-day wave (claim-day ↔ now-day alignment)
-  const dayPhase01 = frac(nowPulse / PULSES_PER_DAY_EXACT);
-  const claimDayPhase01 = frac(claimPulse / PULSES_PER_DAY_EXACT);
+  const dayPhase01 = quantizeOsc(frac(nowPulse / PULSES_PER_DAY_EXACT));
+  const claimDayPhase01 = quantizeOsc(frac(claimPulse / PULSES_PER_DAY_EXACT));
   const daySim = 1 - Math.abs(((dayPhase01 - claimDayPhase01 + 1) % 1) - 0.5) * 2;
   const dayAmp = DAY_WAVE_GAIN * (0.5 + 0.5 * resonancePhi) * (0.5 + 0.5 * cadenceRegularity);
-  const dayWave = 1 + dayAmp * (2 * daySim - 1);
+  const dayWave = quantizeOsc(1 + dayAmp * (2 * daySim - 1));
 
   // φ-Beatty strobe (no RNG)
-  const { phase01: strobePhase01, wave: strobeWaveVal } = strobeWave(claimPulse, nowPulse);
+  const { phase01: strobePhaseRaw, wave: strobeWaveRaw } = strobeWave(claimPulse, nowPulse);
+  const strobePhase01 = quantizeOsc(strobePhaseRaw);
+  const strobeWaveVal = quantizeOsc(strobeWaveRaw);
 
   // Moment Affinity (use resolved claim step)
   const claimStep = claimStepResolved;
@@ -866,17 +875,20 @@ export function computeIntrinsicUnsigned(
 
   const w_step = 0.30, w_breath = 0.30, w_phi = 0.20, w_digit = 0.20;
   const digitBlend = (MOMENT_AFFINITY_DIGIT_WEIGHT * motifSim + (1 - MOMENT_AFFINITY_DIGIT_WEIGHT) * rareSim);
-  const momentAffinitySim01 = w_step * stepSim + w_breath * breathSim + w_phi * phiFracSim + w_digit * digitBlend;
+  const momentAffinitySim01 = quantizeOsc(
+    w_step * stepSim + w_breath * breathSim + w_phi * phiFracSim + w_digit * digitBlend
+  );
 
-  const momentAffinityAmp =
+  const momentAffinityAmp = quantizeOsc(
     MOMENT_AFFINITY_GAIN_BASE *
     (0.5 + 0.5 * claimRareScore) *
-    (0.5 + 0.5 * resonancePhi);
+    (0.5 + 0.5 * resonancePhi)
+  );
 
-  const momentAffinityOsc = 1 + momentAffinityAmp * (2 * momentAffinitySim01 - 1);
+  const momentAffinityOsc = quantizeOsc(1 + momentAffinityAmp * (2 * momentAffinitySim01 - 1));
 
   // Combine waves (strictly positive; preserves floor)
-  const combinedOsc = breathWave * dayWave * strobeWaveVal * momentAffinityOsc;
+  const combinedOsc = quantizeOsc(breathWave * dayWave * strobeWaveVal * momentAffinityOsc);
 
   /* ----------------------- compose premium with living band ------------------ */
 
@@ -1095,16 +1107,18 @@ export function explainOscillation(
   const resonance = typeof opts?.resonancePhi === "number" ? clamp(opts.resonancePhi, 0, 1) : 0.5;
 
   // breath
-  const breathPhase01 = pulsesPerBeat > 0 ? ((nowPulse % pulsesPerBeat) / pulsesPerBeat) : 0;
+  const breathPhase01 = pulsesPerBeat > 0
+    ? quantizeOsc((nowPulse % pulsesPerBeat) / pulsesPerBeat)
+    : 0;
   const breathAmp = BREATH_WAVE_GAIN * (0.5 + 0.5 * cadence);
-  const breathWave = 1 + breathAmp * Math.sin(2 * Math.PI * breathPhase01);
+  const breathWave = quantizeOsc(1 + breathAmp * Math.sin(2 * Math.PI * breathPhase01));
 
   // day
-  const dayPhase01 = frac(nowPulse / PULSES_PER_DAY_EXACT);
-  const claimDayPhase01 = frac(claimPulse / PULSES_PER_DAY_EXACT);
+  const dayPhase01 = quantizeOsc(frac(nowPulse / PULSES_PER_DAY_EXACT));
+  const claimDayPhase01 = quantizeOsc(frac(claimPulse / PULSES_PER_DAY_EXACT));
   const daySim = 1 - Math.abs(((dayPhase01 - claimDayPhase01 + 1) % 1) - 0.5) * 2;
   const dayAmp = DAY_WAVE_GAIN * (0.5 + 0.5 * resonance) * (0.5 + 0.5 * cadence);
-  const dayWave = 1 + dayAmp * (2 * daySim - 1);
+  const dayWave = quantizeOsc(1 + dayAmp * (2 * daySim - 1));
 
   // affinity
   const claimStep = typeof opts?.stepIndexClaimOverride === "number"
@@ -1128,16 +1142,22 @@ export function explainOscillation(
   const motifSim = jaccard01(claimMotifs, nowMotifs);
 
   // φ-Beatty strobe
-  const { phase01: strobePhase01, wave: strobeWaveVal } = strobeWave(claimPulse, nowPulse);
+  const { phase01: strobePhaseRaw, wave: strobeWaveRaw } = strobeWave(claimPulse, nowPulse);
+  const strobePhase01 = quantizeOsc(strobePhaseRaw);
+  const strobeWaveVal = quantizeOsc(strobeWaveRaw);
 
   const w_step = 0.30, w_breath = 0.30, w_phi = 0.20, w_digit = 0.20;
   const digitBlend = (MOMENT_AFFINITY_DIGIT_WEIGHT * motifSim + (1 - MOMENT_AFFINITY_DIGIT_WEIGHT) * rareSim);
-  const momentAffinitySim01 = w_step * stepSim + w_breath * breathSim + w_phi * phiFracSim + w_digit * digitBlend;
+  const momentAffinitySim01 = quantizeOsc(
+    w_step * stepSim + w_breath * breathSim + w_phi * phiFracSim + w_digit * digitBlend
+  );
 
-  const momentAffinityAmp = MOMENT_AFFINITY_GAIN_BASE * (0.5 + 0.5 * claimRareScore) * (0.5 + 0.5 * resonance);
-  const momentAffinity = 1 + momentAffinityAmp * (2 * momentAffinitySim01 - 1);
+  const momentAffinityAmp = quantizeOsc(
+    MOMENT_AFFINITY_GAIN_BASE * (0.5 + 0.5 * claimRareScore) * (0.5 + 0.5 * resonance)
+  );
+  const momentAffinity = quantizeOsc(1 + momentAffinityAmp * (2 * momentAffinitySim01 - 1));
 
-  const combinedOsc = breathWave * dayWave * strobeWaveVal * momentAffinity;
+  const combinedOsc = quantizeOsc(breathWave * dayWave * strobeWaveVal * momentAffinity);
 
   return {
     breathWave,
