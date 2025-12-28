@@ -1,10 +1,5 @@
 import { blake3Hex } from "./hash";
 
-export const KSFP_CACHE_NAME = "ksfp1-store-v1";
-export const KSFP_ORIGIN_PREFIX = "/ksfp1/origin";
-export const KSFP_LINEAGE_PREFIX = "/ksfp1/lineage";
-export const KSFP_BLOB_PREFIX = "/ksfp1/blobs";
-
 const textEncoder = new TextEncoder();
 
 export type KsfpLineageKey = {
@@ -38,9 +33,9 @@ export type KsfpLineageKey = {
     };
   };
   payload: {
-    encoding: "ref";
+    encoding: "inline";
     compression: "none";
-    blobRef: string;
+    data_b64url: string;
   };
 };
 
@@ -90,6 +85,11 @@ export type KsfpOriginManifest = {
   };
 };
 
+export type KsfpInlineBundle = {
+  origin: KsfpOriginManifest;
+  lineage: KsfpLineageKey[];
+};
+
 type ChunkPlan = {
   tier: number;
   index: number;
@@ -101,26 +101,33 @@ type ChunkPlan = {
 
 type ChunkRange = { tier: number; count: number; chunkBytes: number };
 
-export function isKsfpOriginUrl(url: string | undefined | null): url is string {
-  if (!url) return false;
-  try {
-    const u = new URL(url, globalThis.location?.origin ?? "http://localhost");
-    return u.pathname.startsWith(`${KSFP_ORIGIN_PREFIX}/`);
-  } catch {
-    return false;
+function base64UrlEncodeBytes(buf: ArrayBuffer): string {
+  const bytes = new Uint8Array(buf);
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  const outParts: string[] = [];
+  const n = bytes.length;
+
+  let i = 0;
+  for (; i + 2 < n; i += 3) {
+    const x = (bytes[i] << 16) | (bytes[i + 1] << 8) | bytes[i + 2];
+    outParts.push(
+      alphabet[(x >>> 18) & 63] +
+        alphabet[(x >>> 12) & 63] +
+        alphabet[(x >>> 6) & 63] +
+        alphabet[x & 63],
+    );
   }
-}
 
-export function ksfpOriginUrl(originSig: string): string {
-  return `${KSFP_ORIGIN_PREFIX}/${originSig}`;
-}
+  const rem = n - i;
+  if (rem === 1) {
+    const x = bytes[i] << 16;
+    outParts.push(alphabet[(x >>> 18) & 63] + alphabet[(x >>> 12) & 63] + "==");
+  } else if (rem === 2) {
+    const x = (bytes[i] << 16) | (bytes[i + 1] << 8);
+    outParts.push(alphabet[(x >>> 18) & 63] + alphabet[(x >>> 12) & 63] + alphabet[(x >>> 6) & 63] + "=");
+  }
 
-function ksfpLineageUrl(originSig: string, tier: number, index: number): string {
-  return `${KSFP_LINEAGE_PREFIX}/${originSig}/t${tier}/i${index}`;
-}
-
-function ksfpBlobUrl(chunkHash: string): string {
-  return `${KSFP_BLOB_PREFIX}/${chunkHash}`;
+  return outParts.join("").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
 function fibSequence(start: [number, number], count: number): number[] {
@@ -215,38 +222,23 @@ async function blake3HexStream(blob: Blob, chunkSize = 4 * 1024 * 1024): Promise
   return hasher.digest("hex");
 }
 
-async function cachePutJson(cache: Cache, url: string, value: unknown): Promise<void> {
-  await cache.put(
-    new Request(url, { method: "GET" }),
-    new Response(JSON.stringify(value, null, 2), { headers: { "Content-Type": "application/json" } }),
-  );
-}
-
-export async function ingestKsfpFile(
+export async function buildKsfpInlineBundle(
   file: File,
-  opts: { cacheName?: string; baseChunkBytes?: number; fibStart?: [number, number] } = {},
-): Promise<{ originUrl: string; originSig: string } | null> {
-  if (!("caches" in globalThis) || typeof caches.open !== "function") return null;
-
-  const cacheName = opts.cacheName ?? KSFP_CACHE_NAME;
+  opts: { baseChunkBytes?: number; fibStart?: [number, number] } = {},
+): Promise<KsfpInlineBundle> {
   const baseChunkBytes = opts.baseChunkBytes ?? 256 * 1024;
   const fibStart = opts.fibStart ?? [1, 2];
-  const cache = await caches.open(cacheName);
-
   const { plan, ranges } = buildFibChunkPlan(file.size, baseChunkBytes, fibStart);
   const chunkHashes: string[] = [];
-  const chunkMeta: Array<ChunkPlan & { chunkHash: string }> = [];
+  const chunkMeta: Array<ChunkPlan & { chunkHash: string; data_b64url: string }> = [];
 
   for (const chunk of plan) {
     const slice = file.slice(chunk.offset, chunk.offset + chunk.length);
-    const bytes = new Uint8Array(await slice.arrayBuffer());
-    const chunkHash = await blake3Hex(bytes);
+    const bytes = await slice.arrayBuffer();
+    const chunkHash = await blake3Hex(new Uint8Array(bytes));
+    const data_b64url = base64UrlEncodeBytes(bytes);
     chunkHashes.push(chunkHash);
-    chunkMeta.push({ ...chunk, chunkHash });
-    await cache.put(
-      new Request(ksfpBlobUrl(chunkHash), { method: "GET" }),
-      new Response(slice, { headers: { "Content-Type": file.type || "application/octet-stream" } }),
-    );
+    chunkMeta.push({ ...chunk, chunkHash, data_b64url });
   }
 
   const leafHashes: string[] = [];
@@ -256,10 +248,10 @@ export async function ingestKsfpFile(
   const { root, proofs } = await computeMerkleProofs(leafHashes);
   const fileHash = await blake3HexStream(file);
   const originSig = fileHash;
-
   const pulse = Date.now();
-  const chunking = {
-    scheme: "FCS-1" as const,
+
+  const chunking: KsfpChunking = {
+    scheme: "FCS-1",
     baseChunkBytes,
     fibStart,
     maxTier: ranges.length - 1,
@@ -305,11 +297,10 @@ export async function ingestKsfpFile(
     };
   }
 
-  await cachePutJson(cache, ksfpOriginUrl(originSig), origin);
-
-  for (const [idx, chunk] of chunkMeta.entries()) {
+  const lineage: KsfpLineageKey[] = [];
+  for (const chunk of chunkMeta) {
     const leafIndex = chunk.leafIndex;
-    const lineage: KsfpLineageKey = {
+    lineage.push({
       format: "KFC-1",
       "data-type": "lineage-file-chunk",
       originKeyRef: originSig,
@@ -340,30 +331,14 @@ export async function ingestKsfpFile(
         },
       },
       payload: {
-        encoding: "ref",
+        encoding: "inline",
         compression: "none",
-        blobRef: ksfpBlobUrl(chunk.chunkHash),
+        data_b64url: chunk.data_b64url,
       },
-    };
-    await cachePutJson(cache, ksfpLineageUrl(originSig, chunk.tier, chunk.index), lineage);
+    });
   }
 
-  return { originUrl: ksfpOriginUrl(originSig), originSig };
-}
-
-export async function loadKsfpOrigin(
-  originUrl: string,
-  opts: { cacheName?: string } = {},
-): Promise<KsfpOriginManifest | null> {
-  if (!("caches" in globalThis) || typeof caches.open !== "function") return null;
-  const cache = await caches.open(opts.cacheName ?? KSFP_CACHE_NAME);
-  const res = await cache.match(originUrl);
-  if (!res) return null;
-  try {
-    return (await res.json()) as KsfpOriginManifest;
-  } catch {
-    return null;
-  }
+  return { origin, lineage };
 }
 
 export function listKsfpChunks(origin: KsfpOriginManifest): Array<{ tier: number; index: number }> {
@@ -374,32 +349,4 @@ export function listKsfpChunks(origin: KsfpOriginManifest): Array<{ tier: number
     }
   }
   return chunks;
-}
-
-export async function loadKsfpLineage(
-  originSig: string,
-  tier: number,
-  index: number,
-  opts: { cacheName?: string } = {},
-): Promise<KsfpLineageKey | null> {
-  if (!("caches" in globalThis) || typeof caches.open !== "function") return null;
-  const cache = await caches.open(opts.cacheName ?? KSFP_CACHE_NAME);
-  const res = await cache.match(ksfpLineageUrl(originSig, tier, index));
-  if (!res) return null;
-  try {
-    return (await res.json()) as KsfpLineageKey;
-  } catch {
-    return null;
-  }
-}
-
-export async function loadKsfpChunkBuffer(
-  blobRef: string,
-  opts: { cacheName?: string } = {},
-): Promise<ArrayBuffer | null> {
-  if (!("caches" in globalThis) || typeof caches.open !== "function") return null;
-  const cache = await caches.open(opts.cacheName ?? KSFP_CACHE_NAME);
-  const res = await cache.match(blobRef);
-  if (!res) return null;
-  return res.arrayBuffer();
 }

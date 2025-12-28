@@ -1,17 +1,9 @@
 // src/pages/sigilstream/attachments/ksfp.tsx
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { AttachmentFileRef } from "./types";
-import {
-  KSFP_CACHE_NAME,
-  isKsfpOriginUrl,
-  loadKsfpOrigin,
-  loadKsfpLineage,
-  loadKsfpChunkBuffer,
-  listKsfpChunks,
-  type KsfpOriginManifest,
-} from "../../../lib/ksfp1";
+import { useEffect, useRef, useState } from "react";
+import type { AttachmentKsfpInline } from "./types";
+import { listKsfpChunks, type KsfpLineageKey, type KsfpOriginManifest } from "../../../lib/ksfp1";
 
 type KsfpStatus = "idle" | "loading" | "ready" | "error";
 
@@ -28,6 +20,16 @@ const prettyBytes = (n: number | undefined): string => {
 
 function canUseMediaSource(): boolean {
   return typeof window !== "undefined" && typeof window.MediaSource !== "undefined";
+}
+
+function fromBase64Url(token: string): Uint8Array {
+  const base64 = token.replace(/-/g, "+").replace(/_/g, "/");
+  const pad = base64.length % 4;
+  const padded = pad ? base64 + "=".repeat(4 - pad) : base64;
+  const binary = atob(padded);
+  const out = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) out[i] = binary.charCodeAt(i);
+  return out;
 }
 
 async function waitForUpdateEnd(sourceBuffer: SourceBuffer): Promise<void> {
@@ -48,9 +50,17 @@ async function waitForUpdateEnd(sourceBuffer: SourceBuffer): Promise<void> {
   });
 }
 
+function lineageByKey(lineage: KsfpLineageKey[]): Map<string, KsfpLineageKey> {
+  const map = new Map<string, KsfpLineageKey>();
+  for (const item of lineage) {
+    map.set(`${item.tier}:${item.chunkIndex}`, item);
+  }
+  return map;
+}
+
 async function streamKsfpToMediaSource(
-  originSig: string,
   origin: KsfpOriginManifest,
+  lineage: KsfpLineageKey[],
   videoEl: HTMLVideoElement,
 ): Promise<() => void> {
   const mediaSource = new MediaSource();
@@ -72,14 +82,15 @@ async function streamKsfpToMediaSource(
   if (!MediaSource.isTypeSupported(mime)) {
     throw new Error(`Unsupported media type: ${mime}`);
   }
+
   const sourceBuffer = mediaSource.addSourceBuffer(mime);
+  const map = lineageByKey(lineage);
 
   for (const chunk of listKsfpChunks(origin)) {
-    const lineage = await loadKsfpLineage(originSig, chunk.tier, chunk.index, { cacheName: KSFP_CACHE_NAME });
-    if (!lineage) continue;
-    const buf = await loadKsfpChunkBuffer(lineage.payload.blobRef, { cacheName: KSFP_CACHE_NAME });
-    if (!buf) continue;
-    sourceBuffer.appendBuffer(buf);
+    const entry = map.get(`${chunk.tier}:${chunk.index}`);
+    if (!entry) continue;
+    const bytes = fromBase64Url(entry.payload.data_b64url);
+    sourceBuffer.appendBuffer(bytes);
     await waitForUpdateEnd(sourceBuffer);
   }
 
@@ -87,90 +98,55 @@ async function streamKsfpToMediaSource(
   return cleanup;
 }
 
-async function buildKsfpBlob(originSig: string, origin: KsfpOriginManifest): Promise<Blob | null> {
-  const parts: ArrayBuffer[] = [];
+async function buildKsfpBlob(origin: KsfpOriginManifest, lineage: KsfpLineageKey[]): Promise<Blob | null> {
+  const map = lineageByKey(lineage);
+  const parts: Uint8Array[] = [];
   for (const chunk of listKsfpChunks(origin)) {
-    const lineage = await loadKsfpLineage(originSig, chunk.tier, chunk.index, { cacheName: KSFP_CACHE_NAME });
-    if (!lineage) return null;
-    const buf = await loadKsfpChunkBuffer(lineage.payload.blobRef, { cacheName: KSFP_CACHE_NAME });
-    if (!buf) return null;
-    parts.push(buf);
+    const entry = map.get(`${chunk.tier}:${chunk.index}`);
+    if (!entry) return null;
+    parts.push(fromBase64Url(entry.payload.data_b64url));
   }
   return new Blob(parts, { type: origin.mime || "application/octet-stream" });
 }
 
-export function KsfpFileCard({ item }: { item: AttachmentFileRef }): React.JSX.Element {
-  const [origin, setOrigin] = useState<KsfpOriginManifest | null>(null);
+export function KsfpInlineCard({ item }: { item: AttachmentKsfpInline }): React.JSX.Element {
+  const { origin, lineage } = item.bundle;
   const [status, setStatus] = useState<KsfpStatus>("idle");
   const [error, setError] = useState<string | null>(null);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
-  const originSig = useMemo(() => {
-    if (!item.url) return null;
-    try {
-      const u = new URL(item.url, globalThis.location?.origin ?? "http://localhost");
-      const parts = u.pathname.split("/").filter(Boolean);
-      return parts[2] ?? null;
-    } catch {
-      return null;
-    }
-  }, [item.url]);
+  const isVideo = (origin.mime || item.type || "").startsWith("video/");
 
   useEffect(() => {
-    if (!item.url || !isKsfpOriginUrl(item.url)) return;
-    let active = true;
-    setStatus("loading");
-    setError(null);
-    loadKsfpOrigin(item.url, { cacheName: KSFP_CACHE_NAME })
-      .then((o) => {
-        if (!active) return;
-        if (!o) {
-          setStatus("error");
-          setError("KSFP origin missing from cache.");
-          return;
-        }
-        setOrigin(o);
-        setStatus("ready");
-      })
-      .catch((err) => {
-        if (!active) return;
-        setStatus("error");
-        setError(err instanceof Error ? err.message : "Failed to load KSFP origin.");
-      });
-    return () => {
-      active = false;
-    };
-  }, [item.url]);
-
-  useEffect(() => {
-    if (!origin || !originSig) return;
     if (!videoRef.current) return;
-    if (!canUseMediaSource()) return;
+    if (!isVideo || !canUseMediaSource()) return;
     let cleanup: (() => void) | null = null;
     let cancelled = false;
-    streamKsfpToMediaSource(originSig, origin, videoRef.current)
+    setStatus("loading");
+    streamKsfpToMediaSource(origin, lineage, videoRef.current)
       .then((c) => {
         if (cancelled) return;
         cleanup = c;
+        setStatus("ready");
       })
-      .catch(() => {
+      .catch((err) => {
         if (cancelled) return;
-        setError("KSFP stream failed.");
+        setStatus("error");
+        setError(err instanceof Error ? err.message : "KSFP stream failed.");
       });
     return () => {
       cancelled = true;
       cleanup?.();
     };
-  }, [origin, originSig]);
+  }, [origin, lineage, isVideo]);
 
   const handlePrepareDownload = async (): Promise<void> => {
-    if (!origin || !originSig) return;
     setStatus("loading");
-    const blob = await buildKsfpBlob(originSig, origin);
+    const blob = await buildKsfpBlob(origin, lineage);
     if (!blob) {
       setStatus("error");
-      setError("Unable to reconstruct from cache.");
+      setError("Unable to reconstruct from inline payload.");
       return;
     }
     const url = URL.createObjectURL(blob);
@@ -178,24 +154,23 @@ export function KsfpFileCard({ item }: { item: AttachmentFileRef }): React.JSX.E
     setStatus("ready");
   };
 
-  const safeName = item.name || origin?.fileName || "file";
-  const isVideo = (origin?.mime || item.type || "").startsWith("video/");
+  const safeName = item.name || origin.fileName || "file";
 
   return (
     <div className="sf-ksfp">
       <div className="sf-file-head">
         <div className="sf-file-name">{item.relPath || safeName}</div>
-        <div className="sf-file-size">{prettyBytes(item.size ?? origin?.byteLength)}</div>
+        <div className="sf-file-size">{prettyBytes(item.size ?? origin.byteLength)}</div>
       </div>
 
       <div className="sf-file-foot">
-        <div className="sf-file-type">{origin?.mime || item.type || "application/octet-stream"}</div>
-        <code className="sf-hash mono">sha256:{item.sha256}</code>
+        <div className="sf-file-type">{origin.mime || item.type || "application/octet-stream"}</div>
+        <code className="sf-hash mono">blake3:{origin.fileHash}</code>
       </div>
 
       {status === "error" && error && <div className="sf-note sf-note--warn">{error}</div>}
 
-      {origin && isVideo ? (
+      {isVideo ? (
         <div className="sf-media sf-media--video sf-ksfp-media">
           {canUseMediaSource() ? (
             <video ref={videoRef} controls playsInline preload="metadata" />
@@ -215,12 +190,8 @@ export function KsfpFileCard({ item }: { item: AttachmentFileRef }): React.JSX.E
             {status === "loading" ? "Preparing…" : "Prepare download"}
           </button>
         )}
-        <span className="sf-ksfp-tag">KSFP-1 cache</span>
+        <span className="sf-ksfp-tag">KSFP-1 inline</span>
       </div>
     </div>
   );
-}
-
-export function shouldRenderKsfp(item: AttachmentFileRef): boolean {
-  return isKsfpOriginUrl(item.url);
 }

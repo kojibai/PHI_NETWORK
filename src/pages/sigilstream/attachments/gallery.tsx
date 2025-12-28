@@ -9,7 +9,7 @@ import type {
 } from "./types";
 import { UrlEmbed } from "./embeds";
 import { dataUrlFrom } from "./files";
-import { KsfpFileCard, shouldRenderKsfp } from "./ksfp";
+import { KsfpInlineCard } from "./ksfp";
 
 /* ---------- tiny pretty-bytes helper ---------- */
 function PrettyBytes({ n }: { n: number | undefined }): React.JSX.Element {
@@ -132,10 +132,6 @@ function InlineFileCard({ it }: { it: AttachmentFileInline }): React.JSX.Element
 function FileRefCard({ it }: { it: AttachmentFileRef }): React.JSX.Element {
   const safeName = it.name || "file";
 
-  if (shouldRenderKsfp(it)) {
-    return <KsfpFileCard item={it} />;
-  }
-
   return (
     <div className="sf-fileref">
       <div className="sf-file-head">
@@ -164,6 +160,9 @@ export function AttachmentCard({ item }: { item: AttachmentItem }): React.JSX.El
   }
   if (item.kind === "file-inline") {
     return <InlineFileCard it={item} />;
+  }
+  if (item.kind === "ksfp-inline") {
+    return <KsfpInlineCard item={item} />;
   }
   return <FileRefCard it={item} />;
 }

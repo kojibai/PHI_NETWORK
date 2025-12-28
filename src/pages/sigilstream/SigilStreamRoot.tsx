@@ -939,6 +939,15 @@ function sumBytes(items: AttachmentItem[]): { total: number; inlined: number } {
       }
       continue;
     }
+    if (it.kind === "ksfp-inline") {
+      const bundleBytes =
+        typeof it.size === "number" && Number.isFinite(it.size) && it.size >= 0 ? it.size : it.bundle.origin.byteLength;
+      total += bundleBytes;
+      for (const chunk of it.bundle.lineage) {
+        inlined += chunk.payload.data_b64url.length * 0.75;
+      }
+      continue;
+    }
   }
 
   return { total, inlined };
