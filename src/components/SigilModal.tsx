@@ -1276,53 +1276,6 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
     setSealOpen(true);
   };
 
-  const saveZipBundle = async () => {
-    const canTrustChildHash = pulse <= MAX_SAFE_BI;
-
-    const canonical = canTrustChildHash && lastHash ? String(lastHash).toLowerCase() : "";
-
-    const canonicalHash = canonical
-      ? canonical
-      : (await sha256Hex(
-          `pulseExact=${pulse.toString()}|beat=${kksDisplay.beat}|step=${kksDisplay.stepIndex}|chakra=${chakraDay}`
-        )).toLowerCase();
-
-    const meta = makeSharePayload(canonicalHash);
-
-    const [svgBlob, pngBlob] = await Promise.all([buildSVGBlob(meta), buildPNGBlob()]);
-    if (!svgBlob || !pngBlob) return;
-
-    const pulseSlugRaw = pulse.toString();
-    const pulseSlug =
-      pulseSlugRaw.length > 80
-        ? `${pulseSlugRaw.slice(0, 40)}_${pulseSlugRaw.slice(-20)}`
-        : pulseSlugRaw;
-
-    const zip = new JSZip();
-    zip.file(`sigil_${pulseSlug}.svg`, svgBlob);
-    zip.file(`sigil_${pulseSlug}.png`, pngBlob);
-
-    const manifest: SigilSharePayloadExtended & {
-      overlays: { qr: boolean; eternalPulseBar: boolean };
-    } = {
-      ...meta,
-      overlays: { qr: false, eternalPulseBar: false },
-    };
-    zip.file(`sigil_${pulseSlug}.manifest.json`, JSON.stringify(manifest, null, 2));
-
-    const zipBlob = await zip.generateAsync({ type: "blob" });
-    const url = URL.createObjectURL(zipBlob);
-
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `sigil_${pulseSlug}.zip`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-
-    requestAnimationFrame(() => URL.revokeObjectURL(url));
-  };
-
   const exportProofBundle = async (): Promise<string | null> => {
     try {
       const svgEl = getSVGElement();
