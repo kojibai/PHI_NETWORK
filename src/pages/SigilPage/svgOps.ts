@@ -312,8 +312,9 @@ export function applyCanonicalShareUrl(
   if (!svgString || !canonicalShareUrl || !payloadHash) return svgString;
 
   const dom = new DOMParser().parseFromString(svgString, "image/svg+xml");
-  const svg = dom.documentElement as SVGSVGElement | null;
-  if (!svg || svg.nodeName.toLowerCase() !== "svg") return svgString;
+  const svgEl = dom.documentElement as unknown;
+  if (!(svgEl instanceof SVGSVGElement)) return svgString;
+  const svg = svgEl;
 
   svg.setAttribute("data-share-url", canonicalShareUrl);
   svg.setAttribute("data-payload-hash", payloadHash);
