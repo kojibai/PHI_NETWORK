@@ -29,6 +29,25 @@ function canUseMediaSource(): boolean {
   return typeof window !== "undefined" && typeof window.MediaSource !== "undefined";
 }
 
+function splitMimeType(mime: string): { base: string; codec?: string } {
+  const [baseRaw, ...paramParts] = mime.split(";");
+  const base = baseRaw.trim();
+  const params = paramParts.join(";").trim();
+  if (!params) return { base };
+  const match = params.match(/codecs\s*=\s*\"?([^\";]+)\"?/i);
+  const codec = match?.[1]?.trim();
+  return codec ? { base, codec } : { base };
+}
+
+function resolveMimeForMediaSource(origin: KsfpOriginManifest): { base: string; codec?: string } {
+  const rawMime = origin.mime || "video/mp4";
+  const parsed = splitMimeType(rawMime);
+  return {
+    base: parsed.base,
+    codec: origin.specialization?.codec ?? parsed.codec,
+  };
+}
+
 function fromBase64Url(token: string): Uint8Array {
   const base64 = token.replace(/-/g, "+").replace(/_/g, "/");
   const pad = base64.length % 4;
@@ -205,8 +224,7 @@ async function streamKsfpToMediaSource(
     mediaSource.addEventListener("sourceopen", () => resolve(), { once: true });
   });
 
-  const codec = origin.specialization?.codec;
-  const mimeBase = origin.mime || "video/mp4";
+  const { base: mimeBase, codec } = resolveMimeForMediaSource(origin);
   const mime = codec ? `${mimeBase}; codecs="${codec}"` : mimeBase;
 
   const sourceBuffer = mediaSource.addSourceBuffer(mime);
@@ -280,8 +298,7 @@ export function KsfpInlineCard({ item }: { item: AttachmentKsfpInline }): React.
       };
     }
 
-    const codec = origin.specialization?.codec;
-    const mimeBase = origin.mime || "video/mp4";
+    const { base: mimeBase, codec } = resolveMimeForMediaSource(origin);
     const mime = codec ? `${mimeBase}; codecs="${codec}"` : mimeBase;
     if (!MediaSource.isTypeSupported(mime)) {
       fallbackToBlob().catch((err) => {
