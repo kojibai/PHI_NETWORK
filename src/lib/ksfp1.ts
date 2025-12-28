@@ -2,6 +2,21 @@ import { blake3Hex } from "./hash";
 
 const textEncoder = new TextEncoder();
 
+type MimeParts = {
+  base: string;
+  codec?: string;
+};
+
+function splitMimeType(mime: string): MimeParts {
+  const [baseRaw, ...paramParts] = mime.split(";");
+  const base = baseRaw.trim();
+  const params = paramParts.join(";").trim();
+  if (!params) return { base };
+  const match = params.match(/codecs\s*=\s*\"?([^\";]+)\"?/i);
+  const codec = match?.[1]?.trim();
+  return codec ? { base, codec } : { base };
+}
+
 export type KsfpLineageKey = {
   format: "KFC-1";
   "data-type": "lineage-file-chunk";
@@ -290,11 +305,14 @@ export async function buildKsfpInlineBundle(
   };
 
   if (file.type.startsWith("video/")) {
+    const mimeParts = splitMimeType(file.type);
     origin.specialization = {
       kind: "video",
-      container: file.type.includes("mp4") ? "fMP4" : "webm",
+      container: mimeParts.base.includes("mp4") ? "fMP4" : "webm",
       initSegmentKey: `${originSig}:t0:i0`,
+      codec: mimeParts.codec,
     };
+    origin.mime = mimeParts.base || origin.mime;
   }
 
   const lineage: KsfpLineageKey[] = [];
