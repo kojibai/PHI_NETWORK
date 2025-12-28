@@ -127,6 +127,11 @@ const modE = (a: bigint, m: bigint) => {
   const r = a % m;
   return r >= 0n ? r : r + m;
 };
+/** Scale μpulses-in-day onto the 17,424-grid (SovereignSolar canonical). */
+const pulsesInGridDay = (pμ: bigint) => {
+  const pulsesInDay = modE(pμ, N_DAY_MICRO);
+  return (pulsesInDay * BASE_DAY_MICRO) / N_DAY_MICRO;
+};
 const floorDivE = (a: bigint, d: bigint) => {
   // Euclidean floor division
   const q = a / d;
@@ -449,8 +454,7 @@ export function latticeFromMicroPulses(pμ: bigint): {
   stepIndex: number;
   percentIntoStep: number; // [0,1)
 } {
-  const pulsesInDay  = modE(pμ, N_DAY_MICRO);
-  const pulsesInGrid = pulsesInDay % BASE_DAY_MICRO;
+  const pulsesInGrid = pulsesInGridDay(pμ);
 
   const beatBI       = pulsesInGrid / PULSES_PER_BEAT_MICRO;                // 0..35
   const pulsesInBeat = pulsesInGrid - beatBI * PULSES_PER_BEAT_MICRO;
@@ -1019,7 +1023,7 @@ export async function buildKaiKlockResponse(utc?: string | Date | bigint) {
 
   // 5) Beat/Step μpulse breakdown for % to next
   const pulsesInDay = modE(pμ, N_DAY_MICRO);
-  const pulsesInGrid = pulsesInDay % BASE_DAY_MICRO;
+  const pulsesInGrid = pulsesInGridDay(pμ);
   const beatBI = pulsesInGrid / PULSES_PER_BEAT_MICRO;
   const pulsesInBeat = pulsesInGrid - beatBI * PULSES_PER_BEAT_MICRO;
   const pulsesInStep = pulsesInBeat - BigInt(stepIndex) * PULSES_PER_STEP_MICRO;
