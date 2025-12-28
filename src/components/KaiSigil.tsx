@@ -209,37 +209,20 @@ const KaiSigil = forwardRef<KaiSigilHandle, KaiSigilProps>((props, ref) => {
 
   // Canonical render state (used for DOM attrs, metadata, exports).
   // ✅ Everything here is pulse-derived (beat/stepIndex/stepPct).
-  const canon = useMemo(() => {
-    const providedStep = coerceInt(stepIndexProp, Number.NaN);
-    const resolvedStepIndex = Number.isFinite(providedStep)
-      ? providedStep
-      : kks.stepIndex;
-    const providedPct = Number.isFinite(stepPctProp)
-      ? normalizePercentIntoStep(coercePct(stepPctProp, Number.NaN))
-      : kks.stepPct;
-    const stepPctToNext = 1 - providedPct;
-
-    return {
+  const canon = useMemo(
+    () => ({
       pulse,
       beat: kks.beat,
-      stepIndex: resolvedStepIndex,
+      stepIndex: kks.stepIndex,
       stepsPerBeat: kks.stepsPerBeat,
       chakraDayKey,
       // stepPct is percentIntoStep; used for visuals only.
-      visualClamped: providedPct,
+      visualClamped: kks.stepPct,
       // optionally useful for UI/debugging
-      stepPctToNext,
-    };
-  }, [
-    pulse,
-    kks.beat,
-    kks.stepIndex,
-    kks.stepsPerBeat,
-    kks.stepPct,
-    stepIndexProp,
-    stepPctProp,
-    chakraDayKey,
-  ]);
+      stepPctToNext: kks.stepPctToNext,
+    }),
+    [pulse, kks.beat, kks.stepIndex, kks.stepsPerBeat, chakraDayKey, kks.stepPct, kks.stepPctToNext]
+  );
 
   const { prefersReduce, prefersContrast } = useMediaPrefs();
   const { kaiData, kaiDataRef } = useKaiData(hashMode);
@@ -616,8 +599,8 @@ const KaiSigil = forwardRef<KaiSigilHandle, KaiSigilProps>((props, ref) => {
   }, [canon.pulse, onError]);
 
   /* summary + snapshots
-     - summaryDisplay (visible): reflects displayStepIndex
-     - summaryForAttrs (data-*): uses built step when available to avoid race
+     - summaryDisplay (visible): pulse-derived step (eternal seal)
+     - summaryForAttrs (data-*): pulse-derived step (eternal seal)
   */
   const eternalSeal =
     getStrField(klock, "eternalSeal") ??
@@ -625,15 +608,13 @@ const KaiSigil = forwardRef<KaiSigilHandle, KaiSigilProps>((props, ref) => {
     getStrField(kaiData, "kairos_seal");
 
   const summaryDisplay = useMemo(
-    () => makeSummary(eternalSeal, canon.beat, displayStepIndex, canon.pulse),
-    [eternalSeal, canon.beat, displayStepIndex, canon.pulse]
+    () => makeSummary(eternalSeal, canon.beat, canon.stepIndex, canon.pulse),
+    [eternalSeal, canon.beat, canon.stepIndex, canon.pulse]
   );
 
   const summaryForAttrs = useMemo(() => {
-    const stepForAttrs =
-      built && built.createdFor.stateKey === stateKey ? built.createdFor.stepIndex : displayStepIndex;
-    return makeSummary(eternalSeal, canon.beat, stepForAttrs, canon.pulse);
-  }, [built, stateKey, eternalSeal, canon.beat, displayStepIndex, canon.pulse]);
+    return makeSummary(eternalSeal, canon.beat, canon.stepIndex, canon.pulse);
+  }, [eternalSeal, canon.beat, canon.stepIndex, canon.pulse]);
 
   const summaryB64 = useMemo(() => toSummaryB64(summaryForAttrs), [summaryForAttrs]);
 
