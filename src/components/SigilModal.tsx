@@ -1165,13 +1165,17 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
 
     const moment = momentFromPulse(mintPulse);
     const chakraSnapshot = normalizeChakraDay(moment.chakraDay) ?? chakraDay;
-    const canTrustChildHash = mintPulse <= MAX_SAFE_BI;
+    const svg = getSVGElement();
+    const svgPulseAttr = svg?.getAttribute("data-pulse");
+    const svgPulseBI =
+      svgPulseAttr && /^\d+$/.test(svgPulseAttr) ? BigInt(svgPulseAttr) : null;
+    const svgMatchesMint = svgPulseBI !== null && svgPulseBI === mintPulse;
+    const canTrustChildHash = mintPulse <= MAX_SAFE_BI && svgMatchesMint;
 
     let hash = (canTrustChildHash ? lastHash : "").toLowerCase();
 
     if (!hash) {
       const mintKks = exactBeatStepFromPulse(mintPulse);
-      const svg = getSVGElement();
       const svgStr = svg ? new XMLSerializer().serializeToString(svg) : "";
       const basis =
         (svgStr || "no-svg") +
