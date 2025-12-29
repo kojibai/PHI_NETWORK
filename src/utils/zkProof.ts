@@ -35,13 +35,16 @@ async function resolveArtifactPath(
 }
 
 async function loadGroth16Prover(): Promise<Groth16Module | null> {
-  if (typeof window !== "undefined" && window.snarkjs?.groth16?.fullProve) {
-    return window.snarkjs.groth16 as Groth16Module;
+  const isGroth16Prover = (v: unknown): v is Groth16Module =>
+    typeof v === "object" && v !== null && "fullProve" in v && typeof (v as Groth16Module).fullProve === "function";
+
+  if (typeof window !== "undefined" && isGroth16Prover(window.snarkjs?.groth16)) {
+    return window.snarkjs!.groth16 as Groth16Module;
   }
 
   const mod = await import("snarkjs").catch(() => null);
   const candidate = (mod?.groth16 ?? mod?.default?.groth16) as Groth16Module | undefined;
-  if (candidate?.fullProve) return candidate;
+  if (isGroth16Prover(candidate)) return candidate;
   return null;
 }
 
