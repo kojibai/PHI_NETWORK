@@ -9,7 +9,7 @@
 
 // Update this version string manually to keep the app + cache versions in sync.
 // The value is forwarded to the UI via the service worker "SW_ACTIVATED" message.
-const APP_VERSION = "35.3.2"; // update on release
+const APP_VERSION = "35.3.3"; // update on release
 const VERSION = new URL(self.location.href).searchParams.get("v") || APP_VERSION; // derived from build
 const PREFIX  = "PHINETWORK";
 const PRECACHE = `${PREFIX}-precache-${VERSION}`;
@@ -86,11 +86,9 @@ const SHORTCUT_ROUTES = [
 
 // Assets required to keep verification + sigil flows alive while offline
 const CRITICAL_OFFLINE_ASSETS = [
-  "/sigil.wasm",
-  "/sigil.zkey",
-  "/sigil.artifacts.json",
-  "/sigil.vkey.json",
-  "/verification_key.json",
+  "/zk/sigil_proof.wasm",
+  "/zk/sigil_proof_final.zkey",
+  "/zk/verification_key.json",
   "/verifier-core.js",
   "/verifier.inline.html",
   "/verifier.html",
