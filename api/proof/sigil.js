@@ -82,17 +82,33 @@ function normalizePublicSignals(signals) {
   });
 }
 
+function coercePoseidonHash(value) {
+  if (Array.isArray(value)) {
+    return coercePoseidonHash(value[0]);
+  }
+  if (typeof value === "bigint") return value.toString();
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value.toString() : "";
+  }
+  if (typeof value === "string") return value.trim();
+  return "";
+}
+
 export async function generateSigilProof({
   zkPoseidonHash,
   payloadHashHex,
   poseidonHash,
 } = {}) {
   await ensureArtifacts();
+  const normalizedPoseidonHash = coercePoseidonHash(poseidonHash);
+  const normalizedZkPoseidonHash = coercePoseidonHash(zkPoseidonHash);
   const hashFromPayload = payloadHashHex
     ? await computeZkPoseidonHashFromPayloadHex(payloadHashHex)
     : null;
   const canonicalPoseidonHash =
-    (hashFromPayload ?? poseidonHash ?? zkPoseidonHash ?? "").toString().trim();
+    (hashFromPayload ?? normalizedPoseidonHash ?? normalizedZkPoseidonHash ?? "")
+      .toString()
+      .trim();
   if (!canonicalPoseidonHash) {
     throw new Error("Missing zkPoseidonHash/payloadHashHex");
   }

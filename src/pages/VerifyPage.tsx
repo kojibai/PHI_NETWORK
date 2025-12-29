@@ -184,7 +184,7 @@ export default function VerifyPage(): ReactElement {
   React.useEffect(() => {
     let active = true;
     (async () => {
-      if (!embeddedProof?.zkProof || !embeddedProof?.zkPublicInputs) {
+      if (!embeddedProof?.zkProof || !embeddedProof?.zkPoseidonHash) {
         if (active) setZkVerify(null);
         return;
       }
@@ -201,20 +201,9 @@ export default function VerifyPage(): ReactElement {
         }
       }
 
-      const inputs =
-        typeof embeddedProof.zkPublicInputs === "string"
-          ? (() => {
-              try {
-                return JSON.parse(embeddedProof.zkPublicInputs);
-              } catch {
-                return [embeddedProof.zkPublicInputs];
-              }
-            })()
-          : embeddedProof.zkPublicInputs;
-
       const verified = await tryVerifyGroth16({
         proof: embeddedProof.zkProof,
-        publicSignals: inputs,
+        publicSignals: [embeddedProof.zkPoseidonHash],
         vkey: zkVkey ?? undefined,
         fallbackVkey: zkVkey ?? undefined,
       });
