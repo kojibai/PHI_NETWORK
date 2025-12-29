@@ -12,7 +12,7 @@ const DEFAULT_PROOF_HINTS: SigilProofHints = {
 
 export function buildProofHints(
   poseidonHash: string,
-  baseHints?: SigilProofHints
+  baseHints?: Partial<SigilProofHints>
 ): SigilProofHints {
   const merged: SigilProofHints = {
     ...DEFAULT_PROOF_HINTS,
