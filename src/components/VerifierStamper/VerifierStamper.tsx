@@ -2242,11 +2242,6 @@ const VerifierStamperInner: React.FC = () => {
 
                 {tab === "data" && (
                   <>
-                    {authorSigDisplay && (
-                      <div className="summary-grid" style={{ marginBottom: 10 }}>
-                        <KV k="Author Sig:" v={authorSigDisplay} wide mono />
-                      </div>
-                    )}
                     <div className="json-toggle">
                       <label>
                         <input type="checkbox" checked={viewRaw} onChange={() => setViewRaw((v) => !v)} /> View raw JSON
