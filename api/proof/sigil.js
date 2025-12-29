@@ -88,6 +88,9 @@ export async function generateSigilProof({
   poseidonHash,
 } = {}) {
   await ensureArtifacts();
+  if (Array.isArray(poseidonHash) || Array.isArray(zkPoseidonHash)) {
+    throw new Error("poseidonHash must be a scalar string");
+  }
   const hashFromPayload = payloadHashHex
     ? await computeZkPoseidonHashFromPayloadHex(payloadHashHex)
     : null;
