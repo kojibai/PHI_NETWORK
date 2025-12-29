@@ -38,16 +38,10 @@ import "./SigilModal.css";
 import { downloadBlob } from "../lib/download";
 import { jcsCanonicalize } from "../utils/jcs";
 import { sha256Hex as sha256HexStrict } from "../utils/sha256";
-import { embedProofMetadata, svgCanonicalForHash } from "../utils/svgProof";
+import { embedProofMetadata } from "../utils/svgProof";
 import { extractEmbeddedMetaFromSvg } from "../utils/sigilMetadata";
 import { buildProofHints, generateZkProofFromPoseidonHash } from "../utils/zkProof";
 import { computeZkPoseidonHash } from "../utils/kai";
-import { computeZkPoseidonHash } from "../utils/kai";
-import {
-  ensurePasskey,
-  isWebAuthnAvailable,
-  signBundleHash,
-} from "../utils/webauthnKAS";
 import { buildVerifierUrl, normalizeChakraDay } from "./KaiVoh/verifierProof";
 import type { SigilProofHints } from "../types/sigil";
 
@@ -1423,16 +1417,6 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
         throw new Error("SVG data attributes do not match proof capsule");
       }
 
-      let authorSig: AuthorSig | null = null;
-      let warning: string | null = null;
-
-      if (isWebAuthnAvailable()) {
-        await ensurePasskey(phiKey);
-        authorSig = (await signBundleHash(phiKey, bundleHash)) as AuthorSig;
-      } else {
-        warning = "Warning: WebAuthn unavailable — exporting without author signature.";
-      }
-
       const proofBundle: ProofBundle = {
         hashAlg: "sha256",
         canon: "JCS",
@@ -1442,7 +1426,7 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
         bundleHash: "",
         shareUrl,
         verifierUrl,
-        authorSig,
+        authorSig: null,
         zkPoseidonHash,
         zkProof,
         proofHints,
@@ -1450,7 +1434,7 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
       };
 
       let sealedSvg = embedProofMetadata(svgString, proofBundle);
-      const svgHash = await sha256HexStrict(svgCanonicalForHash(sealedSvg));
+      const svgHash = await sha256HexStrict(sealedSvg);
       const bundleHash = await sha256HexStrict(
         jcsCanonicalize({ capsuleHash, svgHash })
       );
@@ -1464,7 +1448,7 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
       const zipBlob = await zip.generateAsync({ type: "blob" });
       downloadBlob(zipBlob, `${baseName}_proof_bundle.zip`);
 
-      return warning;
+      return null;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       return `Export failed: ${msg}`;
