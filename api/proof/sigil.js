@@ -42,6 +42,24 @@ async function loadSigilVkey() {
   return JSON.parse(raw);
 }
 
+async function ensureArtifacts() {
+  const paths = [WASM_PATH, ZKEY_PATH, VKEY_PATH];
+  const checks = await Promise.all(
+    paths.map(async (p) => {
+      try {
+        await fs.access(p);
+        return null;
+      } catch {
+        return p;
+      }
+    })
+  );
+  const missing = checks.filter((p) => p !== null);
+  if (missing.length > 0) {
+    throw new Error(`Missing ZK artifacts: ${missing.join(", ")}`);
+  }
+}
+
 function normalizeValue(value) {
   if (typeof value === "bigint") return value.toString();
   if (Array.isArray(value)) return value.map((entry) => normalizeValue(entry));
@@ -67,6 +85,7 @@ export async function generateSigilProof({
   payloadHashHex,
   poseidonHash,
 } = {}) {
+  await ensureArtifacts();
   const hashFromPayload = payloadHashHex
     ? await computeZkPoseidonHashFromPayloadHex(payloadHashHex)
     : null;
@@ -74,6 +93,9 @@ export async function generateSigilProof({
     (hashFromPayload ?? poseidonHash ?? zkPoseidonHash ?? "").toString().trim();
   if (!canonicalPoseidonHash) {
     throw new Error("Missing zkPoseidonHash/payloadHashHex");
+  }
+  if (canonicalPoseidonHash === "0x") {
+    throw new Error("Invalid zkPoseidonHash");
   }
 
   const input = {
