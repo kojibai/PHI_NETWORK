@@ -18,6 +18,13 @@ function isNonEmptyObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && Object.keys(value).length > 0;
 }
 
+function normalizePoseidonHash(value: unknown): string {
+  if (Array.isArray(value)) return normalizePoseidonHash(value[0]);
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "number" || typeof value === "bigint") return value.toString();
+  return "";
+}
+
 function hasMeaningfulZkProof(value: unknown): boolean {
   if (!value) return false;
   if (typeof value === "string") return value.trim().length > 0;
@@ -46,13 +53,15 @@ async function fetchSigilProofFromApi(params: {
   payloadHashHex?: string;
 }): Promise<{ proof: unknown; proofHints: SigilProofHints; zkPublicInputs: string[] } | null> {
   if (typeof fetch !== "function") return null;
+  const poseidonHash = normalizePoseidonHash(params.poseidonHash);
+  if (!poseidonHash) return null;
   try {
     const res = await fetch("/api/proof/sigil", {
       method: "POST",
       cache: "no-store",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        poseidonHash: params.poseidonHash,
+        poseidonHash,
       }),
     });
     if (!res.ok) return null;
@@ -67,7 +76,7 @@ async function fetchSigilProofFromApi(params: {
     const proofHints: SigilProofHints = {
       scheme: "groth16-poseidon",
       api: "/api/proof/sigil",
-      explorer: `/keystream/hash/${params.poseidonHash}`,
+      explorer: `/keystream/hash/${poseidonHash}`,
       ...(params.proofHints ?? {}),
       ...(data.proofHints ?? {}),
     };
@@ -76,7 +85,7 @@ async function fetchSigilProofFromApi(params: {
       proofHints,
       zkPublicInputs: Array.isArray(data.zkPublicInputs)
         ? data.zkPublicInputs.map((entry) => String(entry))
-        : [params.poseidonHash],
+        : [poseidonHash],
     };
   } catch {
     return null;
@@ -124,7 +133,7 @@ export async function generateZkProofFromPoseidonHash(params: {
   vkey?: unknown;
   payloadHashHex?: string;
 }): Promise<{ proof: unknown; proofHints: SigilProofHints; zkPublicInputs: string[] } | null> {
-  const poseidonHash = params.poseidonHash?.trim();
+  const poseidonHash = normalizePoseidonHash(params.poseidonHash);
   if (!poseidonHash) return null;
 
   const apiAttempted = typeof fetch === "function";
