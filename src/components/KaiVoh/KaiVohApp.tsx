@@ -57,6 +57,7 @@ import { derivePhiKeyFromSig } from "../VerifierStamper/sigilUtils";
 /* Kai-Klok φ-engine (KKS v1) */
 import { fetchKaiOrLocal, epochMsFromPulse, type ChakraDay } from "../../utils/kai_pulse";
 import { signHash, type HarmonicSig } from "../../lib/sigil/signature";
+import { computeZkPoseidonHash } from "../../utils/kai";
 import { generateZkProofFromPoseidonHash } from "../../utils/zkProof";
 import type { SigilProofHints } from "../../types/sigil";
 
@@ -731,6 +732,14 @@ function KaiVohFlow(): ReactElement {
             typeof (mergedMetadata as { zkPoseidonHash?: unknown }).zkPoseidonHash === "string"
               ? (mergedMetadata as { zkPoseidonHash?: string }).zkPoseidonHash
               : undefined;
+          const zkPoseidonSecret =
+            typeof (mergedMetadata as { zkPoseidonSecret?: unknown }).zkPoseidonSecret === "string"
+              ? (mergedMetadata as { zkPoseidonSecret?: string }).zkPoseidonSecret
+              : undefined;
+          const payloadHashHex =
+            typeof (mergedMetadata as { payloadHashHex?: unknown }).payloadHashHex === "string"
+              ? (mergedMetadata as { payloadHashHex?: string }).payloadHashHex
+              : undefined;
           let zkProof = (mergedMetadata as { zkProof?: unknown }).zkProof;
           let proofHints = (mergedMetadata as { proofHints?: unknown }).proofHints;
           let zkPublicInputs: unknown = (mergedMetadata as { zkPublicInputs?: unknown }).zkPublicInputs;
@@ -747,9 +756,21 @@ function KaiVohFlow(): ReactElement {
                     ? Object.keys(proofObj).length > 0
                     : false;
 
-            if (!hasProof) {
+            let secretForProof =
+              typeof zkPoseidonSecret === "string" && zkPoseidonSecret.trim().length > 0
+                ? zkPoseidonSecret.trim()
+                : undefined;
+            if (!secretForProof && payloadHashHex) {
+              const computed = await computeZkPoseidonHash(payloadHashHex);
+              if (computed.hash === zkPoseidonHash) {
+                secretForProof = computed.secret;
+              }
+            }
+
+            if (!hasProof && secretForProof) {
               const generated = await generateZkProofFromPoseidonHash({
                 poseidonHash: zkPoseidonHash,
+                secret: secretForProof,
                 proofHints:
                   typeof proofHints === "object" && proofHints !== null
                     ? (proofHints as SigilProofHints)
