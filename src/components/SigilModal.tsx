@@ -39,6 +39,7 @@ import { downloadBlob } from "../lib/download";
 import { jcsCanonicalize } from "../utils/jcs";
 import { sha256Hex as sha256HexStrict } from "../utils/sha256";
 import { embedProofMetadata, svgCanonicalForHash } from "../utils/svgProof";
+import { extractEmbeddedMetaFromSvg } from "../utils/sigilMetadata";
 import {
   ensurePasskey,
   isWebAuthnAvailable,
@@ -1128,6 +1129,9 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
     bundleHash: string;
     verifierUrl: string;
     authorSig: AuthorSig | null;
+    zkPoseidonHash?: string;
+    zkProof?: unknown;
+    proofHints?: unknown;
   };
 
   const makeSharePayload = (
@@ -1296,6 +1300,14 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
       svgClone.setAttribute("data-payload-hash", payloadHashHex);
 
       const svgString = new XMLSerializer().serializeToString(svgClone);
+      const embeddedMeta = extractEmbeddedMetaFromSvg(svgString);
+      const zkPoseidonHash =
+        typeof embeddedMeta.zkPoseidonHash === "string" &&
+        embeddedMeta.zkPoseidonHash.trim().length > 0
+          ? embeddedMeta.zkPoseidonHash.trim()
+          : undefined;
+      const zkProof = embeddedMeta.zkProof;
+      const proofHints = embeddedMeta.proofHints;
       const svgHash = await sha256HexStrict(svgCanonicalForHash(svgString));
       const bundleHash = await sha256HexStrict(
         jcsCanonicalize({ capsuleHash, svgHash })
@@ -1320,6 +1332,9 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
         bundleHash,
         verifierUrl,
         authorSig,
+        zkPoseidonHash,
+        zkProof,
+        proofHints,
       };
 
       const sealedSvg = embedProofMetadata(svgString, proofBundle);

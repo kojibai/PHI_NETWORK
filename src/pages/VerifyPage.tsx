@@ -18,6 +18,16 @@ import {
 } from "../components/KaiVoh/verifierProof";
 import { extractProofBundleMetaFromSvg, type ProofBundleMeta } from "../utils/sigilMetadata";
 
+function formatProofValue(value: unknown): string {
+  if (value === null || value === undefined) return "—";
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
 function readSlugFromLocation(): string {
   if (typeof window === "undefined") return "";
 
@@ -59,6 +69,14 @@ export default function VerifyPage(): ReactElement {
   const [bundleHash, setBundleHash] = useState<string>("");
   const [embeddedProof, setEmbeddedProof] = useState<ProofBundleMeta | null>(null);
   const [copyNotice, setCopyNotice] = useState<string>("");
+  const embeddedZkProof = useMemo(() => {
+    if (!embeddedProof?.zkProof) return "";
+    return formatProofValue(embeddedProof.zkProof);
+  }, [embeddedProof]);
+  const embeddedProofHints = useMemo(() => {
+    if (!embeddedProof?.proofHints) return "";
+    return formatProofValue(embeddedProof.proofHints);
+  }, [embeddedProof]);
 
   const verifierFrameProps = useMemo(() => {
     // If we only have the slug, we can still render the capsule.
@@ -348,6 +366,45 @@ export default function VerifyPage(): ReactElement {
                         Copy
                       </button>
                     </div>
+                    {embeddedProof?.zkPoseidonHash && (
+                      <div className="verify-proof-row">
+                        <span className="verify-proof-label">ZK Poseidon hash</span>
+                        <code className="verify-proof-code">{embeddedProof.zkPoseidonHash}</code>
+                        <button
+                          type="button"
+                          className="verify-copy-btn"
+                          onClick={() => void copyText(embeddedProof.zkPoseidonHash ?? "", "ZK Poseidon hash")}
+                        >
+                          Copy
+                        </button>
+                      </div>
+                    )}
+                    {embeddedZkProof && (
+                      <div className="verify-proof-row">
+                        <span className="verify-proof-label">ZK proof</span>
+                        <code className="verify-proof-code">{embeddedZkProof}</code>
+                        <button
+                          type="button"
+                          className="verify-copy-btn"
+                          onClick={() => void copyText(embeddedZkProof, "ZK proof")}
+                        >
+                          Copy
+                        </button>
+                      </div>
+                    )}
+                    {embeddedProofHints && (
+                      <div className="verify-proof-row">
+                        <span className="verify-proof-label">Proof hints</span>
+                        <code className="verify-proof-code">{embeddedProofHints}</code>
+                        <button
+                          type="button"
+                          className="verify-copy-btn"
+                          onClick={() => void copyText(embeddedProofHints, "Proof hints")}
+                        >
+                          Copy
+                        </button>
+                      </div>
+                    )}
                     <textarea
                       className="verify-proof-textarea"
                       readOnly
@@ -361,6 +418,9 @@ export default function VerifyPage(): ReactElement {
                           bundleHash,
                           verifierUrl: proofVerifierUrl,
                           authorSig: embeddedProof?.authorSig ?? null,
+                          zkPoseidonHash: embeddedProof?.zkPoseidonHash ?? null,
+                          zkProof: embeddedProof?.zkProof ?? null,
+                          proofHints: embeddedProof?.proofHints ?? null,
                         },
                         null,
                         2,

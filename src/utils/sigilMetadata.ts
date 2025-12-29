@@ -21,6 +21,9 @@ export type EmbeddedMeta = {
   hashAlg?: string;
   canon?: string;
   authorSig?: HarmonicSig | null;
+  zkPoseidonHash?: string;
+  zkProof?: unknown;
+  proofHints?: unknown;
   raw?: unknown;
 };
 
@@ -113,6 +116,11 @@ function toEmbeddedMetaFromUnknown(raw: unknown): EmbeddedMeta {
       ? (capsuleRaw as ProofCapsuleV1)
       : undefined;
 
+  const zkPoseidonHash =
+    typeof raw.zkPoseidonHash === "string" ? raw.zkPoseidonHash : undefined;
+  const zkProof = "zkProof" in raw ? raw.zkProof : undefined;
+  const proofHints = "proofHints" in raw ? raw.proofHints : undefined;
+
   const capsuleHash = typeof raw.capsuleHash === "string" ? raw.capsuleHash : undefined;
   const svgHash = typeof raw.svgHash === "string" ? raw.svgHash : undefined;
   const bundleHash = typeof raw.bundleHash === "string" ? raw.bundleHash : undefined;
@@ -139,6 +147,9 @@ function toEmbeddedMetaFromUnknown(raw: unknown): EmbeddedMeta {
     hashAlg,
     canon,
     authorSig,
+    zkPoseidonHash,
+    zkProof,
+    proofHints,
     raw,
   };
 }
@@ -254,6 +265,9 @@ function findProofBundleInText(text: string): ProofBundleMeta | null {
         bundleHash: meta.bundleHash,
         verifierUrl: meta.verifierUrl,
         authorSig: meta.authorSig,
+        zkPoseidonHash: meta.zkPoseidonHash,
+        zkProof: meta.zkProof,
+        proofHints: meta.proofHints,
         raw: parsed,
       };
     }
@@ -280,6 +294,9 @@ function findProofBundleInText(text: string): ProofBundleMeta | null {
         bundleHash: meta.bundleHash,
         verifierUrl: meta.verifierUrl,
         authorSig: meta.authorSig,
+        zkPoseidonHash: meta.zkPoseidonHash,
+        zkProof: meta.zkProof,
+        proofHints: meta.proofHints,
         raw: blobParsed,
       };
     }
@@ -335,6 +352,7 @@ function extractAttrFallback(svgText: string): EmbeddedMeta {
   const chakraDay = getAttr(svgText, "data-harmonic-day") ?? getAttr(svgText, "data-chakra-day");
   const kaiSignature = getAttr(svgText, "data-kai-signature");
   const phiKey = getAttr(svgText, "data-phi-key");
+  const zkPoseidonHash = getAttr(svgText, "data-zk-poseidon-hash");
 
   return {
     pulse,
@@ -345,6 +363,7 @@ function extractAttrFallback(svgText: string): EmbeddedMeta {
     chakraGate,
     kaiSignature,
     phiKey,
+    zkPoseidonHash,
   };
 }
 
@@ -386,6 +405,9 @@ export type ProofBundleMeta = {
   bundleHash?: string;
   verifierUrl?: string;
   authorSig?: HarmonicSig | null;
+  zkPoseidonHash?: string;
+  zkProof?: unknown;
+  proofHints?: unknown;
   raw?: unknown;
 };
 
@@ -409,6 +431,9 @@ export function extractProofBundleMetaFromSvg(svgText: string): ProofBundleMeta 
           bundleHash: meta.bundleHash,
           verifierUrl: meta.verifierUrl,
           authorSig: meta.authorSig,
+          zkPoseidonHash: meta.zkPoseidonHash,
+          zkProof: meta.zkProof,
+          proofHints: meta.proofHints,
           raw: parsed,
         };
       }

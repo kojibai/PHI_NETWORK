@@ -65,6 +65,7 @@ export async function parseSvgFile(file: File) {
 
   meta.kaiSignature ??= getAttr(text, "data-kai-signature");
   meta.userPhiKey ??= getAttr(text, "data-phi-key");
+  meta.zkPoseidonHash ??= getAttr(text, "data-zk-poseidon-hash");
 
   meta.kaiSignature ??= embedded.kaiSignature;
   meta.userPhiKey ??= embedded.phiKey;
@@ -74,6 +75,9 @@ export async function parseSvgFile(file: File) {
   meta.chakraDay ??= embedded.chakraDay;
   meta.chakraGate ??= embedded.chakraGate;
   meta.frequencyHz ??= embedded.frequencyHz;
+  meta.zkPoseidonHash ??= embedded.zkPoseidonHash;
+  if (embedded.zkProof && meta.zkProof === undefined) meta.zkProof = embedded.zkProof;
+  if (embedded.proofHints && meta.proofHints === undefined) meta.proofHints = embedded.proofHints;
 
   if (embedded.verifierUrl && !meta.verifierUrl) meta.verifierUrl = embedded.verifierUrl;
   if (embedded.proofCapsule && !meta.proofCapsule) meta.proofCapsule = embedded.proofCapsule;
@@ -92,6 +96,9 @@ export async function parseSvgFile(file: File) {
     meta.bundleHash ??= proofBundle.bundleHash;
     meta.hashAlg ??= proofBundle.hashAlg;
     meta.canon ??= proofBundle.canon;
+    meta.zkPoseidonHash ??= proofBundle.zkPoseidonHash;
+    if (proofBundle.zkProof && meta.zkProof === undefined) meta.zkProof = proofBundle.zkProof;
+    if (proofBundle.proofHints && meta.proofHints === undefined) meta.proofHints = proofBundle.proofHints;
     if (proofBundle.authorSig !== undefined && meta.authorSig === undefined) {
       meta.authorSig = proofBundle.authorSig;
     }

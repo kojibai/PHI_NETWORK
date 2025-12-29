@@ -713,6 +713,12 @@ function KaiVohFlow(): ReactElement {
             bundleHash,
             verifierUrl,
             authorSig,
+            zkPoseidonHash:
+              typeof (mergedMetadata as { zkPoseidonHash?: unknown }).zkPoseidonHash === "string"
+                ? (mergedMetadata as { zkPoseidonHash?: string }).zkPoseidonHash
+                : undefined,
+            zkProof: (mergedMetadata as { zkProof?: unknown }).zkProof,
+            proofHints: (mergedMetadata as { proofHints?: unknown }).proofHints,
           };
 
           content = await embedProofMetadataIntoSvgBlob(content, proofBundle);
