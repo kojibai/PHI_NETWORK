@@ -8,6 +8,7 @@ import { parseSlug, verifySigilSvg, type VerifyResult } from "../utils/verifySig
 import {
   buildVerifierSlug,
   buildVerifierUrl,
+  buildBundleUnsigned,
   hashBundle,
   hashProofCapsuleV1,
   hashSvgText,
@@ -18,6 +19,8 @@ import {
 } from "../components/KaiVoh/verifierProof";
 import { extractProofBundleMetaFromSvg, type ProofBundleMeta } from "../utils/sigilMetadata";
 import { tryVerifyGroth16 } from "../components/VerifierStamper/zk";
+import { isKASAuthorSig } from "../utils/authorSig";
+import { verifyBundleAuthorSig } from "../utils/webauthnKAS";
 
 function formatProofValue(value: unknown): string {
   if (value === null || value === undefined) return "—";
@@ -70,6 +73,7 @@ export default function VerifyPage(): ReactElement {
   const [bundleHash, setBundleHash] = useState<string>("");
   const [embeddedProof, setEmbeddedProof] = useState<ProofBundleMeta | null>(null);
   const [copyNotice, setCopyNotice] = useState<string>("");
+  const [authorSigVerified, setAuthorSigVerified] = useState<boolean | null>(null);
   const [zkVerify, setZkVerify] = useState<boolean | null>(null);
   const [zkVkey, setZkVkey] = useState<unknown>(null);
   const zkMeta = useMemo(() => {
@@ -161,6 +165,7 @@ export default function VerifyPage(): ReactElement {
         setSvgHash("");
         setBundleHash("");
         setEmbeddedProof(null);
+        setAuthorSigVerified(null);
         setCopyNotice("");
         return;
       }
@@ -185,7 +190,36 @@ export default function VerifyPage(): ReactElement {
       const embedded = extractProofBundleMetaFromSvg(svgText);
       const capsule = embedded?.proofCapsule ?? fallbackCapsule;
       const capsuleHashNext = await hashProofCapsuleV1(capsule);
-      const bundleHashNext = await hashBundle(capsuleHashNext, svgHashNext);
+      const bundleSeed =
+        embedded?.raw && typeof embedded.raw === "object" && embedded.raw !== null
+          ? {
+              ...(embedded.raw as Record<string, unknown>),
+              svgHash: svgHashNext,
+              capsuleHash: capsuleHashNext,
+              proofCapsule: capsule,
+            }
+          : {
+              hashAlg: embedded?.hashAlg ?? PROOF_HASH_ALG,
+              canon: embedded?.canon ?? PROOF_CANON,
+              proofCapsule: capsule,
+              capsuleHash: capsuleHashNext,
+              svgHash: svgHashNext,
+              shareUrl: embedded?.shareUrl,
+              verifierUrl: embedded?.verifierUrl,
+              zkPoseidonHash: embedded?.zkPoseidonHash,
+              zkProof: embedded?.zkProof,
+              proofHints: embedded?.proofHints,
+              zkPublicInputs: embedded?.zkPublicInputs,
+              authorSig: embedded?.authorSig ?? null,
+            };
+      const bundleUnsigned = buildBundleUnsigned(bundleSeed);
+      const bundleHashNext = await hashBundle(bundleUnsigned);
+      const authorSigNext = embedded?.authorSig;
+      const authorSigOk = authorSigNext
+        ? isKASAuthorSig(authorSigNext)
+          ? await verifyBundleAuthorSig(bundleHashNext, authorSigNext)
+          : false
+        : null;
 
       if (!active) return;
       setProofCapsule(capsule);
@@ -193,6 +227,7 @@ export default function VerifyPage(): ReactElement {
       setCapsuleHash(capsuleHashNext);
       setBundleHash(bundleHashNext);
       setEmbeddedProof(embedded);
+      setAuthorSigVerified(authorSigOk);
     };
     void buildProof();
     return () => {
@@ -545,6 +580,12 @@ export default function VerifyPage(): ReactElement {
                         <li>
                           author signature present:{" "}
                           <strong>{embeddedProof.authorSig ? "true" : "false"}</strong>
+                        </li>
+                        <li>
+                          author signature verified:{" "}
+                          <strong>
+                            {authorSigVerified === null ? "n/a" : String(authorSigVerified)}
+                          </strong>
                         </li>
                       </ul>
                     ) : (

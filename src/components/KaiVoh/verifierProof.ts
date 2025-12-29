@@ -16,6 +16,7 @@ import type { ChakraDay } from "../../utils/kai_pulse";
 import { jcsCanonicalize } from "../../utils/jcs";
 import { sha256Hex } from "../../utils/sha256";
 import { svgCanonicalForHash } from "../../utils/svgProof";
+import type { AuthorSig } from "../../utils/authorSig";
 
 export const PROOF_HASH_ALG = "sha256" as const;
 export const PROOF_CANON = "JCS" as const;
@@ -168,8 +169,33 @@ export async function hashSvgText(svgText: string): Promise<string> {
   return await sha256Hex(svgCanonicalForHash(svgText));
 }
 
-export async function hashBundle(capsuleHash: string, svgHash: string): Promise<string> {
-  return await sha256Hex(jcsCanonicalize({ capsuleHash, svgHash }));
+export type ProofBundleLike = {
+  hashAlg?: string;
+  canon?: string;
+  proofCapsule?: ProofCapsuleV1;
+  capsuleHash?: string;
+  svgHash?: string;
+  shareUrl?: string;
+  verifierUrl?: string;
+  zkPoseidonHash?: string;
+  zkProof?: unknown;
+  proofHints?: unknown;
+  zkPublicInputs?: unknown;
+  authorSig?: AuthorSig | null;
+  bundleHash?: string;
+  v?: string;
+  [key: string]: unknown;
+};
+
+type JcsValue = string | number | boolean | null | JcsValue[] | { [k: string]: JcsValue };
+
+export function buildBundleUnsigned(bundle: ProofBundleLike): Record<string, unknown> {
+  const { bundleHash: _bundleHash, authorSig: _authorSig, ...rest } = bundle;
+  return { ...rest, authorSig: null };
+}
+
+export async function hashBundle(bundleUnsigned: Record<string, unknown>): Promise<string> {
+  return await sha256Hex(jcsCanonicalize(bundleUnsigned as JcsValue));
 }
 
 /** Convenience short display for hashes. */

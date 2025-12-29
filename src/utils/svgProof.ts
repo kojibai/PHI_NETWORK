@@ -8,8 +8,12 @@ export function stripProofMetadata(svg: string): string {
   return svg.replace(PROOF_METADATA_REGEX, "");
 }
 
+export function normalizeSvgForHash(svgText: string): string {
+  return stripProofMetadata(svgText);
+}
+
 export function svgCanonicalForHash(svg: string): string {
-  return stripProofMetadata(svg);
+  return normalizeSvgForHash(svg);
 }
 
 export function embedProofMetadata(svg: string, bundle: unknown): string {

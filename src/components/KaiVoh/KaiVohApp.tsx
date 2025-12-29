@@ -35,19 +35,20 @@ import { embedKaiSignature } from "./SignatureEmbedder";
 import type { EmbeddedMediaResult } from "./SignatureEmbedder";
 import MultiShareDispatcher from "./MultiShareDispatcher";
 import { buildNextSigilSvg, downloadSigil } from "./SigilMemoryBuilder";
+import { embedProofMetadata } from "../../utils/svgProof";
 
 /* Verifier UI + proof helpers */
 import VerifierFrame from "./VerifierFrame";
 import {
   buildVerifierSlug,
   buildVerifierUrl,
+  buildBundleUnsigned,
   hashBundle,
   hashProofCapsuleV1,
   hashSvgText,
   normalizeChakraDay,
   PROOF_CANON,
   PROOF_HASH_ALG,
-  PROOF_METADATA_ID,
   type ProofCapsuleV1,
 } from "./verifierProof";
 
@@ -56,7 +57,8 @@ import { derivePhiKeyFromSig } from "../VerifierStamper/sigilUtils";
 
 /* Kai-Klok φ-engine (KKS v1) */
 import { fetchKaiOrLocal, epochMsFromPulse, type ChakraDay } from "../../utils/kai_pulse";
-import { signHash, type HarmonicSig } from "../../lib/sigil/signature";
+import type { AuthorSig } from "../../utils/authorSig";
+import { ensurePasskey, signBundleHash } from "../../utils/webauthnKAS";
 import { computeZkPoseidonHash } from "../../utils/kai";
 import { buildProofHints, generateZkProofFromPoseidonHash } from "../../utils/zkProof";
 import type { SigilProofHints } from "../../types/sigil";
@@ -107,7 +109,7 @@ type ExtendedKksMetadata = KaiSigKksMetadataShape & {
   bundleHash?: string;
   hashAlg?: string;
   canon?: string;
-  authorSig?: HarmonicSig | null;
+  authorSig?: AuthorSig | null;
 
   /** KPV-1: canonical capsule used to compute proofHash */
   proofCapsule?: ProofCapsuleV1;
@@ -148,7 +150,7 @@ type VerifierData = Readonly<{
   capsuleHash: string;
   svgHash: string;
   bundleHash: string;
-  authorSig?: HarmonicSig | null;
+  authorSig?: AuthorSig | null;
   proofHash: string;
 }>;
 
@@ -294,26 +296,7 @@ async function embedMetadataIntoSvgBlob(svgBlob: Blob, metadata: unknown): Promi
 async function embedProofMetadataIntoSvgBlob(svgBlob: Blob, metadata: unknown): Promise<Blob> {
   try {
     const rawText = await svgBlob.text();
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(rawText, "image/svg+xml");
-
-    if (doc.querySelector("parsererror")) return svgBlob;
-
-    const root = doc.documentElement;
-    if (!root || root.namespaceURI !== SVG_NS || root.tagName.toLowerCase() !== "svg") return svgBlob;
-
-    let proofMeta = doc.querySelector(`metadata#${PROOF_METADATA_ID}`) as SVGMetadataElement | null;
-    if (!proofMeta) {
-      proofMeta = doc.createElementNS(SVG_NS, "metadata") as SVGMetadataElement;
-      proofMeta.setAttribute("id", PROOF_METADATA_ID);
-      proofMeta.setAttribute("data-type", "application/json");
-      root.appendChild(proofMeta);
-    }
-
-    proofMeta.textContent = JSON.stringify(metadata, null, 2);
-
-    const serializer = new XMLSerializer();
-    const updatedSvg = serializer.serializeToString(doc);
+    const updatedSvg = embedProofMetadata(rawText, metadata);
     return new Blob([updatedSvg], { type: "image/svg+xml" });
   } catch {
     return svgBlob;
@@ -715,18 +698,11 @@ function KaiVohFlow(): ReactElement {
 
         let svgHash: string | undefined;
         let bundleHash: string | undefined;
-        let authorSig: HarmonicSig | null = null;
+        let authorSig: AuthorSig | null = null;
 
         if (mediaRaw.type === "image" && content.type.includes("svg")) {
           const svgText = await content.text();
           svgHash = await hashSvgText(svgText);
-          bundleHash = await hashBundle(capsuleHash, svgHash);
-          try {
-            authorSig = (await signHash(bundleHash)) ?? null;
-          } catch (err) {
-            console.warn("Author signature failed; continuing without authorSig.", err);
-            authorSig = null;
-          }
 
           const zkPoseidonHash =
             typeof (mergedMetadata as { zkPoseidonHash?: unknown }).zkPoseidonHash === "string"
@@ -800,21 +776,36 @@ function KaiVohFlow(): ReactElement {
               ? (mergedMetadata as { shareUrl?: string }).shareUrl
               : undefined;
 
-          const proofBundle = {
+          const proofBundleBase = {
             v: "KPB-1",
             hashAlg: PROOF_HASH_ALG,
             canon: PROOF_CANON,
             proofCapsule: capsule,
             capsuleHash,
             svgHash,
-            bundleHash,
             shareUrl,
             verifierUrl,
-            authorSig,
             zkPoseidonHash,
             zkProof,
             proofHints,
             zkPublicInputs,
+          };
+          const bundleUnsigned = buildBundleUnsigned({
+            ...proofBundleBase,
+            authorSig: null,
+          });
+          bundleHash = await hashBundle(bundleUnsigned);
+          try {
+            await ensurePasskey(proofPhiKey);
+            authorSig = await signBundleHash(proofPhiKey, bundleHash);
+          } catch (err) {
+            console.warn("Author signature failed; continuing without authorSig.", err);
+            authorSig = null;
+          }
+          const proofBundle = {
+            ...proofBundleBase,
+            bundleHash,
+            authorSig,
           };
 
           content = await embedProofMetadataIntoSvgBlob(content, proofBundle);
