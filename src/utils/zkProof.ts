@@ -1,7 +1,9 @@
 import type { SigilProofHints } from "../types/sigil";
 
+type SignalInputValue = string | number | bigint | Array<string | number | bigint>;
+
 type Groth16FullProve = (
-  input: Record<string, string | number | bigint>,
+  input: Record<string, SignalInputValue>,
   wasmPath: string,
   zkeyPath: string
 ) => Promise<{ proof: unknown; publicSignals: string[] }>;
@@ -49,8 +51,8 @@ function splitPayloadHashHex(payloadHashHex: string): { hi: string; lo: string }
 function buildInputCandidates(params: {
   poseidonHash: string;
   payloadHashHex?: string;
-}): Record<string, string | string[]>[] {
-  const candidates: Record<string, string | string[]>[] = [];
+}): Record<string, SignalInputValue>[] {
+  const candidates: Record<string, SignalInputValue>[] = [];
   if (params.poseidonHash) {
     candidates.push({ poseidonHash: params.poseidonHash });
   }
