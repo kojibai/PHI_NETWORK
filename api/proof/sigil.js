@@ -39,6 +39,30 @@ async function computeZkPoseidonHashFromPayloadHex(payloadHashHex) {
   return BigInt(`0x${digestHex}`).toString();
 }
 
+function coercePoseidonHash(value) {
+  if (value == null) return "";
+  if (typeof value === "bigint") return value.toString();
+  if (typeof value === "number") return value.toString();
+  if (Array.isArray(value)) {
+    if (value.length === 0) return "";
+    return coercePoseidonHash(value[0]);
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return "";
+    if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        return coercePoseidonHash(parsed);
+      } catch {
+        return trimmed;
+      }
+    }
+    return trimmed;
+  }
+  return String(value).trim();
+}
+
 async function loadSigilVkey() {
   const raw = await fs.readFile(VKEY_PATH, "utf8");
   return JSON.parse(raw);
@@ -91,8 +115,8 @@ export async function generateSigilProof({
   const hashFromPayload = payloadHashHex
     ? await computeZkPoseidonHashFromPayloadHex(payloadHashHex)
     : null;
-  const canonicalPoseidonHash =
-    (hashFromPayload ?? poseidonHash ?? zkPoseidonHash ?? "").toString().trim();
+  const directPoseidonHash = coercePoseidonHash(poseidonHash ?? zkPoseidonHash);
+  const canonicalPoseidonHash = (hashFromPayload ?? directPoseidonHash).toString().trim();
   if (!canonicalPoseidonHash) {
     throw new Error("Missing zkPoseidonHash/payloadHashHex");
   }
