@@ -1699,6 +1699,26 @@ const VerifierStamperInner: React.FC = () => {
     }
   }, [zkProof]);
 
+  const authorSigValue = useMemo(() => {
+    const value = getPath(meta, "authorSig");
+    if (value !== undefined && value !== null) return value;
+    return getPath(meta, "authSig");
+  }, [meta]);
+
+  const authorSigDisplay = useMemo(() => {
+    if (authorSigValue === undefined || authorSigValue === null) return null;
+    if (typeof authorSigValue === "string") {
+      const trimmed = authorSigValue.trim();
+      return trimmed.length ? trimmed : null;
+    }
+    try {
+      return stableStringify(authorSigValue);
+    } catch (err) {
+      logError("authorSig.stringify", err);
+      return "[authorSig]";
+    }
+  }, [authorSigValue]);
+
   // Chakra: resolve from chakraDay or chakraGate (strips "gate" implicitly)
   const chakraDayDisplay = useMemo<ChakraDay | null>(() => resolveChakraDay(meta ?? {}), [meta]);
 
@@ -2001,6 +2021,7 @@ const VerifierStamperInner: React.FC = () => {
                       />
                     )}
 
+                    {authorSigDisplay && <KV k="Author Sig:" v={authorSigDisplay} wide mono />}
                     {frequencyHz && <KV k="Frequency (Hz):" v={frequencyHz} />}
                     {chakraGate && <KV k="Spiral Gate:" v={chakraGate} />}
                     {liveSig && <KV k="PROOF OF BREATH™:" v={liveSig} wide mono />}
@@ -2221,18 +2242,6 @@ const VerifierStamperInner: React.FC = () => {
 
                 {tab === "data" && (
                   <>
-                    {zkSummary && (
-                      <div className="summary-grid" style={{ marginBottom: 10 }}>
-                        <KV k="ZK proofs:" v={zkSummary.label} />
-                      </div>
-                    )}
-                    {(zkPoseidonHash || zkProofDisplay) && (
-                      <div className="summary-grid" style={{ marginBottom: 10 }}>
-                        {zkPoseidonHash && <KV k="ZK Poseidon hash:" v={zkPoseidonHash} wide mono />}
-                        {zkPublicInputs && <KV k="ZK public inputs:" v={zkPublicInputs} wide mono />}
-                        {zkProofDisplay && <KV k="ZK proof:" v={zkProofDisplay} wide mono />}
-                      </div>
-                    )}
                     <div className="json-toggle">
                       <label>
                         <input type="checkbox" checked={viewRaw} onChange={() => setViewRaw((v) => !v)} /> View raw JSON
