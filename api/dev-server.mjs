@@ -11,7 +11,7 @@ const server = http.createServer((req, res) => {
   if (url.pathname === "/") {
     res.statusCode = 200;
     res.setHeader("Content-Type", "text/plain; charset=utf-8");
-    res.end("Proof API is running. POST /api/proof/sigil with { zkPoseidonHash }.");
+    res.end("Proof API is running. POST /api/proof/sigil with { poseidonHash }.");
     return;
   }
 
