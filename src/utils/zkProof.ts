@@ -150,8 +150,6 @@ export async function generateZkProofFromPoseidonHash(params: {
 
   const input = {
     poseidonHash,
-    zkPoseidonHash: poseidonHash,
-    hash: poseidonHash,
   };
 
   try {

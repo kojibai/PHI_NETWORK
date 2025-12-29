@@ -102,8 +102,6 @@ export async function generateSigilProof({
 
   const input = {
     poseidonHash: canonicalPoseidonHash,
-    zkPoseidonHash: canonicalPoseidonHash,
-    hash: canonicalPoseidonHash,
   };
 
   const { proof, publicSignals } = await groth16.fullProve(
