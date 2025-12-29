@@ -52,9 +52,7 @@ async function fetchSigilProofFromApi(params: {
       cache: "no-store",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        zkPoseidonHash: params.poseidonHash,
         poseidonHash: params.poseidonHash,
-        payloadHashHex: params.payloadHashHex,
       }),
     });
     if (!res.ok) return null;

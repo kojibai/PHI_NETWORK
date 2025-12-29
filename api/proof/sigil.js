@@ -39,6 +39,17 @@ async function computeZkPoseidonHashFromPayloadHex(payloadHashHex) {
   return BigInt(`0x${digestHex}`).toString();
 }
 
+function normalizePoseidonHashInput(value) {
+  if (value === null || value === undefined) return "";
+  if (Array.isArray(value)) {
+    throw new Error("poseidonHash must be a single value");
+  }
+  if (typeof value === "object") {
+    throw new Error("poseidonHash must be a scalar");
+  }
+  return String(value).trim();
+}
+
 async function loadSigilVkey() {
   const raw = await fs.readFile(VKEY_PATH, "utf8");
   return JSON.parse(raw);
@@ -91,8 +102,9 @@ export async function generateSigilProof({
   const hashFromPayload = payloadHashHex
     ? await computeZkPoseidonHashFromPayloadHex(payloadHashHex)
     : null;
-  const canonicalPoseidonHash =
-    (hashFromPayload ?? poseidonHash ?? zkPoseidonHash ?? "").toString().trim();
+  const canonicalPoseidonHash = normalizePoseidonHashInput(
+    hashFromPayload ?? poseidonHash ?? zkPoseidonHash ?? ""
+  );
   if (!canonicalPoseidonHash) {
     throw new Error("Missing zkPoseidonHash/payloadHashHex");
   }
