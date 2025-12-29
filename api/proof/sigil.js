@@ -28,6 +28,43 @@ function padHex64(hex) {
   return String(hex).padStart(64, "0");
 }
 
+function normalizePoseidonHashInput(value) {
+  if (value == null) return null;
+  if (typeof value === "bigint" || typeof value === "number") {
+    return value.toString();
+  }
+  if (Array.isArray(value)) {
+    if (value.length === 0) return null;
+    if (value.length > 1) {
+      throw new Error("poseidonHash must be a single value");
+    }
+    return normalizePoseidonHashInput(value[0]);
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) {
+          if (parsed.length === 0) return null;
+          if (parsed.length > 1) {
+            throw new Error("poseidonHash must be a single value");
+          }
+          return normalizePoseidonHashInput(parsed[0]);
+        }
+      } catch {
+        // Fall through to treat as a raw string.
+      }
+    }
+    if (trimmed.includes(",")) {
+      throw new Error("poseidonHash must be a single value");
+    }
+    return trimmed;
+  }
+  return null;
+}
+
 async function computeZkPoseidonHashFromPayloadHex(payloadHashHex) {
   const clean = String(payloadHashHex).trim().replace(/^0x/i, "");
   const hi = clean.slice(0, 32).padStart(32, "0");
@@ -91,8 +128,10 @@ export async function generateSigilProof({
   const hashFromPayload = payloadHashHex
     ? await computeZkPoseidonHashFromPayloadHex(payloadHashHex)
     : null;
+  const normalizedInputHash = normalizePoseidonHashInput(poseidonHash);
+  const normalizedLegacyHash = normalizePoseidonHashInput(zkPoseidonHash);
   const canonicalPoseidonHash =
-    (hashFromPayload ?? poseidonHash ?? zkPoseidonHash ?? "").toString().trim();
+    (hashFromPayload ?? normalizedInputHash ?? normalizedLegacyHash ?? "").toString().trim();
   if (!canonicalPoseidonHash) {
     throw new Error("Missing zkPoseidonHash/payloadHashHex");
   }

@@ -18,6 +18,43 @@ function isNonEmptyObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && Object.keys(value).length > 0;
 }
 
+function normalizePoseidonHashInput(value: unknown): string | null {
+  if (value == null) return null;
+  if (typeof value === "bigint" || typeof value === "number") {
+    return value.toString();
+  }
+  if (Array.isArray(value)) {
+    if (value.length === 0) return null;
+    if (value.length > 1) {
+      throw new Error("poseidonHash must be a single value");
+    }
+    return normalizePoseidonHashInput(value[0]);
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+      try {
+        const parsed = JSON.parse(trimmed) as unknown;
+        if (Array.isArray(parsed)) {
+          if (parsed.length === 0) return null;
+          if (parsed.length > 1) {
+            throw new Error("poseidonHash must be a single value");
+          }
+          return normalizePoseidonHashInput(parsed[0]);
+        }
+      } catch {
+        return trimmed;
+      }
+    }
+    if (trimmed.includes(",")) {
+      throw new Error("poseidonHash must be a single value");
+    }
+    return trimmed;
+  }
+  return null;
+}
+
 function hasMeaningfulZkProof(value: unknown): boolean {
   if (!value) return false;
   if (typeof value === "string") return value.trim().length > 0;
@@ -126,7 +163,7 @@ export async function generateZkProofFromPoseidonHash(params: {
   vkey?: unknown;
   payloadHashHex?: string;
 }): Promise<{ proof: unknown; proofHints: SigilProofHints; zkPublicInputs: string[] } | null> {
-  const poseidonHash = params.poseidonHash?.trim();
+  const poseidonHash = normalizePoseidonHashInput(params.poseidonHash);
   if (!poseidonHash) return null;
 
   const apiAttempted = typeof fetch === "function";
