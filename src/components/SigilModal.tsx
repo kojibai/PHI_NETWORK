@@ -36,17 +36,23 @@ import {
 } from "../utils/sigilUrl";
 import "./SigilModal.css";
 import { downloadBlob } from "../lib/download";
-import { jcsCanonicalize } from "../utils/jcs";
-import { sha256Hex as sha256HexStrict } from "../utils/sha256";
-import { embedProofMetadata, svgCanonicalForHash } from "../utils/svgProof";
+import { embedProofMetadata } from "../utils/svgProof";
 import { extractEmbeddedMetaFromSvg } from "../utils/sigilMetadata";
-import { generateZkProofFromPoseidonHash } from "../utils/zkProof";
+import { buildProofHints, generateZkProofFromPoseidonHash } from "../utils/zkProof";
+import { computeZkPoseidonHash } from "../utils/kai";
 import {
-  ensurePasskey,
-  isWebAuthnAvailable,
-  signBundleHash,
-} from "../utils/webauthnKAS";
-import { buildVerifierUrl, normalizeChakraDay } from "./KaiVoh/verifierProof";
+  buildBundleUnsigned,
+  buildVerifierUrl,
+  hashBundle,
+  hashProofCapsuleV1,
+  hashSvgText,
+  normalizeChakraDay,
+  PROOF_CANON,
+  PROOF_HASH_ALG,
+  type ProofCapsuleV1,
+} from "./KaiVoh/verifierProof";
+import type { AuthorSig } from "../utils/authorSig";
+import { ensurePasskey, signBundleHash } from "../utils/webauthnKAS";
 import type { SigilProofHints } from "../types/sigil";
 
 /* ✅ SINGLE SOURCE OF TRUTH: src/utils/kai_pulse.ts */
@@ -725,6 +731,7 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
 
   // canonical child hash from KaiSigil.onReady()
   const [lastHash, setLastHash] = useState("");
+  const [zkPoseidonSecret, setZkPoseidonSecret] = useState<string | null>(null);
 
   // RICH DATA toggle
   const [showRich, setShowRich] = useState(false);
@@ -1102,30 +1109,10 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
     pulseExact: string; // bigint exact
   };
 
-  type ProofCapsule = {
-    v: "KPV-1";
-    pulse: number;
-    chakraDay: string;
-    kaiSignature: string;
-    phiKey: string;
-    verifierSlug: string;
-  };
-
-  type AuthorSig = {
-    v: "KAS-1";
-    alg: "webauthn-es256";
-    credId: string;
-    pubKeyJwk: JsonWebKey;
-    challenge: string;
-    signature: string;
-    authenticatorData: string;
-    clientDataJSON: string;
-  };
-
   type ProofBundle = {
     hashAlg: "sha256";
     canon: "JCS";
-    proofCapsule: ProofCapsule;
+    proofCapsule: ProofCapsuleV1;
     capsuleHash: string;
     svgHash: string;
     bundleHash: string;
@@ -1305,7 +1292,7 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
       const shareUrl = makeSigilUrl(payloadHashHex, sharePayload);
       const verifierUrl = buildVerifierUrl(pulseNum, kaiSignature);
       const kaiSignatureShort = kaiSignature.slice(0, 10);
-      const proofCapsule: ProofCapsule = {
+      const proofCapsule: ProofCapsuleV1 = {
         v: "KPV-1",
         pulse: pulseNum,
         chakraDay: chakraNormalized,
@@ -1314,7 +1301,7 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
         verifierSlug: `${pulseNum}-${kaiSignatureShort}`,
       };
 
-      const capsuleHash = await sha256HexStrict(jcsCanonicalize(proofCapsule));
+      const capsuleHash = await hashProofCapsuleV1(proofCapsule);
       const svgClone = svgEl.cloneNode(true) as SVGElement;
       svgClone.setAttribute("data-pulse", String(pulseNum));
       svgClone.setAttribute("data-beat", String(beatNum));
@@ -1327,7 +1314,7 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
 
       const svgString = new XMLSerializer().serializeToString(svgClone);
       const embeddedMeta = extractEmbeddedMetaFromSvg(svgString);
-      const zkPoseidonHash =
+      let zkPoseidonHash =
         typeof embeddedMeta.zkPoseidonHash === "string" &&
         embeddedMeta.zkPoseidonHash.trim().length > 0
           ? embeddedMeta.zkPoseidonHash.trim()
@@ -1335,6 +1322,11 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
       let zkProof = embeddedMeta.zkProof;
       let proofHints = embeddedMeta.proofHints;
       let zkPublicInputs: unknown = embeddedMeta.zkPublicInputs;
+
+      if (!zkPoseidonHash && payloadHashHex) {
+        const computed = await computeZkPoseidonHash(payloadHashHex);
+        zkPoseidonHash = computed.hash;
+      }
 
       if (zkPoseidonHash) {
         const proofObj =
@@ -1350,18 +1342,42 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
                 ? Object.keys(proofObj).length > 0
                 : false;
 
-        if (!hasProof) {
+        let secretForProof =
+          typeof zkPoseidonSecret === "string" && zkPoseidonSecret.trim().length > 0
+            ? zkPoseidonSecret.trim()
+            : undefined;
+
+        if (!secretForProof && payloadHashHex) {
+          const computed = await computeZkPoseidonHash(payloadHashHex);
+          if (computed.hash === zkPoseidonHash) {
+            secretForProof = computed.secret;
+          }
+        }
+
+        if (!hasProof && !secretForProof) {
+          throw new Error("ZK secret missing for proof generation");
+        }
+
+        if (!hasProof && secretForProof) {
           const generated = await generateZkProofFromPoseidonHash({
             poseidonHash: zkPoseidonHash,
-            proofHints: typeof proofHints === "object" && proofHints !== null
-              ? (proofHints as SigilProofHints)
-              : undefined,
+            secret: secretForProof,
+            proofHints:
+              typeof proofHints === "object" && proofHints !== null
+                ? (proofHints as SigilProofHints)
+                : undefined,
           });
-          if (generated) {
-            zkProof = generated.proof;
-            proofHints = generated.proofHints;
-            zkPublicInputs = generated.zkPublicInputs;
+          if (!generated) {
+            throw new Error("ZK proof generation failed");
           }
+          zkProof = generated.proof;
+          proofHints = generated.proofHints;
+          zkPublicInputs = generated.zkPublicInputs;
+        }
+        if (typeof proofHints !== "object" || proofHints === null) {
+          proofHints = buildProofHints(zkPoseidonHash);
+        } else {
+          proofHints = buildProofHints(zkPoseidonHash, proofHints as SigilProofHints);
         }
       }
       if (zkPoseidonHash && zkPublicInputs) {
@@ -1370,38 +1386,56 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
           throw new Error("Embedded ZK mismatch");
         }
       }
+      if (zkPoseidonHash && (!zkProof || typeof zkProof !== "object")) {
+        throw new Error("ZK proof missing");
+      }
       if (zkPublicInputs) {
         svgClone.setAttribute("data-zk-public-inputs", JSON.stringify(zkPublicInputs));
       }
-      const svgHash = await sha256HexStrict(svgCanonicalForHash(svgString));
-      const bundleHash = await sha256HexStrict(
-        jcsCanonicalize({ capsuleHash, svgHash })
-      );
-
-      let authorSig: AuthorSig | null = null;
-      let warning: string | null = null;
-
-      if (isWebAuthnAvailable()) {
-        await ensurePasskey(phiKey);
-        authorSig = (await signBundleHash(phiKey, bundleHash)) as AuthorSig;
-      } else {
-        warning = "Warning: WebAuthn unavailable — exporting without author signature.";
+      if (zkPoseidonHash) {
+        svgClone.setAttribute("data-zk-scheme", "groth16-poseidon");
+        svgClone.setAttribute("data-zk-poseidon-hash", zkPoseidonHash);
+        if (zkProof) {
+          svgClone.setAttribute("data-zk-proof", "present");
+        }
+      }
+      if (
+        svgClone.getAttribute("data-pulse") !== String(pulseNum) ||
+        svgClone.getAttribute("data-kai-signature") !== kaiSignature ||
+        svgClone.getAttribute("data-phi-key") !== phiKey
+      ) {
+        throw new Error("SVG data attributes do not match proof capsule");
       }
 
-      const proofBundle: ProofBundle = {
-        hashAlg: "sha256",
-        canon: "JCS",
+      const svgHash = await hashSvgText(svgString);
+      const proofBundleBase = {
+        hashAlg: PROOF_HASH_ALG,
+        canon: PROOF_CANON,
         proofCapsule,
         capsuleHash,
         svgHash,
-        bundleHash,
         shareUrl,
         verifierUrl,
-        authorSig,
+        authorSig: null as AuthorSig | null,
         zkPoseidonHash,
         zkProof,
         proofHints,
         zkPublicInputs,
+      };
+      const bundleUnsigned = buildBundleUnsigned(proofBundleBase);
+      const computedBundleHash = await hashBundle(bundleUnsigned);
+      let authorSig: AuthorSig | null = null;
+      try {
+        await ensurePasskey(phiKey);
+        authorSig = await signBundleHash(phiKey, computedBundleHash);
+      } catch (err) {
+        console.warn("Author signature failed; continuing without authorSig.", err);
+        authorSig = null;
+      }
+      const proofBundle: ProofBundle = {
+        ...proofBundleBase,
+        bundleHash: computedBundleHash,
+        authorSig,
       };
 
       const sealedSvg = embedProofMetadata(svgString, proofBundle);
@@ -1412,7 +1446,7 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
       const zipBlob = await zip.generateAsync({ type: "blob" });
       downloadBlob(zipBlob, `${baseName}_proof_bundle.zip`);
 
-      return warning;
+      return null;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       return `Export failed: ${msg}`;
@@ -1616,9 +1650,12 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
               size={240}
               hashMode="deterministic"
               origin=""
-              onReady={(payload: { hash?: string }) => {
+              onReady={(payload: { hash?: string; zkPoseidonSecret?: string }) => {
                 const h = payload.hash ? String(payload.hash).toLowerCase() : "";
                 if (h) setLastHash(h);
+                if (payload.zkPoseidonSecret) {
+                  setZkPoseidonSecret(payload.zkPoseidonSecret);
+                }
               }}
             />
             <span className="pulse-tag">{pulseDisp}</span>

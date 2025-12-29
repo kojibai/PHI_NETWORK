@@ -1,41 +1,12 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { groth16 } from "snarkjs";
-import { blake3 } from "hash-wasm";
 
 const ROOT_DIR = process.cwd();
 const ARTIFACTS_DIR = path.join(ROOT_DIR, "public", "zk");
-const WASM_PATH = path.join(ARTIFACTS_DIR, "sigil.wasm");
-const ZKEY_PATH = path.join(ARTIFACTS_DIR, "sigil.zkey");
-const VKEY_PATH = path.join(ARTIFACTS_DIR, "sigil.vkey.json");
-
-function hexToBytes(hex) {
-  const clean = String(hex).trim().toLowerCase().replace(/^0x/, "");
-  if (clean.length % 2 !== 0) throw new Error("HEX_LENGTH_MUST_BE_EVEN");
-  const out = new Uint8Array(clean.length / 2);
-  for (let i = 0; i < out.length; i += 1) {
-    const byte = clean.slice(i * 2, i * 2 + 2);
-    const val = Number.parseInt(byte, 16);
-    if (Number.isNaN(val)) throw new Error("HEX_PARSE_ERROR");
-    out[i] = val;
-  }
-  return out;
-}
-
-function padHex64(hex) {
-  return String(hex).padStart(64, "0");
-}
-
-async function computeZkPoseidonHashFromPayloadHex(payloadHashHex) {
-  const clean = String(payloadHashHex).trim().replace(/^0x/i, "");
-  const hi = clean.slice(0, 32).padStart(32, "0");
-  const lo = clean.slice(32).padEnd(32, "0");
-  const hiBig = BigInt(`0x${hi}`);
-  const loBig = BigInt(`0x${lo}`);
-  const joined = `${padHex64(hiBig.toString(16))}${padHex64(loBig.toString(16))}`;
-  const digestHex = await blake3(hexToBytes(joined));
-  return BigInt(`0x${digestHex}`).toString();
-}
+const WASM_PATH = path.join(ARTIFACTS_DIR, "sigil_proof.wasm");
+const ZKEY_PATH = path.join(ARTIFACTS_DIR, "sigil_proof_final.zkey");
+const VKEY_PATH = path.join(ARTIFACTS_DIR, "verification_key.json");
 
 async function loadSigilVkey() {
   const raw = await fs.readFile(VKEY_PATH, "utf8");
@@ -63,23 +34,20 @@ function normalizePublicSignals(signals) {
 }
 
 export async function generateSigilProof({
-  zkPoseidonHash,
-  payloadHashHex,
-  poseidonHash,
+  secret,
+  expectedHash,
 } = {}) {
-  const hashFromPayload = payloadHashHex
-    ? await computeZkPoseidonHashFromPayloadHex(payloadHashHex)
-    : null;
-  const canonicalPoseidonHash =
-    (hashFromPayload ?? poseidonHash ?? zkPoseidonHash ?? "").toString().trim();
-  if (!canonicalPoseidonHash) {
-    throw new Error("Missing zkPoseidonHash/payloadHashHex");
+  const canonicalSecret = secret != null ? String(secret).trim() : "";
+  const canonicalExpectedHash =
+    expectedHash != null ? String(expectedHash).trim() : "";
+
+  if (!canonicalSecret || !canonicalExpectedHash) {
+    throw new Error("Missing secret/expectedHash");
   }
 
   const input = {
-    poseidonHash: canonicalPoseidonHash,
-    zkPoseidonHash: canonicalPoseidonHash,
-    hash: canonicalPoseidonHash,
+    secret: canonicalSecret,
+    expectedHash: canonicalExpectedHash,
   };
 
   const { proof, publicSignals } = await groth16.fullProve(
@@ -90,9 +58,12 @@ export async function generateSigilProof({
 
   const normalizedProof = normalizeValue(proof);
   const normalizedSignals = normalizePublicSignals(publicSignals);
+  if (normalizedSignals.length < 1) {
+    throw new Error("ZK public input missing");
+  }
   const publicInput0 = normalizedSignals[0];
 
-  if (publicInput0 !== canonicalPoseidonHash) {
+  if (publicInput0 !== canonicalExpectedHash) {
     throw new Error("ZK public input mismatch");
   }
 
@@ -144,5 +115,9 @@ export default async function handler(req, res) {
     res.end(JSON.stringify({ error: message }));
   }
 }
+
+export const config = {
+  runtime: "nodejs",
+};
 
 export { loadSigilVkey };

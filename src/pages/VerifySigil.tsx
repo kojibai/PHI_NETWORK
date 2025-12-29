@@ -310,7 +310,7 @@ export default function VerifySigil(): React.JSX.Element {
 
     (async () => {
       try {
-        const res = await fetch("/sigil.vkey.json", { cache: "no-store" });
+        const res = await fetch("/zk/verification_key.json", { cache: "no-store" });
         if (!res.ok) return;
         const vkey: unknown = await res.json();
         if (!alive) return;

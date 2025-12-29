@@ -33,3 +33,18 @@ export function base64UrlDecode(input: string): Uint8Array {
   for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
   return bytes;
 }
+
+export function hexToBytes(hex: string): Uint8Array {
+  const normalized = hex.trim();
+  if (normalized.length % 2 !== 0) {
+    throw new Error("Invalid hex string length.");
+  }
+  if (!/^[0-9a-fA-F]*$/.test(normalized)) {
+    throw new Error("Invalid hex string characters.");
+  }
+  const out = new Uint8Array(normalized.length / 2);
+  for (let i = 0; i < normalized.length; i += 2) {
+    out[i / 2] = Number.parseInt(normalized.slice(i, i + 2), 16);
+  }
+  return out;
+}

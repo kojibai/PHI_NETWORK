@@ -8,6 +8,11 @@ export default defineConfig({
   resolve: {
     dedupe: ["react", "react-dom", "react/jsx-runtime"],
   },
+  server: {
+    proxy: {
+      "/api": "http://localhost:8787",
+    },
+  },
   define: {
     "import.meta.env.VITE_APP_VERSION": JSON.stringify(BASE_APP_VERSION),
   },

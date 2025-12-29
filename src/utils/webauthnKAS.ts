@@ -1,5 +1,6 @@
 import { decodeCbor } from "./cbor";
-import { base64UrlDecode, base64UrlEncode, sha256Bytes } from "./sha256";
+import { base64UrlDecode, base64UrlEncode, hexToBytes, sha256Bytes } from "./sha256";
+import type { KASAuthorSig } from "./authorSig";
 
 export type StoredPasskey = {
   credId: string;
@@ -159,7 +160,7 @@ export async function ensurePasskey(phiKey: string): Promise<StoredPasskey> {
   return record;
 }
 
-export async function signBundleHash(phiKey: string, bundleHash: string) {
+export async function signBundleHash(phiKey: string, bundleHash: string): Promise<KASAuthorSig> {
   if (!isWebAuthnSupported()) {
     throw new Error("WebAuthn is not available in this browser.");
   }
@@ -169,7 +170,7 @@ export async function signBundleHash(phiKey: string, bundleHash: string) {
   }
 
   const credIdBytes = base64UrlDecode(stored.credId);
-  const challengeBytes = await sha256Bytes(`KAS-1|bundleHash|${bundleHash}`);
+  const challengeBytes = hexToBytes(bundleHash);
 
   const challenge = challengeBytes.slice();
   const allowId = credIdBytes.slice();
@@ -197,6 +198,103 @@ export async function signBundleHash(phiKey: string, bundleHash: string) {
     authenticatorData: base64UrlEncode(new Uint8Array(response.authenticatorData)),
     clientDataJSON: base64UrlEncode(new Uint8Array(response.clientDataJSON)),
   };
+}
+
+function concatBytes(a: Uint8Array, b: Uint8Array): Uint8Array {
+  const out = new Uint8Array(a.length + b.length);
+  out.set(a, 0);
+  out.set(b, a.length);
+  return out;
+}
+
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const buf = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(buf).set(bytes);
+  return buf;
+}
+
+function derToRawSignature(signature: Uint8Array, size: number): Uint8Array | null {
+  if (signature.length < 8 || signature[0] !== 0x30) return null;
+  const totalLength = signature[1];
+  if (totalLength + 2 !== signature.length) return null;
+  let offset = 2;
+  if (signature[offset] !== 0x02) return null;
+  const rLen = signature[offset + 1];
+  offset += 2;
+  const r = signature.slice(offset, offset + rLen);
+  offset += rLen;
+  if (signature[offset] !== 0x02) return null;
+  const sLen = signature[offset + 1];
+  offset += 2;
+  const s = signature.slice(offset, offset + sLen);
+
+  const rTrim = r[0] === 0x00 ? r.slice(1) : r;
+  const sTrim = s[0] === 0x00 ? s.slice(1) : s;
+  if (rTrim.length > size || sTrim.length > size) return null;
+
+  const raw = new Uint8Array(size * 2);
+  raw.set(rTrim, size - rTrim.length);
+  raw.set(sTrim, size * 2 - sTrim.length);
+  return raw;
+}
+
+async function importP256Jwk(jwk: JsonWebKey): Promise<CryptoKey> {
+  return crypto.subtle.importKey(
+    "jwk",
+    jwk,
+    { name: "ECDSA", namedCurve: "P-256" },
+    false,
+    ["verify"]
+  );
+}
+
+export async function verifyBundleAuthorSig(
+  bundleHash: string,
+  authorSig: KASAuthorSig
+): Promise<boolean> {
+  try {
+    const expectedChallenge = hexToBytes(bundleHash);
+    const expectedChallengeB64 = base64UrlEncode(expectedChallenge);
+    if (authorSig.challenge !== expectedChallengeB64) return false;
+
+    let clientData: { challenge?: string } | null = null;
+    try {
+      const clientDataBytes = base64UrlDecode(authorSig.clientDataJSON);
+      const clientDataText = new TextDecoder().decode(clientDataBytes);
+      const parsed = JSON.parse(clientDataText) as { challenge?: string };
+      clientData = parsed;
+    } catch {
+      return false;
+    }
+
+    if (!clientData || clientData.challenge !== expectedChallengeB64) return false;
+
+    const authenticatorData = base64UrlDecode(authorSig.authenticatorData);
+    const clientDataBytes = base64UrlDecode(authorSig.clientDataJSON);
+    const clientDataHash = await sha256Bytes(clientDataBytes);
+    const signedPayload = concatBytes(authenticatorData, clientDataHash);
+    const signatureBytes = base64UrlDecode(authorSig.signature);
+
+    const pubKey = await importP256Jwk(authorSig.pubKeyJwk);
+    const verified = await crypto.subtle.verify(
+      { name: "ECDSA", hash: "SHA-256" },
+      pubKey,
+      toArrayBuffer(signatureBytes),
+      toArrayBuffer(signedPayload)
+    );
+    if (verified) return true;
+
+    const rawSig = derToRawSignature(signatureBytes, 32);
+    if (!rawSig) return false;
+    return crypto.subtle.verify(
+      { name: "ECDSA", hash: "SHA-256" },
+      pubKey,
+      toArrayBuffer(rawSig),
+      toArrayBuffer(signedPayload)
+    );
+  } catch {
+    return false;
+  }
 }
 
 export function isWebAuthnAvailable(): boolean {
