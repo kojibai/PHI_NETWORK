@@ -27,6 +27,7 @@ import type { Built, SigilPayloadExtended, ChakraDayKey } from "./types";
 import type { SigilMetadataLite } from "../../utils/valuation";
 import { makeSigilUrl, type SigilSharePayload } from "../../utils/sigilUrl";
 import { computeZkPoseidonHash } from "../../utils/kai";
+import { generateZkProofFromPoseidonHash } from "../../utils/zkProof";
 
 /* ─────────────────────────────────────────────────────────────
  * STRICT CONVERSION: guarantee ArrayBuffer (not SharedArrayBuffer)
@@ -170,6 +171,9 @@ export async function buildEmbeddedBundle(args: {
 
   let zkPoseidonHash = "0x";
   let zkPoseidonSecret = "";
+  let zkProof: unknown;
+  let zkPublicInputs: string[] | undefined;
+  let proofHints = payloadObj.proofHints;
   let payloadObj: SigilPayloadExtended = {
     v: "1.0",
     kaiSignature: kaiSignature ?? "",
@@ -223,6 +227,20 @@ export async function buildEmbeddedBundle(args: {
   zkPoseidonHash = poseidonResult.hash;
   zkPoseidonSecret = poseidonResult.secret;
   payloadObj = { ...payloadObj, zkPoseidonHash };
+
+  if (typeof window !== "undefined") {
+    const generated = await generateZkProofFromPoseidonHash({
+      poseidonHash: zkPoseidonHash,
+      secret: zkPoseidonSecret,
+      proofHints: payloadObj.proofHints,
+    });
+    if (generated) {
+      zkProof = generated.proof;
+      zkPublicInputs = generated.zkPublicInputs;
+      proofHints = generated.proofHints;
+      payloadObj = { ...payloadObj, zkProof, proofHints };
+    }
+  }
 
   const canonicalPayload: JSONDict = {
     v: payloadObj.v,
@@ -365,6 +383,10 @@ export async function buildEmbeddedBundle(args: {
     payload: payloadB64,
     integrity,
     frequencyHzAtMint: frequencyHzCurrent,
+    zkPoseidonHash: payloadObj.zkPoseidonHash,
+    zkProof,
+    zkPublicInputs,
+    proofHints,
     valuationSource: valuationSource ?? null,
     valuationSeal: mintSeal ?? null,
   };
