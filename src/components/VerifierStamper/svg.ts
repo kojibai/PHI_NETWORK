@@ -69,6 +69,35 @@ export async function parseSvgFile(file: File) {
   meta.zkPoseidonHash ??= getAttr(text, "data-zk-poseidon-hash");
   meta.zkPublicInputs ??= getAttr(text, "data-zk-public-inputs");
 
+  const proofMetaText = (() => {
+    try {
+      const doc = new DOMParser().parseFromString(text, "image/svg+xml");
+      const node =
+        doc.querySelector('metadata#kai-voh-proof[type="application/json"]') ??
+        doc.querySelector("metadata#kai-voh-proof");
+      return node?.textContent ?? null;
+    } catch {
+      return null;
+    }
+  })();
+  if (proofMetaText) {
+    const normalized = proofMetaText
+      .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&amp;/g, "&");
+    try {
+      const parsed = JSON.parse(normalized) as { authorSig?: string; authSig?: string };
+      if (parsed.authorSig !== undefined) {
+        meta.authorSig = parsed.authorSig;
+      } else if (parsed.authSig !== undefined) {
+        meta.authorSig = parsed.authSig;
+      }
+    } catch {
+      // ignore invalid proof bundle
+    }
+  }
+
   meta.kaiSignature ??= embedded.kaiSignature;
   meta.userPhiKey ??= embedded.phiKey;
   meta.pulse ??= embedded.pulse;
