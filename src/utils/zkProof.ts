@@ -27,6 +27,31 @@ function normalizePoseidonHash(value: unknown): string {
   return "";
 }
 
+function normalizeSecret(value: unknown): string {
+  if (typeof value === "bigint") return value.toString();
+  if (typeof value === "number") return Number.isFinite(value) ? value.toString() : "";
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return "";
+    if (/^0x/i.test(trimmed)) {
+      try {
+        return BigInt(trimmed).toString();
+      } catch {
+        return trimmed;
+      }
+    }
+    if (/[a-f]/i.test(trimmed)) {
+      try {
+        return BigInt(`0x${trimmed}`).toString();
+      } catch {
+        return trimmed;
+      }
+    }
+    return trimmed;
+  }
+  return "";
+}
+
 function isInputMismatch(err: unknown): boolean {
   if (!(err instanceof Error)) return false;
   const msg = err.message ?? "";
@@ -38,29 +63,25 @@ function isInputMismatch(err: unknown): boolean {
   );
 }
 
-function splitPayloadHashHex(payloadHashHex: string): { hi: string; lo: string } {
+function payloadHashHexToSecret(payloadHashHex: string): string {
   const clean = payloadHashHex.trim().replace(/^0x/i, "");
-  const hi = clean.slice(0, 32).padStart(32, "0");
-  const lo = clean.slice(32).padEnd(32, "0");
-  return {
-    hi: BigInt(`0x${hi}`).toString(),
-    lo: BigInt(`0x${lo}`).toString(),
-  };
+  if (!clean) return "";
+  return BigInt(`0x${clean}`).toString();
 }
 
 function buildInputCandidates(params: {
-  poseidonHash: string;
-  payloadHashHex?: string;
+  expectedHash: string;
+  secret: string;
 }): Record<string, SignalInputValue>[] {
   const candidates: Record<string, SignalInputValue>[] = [];
-  if (params.poseidonHash) {
-    candidates.push({ poseidonHash: params.poseidonHash });
+  if (params.secret && params.expectedHash) {
+    candidates.push({ secret: params.secret, expectedHash: params.expectedHash });
   }
-  if (params.payloadHashHex) {
-    const { hi, lo } = splitPayloadHashHex(params.payloadHashHex);
-    candidates.push({ payloadHash: [hi, lo] });
-    candidates.push({ payloadHashHi: hi, payloadHashLo: lo });
-    candidates.push({ hashHi: hi, hashLo: lo });
+  if (params.secret) {
+    candidates.push({ secret: params.secret });
+  }
+  if (params.expectedHash) {
+    candidates.push({ expectedHash: params.expectedHash });
   }
   candidates.push({});
   return candidates;
@@ -92,6 +113,7 @@ async function fetchSigilProofFromApi(params: {
   poseidonHash: string;
   proofHints?: SigilProofHints;
   payloadHashHex?: string;
+  secret?: string;
 }): Promise<{ proof: unknown; proofHints: SigilProofHints; zkPublicInputs: string[] } | null> {
   if (typeof fetch !== "function") return null;
   const poseidonHash = normalizePoseidonHash(params.poseidonHash);
@@ -103,6 +125,8 @@ async function fetchSigilProofFromApi(params: {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         poseidonHash,
+        payloadHashHex: params.payloadHashHex,
+        secret: params.secret,
       }),
     });
     if (!res.ok) return null;
@@ -173,9 +197,17 @@ export async function generateZkProofFromPoseidonHash(params: {
   proofHints?: SigilProofHints;
   vkey?: unknown;
   payloadHashHex?: string;
+  secret?: string;
 }): Promise<{ proof: unknown; proofHints: SigilProofHints; zkPublicInputs: string[] } | null> {
   const poseidonHash = normalizePoseidonHash(params.poseidonHash);
   if (!poseidonHash) return null;
+
+  const canonicalSecret =
+    normalizeSecret(params.secret) ||
+    (params.payloadHashHex ? payloadHashHexToSecret(params.payloadHashHex) : "");
+  if (!canonicalSecret) {
+    return null;
+  }
 
   const apiAttempted = typeof fetch === "function";
   if (apiAttempted) {
@@ -183,6 +215,7 @@ export async function generateZkProofFromPoseidonHash(params: {
       poseidonHash,
       proofHints: params.proofHints,
       payloadHashHex: params.payloadHashHex,
+      secret: canonicalSecret,
     });
     if (apiProof) return apiProof;
     throw new Error("ZK proof API unavailable");
@@ -198,8 +231,8 @@ export async function generateZkProofFromPoseidonHash(params: {
 
   try {
     const candidates = buildInputCandidates({
-      poseidonHash,
-      payloadHashHex: params.payloadHashHex,
+      expectedHash: poseidonHash,
+      secret: canonicalSecret,
     });
     let proofResult: { proof: unknown; publicSignals: string[] } | null = null;
     let lastMismatch: unknown = null;
@@ -216,8 +249,8 @@ export async function generateZkProofFromPoseidonHash(params: {
     }
     if (!proofResult) {
       const suffix = params.payloadHashHex
-        ? "Tried poseidonHash, payloadHash variants, and empty inputs."
-        : "Tried poseidonHash and empty inputs. Provide payloadHashHex or regenerate matching artifacts.";
+        ? "Tried secret/expectedHash and empty inputs."
+        : "Tried secret/expectedHash and empty inputs. Provide payloadHashHex or secret.";
       const baseMessage =
         lastMismatch instanceof Error ? lastMismatch.message : "ZK input mismatch";
       throw new Error(`${baseMessage} ${suffix}`.trim());

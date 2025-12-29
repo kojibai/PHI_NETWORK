@@ -94,6 +94,33 @@ function coercePoseidonHash(value) {
   return "";
 }
 
+function coerceSecret(value) {
+  if (typeof value === "bigint") return value.toString();
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value.toString() : "";
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return "";
+    if (/^0x/i.test(trimmed)) {
+      try {
+        return BigInt(trimmed).toString();
+      } catch {
+        return trimmed;
+      }
+    }
+    if (/[a-f]/i.test(trimmed)) {
+      try {
+        return BigInt(`0x${trimmed}`).toString();
+      } catch {
+        return trimmed;
+      }
+    }
+    return trimmed;
+  }
+  return "";
+}
+
 function isInputMismatch(err) {
   if (!(err instanceof Error)) return false;
   const message = err.message ?? "";
@@ -105,56 +132,71 @@ function isInputMismatch(err) {
   );
 }
 
-function splitPayloadHashHex(payloadHashHex) {
+function payloadHashHexToSecret(payloadHashHex) {
   const clean = String(payloadHashHex).trim().replace(/^0x/i, "");
-  const hi = clean.slice(0, 32).padStart(32, "0");
-  const lo = clean.slice(32).padEnd(32, "0");
-  return {
-    hi: BigInt(`0x${hi}`).toString(),
-    lo: BigInt(`0x${lo}`).toString(),
-  };
+  if (!clean) return "";
+  return BigInt(`0x${clean}`).toString();
 }
 
-function buildInputCandidates({ canonicalPoseidonHash, payloadHashHex }) {
+function buildInputCandidates({ expectedHash, secret }) {
   const candidates = [];
-  if (canonicalPoseidonHash) {
-    candidates.push({ poseidonHash: canonicalPoseidonHash });
+  if (secret && expectedHash) {
+    candidates.push({ secret, expectedHash });
   }
-  if (payloadHashHex) {
-    const { hi, lo } = splitPayloadHashHex(payloadHashHex);
-    candidates.push({ payloadHash: [hi, lo] });
-    candidates.push({ payloadHashHi: hi, payloadHashLo: lo });
-    candidates.push({ hashHi: hi, hashLo: lo });
+  if (secret) {
+    candidates.push({ secret });
+  }
+  if (expectedHash) {
+    candidates.push({ expectedHash });
   }
   candidates.push({});
   return candidates;
 }
 
 export async function generateSigilProof({
+  secret,
+  expectedHash,
   zkPoseidonHash,
   payloadHashHex,
   poseidonHash,
 } = {}) {
   await ensureArtifacts();
+  const normalizedExpectedHash = coercePoseidonHash(expectedHash);
   const normalizedPoseidonHash = coercePoseidonHash(poseidonHash);
   const normalizedZkPoseidonHash = coercePoseidonHash(zkPoseidonHash);
   const hashFromPayload = payloadHashHex
     ? await computeZkPoseidonHashFromPayloadHex(payloadHashHex)
     : null;
-  const canonicalPoseidonHash =
-    (hashFromPayload ?? normalizedPoseidonHash ?? normalizedZkPoseidonHash ?? "")
-      .toString()
-      .trim();
+  const canonicalPoseidonHash = (
+    normalizedExpectedHash ||
+    hashFromPayload ||
+    normalizedPoseidonHash ||
+    normalizedZkPoseidonHash ||
+    ""
+  )
+    .toString()
+    .trim();
   if (!canonicalPoseidonHash) {
-    throw new Error("Missing zkPoseidonHash/payloadHashHex");
+    throw new Error("Missing expectedHash/poseidonHash");
   }
   if (canonicalPoseidonHash === "0x") {
-    throw new Error("Invalid zkPoseidonHash");
+    throw new Error("Invalid expectedHash/poseidonHash");
+  }
+
+  const normalizedSecret = coerceSecret(secret);
+  const secretFromPayload = payloadHashHex
+    ? payloadHashHexToSecret(payloadHashHex)
+    : "";
+  const canonicalSecret = (normalizedSecret || secretFromPayload || "")
+    .toString()
+    .trim();
+  if (!canonicalSecret) {
+    throw new Error("Missing secret/payloadHashHex");
   }
 
   const candidates = buildInputCandidates({
-    canonicalPoseidonHash,
-    payloadHashHex: payloadHashHex ?? null,
+    expectedHash: canonicalPoseidonHash,
+    secret: canonicalSecret,
   });
   let proofResult = null;
   let lastMismatch = null;
@@ -171,8 +213,8 @@ export async function generateSigilProof({
   }
   if (!proofResult) {
     const suffix = payloadHashHex
-      ? "Tried poseidonHash, payloadHash variants, and empty inputs."
-      : "Tried poseidonHash and empty inputs. Provide payloadHashHex or regenerate matching artifacts.";
+      ? "Tried secret/expectedHash and empty inputs."
+      : "Tried secret/expectedHash and empty inputs. Provide payloadHashHex or secret.";
     const baseMessage =
       lastMismatch instanceof Error ? lastMismatch.message : "ZK input mismatch";
     throw new Error(`${baseMessage} ${suffix}`.trim());
