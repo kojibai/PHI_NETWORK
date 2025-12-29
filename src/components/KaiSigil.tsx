@@ -481,6 +481,7 @@ const KaiSigil = forwardRef<KaiSigilHandle, KaiSigilProps>((props, ref) => {
         let sigilUrl = "";
         let hashB58 = "";
         let zkPoseidonHash = "";
+        let zkPoseidonSecret = "";
 
         if (isRecord(rawBundle)) {
           const eb = rawBundle["embeddedBase"];
@@ -503,6 +504,9 @@ const KaiSigil = forwardRef<KaiSigilHandle, KaiSigilProps>((props, ref) => {
 
           const zph = rawBundle["zkPoseidonHash"];
           if (typeof zph === "string") zkPoseidonHash = zph;
+
+          const zps = rawBundle["zkPoseidonSecret"];
+          if (typeof zps === "string") zkPoseidonSecret = zps;
         }
 
         const headerValuationRuntime = {
@@ -542,6 +546,7 @@ const KaiSigil = forwardRef<KaiSigilHandle, KaiSigilProps>((props, ref) => {
           valuationSourceJson: JSON.stringify(valuationSource),
           zkScheme: "groth16-poseidon",
           zkPoseidonHash,
+          zkPoseidonSecret,
           innerRingText,
           sigilUrl,
           hashB58,
@@ -554,6 +559,7 @@ const KaiSigil = forwardRef<KaiSigilHandle, KaiSigilProps>((props, ref) => {
             hash: next.payloadHashHex,
             url: next.shareUrl,
             metadataJson: next.embeddedMetaJson,
+            zkPoseidonSecret: next.zkPoseidonSecret,
           });
         }
       } catch (e) {

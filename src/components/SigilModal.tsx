@@ -725,6 +725,7 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
 
   // canonical child hash from KaiSigil.onReady()
   const [lastHash, setLastHash] = useState("");
+  const [zkPoseidonSecret, setZkPoseidonSecret] = useState<string | null>(null);
 
   // RICH DATA toggle
   const [showRich, setShowRich] = useState(false);
@@ -1350,10 +1351,19 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
                 ? Object.keys(proofObj).length > 0
                 : false;
 
-        if (!hasProof) {
+        const secretForProof =
+          typeof zkPoseidonSecret === "string" && zkPoseidonSecret.trim().length > 0
+            ? zkPoseidonSecret.trim()
+            : undefined;
+
+        if (!hasProof && !secretForProof) {
+          throw new Error("ZK secret missing for proof generation");
+        }
+
+        if (!hasProof && secretForProof) {
           const generated = await generateZkProofFromPoseidonHash({
             poseidonHash: zkPoseidonHash,
-            secret: zkPoseidonHash,
+            secret: secretForProof,
             proofHints: typeof proofHints === "object" && proofHints !== null
               ? (proofHints as SigilProofHints)
               : undefined,
@@ -1617,9 +1627,12 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
               size={240}
               hashMode="deterministic"
               origin=""
-              onReady={(payload: { hash?: string }) => {
+              onReady={(payload: { hash?: string; zkPoseidonSecret?: string }) => {
                 const h = payload.hash ? String(payload.hash).toLowerCase() : "";
                 if (h) setLastHash(h);
+                if (payload.zkPoseidonSecret) {
+                  setZkPoseidonSecret(payload.zkPoseidonSecret);
+                }
               }}
             />
             <span className="pulse-tag">{pulseDisp}</span>

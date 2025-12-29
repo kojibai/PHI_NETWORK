@@ -1,1 +1,0 @@
-import{Ir as e}from"./index-D1ZqM7_o.js";var t=e(((e,t)=>{t.exports={}}));export default t();

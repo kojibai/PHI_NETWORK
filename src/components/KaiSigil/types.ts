@@ -58,7 +58,12 @@ export interface KaiSigilProps {
   /** Optional canonical payload hash (from sealed payload). */
   canonicalPayloadHash?: string;
 
-  onReady?: (info: { hash: string; url: string; metadataJson: string }) => void;
+  onReady?: (info: {
+    hash: string;
+    url: string;
+    metadataJson: string;
+    zkPoseidonSecret?: string;
+  }) => void;
   onError?: (err: unknown) => void;
 
   /* kept for embedding/attrs (NOT for step resolution) */
@@ -134,6 +139,7 @@ export type Built = {
   valuationSourceJson: string;
   zkScheme?: string;
   zkPoseidonHash?: string;
+  zkPoseidonSecret?: string;
   innerRingText: string;
   sigilUrl: string;
   hashB58: string;
