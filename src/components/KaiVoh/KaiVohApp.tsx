@@ -750,7 +750,6 @@ function KaiVohFlow(): ReactElement {
             if (!hasProof) {
               const generated = await generateZkProofFromPoseidonHash({
                 poseidonHash: zkPoseidonHash,
-                secret: zkPoseidonHash,
                 proofHints:
                   typeof proofHints === "object" && proofHints !== null
                     ? (proofHints as SigilProofHints)

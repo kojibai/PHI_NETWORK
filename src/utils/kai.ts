@@ -12,6 +12,7 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 import { blake3Hex, hexToBytes } from "../lib/hash";
+import { poseidonHash1, toPoseidonField } from "./poseidon";
 
 ////////////////////////////////////////////////////////////////////////////////
 // ░░  CONSTANTS  ░░
@@ -85,14 +86,20 @@ export const computeKaiSignature = async (
   return blake3HashHex(poseidonHex);
 };
 
+export const deriveZkPoseidonSecret = async (hashHex: string): Promise<string> => {
+  const clean = hashHex.startsWith("0x") ? hashHex.slice(2) : hashHex;
+  const raw = BigInt(`0x${clean || "0"}`);
+  return toPoseidonField(raw).toString();
+};
+
 /**
  * Computes a deterministic Poseidon hash (decimal string) from a 64-char hex.
  * Used for per-payload ZK stamps without circular dependency on the payload.
  */
-export const computeZkPoseidonHash = async (hashHex: string): Promise<string> => {
-  const clean = hashHex.startsWith("0x") ? hashHex.slice(2) : hashHex;
-  const hi = clean.slice(0, 32).padStart(32, "0");
-  const lo = clean.slice(32).padEnd(32, "0");
-  const out = await poseidonHashBigInt([BigInt(`0x${hi}`), BigInt(`0x${lo}`)]);
-  return out.toString();
+export const computeZkPoseidonHash = async (
+  hashHex: string
+): Promise<{ hash: string; secret: string }> => {
+  const secret = await deriveZkPoseidonSecret(hashHex);
+  const out = poseidonHash1(BigInt(secret)).toString();
+  return { hash: out, secret };
 };

@@ -87,7 +87,7 @@ function getSignParamsForKey(key: CryptoKey): SignParams {
  * ───────────────────────────────────────────────────────────── */
 export type EmbeddedBundleResult = Pick<
   Built,
-  "payloadHashHex" | "sigilUrl" | "hashB58" | "innerRingText" | "zkPoseidonHash"
+  "payloadHashHex" | "sigilUrl" | "hashB58" | "innerRingText" | "zkPoseidonHash" | "zkPoseidonSecret"
 > & {
   parityUrl: string;
   embeddedBase: unknown;
@@ -169,6 +169,7 @@ export async function buildEmbeddedBundle(args: {
     `Day Seal: ${canon.beat}:${canon.stepIndex} • Kai-Pulse ${canon.pulse}`;
 
   let zkPoseidonHash = "0x";
+  let zkPoseidonSecret = "";
   let payloadObj: SigilPayloadExtended = {
     v: "1.0",
     kaiSignature: kaiSignature ?? "",
@@ -218,7 +219,9 @@ export async function buildEmbeddedBundle(args: {
 
   const canonicalBaseBytes = canonicalize(canonicalPayloadBase);
   const hashHexBase = await blake3Hex(canonicalBaseBytes);
-  zkPoseidonHash = await computeZkPoseidonHash(hashHexBase);
+  const poseidonResult = await computeZkPoseidonHash(hashHexBase);
+  zkPoseidonHash = poseidonResult.hash;
+  zkPoseidonSecret = poseidonResult.secret;
   payloadObj = { ...payloadObj, zkPoseidonHash };
 
   const canonicalPayload: JSONDict = {
@@ -397,6 +400,7 @@ export async function buildEmbeddedBundle(args: {
     sigilUrl: manifestUrl,
     hashB58,
     zkPoseidonHash: payloadObj.zkPoseidonHash,
+    zkPoseidonSecret,
     embeddedBase: meta,
   };
 }

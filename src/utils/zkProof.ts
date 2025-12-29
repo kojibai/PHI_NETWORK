@@ -10,7 +10,8 @@ export async function generateZkProofFromPoseidonHash(params: {
   proofHints?: SigilProofHints;
 }): Promise<{ proof: unknown; proofHints: SigilProofHints; zkPublicInputs: string[] } | null> {
   const poseidonHash = params.poseidonHash?.trim();
-  if (!poseidonHash) return null;
+  const secret = params.secret?.trim();
+  if (!poseidonHash || !secret) return null;
 
   try {
     if (typeof fetch !== "function") return null;
@@ -18,7 +19,7 @@ export async function generateZkProofFromPoseidonHash(params: {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        secret: params.secret ?? poseidonHash,
+        secret,
         expectedHash: poseidonHash,
       }),
     });

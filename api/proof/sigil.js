@@ -77,11 +77,6 @@ export async function generateSigilProof({
     zkPoseidonHash: publicInput0,
     zkProof: normalizedProof,
     zkPublicInputs: normalizedSignals,
-    proofHints: {
-      scheme: "groth16-poseidon",
-      api: "/api/proof/sigil",
-      explorer: `/keystream/hash/${publicInput0}`,
-    },
   };
 }
 
@@ -115,5 +110,9 @@ export default async function handler(req, res) {
     res.end(JSON.stringify({ error: message }));
   }
 }
+
+export const config = {
+  runtime: "nodejs",
+};
 
 export { loadSigilVkey };
