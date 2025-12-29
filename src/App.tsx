@@ -117,11 +117,9 @@ const useIsoLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : use
    App constants
 ────────────────────────────────────────────────────────────────────────────── */
 const OFFLINE_ASSETS_TO_WARM: readonly string[] = [
-  "/sigil.wasm",
-  "/sigil.zkey",
-  "/sigil.artifacts.json",
-  "/sigil.vkey.json",
-  "/verification_key.json",
+  "/zk/sigil_proof.wasm",
+  "/zk/sigil_proof_final.zkey",
+  "/zk/verification_key.json",
   "/verifier-core.js",
   "/verifier.inline.html",
   "/verifier.html",

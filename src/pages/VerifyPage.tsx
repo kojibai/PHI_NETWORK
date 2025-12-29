@@ -191,7 +191,7 @@ export default function VerifyPage(): ReactElement {
 
       if (!zkVkey) {
         try {
-          const res = await fetch("/zk/sigil.vkey.json", { cache: "no-store" });
+          const res = await fetch("/zk/verification_key.json", { cache: "no-store" });
           if (!res.ok) return;
           const vkey = (await res.json()) as unknown;
           if (!active) return;

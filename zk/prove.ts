@@ -8,7 +8,7 @@ export interface ZkProof {
   publicSignals: string[];
 }
 
-const WASM_URL = "/zk/sigil_proof_js/sigil_proof.wasm";
+const WASM_URL = "/zk/sigil_proof.wasm";
 const ZKEY_URL = "/zk/sigil_proof_final.zkey";
 
 /** Browser-safe proof generation with lazy import of snarkjs (no types leak). */
