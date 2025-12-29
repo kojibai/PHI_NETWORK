@@ -41,6 +41,7 @@ import { sha256Hex as sha256HexStrict } from "../utils/sha256";
 import { embedProofMetadata, svgCanonicalForHash } from "../utils/svgProof";
 import { extractEmbeddedMetaFromSvg } from "../utils/sigilMetadata";
 import { generateZkProofFromPoseidonHash } from "../utils/zkProof";
+import { computeZkPoseidonHash } from "../utils/kai";
 import {
   ensurePasskey,
   isWebAuthnAvailable,
@@ -1327,11 +1328,15 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
 
       const svgString = new XMLSerializer().serializeToString(svgClone);
       const embeddedMeta = extractEmbeddedMetaFromSvg(svgString);
-      const zkPoseidonHash =
+      let zkPoseidonHash =
         typeof embeddedMeta.zkPoseidonHash === "string" &&
         embeddedMeta.zkPoseidonHash.trim().length > 0
           ? embeddedMeta.zkPoseidonHash.trim()
           : undefined;
+      if ((!zkPoseidonHash || zkPoseidonHash === "0x") && payloadHashHex) {
+        zkPoseidonHash = await computeZkPoseidonHash(payloadHashHex);
+        svgClone.setAttribute("data-zk-poseidon-hash", zkPoseidonHash);
+      }
       let zkProof = embeddedMeta.zkProof;
       let proofHints = embeddedMeta.proofHints;
       let zkPublicInputs: unknown = embeddedMeta.zkPublicInputs;
@@ -1353,6 +1358,7 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
         if (!hasProof) {
           const generated = await generateZkProofFromPoseidonHash({
             poseidonHash: zkPoseidonHash,
+            payloadHashHex,
             proofHints: typeof proofHints === "object" && proofHints !== null
               ? (proofHints as SigilProofHints)
               : undefined,

@@ -1,9 +1,11 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { groth16 } from "snarkjs";
 import { blake3 } from "hash-wasm";
 
-const ROOT_DIR = process.cwd();
+const CURRENT_DIR = path.dirname(fileURLToPath(import.meta.url));
+const ROOT_DIR = path.resolve(CURRENT_DIR, "..", "..");
 const ARTIFACTS_DIR = path.join(ROOT_DIR, "public", "zk");
 const WASM_PATH = path.join(ARTIFACTS_DIR, "sigil.wasm");
 const ZKEY_PATH = path.join(ARTIFACTS_DIR, "sigil.zkey");
@@ -42,6 +44,24 @@ async function loadSigilVkey() {
   return JSON.parse(raw);
 }
 
+async function ensureArtifacts() {
+  const paths = [WASM_PATH, ZKEY_PATH, VKEY_PATH];
+  const checks = await Promise.all(
+    paths.map(async (p) => {
+      try {
+        await fs.access(p);
+        return null;
+      } catch {
+        return p;
+      }
+    })
+  );
+  const missing = checks.filter((p) => p !== null);
+  if (missing.length > 0) {
+    throw new Error(`Missing ZK artifacts: ${missing.join(", ")}`);
+  }
+}
+
 function normalizeValue(value) {
   if (typeof value === "bigint") return value.toString();
   if (Array.isArray(value)) return value.map((entry) => normalizeValue(entry));
@@ -67,6 +87,7 @@ export async function generateSigilProof({
   payloadHashHex,
   poseidonHash,
 } = {}) {
+  await ensureArtifacts();
   const hashFromPayload = payloadHashHex
     ? await computeZkPoseidonHashFromPayloadHex(payloadHashHex)
     : null;
@@ -75,11 +96,12 @@ export async function generateSigilProof({
   if (!canonicalPoseidonHash) {
     throw new Error("Missing zkPoseidonHash/payloadHashHex");
   }
+  if (canonicalPoseidonHash === "0x") {
+    throw new Error("Invalid zkPoseidonHash");
+  }
 
   const input = {
     poseidonHash: canonicalPoseidonHash,
-    zkPoseidonHash: canonicalPoseidonHash,
-    hash: canonicalPoseidonHash,
   };
 
   const { proof, publicSignals } = await groth16.fullProve(
@@ -139,9 +161,14 @@ export default async function handler(req, res) {
     res.end(JSON.stringify(result));
   } catch (err) {
     const message = err instanceof Error ? err.message : "Proof generation failed";
+    console.error("generateSigilProof failed:", err);
     res.statusCode = 400;
     res.setHeader("Content-Type", "application/json");
-    res.end(JSON.stringify({ error: message }));
+    const detail =
+      process.env.NODE_ENV !== "production" && err instanceof Error
+        ? err.stack ?? err.message
+        : undefined;
+    res.end(JSON.stringify({ error: message, detail }));
   }
 }
 
