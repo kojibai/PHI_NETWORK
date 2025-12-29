@@ -94,14 +94,39 @@ function coercePoseidonHash(value) {
   return "";
 }
 
-function isPoseidonInputMismatch(err) {
+function isInputMismatch(err) {
   if (!(err instanceof Error)) return false;
   const message = err.message ?? "";
   return (
-    message.includes("Too many values for input signal poseidonHash") ||
-    message.includes("Not enough values for input signal poseidonHash") ||
-    message.includes("Signal poseidonHash not found")
+    message.includes("Too many values for input signal") ||
+    message.includes("Not enough values for input signal") ||
+    (message.includes("Signal") && message.includes("not found")) ||
+    message.includes("Not all inputs have been set")
   );
+}
+
+function splitPayloadHashHex(payloadHashHex) {
+  const clean = String(payloadHashHex).trim().replace(/^0x/i, "");
+  const hi = clean.slice(0, 32).padStart(32, "0");
+  const lo = clean.slice(32).padEnd(32, "0");
+  return {
+    hi: BigInt(`0x${hi}`).toString(),
+    lo: BigInt(`0x${lo}`).toString(),
+  };
+}
+
+function buildInputCandidates({ canonicalPoseidonHash, payloadHashHex }) {
+  const candidates = [];
+  if (canonicalPoseidonHash) {
+    candidates.push({ poseidonHash: canonicalPoseidonHash });
+  }
+  if (payloadHashHex) {
+    const { hi, lo } = splitPayloadHashHex(payloadHashHex);
+    candidates.push({ payloadHash: [hi, lo] });
+    candidates.push({ payloadHashHi: hi, payloadHashLo: lo });
+    candidates.push({ hashHi: hi, hashLo: lo });
+  }
+  return candidates;
 }
 
 export async function generateSigilProof({
@@ -126,18 +151,30 @@ export async function generateSigilProof({
     throw new Error("Invalid zkPoseidonHash");
   }
 
-  const input = {
-    poseidonHash: canonicalPoseidonHash,
-  };
-
-  let proofResult;
-  try {
-    proofResult = await groth16.fullProve(input, WASM_PATH, ZKEY_PATH);
-  } catch (err) {
-    if (!isPoseidonInputMismatch(err)) {
-      throw err;
+  const candidates = buildInputCandidates({
+    canonicalPoseidonHash,
+    payloadHashHex: payloadHashHex ?? null,
+  });
+  let proofResult = null;
+  let lastMismatch = null;
+  for (const candidate of candidates) {
+    try {
+      proofResult = await groth16.fullProve(candidate, WASM_PATH, ZKEY_PATH);
+      break;
+    } catch (err) {
+      if (!isInputMismatch(err)) {
+        throw err;
+      }
+      lastMismatch = err;
     }
-    proofResult = await groth16.fullProve({}, WASM_PATH, ZKEY_PATH);
+  }
+  if (!proofResult) {
+    const suffix = payloadHashHex
+      ? "Tried poseidonHash and payloadHash variants."
+      : "Provide payloadHashHex or regenerate matching artifacts.";
+    const baseMessage =
+      lastMismatch instanceof Error ? lastMismatch.message : "ZK input mismatch";
+    throw new Error(`${baseMessage} ${suffix}`.trim());
   }
   const { proof, publicSignals } = proofResult;
 

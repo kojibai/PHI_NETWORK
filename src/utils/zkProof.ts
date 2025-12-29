@@ -25,14 +25,42 @@ function normalizePoseidonHash(value: unknown): string {
   return "";
 }
 
-function isPoseidonInputMismatch(err: unknown): boolean {
+function isInputMismatch(err: unknown): boolean {
   if (!(err instanceof Error)) return false;
   const msg = err.message ?? "";
   return (
-    msg.includes("Too many values for input signal poseidonHash") ||
-    msg.includes("Not enough values for input signal poseidonHash") ||
-    msg.includes("Signal poseidonHash not found")
+    msg.includes("Too many values for input signal") ||
+    msg.includes("Not enough values for input signal") ||
+    (msg.includes("Signal") && msg.includes("not found")) ||
+    msg.includes("Not all inputs have been set")
   );
+}
+
+function splitPayloadHashHex(payloadHashHex: string): { hi: string; lo: string } {
+  const clean = payloadHashHex.trim().replace(/^0x/i, "");
+  const hi = clean.slice(0, 32).padStart(32, "0");
+  const lo = clean.slice(32).padEnd(32, "0");
+  return {
+    hi: BigInt(`0x${hi}`).toString(),
+    lo: BigInt(`0x${lo}`).toString(),
+  };
+}
+
+function buildInputCandidates(params: {
+  poseidonHash: string;
+  payloadHashHex?: string;
+}): Record<string, string | string[]>[] {
+  const candidates: Record<string, string | string[]>[] = [];
+  if (params.poseidonHash) {
+    candidates.push({ poseidonHash: params.poseidonHash });
+  }
+  if (params.payloadHashHex) {
+    const { hi, lo } = splitPayloadHashHex(params.payloadHashHex);
+    candidates.push({ payloadHash: [hi, lo] });
+    candidates.push({ payloadHashHi: hi, payloadHashLo: lo });
+    candidates.push({ hashHi: hi, hashLo: lo });
+  }
+  return candidates;
 }
 
 function hasMeaningfulZkProof(value: unknown): boolean {
@@ -165,19 +193,31 @@ export async function generateZkProofFromPoseidonHash(params: {
   const wasmPath = await resolveArtifactPath(["/zk/sigil.wasm", "/sigil.wasm"]);
   const zkeyPath = await resolveArtifactPath(["/zk/sigil.zkey", "/sigil.zkey"]);
 
-  const input = {
-    poseidonHash,
-  };
-
   try {
-    let proofResult;
-    try {
-      proofResult = await groth16.fullProve(input, wasmPath, zkeyPath);
-    } catch (err) {
-      if (!isPoseidonInputMismatch(err)) {
-        throw err;
+    const candidates = buildInputCandidates({
+      poseidonHash,
+      payloadHashHex: params.payloadHashHex,
+    });
+    let proofResult: { proof: unknown; publicSignals: string[] } | null = null;
+    let lastMismatch: unknown = null;
+    for (const candidate of candidates) {
+      try {
+        proofResult = await groth16.fullProve(candidate, wasmPath, zkeyPath);
+        break;
+      } catch (err) {
+        if (!isInputMismatch(err)) {
+          throw err;
+        }
+        lastMismatch = err;
       }
-      proofResult = await groth16.fullProve({}, wasmPath, zkeyPath);
+    }
+    if (!proofResult) {
+      const suffix = params.payloadHashHex
+        ? "Tried poseidonHash and payloadHash variants."
+        : "Provide payloadHashHex or regenerate matching artifacts.";
+      const baseMessage =
+        lastMismatch instanceof Error ? lastMismatch.message : "ZK input mismatch";
+      throw new Error(`${baseMessage} ${suffix}`.trim());
     }
     const { proof, publicSignals } = proofResult;
     if (!hasMeaningfulZkProof(proof)) return null;
