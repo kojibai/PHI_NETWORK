@@ -30,8 +30,8 @@ import {
   type FeedPostPayload,
   type PostBody,
   makeAttachments,
-  makeFileRefAttachment,
   makeInlineAttachment,
+  makeKsfpInlineAttachment,
   makeUrlAttachment,
   makeBasePayload,
   makeTextBody,
@@ -39,8 +39,10 @@ import {
   makeMarkdownBody,
   makeHtmlBody,
   preparePayloadForLink,
+  encodeFeedPayload,
   encodeTokenWithBudgets,
 } from "../../utils/feedPayload";
+import { buildKsfpInlineBundle } from "../../lib/ksfp1";
 
 import { epochMsFromPulse } from "../../utils/kai_pulse";
 import { useAlignedKaiTicker } from "../../pages/sigilstream/core/ticker";
@@ -48,6 +50,7 @@ import { useSigilAuth } from "./SigilAuthContext";
 import StoryRecorder, { type CapturedStory } from "./StoryRecorder";
 import { registerSigilUrl } from "../../utils/sigilRegistry";
 import { getOriginUrl } from "../../utils/sigilUrl";
+import { buildSegmentedPack } from "../../pages/sigilstream/data/memoryStreamV2";
 
 /* 🔒 Sealing utilities (new) */
 import { sealEnvelopeV1, makeSealSaltB64Url, type GlyphCredential, type SealedEnvelopeV1 } from "../../utils/postSeal";
@@ -248,29 +251,6 @@ function extractSigilActionUrlFromSvgText(
     /* ignore */
   }
   return undefined;
-}
-
-/** Cache helper: store blob under /att/<sha> and return the URL */
-async function cachePutAndUrl(
-  sha256: string,
-  blob: Blob,
-  opts: { cacheName?: string; pathPrefix?: string } = {},
-): Promise<string | undefined> {
-  const cacheName = opts.cacheName ?? "sigil-attachments-v1";
-  const pathPrefix = (opts.pathPrefix ?? "/att/").replace(/\/+$/, "") + "/";
-
-  try {
-    if (!("caches" in globalThis) || typeof caches.open !== "function") return undefined;
-    const cache = await caches.open(cacheName);
-    const url = `${pathPrefix}${sha256}`;
-    await cache.put(
-      new Request(url, { method: "GET" }),
-      new Response(blob, { headers: { "Content-Type": blob.type || "application/octet-stream" } }),
-    );
-    return url;
-  } catch {
-    return undefined;
-  }
 }
 
 function formatMs(ms: number): string {
@@ -761,30 +741,12 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
     return rel.trim() ? rel : f.name;
   }
 
-  async function sha256FileHex(f: File): Promise<string> {
-    const buf = await f.arrayBuffer();
-    const digest = await crypto.subtle.digest("SHA-256", buf);
-    const v = new Uint8Array(digest);
-    let out = "";
-    for (let i = 0; i < v.length; i++) out += v[i].toString(16).padStart(2, "0");
-    return out;
-  }
-
   const readFilesToAttachments = async (fileList: File[]): Promise<Attachments> => {
     const baseItems = attachmentsRef.current.items.slice();
     const items = baseItems;
 
-    const skippedLarge: string[] = [];
-
     for (const f of fileList) {
       const displayName = fileNameWithPath(f);
-
-      // 🔒 Private hard-guard: no cache-only file-ref allowed.
-      // Instead of creating file-ref, we SKIP large files and instruct URL upload.
-      if (privateOn && f.size > MAX_INLINE_BYTES) {
-        skippedLarge.push(displayName);
-        continue;
-      }
 
       if (f.size <= MAX_INLINE_BYTES) {
         const buf = await f.arrayBuffer();
@@ -797,27 +759,23 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
           }),
         );
       } else {
-        const sha = await sha256FileHex(f);
-        const url = await cachePutAndUrl(sha, f, { cacheName: "sigil-attachments-v1", pathPrefix: "/att/" });
-        items.push(
-          makeFileRefAttachment({
-            sha256: sha,
-            name: displayName,
-            type: f.type || "application/octet-stream",
-            size: f.size,
-            url,
-          }),
-        );
+        try {
+          const bundle = await buildKsfpInlineBundle(f);
+          items.push(
+            makeKsfpInlineAttachment({
+              name: displayName,
+              type: f.type || "application/octet-stream",
+              size: f.size,
+              bundle,
+            }),
+          );
+        } catch (err) {
+          setWarn(
+            `Unable to build KSFP inline payload for ${displayName}. ` +
+              `Try a smaller file or split it into chunks before upload.`,
+          );
+        }
       }
-    }
-
-    if (skippedLarge.length > 0) {
-      const head = skippedLarge.slice(0, 3).join(", ");
-      const tail = skippedLarge.length > 3 ? ` (+${skippedLarge.length - 3} more)` : "";
-      setWarn(
-        `Private (Sealed) mode cannot include cache-backed large files. Skipped: ${head}${tail}. ` +
-          `Attach as a URL instead (Drive/S3/IPFS/etc), or keep files ≤ ${prettyBytes(MAX_INLINE_BYTES)}.`,
-      );
     }
 
     return makeAttachments(items);
@@ -860,22 +818,20 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
   }
 
   async function handleStoryCaptured(s: CapturedStory): Promise<void> {
-    // 🔒 Private hard-guard: StoryRecorder produces cache-backed video (file-ref).
-    if (privateOn) {
-      setWarn("Private (Sealed) mode cannot include recorded stories (cache-backed video refs). Upload as a URL instead.");
+    let videoRef: AttachmentItem | null = null;
+    try {
+      const bundle = await buildKsfpInlineBundle(s.file);
+      videoRef = makeKsfpInlineAttachment({
+        name: s.file.name,
+        type: s.mimeType || s.file.type || "video/webm",
+        size: s.file.size,
+        bundle,
+      });
+    } catch {
+      setWarn("Unable to build KSFP inline payload for this story. Try a shorter clip.");
       setStoryOpen(false);
       return;
     }
-
-    const videoUrl = await cachePutAndUrl(s.sha256, s.file, { cacheName: "sigil-attachments-v1", pathPrefix: "/att/" });
-
-    const videoRef = makeFileRefAttachment({
-      sha256: s.sha256,
-      name: s.file.name,
-      type: s.mimeType || s.file.type || "video/webm",
-      size: s.file.size,
-      url: videoUrl,
-    });
 
     const b64 = (s.thumbnailDataUrl.split(",", 2)[1] ?? "")
       .replace(/\+/g, "-")
@@ -1054,7 +1010,7 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
       if (mergedItemsPre.some((it) => it.kind === "file-ref")) {
         setErr(
           `Private (Sealed) mode cannot include cache-backed file refs. ` +
-            `Keep files ≤ ${prettyBytes(MAX_INLINE_BYTES)} (inline) or attach public URLs.`,
+            `Use KSFP inline (default for large files) or attach public URLs.`,
         );
         return;
       }
@@ -1080,10 +1036,10 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
     // ✅ If payload requires a timestamp field, derive it FROM the pulse (not Date.now)
     const ts = toSafeNumberFromBigInt(epochMsFromPulse(pulse));
 
-    const t0 = nowMs();
+  const t0 = nowMs();
 
-    try {
-      setBusy(true);
+  try {
+    setBusy(true);
       setStage("paint");
       await nextPaint();
       await nextPaint();
@@ -1118,17 +1074,166 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
         originUrl,
       });
 
+      type KsfpInlineAttachment = Extract<AttachmentItem, { kind: "ksfp-inline" }>;
+
+      const buildPayloadWithAttachments = (
+        items: AttachmentItem[],
+        includeContent: boolean,
+      ): FeedPostPayload => ({
+        ...basePayload,
+        caption: includeContent ? basePayload.caption : undefined,
+        body: includeContent ? basePayload.body : undefined,
+        author: includeContent ? basePayload.author : undefined,
+        attachments: items.length > 0 ? makeAttachments(items) : undefined,
+      });
+
+      const splitKsfpInlineAttachment = (att: KsfpInlineAttachment): KsfpInlineAttachment[] => {
+        const pieces: KsfpInlineAttachment[] = [];
+        let current: KsfpInlineAttachment["bundle"]["lineage"] = [];
+
+        for (const entry of att.bundle.lineage) {
+          const next = [...current, entry];
+          const candidate: KsfpInlineAttachment = {
+            ...att,
+            bundle: { origin: att.bundle.origin, lineage: next },
+          };
+          const payload = buildPayloadWithAttachments([candidate], false);
+          const len = encodeFeedPayload(payload).length;
+          if (len > TOKEN_HARD_LIMIT && current.length > 0) {
+            pieces.push({ ...att, bundle: { origin: att.bundle.origin, lineage: current } });
+            current = [entry];
+          } else {
+            current = next;
+          }
+        }
+
+        if (current.length > 0) {
+          pieces.push({ ...att, bundle: { origin: att.bundle.origin, lineage: current } });
+        }
+
+        return pieces;
+      };
+
+      const buildKsfpDerivativePack = (): {
+        payloads: FeedPostPayload[];
+        shareUrl: string;
+        archiveUrls: string[];
+        rootToken: string;
+        addCount: number;
+      } => {
+        const pieces: AttachmentItem[] = [];
+        for (const item of mergedItems) {
+          if (item.kind === "ksfp-inline") {
+            pieces.push(...splitKsfpInlineAttachment(item));
+          } else {
+            pieces.push(item);
+          }
+        }
+
+        const payloads: FeedPostPayload[] = [];
+        let current: AttachmentItem[] = [];
+
+        for (const piece of pieces) {
+          const includeContent = payloads.length === 0;
+          const candidateItems = [...current, piece];
+          const payload = buildPayloadWithAttachments(candidateItems, includeContent);
+          const len = encodeFeedPayload(payload).length;
+          if (len > TOKEN_HARD_LIMIT && current.length > 0) {
+            payloads.push(buildPayloadWithAttachments(current, includeContent));
+            current = [piece];
+          } else {
+            current = candidateItems;
+          }
+        }
+
+        if (current.length > 0 || payloads.length === 0) {
+          const includeContent = payloads.length === 0;
+          payloads.push(buildPayloadWithAttachments(current, includeContent));
+        }
+
+        const tokens = payloads.map((p) => encodeFeedPayload(p));
+        const rootToken = tokens[0];
+        const addTokens = tokens.slice(1);
+        const pack = buildSegmentedPack(rootToken, addTokens, "/stream");
+
+        return {
+          payloads,
+          shareUrl: pack.primary.url,
+          archiveUrls: pack.archives.map((a) => a.url),
+          rootToken,
+          addCount: addTokens.length,
+        };
+      };
+
       setStage("prepare");
       const tPrep0 = nowMs();
 
-      // Prepare attachments for link (inline/url only for private; normal path otherwise)
-      const preparedFull = await withTimeout(
-        preparePayloadForLink(basePayload, { cacheName: "sigil-attachments-v1", pathPrefix: "/att/" }),
-        20_000,
-        "preparePayloadForLink",
-      );
+      let preparedFull: FeedPostPayload | null = null;
+      let ksfpPack: ReturnType<typeof buildKsfpDerivativePack> | null = null;
+
+      try {
+        // Prepare attachments for link (inline/url only for private; normal path otherwise)
+        preparedFull = await withTimeout(
+          preparePayloadForLink(basePayload, { cacheName: "sigil-attachments-v1", pathPrefix: "/att/" }),
+          20_000,
+          "preparePayloadForLink",
+        );
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (!privateOn && msg.includes("KSFP inline attachments exceed safe token size")) {
+          ksfpPack = buildKsfpDerivativePack();
+        } else {
+          throw err;
+        }
+      }
 
       const prepareMs = nowMs() - tPrep0;
+
+      if (ksfpPack) {
+        setStage("encode(derivative)");
+        setTokenLength(ksfpPack.rootToken.length);
+
+        setWarn(
+          `KSFP split into ${ksfpPack.addCount + 1} derivative glyphs. ` +
+            `Lineage is embedded in the stream URL.`,
+        );
+
+        setUrlMode("hash");
+        setStage("register");
+        registerSigilUrl(ksfpPack.shareUrl);
+        for (const url of ksfpPack.archiveUrls) {
+          registerSigilUrl(url);
+        }
+
+        setStage("clipboard");
+        try {
+          await navigator.clipboard.writeText(ksfpPack.shareUrl);
+          setCopied(true);
+        } catch {
+          setCopied(false);
+        }
+
+        setGeneratedUrl(ksfpPack.shareUrl);
+
+        setDiag({
+          stage: "done",
+          totalMs: nowMs() - t0,
+          prepareMs,
+          encodeMs: 0,
+          tokenLen: ksfpPack.rootToken.length,
+          items: mergedItems.length,
+          inlinedBytes: mergedAttachments?.inlinedBytes,
+          totalBytes: mergedAttachments?.totalBytes,
+          note: `ksfp-derivatives:${ksfpPack.addCount}`,
+        });
+
+        if (onExhale) onExhale({ shareUrl: ksfpPack.shareUrl, token: ksfpPack.rootToken, payload: ksfpPack.payloads[0] });
+        return;
+      }
+
+      if (!preparedFull) {
+        throw new Error("Failed to prepare payload.");
+      }
 
       // 🔒 If private: seal inner content (body + attachments) and remove plaintext from outer payload
       let payloadToEncode: FeedPostPayload = preparedFull;
@@ -1544,8 +1649,8 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
           )}
 
           <div className="composer-hint warn" style={{ marginTop: 10 }}>
-            Private (Sealed) hard-guard: no cache-backed <span className="mono">file-ref</span> attachments. Use URLs or keep files ≤{" "}
-            <strong>{prettyBytes(MAX_INLINE_BYTES)}</strong>.
+            Private (Sealed) hard-guard: no cache-backed <span className="mono">file-ref</span> attachments. KSFP inline is supported for large
+            files, or attach public URLs.
           </div>
 
           {privateSealStatus}
@@ -1565,17 +1670,10 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
         <div className="story-actions">
           <button
             type="button"
-            className={`pill prim icon-only${privateOn ? " disabled" : ""}`}
+            className="pill prim icon-only"
             aria-label="Open Memory Recorder"
-            title={privateOn ? "Private mode: story capture is disabled (cache-backed)" : "Record story"}
-            onClick={() => {
-              if (privateOn) {
-                setWarn("Private (Sealed) mode disables story recording (cache-backed file refs). Add as URL instead.");
-                return;
-              }
-              setStoryOpen(true);
-            }}
-            disabled={privateOn}
+            title="Record story"
+            onClick={() => setStoryOpen(true)}
           >
             <IconCamRecord />
           </button>
@@ -1637,7 +1735,7 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
         <div className="dropzone-inner">
           <div className="dz-title">Seal files or folders</div>
           <div className="dz-sub">
-            Tiny files get inlined; large files become cache-backed refs.
+            Tiny files get inlined; large files become KSFP inline bundles (reconstructable without storage).
             {privateOn ? (
               <>
                 {" "}

@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { FeedPostPayload } from "../../../utils/feedPayload";
-import { decodeFeedPayload, extractPayloadToken } from "../../../utils/feedPayload";
+import { decodeFeedPayload, extractPayloadTokenFromLocation } from "../../../utils/feedPayload";
 import type { KaiMomentStrict } from "../core/types";
 import { kaiMomentFromAbsolutePulse } from "../core/kai_time";
 import { report } from "../core/utils";
@@ -29,7 +29,7 @@ export function usePayload(
     if (typeof window === "undefined") return;
 
     try {
-      const token = extractPayloadToken(window.location.pathname);
+      const token = extractPayloadTokenFromLocation(window.location);
       if (!token) {
         // No payload in path — clear any previous state and exit.
         setPayload(null);

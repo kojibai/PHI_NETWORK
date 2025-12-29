@@ -5,6 +5,7 @@
  */
 
 import { isRecord } from "../core/utils";
+import type { KsfpInlineBundle } from "../../../lib/ksfp1";
 
 /* --------------------------------------------------------------------------
    URL ATTACHMENTS
@@ -48,13 +49,27 @@ export type AttachmentFileRef = {
 };
 
 /* --------------------------------------------------------------------------
+   KSFP INLINE ATTACHMENTS (origin + lineage + inline chunk payloads)
+-------------------------------------------------------------------------- */
+
+export type AttachmentKsfpInline = {
+  kind: "ksfp-inline";
+  name?: string;
+  type?: string;
+  size?: number;
+  bundle: KsfpInlineBundle;
+  relPath?: string;
+};
+
+/* --------------------------------------------------------------------------
    UNION
 -------------------------------------------------------------------------- */
 
 export type AttachmentItem =
   | AttachmentUrl
   | AttachmentFileInline
-  | AttachmentFileRef;
+  | AttachmentFileRef
+  | AttachmentKsfpInline;
 
 /* --------------------------------------------------------------------------
    MANIFEST
@@ -107,11 +122,25 @@ export function isAttachmentFileRef(v: unknown): v is AttachmentFileRef {
   );
 }
 
+export function isAttachmentKsfpInline(v: unknown): v is AttachmentKsfpInline {
+  return (
+    isRecord(v) &&
+    v["kind"] === "ksfp-inline" &&
+    (v["name"] === undefined || typeof v["name"] === "string") &&
+    (v["type"] === undefined || typeof v["type"] === "string") &&
+    (v["size"] === undefined || typeof v["size"] === "number") &&
+    (v["relPath"] === undefined || typeof v["relPath"] === "string") &&
+    typeof v["bundle"] === "object" &&
+    v["bundle"] !== null
+  );
+}
+
 export function isAttachmentItem(v: unknown): v is AttachmentItem {
   return (
     isAttachmentUrl(v) ||
     isAttachmentFileInline(v) ||
-    isAttachmentFileRef(v)
+    isAttachmentFileRef(v) ||
+    isAttachmentKsfpInline(v)
   );
 }
 
