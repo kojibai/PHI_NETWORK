@@ -126,6 +126,7 @@ function buildInputCandidates({ canonicalPoseidonHash, payloadHashHex }) {
     candidates.push({ payloadHashHi: hi, payloadHashLo: lo });
     candidates.push({ hashHi: hi, hashLo: lo });
   }
+  candidates.push({});
   return candidates;
 }
 
@@ -170,8 +171,8 @@ export async function generateSigilProof({
   }
   if (!proofResult) {
     const suffix = payloadHashHex
-      ? "Tried poseidonHash and payloadHash variants."
-      : "Provide payloadHashHex or regenerate matching artifacts.";
+      ? "Tried poseidonHash, payloadHash variants, and empty inputs."
+      : "Tried poseidonHash and empty inputs. Provide payloadHashHex or regenerate matching artifacts.";
     const baseMessage =
       lastMismatch instanceof Error ? lastMismatch.message : "ZK input mismatch";
     throw new Error(`${baseMessage} ${suffix}`.trim());

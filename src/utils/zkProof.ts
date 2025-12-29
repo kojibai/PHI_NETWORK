@@ -62,6 +62,7 @@ function buildInputCandidates(params: {
     candidates.push({ payloadHashHi: hi, payloadHashLo: lo });
     candidates.push({ hashHi: hi, hashLo: lo });
   }
+  candidates.push({});
   return candidates;
 }
 
@@ -215,8 +216,8 @@ export async function generateZkProofFromPoseidonHash(params: {
     }
     if (!proofResult) {
       const suffix = params.payloadHashHex
-        ? "Tried poseidonHash and payloadHash variants."
-        : "Provide payloadHashHex or regenerate matching artifacts.";
+        ? "Tried poseidonHash, payloadHash variants, and empty inputs."
+        : "Tried poseidonHash and empty inputs. Provide payloadHashHex or regenerate matching artifacts.";
       const baseMessage =
         lastMismatch instanceof Error ? lastMismatch.message : "ZK input mismatch";
       throw new Error(`${baseMessage} ${suffix}`.trim());
