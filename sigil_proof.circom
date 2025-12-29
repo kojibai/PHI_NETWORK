@@ -13,7 +13,9 @@ template SigilProof() {
     hasher.inputs[0] <== secret;
 
     // Enforce: Poseidon(secret) == expectedHash
-    expectedHash === hasher.out;
+    signal output out;
+    out <== hasher.out;
+    out === expectedHash;
 }
 
 // Compile entry point

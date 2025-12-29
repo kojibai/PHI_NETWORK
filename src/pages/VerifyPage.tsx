@@ -72,18 +72,37 @@ export default function VerifyPage(): ReactElement {
   const [copyNotice, setCopyNotice] = useState<string>("");
   const [zkVerify, setZkVerify] = useState<boolean | null>(null);
   const [zkVkey, setZkVkey] = useState<unknown>(null);
+  const zkMeta = useMemo(() => {
+    if (embeddedProof) return embeddedProof;
+    if (result.status !== "ok") return null;
+    if (
+      !result.embedded.zkProof &&
+      !result.embedded.zkPublicInputs &&
+      !result.embedded.zkPoseidonHash &&
+      !result.embedded.proofHints
+    ) {
+      return null;
+    }
+    return {
+      zkPoseidonHash: result.embedded.zkPoseidonHash,
+      zkProof: result.embedded.zkProof,
+      zkPublicInputs: result.embedded.zkPublicInputs,
+      proofHints: result.embedded.proofHints,
+    } satisfies ProofBundleMeta;
+  }, [embeddedProof, result]);
+
   const embeddedZkProof = useMemo(() => {
-    if (!embeddedProof?.zkProof) return "";
-    return formatProofValue(embeddedProof.zkProof);
-  }, [embeddedProof]);
+    if (!zkMeta?.zkProof) return "";
+    return formatProofValue(zkMeta.zkProof);
+  }, [zkMeta]);
   const embeddedProofHints = useMemo(() => {
-    if (!embeddedProof?.proofHints) return "";
-    return formatProofValue(embeddedProof.proofHints);
-  }, [embeddedProof]);
+    if (!zkMeta?.proofHints) return "";
+    return formatProofValue(zkMeta.proofHints);
+  }, [zkMeta]);
   const embeddedZkPublicInputs = useMemo(() => {
-    if (!embeddedProof?.zkPublicInputs) return "";
-    return formatProofValue(embeddedProof.zkPublicInputs);
-  }, [embeddedProof]);
+    if (!zkMeta?.zkPublicInputs) return "";
+    return formatProofValue(zkMeta.zkPublicInputs);
+  }, [zkMeta]);
 
   const verifierFrameProps = useMemo(() => {
     // If we only have the slug, we can still render the capsule.
@@ -184,7 +203,7 @@ export default function VerifyPage(): ReactElement {
   React.useEffect(() => {
     let active = true;
     (async () => {
-      if (!embeddedProof?.zkProof || !embeddedProof?.zkPublicInputs) {
+      if (!zkMeta?.zkProof || !zkMeta?.zkPublicInputs) {
         if (active) setZkVerify(null);
         return;
       }
@@ -202,18 +221,18 @@ export default function VerifyPage(): ReactElement {
       }
 
       const inputs =
-        typeof embeddedProof.zkPublicInputs === "string"
+        typeof zkMeta.zkPublicInputs === "string"
           ? (() => {
               try {
-                return JSON.parse(embeddedProof.zkPublicInputs);
+                return JSON.parse(zkMeta.zkPublicInputs);
               } catch {
-                return [embeddedProof.zkPublicInputs];
+                return [zkMeta.zkPublicInputs];
               }
             })()
-          : embeddedProof.zkPublicInputs;
+          : zkMeta.zkPublicInputs;
 
       const verified = await tryVerifyGroth16({
-        proof: embeddedProof.zkProof,
+        proof: zkMeta.zkProof,
         publicSignals: inputs,
         vkey: zkVkey ?? undefined,
         fallbackVkey: zkVkey ?? undefined,
@@ -224,7 +243,7 @@ export default function VerifyPage(): ReactElement {
     return () => {
       active = false;
     };
-  }, [embeddedProof, zkVkey]);
+  }, [zkMeta, zkVkey]);
 
   const onPickFile = useCallback(async (file: File): Promise<void> => {
     // We verify SVG text (offline). If user drops non-SVG, show error.
@@ -418,14 +437,14 @@ export default function VerifyPage(): ReactElement {
                         Copy
                       </button>
                     </div>
-                    {embeddedProof?.zkPoseidonHash && (
+                    {zkMeta?.zkPoseidonHash && (
                       <div className="verify-proof-row">
                         <span className="verify-proof-label">ZK Poseidon hash</span>
-                        <code className="verify-proof-code">{embeddedProof.zkPoseidonHash}</code>
+                        <code className="verify-proof-code">{zkMeta.zkPoseidonHash}</code>
                         <button
                           type="button"
                           className="verify-copy-btn"
-                          onClick={() => void copyText(embeddedProof.zkPoseidonHash ?? "", "ZK Poseidon hash")}
+                          onClick={() => void copyText(zkMeta.zkPoseidonHash ?? "", "ZK Poseidon hash")}
                         >
                           Copy
                         </button>
@@ -492,10 +511,10 @@ export default function VerifyPage(): ReactElement {
                           shareUrl: embeddedProof?.shareUrl ?? null,
                           verifierUrl: proofVerifierUrl,
                           authorSig: embeddedProof?.authorSig ?? null,
-                          zkPoseidonHash: embeddedProof?.zkPoseidonHash ?? null,
-                          zkProof: embeddedProof?.zkProof ?? null,
-                          proofHints: embeddedProof?.proofHints ?? null,
-                          zkPublicInputs: embeddedProof?.zkPublicInputs ?? null,
+                          zkPoseidonHash: zkMeta?.zkPoseidonHash ?? null,
+                          zkProof: zkMeta?.zkProof ?? null,
+                          proofHints: zkMeta?.proofHints ?? null,
+                          zkPublicInputs: zkMeta?.zkPublicInputs ?? null,
                         },
                         null,
                         2,
