@@ -229,19 +229,18 @@ export async function buildEmbeddedBundle(args: {
   };
 
   const canonicalBaseBytes = canonicalize(canonicalPayloadBase);
-  const hashHexBase = await blake3Hex(canonicalBaseBytes);
-  const poseidonResult = await computeZkPoseidonHash(hashHexBase);
+  const payloadHashHex = await blake3Hex(canonicalBaseBytes);
+  const poseidonResult = await computeZkPoseidonHash(payloadHashHex);
   zkPoseidonHash = poseidonResult.hash;
   zkPoseidonSecret = poseidonResult.secret;
   payloadObj = { ...payloadObj, zkPoseidonHash };
   proofHints = buildProofHints(zkPoseidonHash, proofHints);
-  payloadObj = { ...payloadObj, proofHints };
 
   if (typeof window !== "undefined") {
     const generated = await generateZkProofFromPoseidonHash({
       poseidonHash: zkPoseidonHash,
       secret: zkPoseidonSecret,
-      proofHints: payloadObj.proofHints,
+      proofHints,
     });
     if (generated) {
       zkProof = isZkProof(generated.proof) ? generated.proof : null;
@@ -276,10 +275,8 @@ export async function buildEmbeddedBundle(args: {
   };
 
   const canonicalBytes = canonicalize(canonicalPayload);
-  const hashHexRaw = await blake3Hex(canonicalBytes);
-  const hashHex = hashHexRaw.toLowerCase();
 
-  const hashSha256Hex = Array.from(await sha256(canonicalBytes))
+  const hashSha256Hex = Array.from(await sha256(canonicalBaseBytes))
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
 
@@ -287,11 +284,11 @@ export async function buildEmbeddedBundle(args: {
 
   let payloadSignature: HarmonicSig | undefined;
   const signer = getSigner();
-  if (signer) payloadSignature = await signWithProvider(hashHex);
+  if (signer) payloadSignature = await signWithProvider(payloadHashHex);
 
   const integrity = {
     payloadEncoding: "gzip+base64",
-    payloadHash: { alg: "blake3", value: hashHex },
+    payloadHash: { alg: "blake3", value: payloadHashHex },
     payloadHashSecondary: { alg: "sha256", value: hashSha256Hex },
     payloadSignature:
       payloadSignature ?? {
@@ -337,14 +334,14 @@ export async function buildEmbeddedBundle(args: {
     stepIndex: canon.stepIndex,
     chakraDay: chakraFromKey(String(canon.chakraDayKey)),
     stepsPerBeat: canon.stepsPerBeat,
-    canonicalHash: hashHex,
+    canonicalHash: payloadHashHex,
     exportedAt: nowIso,
     expiresAtPulse: canon.pulse + 11,
     kaiSignature: kaiSignature ?? undefined,
     userPhiKey: userPhiKey ?? undefined,
   };
 
-  const manifestUrl = makeSigilUrl(hashHex, manifestPayload);
+  const manifestUrl = makeSigilUrl(payloadHashHex, manifestPayload);
 
   /* ── Ledger + DHT ─────────────────────────────────────────── */
   const mintEntry: MintEntry = {
@@ -403,7 +400,7 @@ export async function buildEmbeddedBundle(args: {
   /* ── Diagnostics / inner ring ─────────────────────────────── */
   const len = canonicalBytes.length;
   const crcHex = crc32(canonicalBytes).toString(16).padStart(8, "0");
-  const hashB58 = base58Encode(hexToBytes(hashHex));
+  const hashB58 = base58Encode(hexToBytes(payloadHashHex));
   const creatorShort = creatorResolved.creatorId.slice(0, 12);
   const zkShort = String(payloadObj.zkPoseidonHash).slice(0, 12);
 
@@ -426,7 +423,7 @@ export async function buildEmbeddedBundle(args: {
 
   return {
     parityUrl: manifestUrl,
-    payloadHashHex: hashHex,
+    payloadHashHex,
     innerRingText: inner,
     sigilUrl: manifestUrl,
     hashB58,
