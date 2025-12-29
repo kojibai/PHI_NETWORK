@@ -1,9 +1,11 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { groth16 } from "snarkjs";
 import { blake3 } from "hash-wasm";
 
-const ROOT_DIR = process.cwd();
+const CURRENT_DIR = path.dirname(fileURLToPath(import.meta.url));
+const ROOT_DIR = path.resolve(CURRENT_DIR, "..", "..");
 const ARTIFACTS_DIR = path.join(ROOT_DIR, "public", "zk");
 const WASM_PATH = path.join(ARTIFACTS_DIR, "sigil.wasm");
 const ZKEY_PATH = path.join(ARTIFACTS_DIR, "sigil.zkey");
