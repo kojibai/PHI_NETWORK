@@ -1,4 +1,5 @@
 import { XMLParser } from "fast-xml-parser";
+import { gunzipB64 } from "../lib/sigil/codec";
 import type { ProofCapsuleV1 } from "../components/KaiVoh/verifierProof";
 import type { HarmonicSig } from "../lib/sigil/signature";
 
@@ -48,10 +49,24 @@ function safeJsonParse(s: string): unknown | null {
   }
 }
 
+function tryDecodeEmbeddedPayload(raw: Record<string, unknown>): Record<string, unknown> | null {
+  const payload = raw.payload;
+  if (typeof payload !== "string" || payload.trim().length === 0) return null;
+  try {
+    const bytes = gunzipB64(payload);
+    const text = new TextDecoder().decode(bytes);
+    const parsed = safeJsonParse(text);
+    return isRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 function toEmbeddedMetaFromUnknown(raw: unknown): EmbeddedMeta {
   if (!isRecord(raw)) return { raw };
 
   const capsuleRaw = isRecord(raw.proofCapsule) ? raw.proofCapsule : undefined;
+  const decodedPayload = tryDecodeEmbeddedPayload(raw);
 
   const kaiSignature =
     typeof raw.kaiSignature === "string"
@@ -117,9 +132,23 @@ function toEmbeddedMetaFromUnknown(raw: unknown): EmbeddedMeta {
       : undefined;
 
   const zkPoseidonHash =
-    typeof raw.zkPoseidonHash === "string" ? raw.zkPoseidonHash : undefined;
-  const zkProof = "zkProof" in raw ? raw.zkProof : undefined;
-  const proofHints = "proofHints" in raw ? raw.proofHints : undefined;
+    typeof raw.zkPoseidonHash === "string"
+      ? raw.zkPoseidonHash
+      : typeof decodedPayload?.zkPoseidonHash === "string"
+        ? decodedPayload.zkPoseidonHash
+        : undefined;
+  const zkProof =
+    "zkProof" in raw
+      ? raw.zkProof
+      : decodedPayload && "zkProof" in decodedPayload
+        ? decodedPayload.zkProof
+        : undefined;
+  const proofHints =
+    "proofHints" in raw
+      ? raw.proofHints
+      : decodedPayload && "proofHints" in decodedPayload
+        ? decodedPayload.proofHints
+        : undefined;
 
   const capsuleHash = typeof raw.capsuleHash === "string" ? raw.capsuleHash : undefined;
   const svgHash = typeof raw.svgHash === "string" ? raw.svgHash : undefined;
