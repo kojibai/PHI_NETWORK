@@ -117,7 +117,7 @@ const {
 } = verifier;
 const { extractProofBundleMetaFromSvg } = meta;
 const { verifyBundleAuthorSig } = kas;
-const { base64UrlEncode, sha256Bytes } = sha;
+const { base64UrlEncode, hexToBytes, sha256Bytes } = sha;
 const { computeZkPoseidonHash } = kai;
 
 function makeRandomBytes(size) {
@@ -135,7 +135,7 @@ async function makeAuthorSig(bundleHash) {
   const pubKeyJwk = await crypto.subtle.exportKey("jwk", keyPair.publicKey);
   const credId = base64UrlEncode(makeRandomBytes(16));
   const authenticatorData = makeRandomBytes(37);
-  const challengeBytes = await sha256Bytes(`KAS-1|bundleHash|${bundleHash}`);
+  const challengeBytes = hexToBytes(bundleHash);
   const challenge = base64UrlEncode(challengeBytes);
   const clientData = JSON.stringify({
     type: "webauthn.get",

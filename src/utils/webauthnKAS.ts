@@ -1,5 +1,5 @@
 import { decodeCbor } from "./cbor";
-import { base64UrlDecode, base64UrlEncode, sha256Bytes } from "./sha256";
+import { base64UrlDecode, base64UrlEncode, hexToBytes, sha256Bytes } from "./sha256";
 import type { KASAuthorSig } from "./authorSig";
 
 export type StoredPasskey = {
@@ -170,7 +170,7 @@ export async function signBundleHash(phiKey: string, bundleHash: string): Promis
   }
 
   const credIdBytes = base64UrlDecode(stored.credId);
-  const challengeBytes = await sha256Bytes(`KAS-1|bundleHash|${bundleHash}`);
+  const challengeBytes = hexToBytes(bundleHash);
 
   const challenge = challengeBytes.slice();
   const allowId = credIdBytes.slice();
@@ -253,7 +253,7 @@ export async function verifyBundleAuthorSig(
   authorSig: KASAuthorSig
 ): Promise<boolean> {
   try {
-    const expectedChallenge = await sha256Bytes(`KAS-1|bundleHash|${bundleHash}`);
+    const expectedChallenge = hexToBytes(bundleHash);
     const expectedChallengeB64 = base64UrlEncode(expectedChallenge);
     if (authorSig.challenge !== expectedChallengeB64) return false;
 
