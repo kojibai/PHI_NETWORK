@@ -1,0 +1,1 @@
+import{Ir as e}from"./index-BGas4yy1.js";var t=e(((e,t)=>{t.exports={}}));export default t();
