@@ -163,9 +163,14 @@ export default async function handler(req, res) {
     res.end(JSON.stringify(result));
   } catch (err) {
     const message = err instanceof Error ? err.message : "Proof generation failed";
+    console.error("generateSigilProof failed:", err);
     res.statusCode = 400;
     res.setHeader("Content-Type", "application/json");
-    res.end(JSON.stringify({ error: message }));
+    const detail =
+      process.env.NODE_ENV !== "production" && err instanceof Error
+        ? err.stack ?? err.message
+        : undefined;
+    res.end(JSON.stringify({ error: message, detail }));
   }
 }
 
