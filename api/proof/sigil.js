@@ -58,9 +58,25 @@ function coercePoseidonHash(value) {
         return trimmed;
       }
     }
+    if (trimmed.includes(",")) {
+      const [first] = trimmed.split(",", 1);
+      return first?.trim() ?? "";
+    }
     return trimmed;
   }
   return String(value).trim();
+}
+
+function normalizePoseidonHash(value) {
+  const raw = coercePoseidonHash(value);
+  if (!raw) return "";
+  if (/^0x[0-9a-f]+$/i.test(raw)) {
+    return BigInt(raw).toString();
+  }
+  if (!/^\d+$/.test(raw)) {
+    throw new Error("Invalid zkPoseidonHash");
+  }
+  return raw;
 }
 
 async function loadSigilVkey() {
@@ -115,7 +131,7 @@ export async function generateSigilProof({
   const hashFromPayload = payloadHashHex
     ? await computeZkPoseidonHashFromPayloadHex(payloadHashHex)
     : null;
-  const directPoseidonHash = coercePoseidonHash(poseidonHash ?? zkPoseidonHash);
+  const directPoseidonHash = normalizePoseidonHash(poseidonHash ?? zkPoseidonHash);
   const canonicalPoseidonHash = (hashFromPayload ?? directPoseidonHash).toString().trim();
   if (!canonicalPoseidonHash) {
     throw new Error("Missing zkPoseidonHash/payloadHashHex");
