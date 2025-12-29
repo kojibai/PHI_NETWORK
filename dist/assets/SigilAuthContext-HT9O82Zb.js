@@ -1,1 +1,0 @@
-import{Lr as e,Ur as t}from"./index-CEm8vway.js";var n=t(e(),1);const r=(0,n.createContext)(null);function i(){let e=(0,n.useContext)(r);if(!e)throw Error(`useSigilAuth must be used within <SigilAuthProvider>.`);return e}export{i as n,r as t};

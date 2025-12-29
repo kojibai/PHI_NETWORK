@@ -1,1 +1,0 @@
-import{G as e}from"./index-CEm8vway.js";export default e();

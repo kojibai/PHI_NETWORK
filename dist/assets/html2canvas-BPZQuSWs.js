@@ -1,1 +1,0 @@
-import{t as e}from"./html2canvas-Caliz7Ar.js";export default e();
