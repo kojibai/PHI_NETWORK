@@ -1666,6 +1666,18 @@ const VerifierStamperInner: React.FC = () => {
     return null;
   }, [meta]);
 
+  const zkPublicInputs = useMemo(() => {
+    const raw = getPath(meta, "zkPublicInputs");
+    if (raw === undefined || raw === null) return null;
+    if (typeof raw === "string") return raw;
+    try {
+      return stableStringify(raw);
+    } catch (err) {
+      logError("zkPublicInputs.stringify", err);
+      return "[zkPublicInputs]";
+    }
+  }, [meta]);
+
   const zkProof = useMemo(() => {
     const raw = getPath(meta, "zkProof") ?? getPath(meta, "proofHints.proof");
     if (raw === undefined || raw === null) return null;
@@ -2016,6 +2028,7 @@ const VerifierStamperInner: React.FC = () => {
                     <KV k="Segment Depth:" v={meta.cumulativeTransfers ?? 0} />
                     <KV k="Segment Tree Root:" v={meta.segmentsMerkleRoot ?? "—"} wide mono />
                     {zkPoseidonHash && <KV k="ZK Poseidon hash:" v={zkPoseidonHash} wide mono />}
+                    {zkPublicInputs && <KV k="ZK public inputs:" v={zkPublicInputs} wide mono />}
                     {zkProofDisplay && <KV k="ZK proof:" v={zkProofDisplay} wide mono />}
                     {rgbSeed && <KV k="RGB seed:" v={rgbSeed.join(", ")} />}
                   </div>
@@ -2216,6 +2229,7 @@ const VerifierStamperInner: React.FC = () => {
                     {(zkPoseidonHash || zkProofDisplay) && (
                       <div className="summary-grid" style={{ marginBottom: 10 }}>
                         {zkPoseidonHash && <KV k="ZK Poseidon hash:" v={zkPoseidonHash} wide mono />}
+                        {zkPublicInputs && <KV k="ZK public inputs:" v={zkPublicInputs} wide mono />}
                         {zkProofDisplay && <KV k="ZK proof:" v={zkProofDisplay} wide mono />}
                       </div>
                     )}

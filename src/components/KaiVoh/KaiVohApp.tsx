@@ -711,6 +711,7 @@ function KaiVohFlow(): ReactElement {
               : undefined;
           let zkProof = (mergedMetadata as { zkProof?: unknown }).zkProof;
           let proofHints = (mergedMetadata as { proofHints?: unknown }).proofHints;
+          let zkPublicInputs: unknown = (mergedMetadata as { zkPublicInputs?: unknown }).zkPublicInputs;
 
           if (zkPoseidonHash) {
             const proofObj =
@@ -735,6 +736,7 @@ function KaiVohFlow(): ReactElement {
               if (generated) {
                 zkProof = generated.proof;
                 proofHints = generated.proofHints;
+                zkPublicInputs = generated.zkPublicInputs;
               }
             }
           }
@@ -752,6 +754,7 @@ function KaiVohFlow(): ReactElement {
             zkPoseidonHash,
             zkProof,
             proofHints,
+            zkPublicInputs,
           };
 
           content = await embedProofMetadataIntoSvgBlob(content, proofBundle);

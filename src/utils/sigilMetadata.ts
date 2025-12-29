@@ -25,6 +25,7 @@ export type EmbeddedMeta = {
   zkPoseidonHash?: string;
   zkProof?: unknown;
   proofHints?: unknown;
+  zkPublicInputs?: unknown;
   raw?: unknown;
 };
 
@@ -149,6 +150,12 @@ function toEmbeddedMetaFromUnknown(raw: unknown): EmbeddedMeta {
       : decodedPayload && "proofHints" in decodedPayload
         ? decodedPayload.proofHints
         : undefined;
+  const zkPublicInputs =
+    "zkPublicInputs" in raw
+      ? raw.zkPublicInputs
+      : decodedPayload && "zkPublicInputs" in decodedPayload
+        ? decodedPayload.zkPublicInputs
+        : undefined;
 
   const capsuleHash = typeof raw.capsuleHash === "string" ? raw.capsuleHash : undefined;
   const svgHash = typeof raw.svgHash === "string" ? raw.svgHash : undefined;
@@ -179,6 +186,7 @@ function toEmbeddedMetaFromUnknown(raw: unknown): EmbeddedMeta {
     zkPoseidonHash,
     zkProof,
     proofHints,
+    zkPublicInputs,
     raw,
   };
 }
@@ -297,6 +305,7 @@ function findProofBundleInText(text: string): ProofBundleMeta | null {
         zkPoseidonHash: meta.zkPoseidonHash,
         zkProof: meta.zkProof,
         proofHints: meta.proofHints,
+        zkPublicInputs: meta.zkPublicInputs,
         raw: parsed,
       };
     }
@@ -326,6 +335,7 @@ function findProofBundleInText(text: string): ProofBundleMeta | null {
         zkPoseidonHash: meta.zkPoseidonHash,
         zkProof: meta.zkProof,
         proofHints: meta.proofHints,
+        zkPublicInputs: meta.zkPublicInputs,
         raw: blobParsed,
       };
     }
@@ -382,6 +392,7 @@ function extractAttrFallback(svgText: string): EmbeddedMeta {
   const kaiSignature = getAttr(svgText, "data-kai-signature");
   const phiKey = getAttr(svgText, "data-phi-key");
   const zkPoseidonHash = getAttr(svgText, "data-zk-poseidon-hash");
+  const zkPublicInputs = getAttr(svgText, "data-zk-public-inputs");
 
   return {
     pulse,
@@ -393,6 +404,7 @@ function extractAttrFallback(svgText: string): EmbeddedMeta {
     kaiSignature,
     phiKey,
     zkPoseidonHash,
+    zkPublicInputs,
   };
 }
 
@@ -437,6 +449,7 @@ export type ProofBundleMeta = {
   zkPoseidonHash?: string;
   zkProof?: unknown;
   proofHints?: unknown;
+  zkPublicInputs?: unknown;
   raw?: unknown;
 };
 
@@ -463,6 +476,7 @@ export function extractProofBundleMetaFromSvg(svgText: string): ProofBundleMeta 
           zkPoseidonHash: meta.zkPoseidonHash,
           zkProof: meta.zkProof,
           proofHints: meta.proofHints,
+          zkPublicInputs: meta.zkPublicInputs,
           raw: parsed,
         };
       }

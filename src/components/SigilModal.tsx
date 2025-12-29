@@ -1134,6 +1134,7 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
     zkPoseidonHash?: string;
     zkProof?: unknown;
     proofHints?: unknown;
+    zkPublicInputs?: unknown;
   };
 
   const makeSharePayload = (
@@ -1310,6 +1311,7 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
           : undefined;
       let zkProof = embeddedMeta.zkProof;
       let proofHints = embeddedMeta.proofHints;
+      let zkPublicInputs: unknown = embeddedMeta.zkPublicInputs;
 
       if (zkPoseidonHash) {
         const proofObj =
@@ -1335,8 +1337,12 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
           if (generated) {
             zkProof = generated.proof;
             proofHints = generated.proofHints;
+            zkPublicInputs = generated.zkPublicInputs;
           }
         }
+      }
+      if (zkPublicInputs) {
+        svgClone.setAttribute("data-zk-public-inputs", JSON.stringify(zkPublicInputs));
       }
       const svgHash = await sha256HexStrict(svgCanonicalForHash(svgString));
       const bundleHash = await sha256HexStrict(
@@ -1365,6 +1371,7 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
         zkPoseidonHash,
         zkProof,
         proofHints,
+        zkPublicInputs,
       };
 
       const sealedSvg = embedProofMetadata(svgString, proofBundle);

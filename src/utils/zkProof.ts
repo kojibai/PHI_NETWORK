@@ -64,7 +64,7 @@ async function loadGroth16Prover(): Promise<Groth16Module | null> {
 export async function generateZkProofFromPoseidonHash(params: {
   poseidonHash: string;
   proofHints?: SigilProofHints;
-}): Promise<{ proof: unknown; proofHints: SigilProofHints } | null> {
+}): Promise<{ proof: unknown; proofHints: SigilProofHints; zkPublicInputs: string[] } | null> {
   const poseidonHash = params.poseidonHash?.trim();
   if (!poseidonHash) return null;
 
@@ -81,7 +81,7 @@ export async function generateZkProofFromPoseidonHash(params: {
   };
 
   try {
-    const { proof } = await groth16.fullProve(input, wasmPath, zkeyPath);
+    const { proof, publicSignals } = await groth16.fullProve(input, wasmPath, zkeyPath);
     if (!hasMeaningfulZkProof(proof)) return null;
 
     const proofHints: SigilProofHints = {
@@ -91,7 +91,7 @@ export async function generateZkProofFromPoseidonHash(params: {
       ...(params.proofHints ?? {}),
     };
 
-    return { proof, proofHints };
+    return { proof, proofHints, zkPublicInputs: publicSignals };
   } catch {
     const fallback = await loadFallbackProof();
     if (!fallback) return null;
@@ -101,6 +101,6 @@ export async function generateZkProofFromPoseidonHash(params: {
       explorer: `/keystream/hash/${poseidonHash}`,
       ...(params.proofHints ?? {}),
     };
-    return { proof: fallback, proofHints };
+    return { proof: fallback, proofHints, zkPublicInputs: [poseidonHash] };
   }
 }
