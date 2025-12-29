@@ -42,6 +42,7 @@ import { embedProofMetadata, svgCanonicalForHash } from "../utils/svgProof";
 import { extractEmbeddedMetaFromSvg } from "../utils/sigilMetadata";
 import { buildProofHints, generateZkProofFromPoseidonHash } from "../utils/zkProof";
 import { computeZkPoseidonHash } from "../utils/kai";
+import { computeZkPoseidonHash } from "../utils/kai";
 import {
   ensurePasskey,
   isWebAuthnAvailable,
@@ -1382,11 +1383,12 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
                 ? (proofHints as SigilProofHints)
                 : undefined,
           });
-          if (generated) {
-            zkProof = generated.proof;
-            proofHints = generated.proofHints;
-            zkPublicInputs = generated.zkPublicInputs;
+          if (!generated) {
+            throw new Error("ZK proof generation failed");
           }
+          zkProof = generated.proof;
+          proofHints = generated.proofHints;
+          zkPublicInputs = generated.zkPublicInputs;
         }
         if (typeof proofHints !== "object" || proofHints === null) {
           proofHints = buildProofHints(zkPoseidonHash);
@@ -1400,13 +1402,26 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
           throw new Error("Embedded ZK mismatch");
         }
       }
+      if (zkPoseidonHash && (!zkProof || typeof zkProof !== "object")) {
+        throw new Error("ZK proof missing");
+      }
       if (zkPublicInputs) {
         svgClone.setAttribute("data-zk-public-inputs", JSON.stringify(zkPublicInputs));
       }
-      const svgHash = await sha256HexStrict(svgCanonicalForHash(svgString));
-      const bundleHash = await sha256HexStrict(
-        jcsCanonicalize({ capsuleHash, svgHash })
-      );
+      if (zkPoseidonHash) {
+        svgClone.setAttribute("data-zk-scheme", "groth16-poseidon");
+        svgClone.setAttribute("data-zk-poseidon-hash", zkPoseidonHash);
+        if (zkProof) {
+          svgClone.setAttribute("data-zk-proof", "present");
+        }
+      }
+      if (
+        svgClone.getAttribute("data-pulse") !== String(pulseNum) ||
+        svgClone.getAttribute("data-kai-signature") !== kaiSignature ||
+        svgClone.getAttribute("data-phi-key") !== phiKey
+      ) {
+        throw new Error("SVG data attributes do not match proof capsule");
+      }
 
       let authorSig: AuthorSig | null = null;
       let warning: string | null = null;
@@ -1423,8 +1438,8 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
         canon: "JCS",
         proofCapsule,
         capsuleHash,
-        svgHash,
-        bundleHash,
+        svgHash: "",
+        bundleHash: "",
         shareUrl,
         verifierUrl,
         authorSig,
@@ -1434,7 +1449,14 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
         zkPublicInputs,
       };
 
-      const sealedSvg = embedProofMetadata(svgString, proofBundle);
+      let sealedSvg = embedProofMetadata(svgString, proofBundle);
+      const svgHash = await sha256HexStrict(svgCanonicalForHash(sealedSvg));
+      const bundleHash = await sha256HexStrict(
+        jcsCanonicalize({ capsuleHash, svgHash })
+      );
+      proofBundle.svgHash = svgHash;
+      proofBundle.bundleHash = bundleHash;
+      sealedSvg = embedProofMetadata(sealedSvg, proofBundle);
       const baseName = `kai-voh_pulse-${pulseNum}_${kaiSignatureShort}`;
       const zip = new JSZip();
       zip.file(`${baseName}.svg`, sealedSvg);
