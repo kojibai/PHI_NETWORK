@@ -489,6 +489,7 @@ export default function VerifyPage(): ReactElement {
                           capsuleHash,
                           svgHash,
                           bundleHash,
+                          shareUrl: embeddedProof?.shareUrl ?? null,
                           verifierUrl: proofVerifierUrl,
                           authorSig: embeddedProof?.authorSig ?? null,
                           zkPoseidonHash: embeddedProof?.zkPoseidonHash ?? null,

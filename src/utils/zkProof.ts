@@ -6,7 +6,13 @@ type Groth16FullProve = (
   zkeyPath: string
 ) => Promise<{ proof: unknown; publicSignals: string[] }>;
 
-type Groth16Module = { fullProve?: Groth16FullProve };
+type Groth16Verify = (
+  vkey: unknown,
+  publicSignals: unknown,
+  proof: unknown
+) => Promise<boolean> | boolean;
+
+type Groth16Module = { fullProve?: Groth16FullProve; verify?: Groth16Verify };
 
 function isNonEmptyObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && Object.keys(value).length > 0;
@@ -61,9 +67,31 @@ async function loadGroth16Prover(): Promise<Groth16Module | null> {
   return null;
 }
 
+async function loadSigilVkey(explicit?: unknown): Promise<unknown | null> {
+  if (explicit) return explicit;
+  if (typeof window !== "undefined") {
+    const win = window as unknown as { SIGIL_ZK_VKEY?: unknown };
+    if (win.SIGIL_ZK_VKEY) return win.SIGIL_ZK_VKEY;
+  }
+  if (typeof fetch !== "function") return null;
+
+  const candidates = ["/zk/sigil.vkey.json", "/sigil.vkey.json"];
+  for (const path of candidates) {
+    try {
+      const res = await fetch(path, { cache: "no-store" });
+      if (!res.ok) continue;
+      return (await res.json()) as unknown;
+    } catch {
+      // ignore and try next
+    }
+  }
+  return null;
+}
+
 export async function generateZkProofFromPoseidonHash(params: {
   poseidonHash: string;
   proofHints?: SigilProofHints;
+  vkey?: unknown;
 }): Promise<{ proof: unknown; proofHints: SigilProofHints; zkPublicInputs: string[] } | null> {
   const poseidonHash = params.poseidonHash?.trim();
   if (!poseidonHash) return null;
@@ -83,6 +111,21 @@ export async function generateZkProofFromPoseidonHash(params: {
   try {
     const { proof, publicSignals } = await groth16.fullProve(input, wasmPath, zkeyPath);
     if (!hasMeaningfulZkProof(proof)) return null;
+    const publicInput0 = publicSignals?.[0];
+    if (String(publicInput0 ?? "") !== poseidonHash) {
+      throw new Error("ZK public input mismatch");
+    }
+    if (typeof groth16.verify !== "function") {
+      throw new Error("ZK verifier unavailable");
+    }
+    const vkey = await loadSigilVkey(params.vkey);
+    if (!vkey) {
+      throw new Error("ZK verifying key missing");
+    }
+    const verified = await groth16.verify(vkey, publicSignals, proof);
+    if (!verified) {
+      throw new Error("ZK proof failed verification");
+    }
 
     const proofHints: SigilProofHints = {
       scheme: "groth16-poseidon",
@@ -92,7 +135,18 @@ export async function generateZkProofFromPoseidonHash(params: {
     };
 
     return { proof, proofHints, zkPublicInputs: publicSignals };
-  } catch {
+  } catch (err) {
+    if (err instanceof Error) {
+      const msg = err.message;
+      if (
+        msg.includes("ZK public input mismatch") ||
+        msg.includes("ZK proof failed verification") ||
+        msg.includes("ZK verifier unavailable") ||
+        msg.includes("ZK verifying key missing")
+      ) {
+        throw err;
+      }
+    }
     const fallback = await loadFallbackProof();
     if (!fallback) return null;
     const proofHints: SigilProofHints = {

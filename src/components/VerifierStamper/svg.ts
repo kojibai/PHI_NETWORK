@@ -65,6 +65,7 @@ export async function parseSvgFile(file: File) {
 
   meta.kaiSignature ??= getAttr(text, "data-kai-signature");
   meta.userPhiKey ??= getAttr(text, "data-phi-key");
+  meta.shareUrl ??= getAttr(text, "data-share-url");
   meta.zkPoseidonHash ??= getAttr(text, "data-zk-poseidon-hash");
   meta.zkPublicInputs ??= getAttr(text, "data-zk-public-inputs");
 
@@ -76,6 +77,7 @@ export async function parseSvgFile(file: File) {
   meta.chakraDay ??= embedded.chakraDay;
   meta.chakraGate ??= embedded.chakraGate;
   meta.frequencyHz ??= embedded.frequencyHz;
+  if (embedded.shareUrl && !meta.shareUrl) meta.shareUrl = embedded.shareUrl;
   meta.zkPoseidonHash ??= embedded.zkPoseidonHash;
   if (embedded.zkProof && meta.zkProof === undefined) meta.zkProof = embedded.zkProof;
   if (embedded.proofHints && meta.proofHints === undefined) meta.proofHints = embedded.proofHints;
@@ -91,6 +93,7 @@ export async function parseSvgFile(file: File) {
   if (embedded.authorSig !== undefined && meta.authorSig === undefined) meta.authorSig = embedded.authorSig;
 
   if (proofBundle) {
+    if (proofBundle.shareUrl && !meta.shareUrl) meta.shareUrl = proofBundle.shareUrl;
     meta.verifierUrl ??= proofBundle.verifierUrl;
     meta.proofCapsule ??= proofBundle.proofCapsule;
     meta.capsuleHash ??= proofBundle.capsuleHash;

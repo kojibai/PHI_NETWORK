@@ -95,6 +95,7 @@ type ExtendedKksMetadata = KaiSigKksMetadataShape & {
   sigilPulse?: number;
   exhalePulse?: number;
 
+  shareUrl?: string;
   verifierUrl?: string;
   verifierSlug?: string;
 
@@ -109,6 +110,27 @@ type ExtendedKksMetadata = KaiSigKksMetadataShape & {
 
   /** KPV-1: canonical capsule used to compute proofHash */
   proofCapsule?: ProofCapsuleV1;
+};
+
+const readPublicInput0 = (inputs: unknown): string | null => {
+  if (!inputs) return null;
+  if (Array.isArray(inputs)) {
+    const first = inputs[0];
+    return first == null ? null : String(first);
+  }
+  if (typeof inputs === "string") {
+    try {
+      const parsed = JSON.parse(inputs) as unknown;
+      if (Array.isArray(parsed)) {
+        const first = parsed[0];
+        return first == null ? null : String(first);
+      }
+    } catch {
+      return inputs;
+    }
+    return inputs;
+  }
+  return null;
 };
 
 type VerifierData = Readonly<{
@@ -740,6 +762,17 @@ function KaiVohFlow(): ReactElement {
               }
             }
           }
+          if (zkPoseidonHash && zkPublicInputs) {
+            const publicInput0 = readPublicInput0(zkPublicInputs);
+            if (publicInput0 && publicInput0 !== zkPoseidonHash) {
+              throw new Error("Embedded ZK mismatch");
+            }
+          }
+
+          const shareUrl =
+            typeof (mergedMetadata as { shareUrl?: unknown }).shareUrl === "string"
+              ? (mergedMetadata as { shareUrl?: string }).shareUrl
+              : undefined;
 
           const proofBundle = {
             v: "KPB-1",
@@ -749,6 +782,7 @@ function KaiVohFlow(): ReactElement {
             capsuleHash,
             svgHash,
             bundleHash,
+            shareUrl,
             verifierUrl,
             authorSig,
             zkPoseidonHash,
