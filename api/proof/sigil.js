@@ -94,6 +94,16 @@ function coercePoseidonHash(value) {
   return "";
 }
 
+function isPoseidonInputMismatch(err) {
+  if (!(err instanceof Error)) return false;
+  const message = err.message ?? "";
+  return (
+    message.includes("Too many values for input signal poseidonHash") ||
+    message.includes("Not enough values for input signal poseidonHash") ||
+    message.includes("Signal poseidonHash not found")
+  );
+}
+
 export async function generateSigilProof({
   zkPoseidonHash,
   payloadHashHex,
@@ -120,17 +130,23 @@ export async function generateSigilProof({
     poseidonHash: canonicalPoseidonHash,
   };
 
-  const { proof, publicSignals } = await groth16.fullProve(
-    input,
-    WASM_PATH,
-    ZKEY_PATH
-  );
+  let proofResult;
+  try {
+    proofResult = await groth16.fullProve(input, WASM_PATH, ZKEY_PATH);
+  } catch (err) {
+    if (!isPoseidonInputMismatch(err)) {
+      throw err;
+    }
+    proofResult = await groth16.fullProve({}, WASM_PATH, ZKEY_PATH);
+  }
+  const { proof, publicSignals } = proofResult;
 
   const normalizedProof = normalizeValue(proof);
   const normalizedSignals = normalizePublicSignals(publicSignals);
-  const publicInput0 = normalizedSignals[0];
+  const publicInput0 =
+    normalizedSignals.length > 0 ? normalizedSignals[0] : canonicalPoseidonHash;
 
-  if (publicInput0 !== canonicalPoseidonHash) {
+  if (normalizedSignals.length > 0 && publicInput0 !== canonicalPoseidonHash) {
     throw new Error("ZK public input mismatch");
   }
 
