@@ -1353,6 +1353,7 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
         if (!hasProof) {
           const generated = await generateZkProofFromPoseidonHash({
             poseidonHash: zkPoseidonHash,
+            payloadHashHex,
             proofHints: typeof proofHints === "object" && proofHints !== null
               ? (proofHints as SigilProofHints)
               : undefined,

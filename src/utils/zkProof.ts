@@ -43,6 +43,7 @@ async function resolveArtifactPath(
 async function fetchSigilProofFromApi(params: {
   poseidonHash: string;
   proofHints?: SigilProofHints;
+  payloadHashHex?: string;
 }): Promise<{ proof: unknown; proofHints: SigilProofHints; zkPublicInputs: string[] } | null> {
   if (typeof fetch !== "function") return null;
   try {
@@ -53,6 +54,7 @@ async function fetchSigilProofFromApi(params: {
       body: JSON.stringify({
         zkPoseidonHash: params.poseidonHash,
         poseidonHash: params.poseidonHash,
+        payloadHashHex: params.payloadHashHex,
       }),
     });
     if (!res.ok) return null;
@@ -122,13 +124,18 @@ export async function generateZkProofFromPoseidonHash(params: {
   poseidonHash: string;
   proofHints?: SigilProofHints;
   vkey?: unknown;
+  payloadHashHex?: string;
 }): Promise<{ proof: unknown; proofHints: SigilProofHints; zkPublicInputs: string[] } | null> {
   const poseidonHash = params.poseidonHash?.trim();
   if (!poseidonHash) return null;
 
   const apiAttempted = typeof fetch === "function";
   if (apiAttempted) {
-    const apiProof = await fetchSigilProofFromApi({ poseidonHash, proofHints: params.proofHints });
+    const apiProof = await fetchSigilProofFromApi({
+      poseidonHash,
+      proofHints: params.proofHints,
+      payloadHashHex: params.payloadHashHex,
+    });
     if (apiProof) return apiProof;
     throw new Error("ZK proof API unavailable");
   }
@@ -185,7 +192,11 @@ export async function generateZkProofFromPoseidonHash(params: {
       }
     }
     if (!apiAttempted) {
-      return fetchSigilProofFromApi({ poseidonHash, proofHints: params.proofHints });
+      return fetchSigilProofFromApi({
+        poseidonHash,
+        proofHints: params.proofHints,
+        payloadHashHex: params.payloadHashHex,
+      });
     }
     return null;
   }
