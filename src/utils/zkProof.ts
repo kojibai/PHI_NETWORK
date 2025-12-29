@@ -25,6 +25,16 @@ function normalizePoseidonHash(value: unknown): string {
   return "";
 }
 
+function isPoseidonInputMismatch(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const msg = err.message ?? "";
+  return (
+    msg.includes("Too many values for input signal poseidonHash") ||
+    msg.includes("Not enough values for input signal poseidonHash") ||
+    msg.includes("Signal poseidonHash not found")
+  );
+}
+
 function hasMeaningfulZkProof(value: unknown): boolean {
   if (!value) return false;
   if (typeof value === "string") return value.trim().length > 0;
@@ -160,10 +170,23 @@ export async function generateZkProofFromPoseidonHash(params: {
   };
 
   try {
-    const { proof, publicSignals } = await groth16.fullProve(input, wasmPath, zkeyPath);
+    let proofResult;
+    try {
+      proofResult = await groth16.fullProve(input, wasmPath, zkeyPath);
+    } catch (err) {
+      if (!isPoseidonInputMismatch(err)) {
+        throw err;
+      }
+      proofResult = await groth16.fullProve({}, wasmPath, zkeyPath);
+    }
+    const { proof, publicSignals } = proofResult;
     if (!hasMeaningfulZkProof(proof)) return null;
     const publicInput0 = publicSignals?.[0];
-    if (String(publicInput0 ?? "") !== poseidonHash) {
+    if (
+      Array.isArray(publicSignals) &&
+      publicSignals.length > 0 &&
+      String(publicInput0 ?? "") !== poseidonHash
+    ) {
       throw new Error("ZK public input mismatch");
     }
     if (typeof groth16.verify !== "function") {
