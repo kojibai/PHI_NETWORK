@@ -847,18 +847,11 @@ const KaiSigil = forwardRef<KaiSigilHandle, KaiSigilProps>((props, ref) => {
         next["header"] = { ...header, shareUrl: shareUrlForRender };
       }
 
-      if (typeof next["verifierUrl"] === "string") {
-        next["verifierUrl"] = shareUrlForRender;
-      }
-
-      const proofCapsule = next["proofCapsule"];
-      if (isObj(proofCapsule)) {
-        next["proofCapsule"] = { ...proofCapsule, verifierUrl: shareUrlForRender };
-      }
+      next["shareUrl"] = shareUrlForRender;
 
       const proof = next["proof"];
       if (isObj(proof)) {
-        next["proof"] = { ...proof, verifierUrl: shareUrlForRender };
+        next["proof"] = { ...proof, shareUrl: shareUrlForRender };
       }
 
       return JSON.stringify(next);

@@ -128,7 +128,7 @@ export type SigilPayload = {
 
   // Zero-knowledge section (ZK Poseidon proof)
   zkPoseidonHash: string;
-  zkProof: SigilZkProof;
+  zkProof?: SigilZkProof | null;
 
   // Public key used for breath signature and the signature itself
   ownerPubKey: JsonWebKey;

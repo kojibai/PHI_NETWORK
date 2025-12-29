@@ -174,7 +174,7 @@ export function validateSigilMeta(meta: SigilMetaLoose): {
     claimExtendUnit,
     claimExtendAmount,
     zkPoseidonHash: "",
-    zkProof: { pi_a: ["", "", ""], pi_b: [["", ""], ["", ""], ["", ""]], pi_c: ["", "", ""] },
+    zkProof: null,
     ownerPubKey: {},
     ownerSig: "",
     originalAmount: 0,

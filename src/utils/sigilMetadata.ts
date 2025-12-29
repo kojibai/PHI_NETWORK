@@ -14,6 +14,7 @@ export type EmbeddedMeta = {
   kaiSignature?: string;
   phiKey?: string;
   timestamp?: string;
+  shareUrl?: string;
   verifierUrl?: string;
   proofCapsule?: ProofCapsuleV1;
   capsuleHash?: string;
@@ -108,6 +109,13 @@ function toEmbeddedMetaFromUnknown(raw: unknown): EmbeddedMeta {
   const timestamp =
     typeof raw.timestamp === "string" ? raw.timestamp : undefined;
 
+  const shareUrl =
+    typeof raw.shareUrl === "string"
+      ? raw.shareUrl
+      : isRecord(raw.header) && typeof raw.header.shareUrl === "string"
+        ? raw.header.shareUrl
+        : undefined;
+
   const phiKeyRaw = typeof raw.phiKey === "string" ? raw.phiKey : undefined;
   const userPhiKey = typeof raw.userPhiKey === "string" ? raw.userPhiKey : undefined;
   const capsulePhiKey = typeof capsuleRaw?.phiKey === "string" ? capsuleRaw.phiKey : undefined;
@@ -175,6 +183,7 @@ function toEmbeddedMetaFromUnknown(raw: unknown): EmbeddedMeta {
     kaiSignature,
     phiKey,
     timestamp,
+    shareUrl,
     verifierUrl,
     proofCapsule,
     capsuleHash,
@@ -391,6 +400,7 @@ function extractAttrFallback(svgText: string): EmbeddedMeta {
   const chakraDay = getAttr(svgText, "data-harmonic-day") ?? getAttr(svgText, "data-chakra-day");
   const kaiSignature = getAttr(svgText, "data-kai-signature");
   const phiKey = getAttr(svgText, "data-phi-key");
+  const shareUrl = getAttr(svgText, "data-share-url");
   const zkPoseidonHash = getAttr(svgText, "data-zk-poseidon-hash");
   const zkPublicInputs = getAttr(svgText, "data-zk-public-inputs");
 
@@ -403,6 +413,7 @@ function extractAttrFallback(svgText: string): EmbeddedMeta {
     chakraGate,
     kaiSignature,
     phiKey,
+    shareUrl,
     zkPoseidonHash,
     zkPublicInputs,
   };
@@ -444,6 +455,7 @@ export type ProofBundleMeta = {
   capsuleHash?: string;
   svgHash?: string;
   bundleHash?: string;
+  shareUrl?: string;
   verifierUrl?: string;
   authorSig?: HarmonicSig | null;
   zkPoseidonHash?: string;
@@ -471,6 +483,7 @@ export function extractProofBundleMetaFromSvg(svgText: string): ProofBundleMeta 
           capsuleHash: meta.capsuleHash,
           svgHash: meta.svgHash,
           bundleHash: meta.bundleHash,
+          shareUrl: meta.shareUrl,
           verifierUrl: meta.verifierUrl,
           authorSig: meta.authorSig,
           zkPoseidonHash: meta.zkPoseidonHash,

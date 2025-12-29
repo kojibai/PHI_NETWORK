@@ -115,7 +115,7 @@ export type SigilPayloadExtended = {
   origin: string;
   proofHints: ProofHints;
   zkPoseidonHash: string;
-  zkProof: ZkProof;
+  zkProof?: ZkProof | null;
   ownerPubKey?: JsonWebKey;
   ownerSig?: string;
 };

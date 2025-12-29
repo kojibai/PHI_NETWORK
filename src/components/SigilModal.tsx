@@ -46,7 +46,7 @@ import {
   isWebAuthnAvailable,
   signBundleHash,
 } from "../utils/webauthnKAS";
-import { normalizeChakraDay } from "./KaiVoh/verifierProof";
+import { buildVerifierUrl, normalizeChakraDay } from "./KaiVoh/verifierProof";
 import type { SigilProofHints } from "../types/sigil";
 
 /* ✅ SINGLE SOURCE OF TRUTH: src/utils/kai_pulse.ts */
@@ -1129,6 +1129,7 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
     capsuleHash: string;
     svgHash: string;
     bundleHash: string;
+    shareUrl: string;
     verifierUrl: string;
     authorSig: AuthorSig | null;
     zkPoseidonHash?: string;
@@ -1160,6 +1161,27 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
       expiresAtPulse: (pulseSnapshot + 11n).toString(),
       pulseExact: pulseSnapshot.toString(),
     };
+  };
+
+  const readPublicInput0 = (inputs: unknown): string | null => {
+    if (!inputs) return null;
+    if (Array.isArray(inputs)) {
+      const first = inputs[0];
+      return first == null ? null : String(first);
+    }
+    if (typeof inputs === "string") {
+      try {
+        const parsed = JSON.parse(inputs) as unknown;
+        if (Array.isArray(parsed)) {
+          const first = parsed[0];
+          return first == null ? null : String(first);
+        }
+      } catch {
+        return inputs;
+      }
+      return inputs;
+    }
+    return null;
   };
 
   const [sealPayload, setSealPayload] = useState<SigilSharePayload | null>(null);
@@ -1280,7 +1302,8 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
         userPhiKey: phiKey,
       };
 
-      const verifierUrl = makeSigilUrl(payloadHashHex, sharePayload);
+      const shareUrl = makeSigilUrl(payloadHashHex, sharePayload);
+      const verifierUrl = buildVerifierUrl(pulseNum, kaiSignature);
       const kaiSignatureShort = kaiSignature.slice(0, 10);
       const proofCapsule: ProofCapsule = {
         v: "KPV-1",
@@ -1341,6 +1364,12 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
           }
         }
       }
+      if (zkPoseidonHash && zkPublicInputs) {
+        const publicInput0 = readPublicInput0(zkPublicInputs);
+        if (publicInput0 && publicInput0 !== zkPoseidonHash) {
+          throw new Error("Embedded ZK mismatch");
+        }
+      }
       if (zkPublicInputs) {
         svgClone.setAttribute("data-zk-public-inputs", JSON.stringify(zkPublicInputs));
       }
@@ -1366,6 +1395,7 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
         capsuleHash,
         svgHash,
         bundleHash,
+        shareUrl,
         verifierUrl,
         authorSig,
         zkPoseidonHash,

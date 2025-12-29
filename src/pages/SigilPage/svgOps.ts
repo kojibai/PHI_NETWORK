@@ -301,7 +301,7 @@ export async function addBreathProofMetadata(
  * Updates:
  *  - root data-share-url + data-payload-hash
  *  - canonical metadata header.shareUrl (if present)
- *  - proof/verifier metadata verifierUrl (if present)
+ *  - proof/verifier metadata shareUrl (if present)
  *  - swaps non-canonical wrapper <g role="button"> → <a href=...>
  */
 export function applyCanonicalShareUrl(
@@ -341,18 +341,11 @@ export function applyCanonicalShareUrl(
       next["header"] = { ...header, shareUrl: canonicalShareUrl };
     }
 
-    if (typeof next["verifierUrl"] === "string") {
-      next["verifierUrl"] = canonicalShareUrl;
-    }
-
-    const proofCapsule = next["proofCapsule"];
-    if (isRecord(proofCapsule)) {
-      next["proofCapsule"] = { ...proofCapsule, verifierUrl: canonicalShareUrl };
-    }
+    next["shareUrl"] = canonicalShareUrl;
 
     const proof = next["proof"];
     if (isRecord(proof)) {
-      next["proof"] = { ...proof, verifierUrl: canonicalShareUrl };
+      next["proof"] = { ...proof, shareUrl: canonicalShareUrl };
     }
 
     return JSON.stringify(next);
