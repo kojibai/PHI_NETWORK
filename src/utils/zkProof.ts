@@ -40,17 +40,44 @@ async function resolveArtifactPath(
   return candidates[0] ?? "";
 }
 
-async function loadFallbackProof(): Promise<unknown | null> {
+async function fetchSigilProofFromApi(params: {
+  poseidonHash: string;
+  proofHints?: SigilProofHints;
+}): Promise<{ proof: unknown; proofHints: SigilProofHints; zkPublicInputs: string[] } | null> {
   if (typeof fetch !== "function") return null;
   try {
-    const res = await fetch("/zk/sigil.artifacts.json");
+    const res = await fetch("/api/proof/sigil", {
+      method: "POST",
+      cache: "no-store",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ zkPoseidonHash: params.poseidonHash }),
+    });
     if (!res.ok) return null;
-    const data = (await res.json()) as unknown;
-    if (isNonEmptyObject(data)) return data;
+    const data = (await res.json()) as {
+      zkProof?: unknown;
+      zkPublicInputs?: unknown;
+      proofHints?: SigilProofHints;
+      zkPoseidonHash?: string;
+    };
+    if (!data || !isNonEmptyObject(data)) return null;
+    if (!data.zkProof || !data.zkPublicInputs) return null;
+    const proofHints: SigilProofHints = {
+      scheme: "groth16-poseidon",
+      api: "/api/proof/sigil",
+      explorer: `/keystream/hash/${params.poseidonHash}`,
+      ...(params.proofHints ?? {}),
+      ...(data.proofHints ?? {}),
+    };
+    return {
+      proof: data.zkProof,
+      proofHints,
+      zkPublicInputs: Array.isArray(data.zkPublicInputs)
+        ? data.zkPublicInputs.map((entry) => String(entry))
+        : [params.poseidonHash],
+    };
   } catch {
     return null;
   }
-  return null;
 }
 
 async function loadGroth16Prover(): Promise<Groth16Module | null> {
@@ -97,7 +124,9 @@ export async function generateZkProofFromPoseidonHash(params: {
   if (!poseidonHash) return null;
 
   const groth16 = await loadGroth16Prover();
-  if (!groth16?.fullProve) return null;
+  if (!groth16?.fullProve) {
+    return fetchSigilProofFromApi({ poseidonHash, proofHints: params.proofHints });
+  }
 
   const wasmPath = await resolveArtifactPath(["/zk/sigil.wasm", "/sigil.wasm"]);
   const zkeyPath = await resolveArtifactPath(["/zk/sigil.zkey", "/sigil.zkey"]);
@@ -140,21 +169,11 @@ export async function generateZkProofFromPoseidonHash(params: {
       const msg = err.message;
       if (
         msg.includes("ZK public input mismatch") ||
-        msg.includes("ZK proof failed verification") ||
-        msg.includes("ZK verifier unavailable") ||
-        msg.includes("ZK verifying key missing")
+        msg.includes("ZK proof failed verification")
       ) {
         throw err;
       }
     }
-    const fallback = await loadFallbackProof();
-    if (!fallback) return null;
-    const proofHints: SigilProofHints = {
-      scheme: "groth16-poseidon",
-      api: "/api/proof/sigil",
-      explorer: `/keystream/hash/${poseidonHash}`,
-      ...(params.proofHints ?? {}),
-    };
-    return { proof: fallback, proofHints, zkPublicInputs: [poseidonHash] };
+    return fetchSigilProofFromApi({ poseidonHash, proofHints: params.proofHints });
   }
 }
