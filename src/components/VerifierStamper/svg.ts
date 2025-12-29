@@ -2,6 +2,10 @@
 import { SIGIL_CTX, SIGIL_TYPE } from "./constants";
 import type { SigilMetadata } from "./types";
 import { sha256Hex } from "./crypto";
+import {
+  extractEmbeddedMetaFromSvg,
+  extractProofBundleMetaFromSvg,
+} from "../../utils/sigilMetadata";
 
 /* SVG attribute helpers */
 export function getAttr(svg: string, key: string): string | undefined {
@@ -40,6 +44,9 @@ export async function parseSvgFile(file: File) {
     }
   }
 
+  const embedded = extractEmbeddedMetaFromSvg(text);
+  const proofBundle = extractProofBundleMetaFromSvg(text);
+
   // 2) attribute fallbacks / mirrors
   meta.pulse ??= getIntAttr(text, "data-pulse");
   meta.beat ??= getIntAttr(text, "data-beat");
@@ -58,6 +65,40 @@ export async function parseSvgFile(file: File) {
 
   meta.kaiSignature ??= getAttr(text, "data-kai-signature");
   meta.userPhiKey ??= getAttr(text, "data-phi-key");
+
+  meta.kaiSignature ??= embedded.kaiSignature;
+  meta.userPhiKey ??= embedded.phiKey;
+  meta.pulse ??= embedded.pulse;
+  meta.beat ??= embedded.beat;
+  meta.stepIndex ??= embedded.stepIndex;
+  meta.chakraDay ??= embedded.chakraDay;
+  meta.chakraGate ??= embedded.chakraGate;
+  meta.frequencyHz ??= embedded.frequencyHz;
+
+  if (embedded.verifierUrl && !meta.verifierUrl) meta.verifierUrl = embedded.verifierUrl;
+  if (embedded.proofCapsule && !meta.proofCapsule) meta.proofCapsule = embedded.proofCapsule;
+  if (embedded.capsuleHash && !meta.capsuleHash) meta.capsuleHash = embedded.capsuleHash;
+  if (embedded.svgHash && !meta.svgHash) meta.svgHash = embedded.svgHash;
+  if (embedded.bundleHash && !meta.bundleHash) meta.bundleHash = embedded.bundleHash;
+  if (embedded.hashAlg && !meta.hashAlg) meta.hashAlg = embedded.hashAlg;
+  if (embedded.canon && !meta.canon) meta.canon = embedded.canon;
+  if (embedded.authorSig !== undefined && meta.authorSig === undefined) meta.authorSig = embedded.authorSig;
+
+  if (proofBundle) {
+    meta.verifierUrl ??= proofBundle.verifierUrl;
+    meta.proofCapsule ??= proofBundle.proofCapsule;
+    meta.capsuleHash ??= proofBundle.capsuleHash;
+    meta.svgHash ??= proofBundle.svgHash;
+    meta.bundleHash ??= proofBundle.bundleHash;
+    meta.hashAlg ??= proofBundle.hashAlg;
+    meta.canon ??= proofBundle.canon;
+    if (proofBundle.authorSig !== undefined && meta.authorSig === undefined) {
+      meta.authorSig = proofBundle.authorSig;
+    }
+    meta.proofBundle = proofBundle;
+  }
+
+  meta.embeddedMeta = embedded;
 
   const contextOk = !meta["@context"] || meta["@context"] === SIGIL_CTX;
   const typeOk = !meta.type || meta.type === SIGIL_TYPE;
