@@ -123,9 +123,15 @@ export async function generateZkProofFromPoseidonHash(params: {
   const poseidonHash = params.poseidonHash?.trim();
   if (!poseidonHash) return null;
 
+  const apiAttempted = typeof fetch === "function";
+  if (apiAttempted) {
+    const apiProof = await fetchSigilProofFromApi({ poseidonHash, proofHints: params.proofHints });
+    if (apiProof) return apiProof;
+  }
+
   const groth16 = await loadGroth16Prover();
   if (!groth16?.fullProve) {
-    return fetchSigilProofFromApi({ poseidonHash, proofHints: params.proofHints });
+    return null;
   }
 
   const wasmPath = await resolveArtifactPath(["/zk/sigil.wasm", "/sigil.wasm"]);
@@ -174,6 +180,9 @@ export async function generateZkProofFromPoseidonHash(params: {
         throw err;
       }
     }
-    return fetchSigilProofFromApi({ poseidonHash, proofHints: params.proofHints });
+    if (!apiAttempted) {
+      return fetchSigilProofFromApi({ poseidonHash, proofHints: params.proofHints });
+    }
+    return null;
   }
 }
