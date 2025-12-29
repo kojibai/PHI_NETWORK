@@ -36,13 +36,23 @@ import {
 } from "../utils/sigilUrl";
 import "./SigilModal.css";
 import { downloadBlob } from "../lib/download";
-import { jcsCanonicalize } from "../utils/jcs";
-import { sha256Hex as sha256HexStrict } from "../utils/sha256";
 import { embedProofMetadata } from "../utils/svgProof";
 import { extractEmbeddedMetaFromSvg } from "../utils/sigilMetadata";
 import { buildProofHints, generateZkProofFromPoseidonHash } from "../utils/zkProof";
 import { computeZkPoseidonHash } from "../utils/kai";
-import { buildVerifierUrl, normalizeChakraDay } from "./KaiVoh/verifierProof";
+import {
+  buildBundleUnsigned,
+  buildVerifierUrl,
+  hashBundle,
+  hashProofCapsuleV1,
+  hashSvgText,
+  normalizeChakraDay,
+  PROOF_CANON,
+  PROOF_HASH_ALG,
+  type ProofCapsuleV1,
+} from "./KaiVoh/verifierProof";
+import type { AuthorSig } from "../utils/authorSig";
+import { signBundleHash } from "../utils/webauthnKAS";
 import type { SigilProofHints } from "../types/sigil";
 
 /* ✅ SINGLE SOURCE OF TRUTH: src/utils/kai_pulse.ts */
@@ -1099,30 +1109,10 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
     pulseExact: string; // bigint exact
   };
 
-  type ProofCapsule = {
-    v: "KPV-1";
-    pulse: number;
-    chakraDay: string;
-    kaiSignature: string;
-    phiKey: string;
-    verifierSlug: string;
-  };
-
-  type AuthorSig = {
-    v: "KAS-1";
-    alg: "webauthn-es256";
-    credId: string;
-    pubKeyJwk: JsonWebKey;
-    challenge: string;
-    signature: string;
-    authenticatorData: string;
-    clientDataJSON: string;
-  };
-
   type ProofBundle = {
     hashAlg: "sha256";
     canon: "JCS";
-    proofCapsule: ProofCapsule;
+    proofCapsule: ProofCapsuleV1;
     capsuleHash: string;
     svgHash: string;
     bundleHash: string;
@@ -1302,7 +1292,7 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
       const shareUrl = makeSigilUrl(payloadHashHex, sharePayload);
       const verifierUrl = buildVerifierUrl(pulseNum, kaiSignature);
       const kaiSignatureShort = kaiSignature.slice(0, 10);
-      const proofCapsule: ProofCapsule = {
+      const proofCapsule: ProofCapsuleV1 = {
         v: "KPV-1",
         pulse: pulseNum,
         chakraDay: chakraNormalized,
@@ -1311,7 +1301,7 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
         verifierSlug: `${pulseNum}-${kaiSignatureShort}`,
       };
 
-      const capsuleHash = await sha256HexStrict(jcsCanonicalize(proofCapsule));
+      const capsuleHash = await hashProofCapsuleV1(proofCapsule);
       const svgClone = svgEl.cloneNode(true) as SVGElement;
       svgClone.setAttribute("data-pulse", String(pulseNum));
       svgClone.setAttribute("data-beat", String(beatNum));
@@ -1417,30 +1407,37 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
         throw new Error("SVG data attributes do not match proof capsule");
       }
 
-      const proofBundle: ProofBundle = {
-        hashAlg: "sha256",
-        canon: "JCS",
+      const svgHash = await hashSvgText(svgString);
+      const proofBundleBase = {
+        hashAlg: PROOF_HASH_ALG,
+        canon: PROOF_CANON,
         proofCapsule,
         capsuleHash,
-        svgHash: "",
-        bundleHash: "",
+        svgHash,
         shareUrl,
         verifierUrl,
-        authorSig: null,
+        authorSig: null as AuthorSig | null,
         zkPoseidonHash,
         zkProof,
         proofHints,
         zkPublicInputs,
       };
+      const bundleUnsigned = buildBundleUnsigned(proofBundleBase);
+      const computedBundleHash = await hashBundle(bundleUnsigned);
+      let authorSig: AuthorSig | null = null;
+      try {
+        authorSig = await signBundleHash(phiKey, computedBundleHash);
+      } catch (err) {
+        console.warn("Author signature failed; continuing without authorSig.", err);
+        authorSig = null;
+      }
+      const proofBundle: ProofBundle = {
+        ...proofBundleBase,
+        bundleHash: computedBundleHash,
+        authorSig,
+      };
 
-      let sealedSvg = embedProofMetadata(svgString, proofBundle);
-      const svgHash = await sha256HexStrict(sealedSvg);
-      const computedBundleHash = await sha256HexStrict(
-        jcsCanonicalize({ capsuleHash, svgHash })
-      );
-      proofBundle.svgHash = svgHash;
-      proofBundle.bundleHash = computedBundleHash;
-      sealedSvg = embedProofMetadata(sealedSvg, proofBundle);
+      const sealedSvg = embedProofMetadata(svgString, proofBundle);
       const baseName = `kai-voh_pulse-${pulseNum}_${kaiSignatureShort}`;
       const zip = new JSZip();
       zip.file(`${baseName}.svg`, sealedSvg);

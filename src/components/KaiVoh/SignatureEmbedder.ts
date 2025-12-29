@@ -3,7 +3,7 @@ import type { SealedPost } from "./BreathSealer";
 import { momentFromPulse, STEPS_BEAT, type ChakraDay } from "../../utils/kai_pulse";
 import { derivePhiKeyFromSig } from "../VerifierStamper/sigilUtils";
 import type { ProofCapsuleV1 } from "./verifierProof";
-import type { HarmonicSig } from "../../lib/sigil/signature";
+import type { AuthorSig } from "../../utils/authorSig";
 
 export interface KaiSigKksMediaDescriptor {
   kind: "image" | "video";
@@ -75,7 +75,7 @@ export interface KaiSigKksMetadata {
   bundleHash?: string;
   hashAlg?: string;
   canon?: string;
-  authorSig?: HarmonicSig | null;
+  authorSig?: AuthorSig | null;
 }
 
 export interface EmbeddedMediaResult {

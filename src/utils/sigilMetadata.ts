@@ -1,7 +1,8 @@
 import { XMLParser } from "fast-xml-parser";
 import { gunzipB64 } from "../lib/sigil/codec";
 import type { ProofCapsuleV1 } from "../components/KaiVoh/verifierProof";
-import type { HarmonicSig } from "../lib/sigil/signature";
+import type { AuthorSig } from "./authorSig";
+import { parseAuthorSig } from "./authorSig";
 
 export type EmbeddedMeta = {
   pulse?: number;
@@ -22,7 +23,7 @@ export type EmbeddedMeta = {
   bundleHash?: string;
   hashAlg?: string;
   canon?: string;
-  authorSig?: HarmonicSig | null;
+  authorSig?: AuthorSig | null;
   zkPoseidonHash?: string;
   zkProof?: unknown;
   proofHints?: unknown;
@@ -170,7 +171,7 @@ function toEmbeddedMetaFromUnknown(raw: unknown): EmbeddedMeta {
   const bundleHash = typeof raw.bundleHash === "string" ? raw.bundleHash : undefined;
   const hashAlg = typeof raw.hashAlg === "string" ? raw.hashAlg : undefined;
   const canon = typeof raw.canon === "string" ? raw.canon : undefined;
-  const authorSig = isRecord(raw.authorSig) ? (raw.authorSig as HarmonicSig) : null;
+  const authorSig = parseAuthorSig(raw.authorSig);
 
   return {
     pulse,
@@ -457,7 +458,7 @@ export type ProofBundleMeta = {
   bundleHash?: string;
   shareUrl?: string;
   verifierUrl?: string;
-  authorSig?: HarmonicSig | null;
+  authorSig?: AuthorSig | null;
   zkPoseidonHash?: string;
   zkProof?: unknown;
   proofHints?: unknown;
