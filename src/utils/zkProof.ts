@@ -50,7 +50,10 @@ async function fetchSigilProofFromApi(params: {
       method: "POST",
       cache: "no-store",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ zkPoseidonHash: params.poseidonHash }),
+      body: JSON.stringify({
+        zkPoseidonHash: params.poseidonHash,
+        poseidonHash: params.poseidonHash,
+      }),
     });
     if (!res.ok) return null;
     const data = (await res.json()) as {
@@ -127,6 +130,7 @@ export async function generateZkProofFromPoseidonHash(params: {
   if (apiAttempted) {
     const apiProof = await fetchSigilProofFromApi({ poseidonHash, proofHints: params.proofHints });
     if (apiProof) return apiProof;
+    throw new Error("ZK proof API unavailable");
   }
 
   const groth16 = await loadGroth16Prover();
