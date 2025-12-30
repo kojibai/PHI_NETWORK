@@ -107,6 +107,11 @@ import { isKASAuthorSig } from "../../utils/authorSig";
 import { computeZkPoseidonHash } from "../../utils/kai";
 import { generateZkProofFromPoseidonHash } from "../../utils/zkProof";
 import type { SigilProofHints } from "../../types/sigil";
+import type { SigilSharePayloadLoose } from "../SigilExplorer/types";
+import { apiFetchJsonWithFailover, API_URLS_PATH } from "../SigilExplorer/apiClient";
+import { extractPayloadFromUrl } from "../SigilExplorer/url";
+import { enqueueInhaleKrystal, flushInhaleQueue } from "../SigilExplorer/inhaleQueue";
+import { memoryRegistry, isOnline } from "../SigilExplorer/registryStore";
 import {
   buildKasChallenge,
   ensureReceiverPasskey,
@@ -164,6 +169,50 @@ function readReceiveSigFromBundle(raw: unknown): ReceiveSig | null {
   if (!isRecord(raw)) return null;
   const candidate = raw.receiveSig;
   return isReceiveSig(candidate) ? candidate : null;
+}
+
+const RECEIVE_LOCK_PREFIX = "kai:receive:lock:v1";
+const RECEIVE_REMOTE_LIMIT = 200;
+const RECEIVE_REMOTE_PAGES = 3;
+
+type ApiUrlsPageResponse = {
+  status: "ok";
+  state_seal: string;
+  total: number;
+  offset: number;
+  limit: number;
+  urls: string[];
+};
+
+function readTransferDirection(value: unknown): "send" | "receive" | null {
+  if (typeof value !== "string") return null;
+  const t = value.trim().toLowerCase();
+  if (!t) return null;
+  if (t.includes("receive") || t.includes("received") || t.includes("inhale")) return "receive";
+  if (t.includes("send") || t.includes("sent") || t.includes("exhale")) return "send";
+  return null;
+}
+
+function readTransferDirectionFromPayload(payload: SigilSharePayloadLoose): "send" | "receive" | null {
+  const record = payload as Record<string, unknown>;
+  return (
+    readTransferDirection(record.transferDirection) ||
+    readTransferDirection(record.transferMode) ||
+    readTransferDirection(record.transferKind) ||
+    readTransferDirection(record.phiDirection)
+  );
+}
+
+function readPayloadCanonical(payload: SigilSharePayloadLoose): string | null {
+  const record = payload as Record<string, unknown>;
+  const raw = record.canonicalHash ?? record.childHash ?? record.hash;
+  return typeof raw === "string" && raw.trim() ? raw.trim().toLowerCase() : null;
+}
+
+function readPayloadNonce(payload: SigilSharePayloadLoose): string | null {
+  const record = payload as Record<string, unknown>;
+  const raw = record.transferNonce ?? record.nonce;
+  return typeof raw === "string" && raw.trim() ? raw.trim() : null;
 }
 
 function collectReceiveSigHistory(raw: Record<string, unknown>, nextSig?: ReceiveSig | null): ReceiveSig[] {
@@ -447,6 +496,7 @@ const VerifierStamperInner: React.FC = () => {
 
   const [canonical, setCanonical] = useState<string | null>(null);
   const [canonicalContext, setCanonicalContext] = useState<"parent" | "derivative" | null>(null);
+  const receiveRemoteCache = useRef<Map<string, boolean>>(new Map());
 
   const openVerifier = () => safeShowDialog(dlgRef.current);
 
@@ -617,6 +667,230 @@ const VerifierStamperInner: React.FC = () => {
       return { canonical: childCanonical, context: "derivative" };
     },
     [isPersistedChild]
+  );
+
+  const buildReceiveLockKeys = useCallback(
+    async (m: SigilMetadata): Promise<{ keys: string[]; canonical: string | null; nonce: string | null }> => {
+      const keys = new Set<string>();
+      if (bundleHash) keys.add(`${RECEIVE_LOCK_PREFIX}:bundle:${bundleHash}`);
+
+      const last = m.transfers?.slice(-1)[0];
+      if (last) {
+        const sendLeaf = await hashTransferSenderSide(last);
+        if (sendLeaf) keys.add(`${RECEIVE_LOCK_PREFIX}:leaf:${sendLeaf}`);
+      }
+
+      let effCanonical = canonical;
+      if (!effCanonical) {
+        try {
+          const eff = await computeEffectiveCanonical(m);
+          effCanonical = eff.canonical;
+        } catch (err) {
+          logError("receive.lock.computeCanonical", err);
+        }
+      }
+      if (effCanonical) keys.add(`${RECEIVE_LOCK_PREFIX}:canonical:${effCanonical}`);
+
+      const nonce = (m as SigilMetadataWithOptionals).transferNonce ?? null;
+      if (nonce) keys.add(`${RECEIVE_LOCK_PREFIX}:nonce:${nonce}`);
+
+      return { keys: Array.from(keys), canonical: effCanonical ?? null, nonce };
+    },
+    [bundleHash, canonical, computeEffectiveCanonical]
+  );
+
+  const hasLocalReceiveLock = useCallback(
+    async (m: SigilMetadata): Promise<boolean> => {
+      const { keys } = await buildReceiveLockKeys(m);
+      return keys.some((key) => window.localStorage.getItem(key));
+    },
+    [buildReceiveLockKeys]
+  );
+
+  const hasRegistryReceiveLock = useCallback(
+    async (m: SigilMetadata): Promise<boolean> => {
+      const { canonical, nonce } = await buildReceiveLockKeys(m);
+      if (!canonical && !nonce) return false;
+
+      for (const payload of memoryRegistry.values()) {
+        if (readTransferDirectionFromPayload(payload) !== "receive") continue;
+        const payloadCanonical = readPayloadCanonical(payload);
+        const payloadNonce = readPayloadNonce(payload);
+        if (nonce && payloadNonce && payloadNonce === nonce) return true;
+        if (canonical && payloadCanonical && payloadCanonical === canonical) return true;
+      }
+
+      return false;
+    },
+    [buildReceiveLockKeys]
+  );
+
+  const hasRemoteReceiveLock = useCallback(
+    async (m: SigilMetadata): Promise<boolean> => {
+      if (!isOnline()) return false;
+      const { canonical, nonce } = await buildReceiveLockKeys(m);
+      if (!canonical && !nonce) return false;
+
+      const cacheKey = `${canonical ?? ""}|${nonce ?? ""}`;
+      const cached = receiveRemoteCache.current.get(cacheKey);
+      if (cached !== undefined) return cached;
+
+      let found = false;
+      for (let page = 0; page < RECEIVE_REMOTE_PAGES; page += 1) {
+        const offset = page * RECEIVE_REMOTE_LIMIT;
+        const r = await apiFetchJsonWithFailover<ApiUrlsPageResponse>(
+          (base) => {
+            const url = new URL(API_URLS_PATH, base);
+            url.searchParams.set("offset", String(offset));
+            url.searchParams.set("limit", String(RECEIVE_REMOTE_LIMIT));
+            return url.toString();
+          },
+          { method: "GET", cache: "no-store" }
+        );
+
+        if (!r.ok) break;
+
+        const urls = r.value.urls;
+        if (!Array.isArray(urls) || urls.length === 0) break;
+
+        for (const rawUrl of urls) {
+          if (typeof rawUrl !== "string") continue;
+          const payload = extractPayloadFromUrl(rawUrl);
+          if (!payload) continue;
+          if (readTransferDirectionFromPayload(payload) !== "receive") continue;
+          const payloadCanonical = readPayloadCanonical(payload);
+          const payloadNonce = readPayloadNonce(payload);
+          if (nonce && payloadNonce && payloadNonce === nonce) {
+            found = true;
+            break;
+          }
+          if (canonical && payloadCanonical && payloadCanonical === canonical) {
+            found = true;
+            break;
+          }
+        }
+
+        if (found) break;
+        if (urls.length < RECEIVE_REMOTE_LIMIT) break;
+      }
+
+      receiveRemoteCache.current.set(cacheKey, found);
+      return found;
+    },
+    [buildReceiveLockKeys]
+  );
+
+  const hasReceiveLock = useCallback(
+    async (m: SigilMetadata): Promise<boolean> => {
+      if (await hasLocalReceiveLock(m)) return true;
+      if (await hasRegistryReceiveLock(m)) return true;
+      return hasRemoteReceiveLock(m);
+    },
+    [hasLocalReceiveLock, hasRegistryReceiveLock, hasRemoteReceiveLock]
+  );
+
+  const writeReceiveLock = useCallback(
+    async (m: SigilMetadata, nowPulse: number) => {
+      const { keys } = await buildReceiveLockKeys(m);
+      for (const key of keys) {
+        if (!window.localStorage.getItem(key)) {
+          window.localStorage.setItem(key, JSON.stringify({ pulse: nowPulse }));
+        }
+      }
+    },
+    [buildReceiveLockKeys]
+  );
+
+  const publishReceiveLock = useCallback(
+    async (m: SigilMetadata, amountPhi?: string) => {
+      let canonicalHash = (m.canonicalHash as string | undefined)?.toLowerCase() ?? null;
+      const parentCanonical =
+        (m as SigilMetadataWithOptionals).childOfHash?.toLowerCase() ||
+        (await sha256Hex(`${m.pulse}|${m.beat}|${m.stepIndex}|${m.chakraDay}`)).toLowerCase();
+
+      if (!canonicalHash) {
+        try {
+          const eff = await computeEffectiveCanonical(m);
+          canonicalHash = eff.canonical;
+        } catch (err) {
+          logError("receive.lock.canonicalFallback", err);
+        }
+      }
+
+      if (!canonicalHash) return;
+
+      const token = (m as SigilMetadataWithOptionals).transferNonce || genNonce();
+      const chakraDay: ChakraDay = (m.chakraDay as ChakraDay) || "Root";
+      const sharePayload = {
+        pulse: m.pulse as number,
+        beat: m.beat as number,
+        stepIndex: m.stepIndex as number,
+        chakraDay,
+        kaiSignature: m.kaiSignature,
+        userPhiKey: m.userPhiKey,
+      };
+
+      let parentUrl = "";
+      try {
+        const { makeSigilUrl } = await import("../../utils/sigilUrl");
+        parentUrl = makeSigilUrl(parentCanonical, sharePayload);
+      } catch (err) {
+        logError("receive.lock.parentUrl", err);
+        const u = new URL(typeof window !== "undefined" ? window.location.href : "http://localhost");
+        u.pathname = `/s/${parentCanonical}`;
+        parentUrl = u.toString();
+      }
+
+      const enriched = {
+        ...sharePayload,
+        parentUrl,
+        canonicalHash,
+        parentHash: parentCanonical,
+        transferNonce: token,
+        ...(amountPhi
+          ? {
+              transferDirection: "receive",
+              transferAmountPhi: amountPhi,
+              phiDelta: amountPhi,
+            }
+          : { transferDirection: "receive" }),
+      };
+
+      let base = "";
+      try {
+        const { makeSigilUrl } = await import("../../utils/sigilUrl");
+        base = makeSigilUrl(canonicalHash, sharePayload);
+      } catch (err) {
+        logError("receive.lock.makeSigilUrl", err);
+        const u = new URL(typeof window !== "undefined" ? window.location.href : "http://localhost");
+        u.pathname = `/s/${canonicalHash}`;
+        base = u.toString();
+      }
+
+      let historyParam: string | undefined;
+      try {
+        const { encodeSigilHistory } = await import("../../utils/sigilUrl");
+        const lite: Array<{ s: string; p: number; r?: string }> = [];
+        for (const t of m.transfers ?? []) {
+          if (!t?.senderSignature || typeof t.senderKaiPulse !== "number") continue;
+          lite.push(
+            typeof t.receiverSignature === "string" && typeof t.receiverKaiPulse === "number"
+              ? { s: t.senderSignature, p: t.senderKaiPulse, r: t.receiverSignature }
+              : { s: t.senderSignature, p: t.senderKaiPulse }
+          );
+        }
+        const enc = encodeSigilHistory(lite);
+        historyParam = enc.startsWith("h:") ? enc.slice(2) : enc;
+      } catch (err) {
+        logError("receive.lock.encodeSigilHistory", err);
+      }
+
+      const url = rewriteUrlPayload(base, enriched, token, historyParam);
+      registerUrlForExplorer(url);
+      enqueueInhaleKrystal(url, enriched);
+      void flushInhaleQueue();
+    },
+    [computeEffectiveCanonical]
   );
 
   const handleSvg = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -799,36 +1073,55 @@ const VerifierStamperInner: React.FC = () => {
   }, [bundleHash, proofBundleMeta?.authorSig]);
 
   useEffect(() => {
-    if (!bundleHash) {
-      setReceiveSig(null);
-      setReceiveStatus("idle");
-      autoReceiveRef.current = null;
-      return;
-    }
-
-    const key = `received:${bundleHash}`;
-    const stored = window.localStorage.getItem(key);
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored) as unknown;
-        setReceiveSig(isReceiveSig(parsed) ? parsed : null);
-      } catch {
+    let alive = true;
+    (async () => {
+      if (!bundleHash) {
         setReceiveSig(null);
+        setReceiveStatus("idle");
+        autoReceiveRef.current = null;
       }
-      setReceiveStatus("already");
-      return;
-    }
 
-    const embedded = readReceiveSigFromBundle(proofBundleMeta?.raw);
-    if (embedded) {
-      setReceiveSig(embedded);
-      setReceiveStatus("already");
-      return;
-    }
+      if (bundleHash) {
+        const key = `received:${bundleHash}`;
+        const stored = window.localStorage.getItem(key);
+        if (stored) {
+          try {
+            const parsed = JSON.parse(stored) as unknown;
+            if (!alive) return;
+            setReceiveSig(isReceiveSig(parsed) ? parsed : null);
+          } catch {
+            if (!alive) return;
+            setReceiveSig(null);
+          }
+          if (!alive) return;
+          setReceiveStatus("already");
+          return;
+        }
+      }
 
-    setReceiveSig(null);
-    setReceiveStatus("new");
-  }, [bundleHash, proofBundleMeta?.raw]);
+      const embedded = readReceiveSigFromBundle(proofBundleMeta?.raw);
+      if (embedded) {
+        if (!alive) return;
+        setReceiveSig(embedded);
+        setReceiveStatus("already");
+        return;
+      }
+
+      if (meta && (await hasReceiveLock(meta))) {
+        if (!alive) return;
+        setReceiveSig(null);
+        setReceiveStatus("already");
+        return;
+      }
+
+      if (!alive) return;
+      setReceiveSig(null);
+      setReceiveStatus(bundleHash ? "new" : "idle");
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [bundleHash, proofBundleMeta?.raw, meta, hasReceiveLock]);
 
   useEffect(() => {
     if (!bundleHash || unlockState.isUnlocked || !unlockState.isRequired) return;
@@ -1820,6 +2113,13 @@ const VerifierStamperInner: React.FC = () => {
 
   const receive = async () => {
     if (!meta || !svgURL || !liveSig) return;
+
+    if (await hasReceiveLock(meta)) {
+      setError("This transfer has already been received.");
+      setReceiveStatus("already");
+      return;
+    }
+
     let receiveSigLocal = receiveSig ?? null;
     if (receiveStatus === "new" && !receiveSigLocal) {
       receiveSigLocal = await claimReceiveSig();
@@ -1934,6 +2234,19 @@ const VerifierStamperInner: React.FC = () => {
         updated.sendLock = { ...(updated.sendLock ?? { nonce: updated.transferNonce! }), used: true, usedPulse: nowPulse };
     } catch (err) {
       logError("receive.setUsedLock", err);
+    }
+
+    try {
+      await writeReceiveLock(updated, nowPulse);
+    } catch (err) {
+      logError("receive.setReceiveLock", err);
+    }
+
+    try {
+      const amountPhi = readPhiAmountFromMeta(updated as SigilMetadataWithOptionals);
+      await publishReceiveLock(updated, amountPhi);
+    } catch (err) {
+      logError("receive.publishReceiveLock", err);
     }
 
     try {
