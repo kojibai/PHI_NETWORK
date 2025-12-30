@@ -384,7 +384,6 @@
       </div>
       <div class="grid">
         <div class="stack"><label class="hint">Now (pulses/day 17,491.270421)</label><input id="val-nowpulse" readonly class="out" /></div>
-        <div class="stack"><label class="hint">—</label><input readonly class="out" value="" /></div>
       </div>
       <div class="row">
         <div></div>
@@ -1694,14 +1693,14 @@ $("pv-pdf")?.addEventListener("change", (e) => {
         const receivedPhi = readTransferAmountPhi(meta);
         const issuance = quotePhiForUsd({ meta, nowPulse, usd: USD_SAMPLE, currentStreakDays: 0, lifetimeUsdSoFar: 0 });
         const usdPerPhi = issuance?.usdPerPhi ?? 0;
-        const receivedUsd = receivedPhi != null && Number.isFinite(receivedPhi) ? receivedPhi * usdPerPhi : null;
-        const totalPhi = receivedPhi != null && Number.isFinite(receivedPhi) ? receivedPhi : valueAdj;
-        const totalUsd = Number.isFinite(totalPhi) ? totalPhi * usdPerPhi : null;
         const par = Number(unsigned?.inputs?.parOffset ?? 1);
         const valueGross   = Math.max(0, Number((unsigned.valuePhi + par).toFixed(6)));
         const premiumGross = Math.max(0, Number((unsigned.premium).toFixed(6)));
         const valueAdj   = Math.max(0, Number((valueGross   - DISPLAY_OFFSET).toFixed(6)));
         const premiumAdj = Math.max(0, Number((premiumGross - DISPLAY_OFFSET).toFixed(6)));
+        const receivedUsd = receivedPhi != null && Number.isFinite(receivedPhi) ? receivedPhi * usdPerPhi : null;
+        const totalPhi = receivedPhi != null && Number.isFinite(receivedPhi) ? receivedPhi : valueAdj;
+        const totalUsd = Number.isFinite(totalPhi) ? totalPhi * usdPerPhi : null;
         if (receivedPhi != null && Number.isFinite(receivedPhi)) {
           $("val-live").value     = fmtPhi(receivedPhi);
           $("val-premium").value  = "";
