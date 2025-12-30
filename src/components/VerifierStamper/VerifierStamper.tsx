@@ -166,6 +166,8 @@ function readReceiveSigFromBundle(raw: unknown): ReceiveSig | null {
   return isReceiveSig(candidate) ? candidate : null;
 }
 
+const RECEIVE_LOCK_PREFIX = "kai:receive:lock:v1";
+
 function collectReceiveSigHistory(raw: Record<string, unknown>, nextSig?: ReceiveSig | null): ReceiveSig[] {
   const history: ReceiveSig[] = [];
   const existing = raw.receiveSigHistory;
@@ -415,6 +417,56 @@ const VerifierStamperInner: React.FC = () => {
       setReceiveBusy(false);
     }
   }, [receiveBusy, receiveStatus, bundleHash, resolveReceiverPasskey]);
+
+  const buildReceiveLockKeys = useCallback(
+    async (m: SigilMetadata): Promise<string[]> => {
+      const keys = new Set<string>();
+      if (bundleHash) keys.add(`${RECEIVE_LOCK_PREFIX}:bundle:${bundleHash}`);
+
+      const last = m.transfers?.slice(-1)[0];
+      if (last) {
+        const sendLeaf = await hashTransferSenderSide(last);
+        if (sendLeaf) keys.add(`${RECEIVE_LOCK_PREFIX}:leaf:${sendLeaf}`);
+      }
+
+      let effCanonical = canonical;
+      if (!effCanonical) {
+        try {
+          const eff = await computeEffectiveCanonical(m);
+          effCanonical = eff.canonical;
+        } catch (err) {
+          logError("receive.lock.computeCanonical", err);
+        }
+      }
+      if (effCanonical) keys.add(`${RECEIVE_LOCK_PREFIX}:canonical:${effCanonical}`);
+
+      const nonce = (m as SigilMetadataWithOptionals).transferNonce;
+      if (nonce) keys.add(`${RECEIVE_LOCK_PREFIX}:nonce:${nonce}`);
+
+      return Array.from(keys);
+    },
+    [bundleHash, canonical, computeEffectiveCanonical]
+  );
+
+  const hasReceiveLock = useCallback(
+    async (m: SigilMetadata): Promise<boolean> => {
+      const keys = await buildReceiveLockKeys(m);
+      return keys.some((key) => window.localStorage.getItem(key));
+    },
+    [buildReceiveLockKeys]
+  );
+
+  const writeReceiveLock = useCallback(
+    async (m: SigilMetadata, nowPulse: number) => {
+      const keys = await buildReceiveLockKeys(m);
+      for (const key of keys) {
+        if (!window.localStorage.getItem(key)) {
+          window.localStorage.setItem(key, JSON.stringify({ pulse: nowPulse }));
+        }
+      }
+    },
+    [buildReceiveLockKeys]
+  );
 
   const [me, setMe] = useState<Keypair | null>(null);
   useEffect(() => {
@@ -799,36 +851,55 @@ const VerifierStamperInner: React.FC = () => {
   }, [bundleHash, proofBundleMeta?.authorSig]);
 
   useEffect(() => {
-    if (!bundleHash) {
-      setReceiveSig(null);
-      setReceiveStatus("idle");
-      autoReceiveRef.current = null;
-      return;
-    }
-
-    const key = `received:${bundleHash}`;
-    const stored = window.localStorage.getItem(key);
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored) as unknown;
-        setReceiveSig(isReceiveSig(parsed) ? parsed : null);
-      } catch {
+    let alive = true;
+    (async () => {
+      if (!bundleHash) {
         setReceiveSig(null);
+        setReceiveStatus("idle");
+        autoReceiveRef.current = null;
       }
-      setReceiveStatus("already");
-      return;
-    }
 
-    const embedded = readReceiveSigFromBundle(proofBundleMeta?.raw);
-    if (embedded) {
-      setReceiveSig(embedded);
-      setReceiveStatus("already");
-      return;
-    }
+      if (bundleHash) {
+        const key = `received:${bundleHash}`;
+        const stored = window.localStorage.getItem(key);
+        if (stored) {
+          try {
+            const parsed = JSON.parse(stored) as unknown;
+            if (!alive) return;
+            setReceiveSig(isReceiveSig(parsed) ? parsed : null);
+          } catch {
+            if (!alive) return;
+            setReceiveSig(null);
+          }
+          if (!alive) return;
+          setReceiveStatus("already");
+          return;
+        }
+      }
 
-    setReceiveSig(null);
-    setReceiveStatus("new");
-  }, [bundleHash, proofBundleMeta?.raw]);
+      const embedded = readReceiveSigFromBundle(proofBundleMeta?.raw);
+      if (embedded) {
+        if (!alive) return;
+        setReceiveSig(embedded);
+        setReceiveStatus("already");
+        return;
+      }
+
+      if (meta && (await hasReceiveLock(meta))) {
+        if (!alive) return;
+        setReceiveSig(null);
+        setReceiveStatus("already");
+        return;
+      }
+
+      if (!alive) return;
+      setReceiveSig(null);
+      setReceiveStatus(bundleHash ? "new" : "idle");
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [bundleHash, proofBundleMeta?.raw, meta, hasReceiveLock]);
 
   useEffect(() => {
     if (!bundleHash || unlockState.isUnlocked || !unlockState.isRequired) return;
@@ -1820,6 +1891,13 @@ const VerifierStamperInner: React.FC = () => {
 
   const receive = async () => {
     if (!meta || !svgURL || !liveSig) return;
+
+    if (await hasReceiveLock(meta)) {
+      setError("This transfer has already been received.");
+      setReceiveStatus("already");
+      return;
+    }
+
     let receiveSigLocal = receiveSig ?? null;
     if (receiveStatus === "new" && !receiveSigLocal) {
       receiveSigLocal = await claimReceiveSig();
@@ -1934,6 +2012,12 @@ const VerifierStamperInner: React.FC = () => {
         updated.sendLock = { ...(updated.sendLock ?? { nonce: updated.transferNonce! }), used: true, usedPulse: nowPulse };
     } catch (err) {
       logError("receive.setUsedLock", err);
+    }
+
+    try {
+      await writeReceiveLock(updated, nowPulse);
+    } catch (err) {
+      logError("receive.setReceiveLock", err);
     }
 
     try {
