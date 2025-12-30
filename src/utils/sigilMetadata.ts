@@ -467,6 +467,36 @@ export type ProofBundleMeta = {
 };
 
 export function extractProofBundleMetaFromSvg(svgText: string): ProofBundleMeta | null {
+  const vohMatch = svgText.match(
+    /<metadata[^>]*id=["']kai-voh-proof["'][^>]*>([\s\S]*?)<\/metadata>/i
+  );
+  if (vohMatch) {
+    const rawBlock = vohMatch[1]?.trim() ?? "";
+    if (rawBlock) {
+      const cleaned = rawBlock.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1").trim();
+      const parsed = safeJsonParse(cleaned);
+      if (parsed) {
+        const meta = toEmbeddedMetaFromUnknown(parsed);
+        return {
+          hashAlg: meta.hashAlg,
+          canon: meta.canon,
+          proofCapsule: meta.proofCapsule,
+          capsuleHash: meta.capsuleHash,
+          svgHash: meta.svgHash,
+          bundleHash: meta.bundleHash,
+          shareUrl: meta.shareUrl,
+          verifierUrl: meta.verifierUrl,
+          authorSig: meta.authorSig,
+          zkPoseidonHash: meta.zkPoseidonHash,
+          zkProof: meta.zkProof,
+          proofHints: meta.proofHints,
+          zkPublicInputs: meta.zkPublicInputs,
+          raw: parsed,
+        };
+      }
+    }
+  }
+
   const match = svgText.match(
     /<metadata[^>]*id=["'](?:kai-proof|kai-voh-proof)["'][^>]*>([\s\S]*?)<\/metadata>/i
   );

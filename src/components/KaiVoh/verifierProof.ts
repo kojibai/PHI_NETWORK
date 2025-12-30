@@ -190,7 +190,7 @@ export type ProofBundleLike = {
 type JcsValue = string | number | boolean | null | JcsValue[] | { [k: string]: JcsValue };
 
 export function buildBundleUnsigned(bundle: ProofBundleLike): Record<string, unknown> {
-  const { bundleHash: _bundleHash, authorSig: _authorSig, ...rest } = bundle;
+  const { bundleHash: _bundleHash, authorSig: _authorSig, receiveSig: _receiveSig, ...rest } = bundle;
   return { ...rest, authorSig: null };
 }
 

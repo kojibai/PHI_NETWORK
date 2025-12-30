@@ -68,6 +68,7 @@ export async function parseSvgFile(file: File) {
   meta.shareUrl ??= getAttr(text, "data-share-url");
   meta.zkPoseidonHash ??= getAttr(text, "data-zk-poseidon-hash");
   meta.zkPublicInputs ??= getAttr(text, "data-zk-public-inputs");
+  meta.payloadHashHex ??= getAttr(text, "data-payload-hash");
 
   const proofMetaText = (() => {
     try {
