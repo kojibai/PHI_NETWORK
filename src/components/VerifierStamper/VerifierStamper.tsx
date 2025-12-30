@@ -81,7 +81,7 @@ import type { BanknoteInputs as NoteBanknoteInputs, VerifierBridge } from "../ex
 import { kaiPulseNow, SIGIL_CTX, SIGIL_TYPE, SEGMENT_SIZE } from "./constants";
 import { sha256Hex, phiFromPublicKey } from "./crypto";
 import { loadOrCreateKeypair, signB64u, type Keypair } from "./keys";
-import { parseSvgFile, centrePixelSignature, embedMetadata, pngBlobFromSvgDataUrl } from "./svg";
+import { parseSvgFile, centrePixelSignature, embedMetadata, embedMetadataText, pngBlobFromSvgDataUrl } from "./svg";
 import { pulseFilename, safeFilename, download, fileToPayload } from "./files";
 import {
   computeKaiSignature,
@@ -96,7 +96,7 @@ import { buildMerkleRoot, merkleProof, verifyProof } from "./merkle";
 import { sealCurrentWindowIntoSegment } from "./segments";
 import { verifyHistorical } from "./verifyHistorical";
 import { verifyZkOnHead } from "./zk";
-import { embedProofMetadata } from "../../utils/svgProof";
+import { embedProofMetadata, stripProofMetadata } from "../../utils/svgProof";
 import { extractProofBundleMetaFromSvg, type ProofBundleMeta } from "../../utils/sigilMetadata";
 import { DEFAULT_ISSUANCE_POLICY, quotePhiForUsd } from "../../utils/phi-issuance";
 import { BREATH_MS } from "../valuation/constants";
@@ -1728,7 +1728,10 @@ const VerifierStamperInner: React.FC = () => {
       allocationPhiStr: validPhi6,
       issuedPulse: nowPulse,
     });
-    const childDataUrl = await embedMetadata(svgURL, childMeta);
+    const baseSvgText = await fetch(svgURL).then((r) => r.text());
+    const cleanedSvgText = stripProofMetadata(baseSvgText);
+    const childSvgText = embedMetadataText(cleanedSvgText, childMeta);
+    const childDataUrl = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(childSvgText)))}`;
     const sigilPulse = updated.pulse ?? 0;
     download(childDataUrl, `${pulseFilename("sigil_send", sigilPulse, nowPulse)}.svg`);
     const phiAmountNumber = Number(validPhi6);

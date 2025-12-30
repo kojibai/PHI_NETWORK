@@ -177,15 +177,19 @@ export async function centrePixelSignature(url: string, pulseForSeal: number) {
 }
 
 /* embed updated <metadata> JSON into SVG and return data: URL */
-export async function embedMetadata(svgURL: string, meta: SigilMetadata) {
-  const raw = await fetch(svgURL).then((r) => r.text());
+export function embedMetadataText(svgText: string, meta: SigilMetadata): string {
   const json = JSON.stringify(meta, null, 2);
-  const updated = raw.match(/<metadata[^>]*>/i)
-    ? raw.replace(
+  return svgText.match(/<metadata[^>]*>/i)
+    ? svgText.replace(
         /<metadata[^>]*>[\s\S]*?<\/metadata>/i,
         `<metadata>${json}</metadata>`
       )
-    : raw.replace(/<svg([^>]*)>/i, `<svg$1><metadata>${json}</metadata>`);
+    : svgText.replace(/<svg([^>]*)>/i, `<svg$1><metadata>${json}</metadata>`);
+}
+
+export async function embedMetadata(svgURL: string, meta: SigilMetadata) {
+  const raw = await fetch(svgURL).then((r) => r.text());
+  const updated = embedMetadataText(raw, meta);
   return `data:image/svg+xml;base64,${btoa(
     unescape(encodeURIComponent(updated))
   )}`;
