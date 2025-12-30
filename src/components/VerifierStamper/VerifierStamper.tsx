@@ -166,18 +166,6 @@ function readReceiveSigFromBundle(raw: unknown): ReceiveSig | null {
   return isReceiveSig(candidate) ? candidate : null;
 }
 
-function applyReceiveSigToMeta(meta: SigilMetadata, receiveSig: ReceiveSig): SigilMetadata {
-  const transfers = meta.transfers ?? [];
-  if (transfers.length === 0) return meta;
-  const last = transfers[transfers.length - 1];
-  if (last.receiverSignature) return meta;
-  const nextLast: SigilTransfer = {
-    ...last,
-    receiverSignature: receiveSig.assertion.response.signature,
-  };
-  return { ...meta, transfers: [...transfers.slice(0, -1), nextLast] };
-}
-
 function readExhaleInfoFromTransfer(
   transfer?: SigilTransfer
 ): { amountUsd?: string; sentPulse?: number } {
@@ -684,11 +672,13 @@ const VerifierStamperInner: React.FC = () => {
       typeof m.chakraDay === "string";
 
     const last = m.transfers?.slice(-1)[0];
-    const lastParty = last?.receiverSignature || last?.senderSignature || null;
+    const receiveProof = Boolean(receiveSig);
+    const sealedByProof = receiveProof && last && !last.receiverSignature;
+    const lastParty = last?.receiverSignature || (!sealedByProof ? last?.senderSignature : null) || null;
     const isOwner = lastParty && sig ? lastParty === sig : null;
     const hasTransfers = !!(m.transfers && m.transfers.length > 0);
-    const lastOpen = !!(last && !last.receiverSignature);
-    const lastClosed = !!(last && !!last.receiverSignature);
+    const lastOpen = !!(last && !last.receiverSignature && !sealedByProof);
+    const lastClosed = !!(last && (last.receiverSignature || sealedByProof));
     const isUnsigned = !m.kaiSignature;
 
     const m2 = await refreshHeadWindow(m);
@@ -741,7 +731,6 @@ const VerifierStamperInner: React.FC = () => {
       const receiveFromBundle = readReceiveSigFromBundle(proofMetaNext?.raw);
       if (receiveFromBundle) {
         metaNext = { ...metaNext, receiveSig: receiveFromBundle };
-        metaNext = applyReceiveSigToMeta(metaNext, receiveFromBundle);
       }
       if (proofMetaNext?.raw && isRecord(proofMetaNext.raw)) {
         metaNext = { ...metaNext, proofBundleRaw: proofMetaNext.raw };
@@ -1019,11 +1008,13 @@ const VerifierStamperInner: React.FC = () => {
         typeof mNew.chakraDay === "string";
 
       const lastTx = mNew.transfers?.slice(-1)[0];
-      const lastParty = lastTx?.receiverSignature || lastTx?.senderSignature || null;
+      const receiveProof = Boolean(receiveSig);
+      const sealedByProof = receiveProof && lastTx && !lastTx.receiverSignature;
+      const lastParty = lastTx?.receiverSignature || (!sealedByProof ? lastTx?.senderSignature : null) || null;
       const isOwner = lastParty && liveSig ? lastParty === liveSig : null;
       const hasTransfers = !!(mNew.transfers && mNew.transfers.length > 0);
-      const lastOpen = !!(lastTx && !lastTx.receiverSignature);
-      const lastClosed = !!(lastTx && !!lastTx.receiverSignature);
+      const lastOpen = !!(lastTx && !lastTx.receiverSignature && !sealedByProof);
+      const lastClosed = !!(lastTx && (lastTx.receiverSignature || sealedByProof));
       const isUnsigned = !mNew.kaiSignature;
 
       let effCtx: "parent" | "derivative" | null = null;
@@ -1060,8 +1051,14 @@ const VerifierStamperInner: React.FC = () => {
       });
       setUiState(next);
     },
-    [liveSig, computeEffectiveCanonical, contentSigExpected]
+    [liveSig, computeEffectiveCanonical, contentSigExpected, receiveSig]
   );
+
+  useEffect(() => {
+    if (meta) {
+      void syncMetaAndUi(meta);
+    }
+  }, [receiveSig, meta, syncMetaAndUi]);
 
   const fmtPhiCompact = useCallback((s: string) => {
     let t = (s || "").trim();
@@ -1776,9 +1773,10 @@ const VerifierStamperInner: React.FC = () => {
 
   const receive = async () => {
     if (!meta || !svgURL || !liveSig) return;
-    if (receiveStatus === "new" && !receiveSig) {
-      const claimed = await claimReceiveSig();
-      if (!claimed) return;
+    let receiveSigLocal = receiveSig ?? null;
+    if (receiveStatus === "new" && !receiveSigLocal) {
+      receiveSigLocal = await claimReceiveSig();
+      if (!receiveSigLocal) return;
     }
 
     if (canonicalContext === "parent") {
@@ -1910,10 +1908,57 @@ const VerifierStamperInner: React.FC = () => {
     }
 
     let durl = await embedMetadata(svgURL, updated);
-    if (receiveSig) {
-      const bundleRaw = proofBundleMeta?.raw;
-      const nextBundle = isRecord(bundleRaw) ? { ...bundleRaw, receiveSig } : { receiveSig };
-      const baseSvg = sigilSvgRaw?.trim() ? sigilSvgRaw : await fetch(svgURL).then((r) => r.text());
+    if (receiveSigLocal) {
+      const baseSvg = await fetch(durl).then((r) => r.text());
+      const svgHash = await hashSvgText(baseSvg);
+      const proofCapsule = proofBundleMeta?.proofCapsule;
+      const capsuleHash = proofBundleMeta?.capsuleHash ?? (proofCapsule ? await hashProofCapsuleV1(proofCapsule) : null);
+
+      let nextBundle: Record<string, unknown>;
+      if (proofBundleMeta?.raw && isRecord(proofBundleMeta.raw)) {
+        nextBundle = {
+          ...(proofBundleMeta.raw as Record<string, unknown>),
+          svgHash,
+          capsuleHash,
+          proofCapsule: proofCapsule ?? undefined,
+          receiveSig: receiveSigLocal,
+        };
+      } else if (updated.kaiSignature && typeof updated.pulse === "number") {
+        const chakraDay = normalizeChakraDay(updated.chakraDay ?? "") ?? "Crown";
+        const verifierSlug = buildVerifierSlug(updated.pulse, updated.kaiSignature);
+        const phiKey = updated.userPhiKey ?? (await derivePhiKeyFromSig(updated.kaiSignature));
+        const fallbackCapsule = {
+          v: "KPV-1" as const,
+          pulse: updated.pulse,
+          chakraDay,
+          kaiSignature: updated.kaiSignature,
+          phiKey,
+          verifierSlug,
+        };
+        const capsuleHashNext = capsuleHash ?? (await hashProofCapsuleV1(fallbackCapsule));
+        nextBundle = {
+          hashAlg: proofBundleMeta?.hashAlg ?? PROOF_HASH_ALG,
+          canon: proofBundleMeta?.canon ?? PROOF_CANON,
+          proofCapsule: fallbackCapsule,
+          capsuleHash: capsuleHashNext,
+          svgHash,
+          shareUrl: proofBundleMeta?.shareUrl,
+          verifierUrl: proofBundleMeta?.verifierUrl,
+          zkPoseidonHash: proofBundleMeta?.zkPoseidonHash,
+          zkProof: proofBundleMeta?.zkProof,
+          proofHints: proofBundleMeta?.proofHints,
+          zkPublicInputs: proofBundleMeta?.zkPublicInputs,
+          authorSig: proofBundleMeta?.authorSig ?? null,
+          receiveSig: receiveSigLocal,
+        };
+      } else {
+        nextBundle = { svgHash, capsuleHash, receiveSig: receiveSigLocal };
+      }
+
+      const bundleUnsigned = buildBundleUnsigned(nextBundle);
+      const bundleHashNext = await hashBundle(bundleUnsigned);
+      nextBundle.bundleHash = bundleHashNext;
+
       const updatedSvg = embedProofMetadata(baseSvg, nextBundle);
       durl = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(updatedSvg)))}`;
     }

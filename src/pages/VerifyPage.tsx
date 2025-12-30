@@ -20,9 +20,10 @@ import {
 } from "../components/KaiVoh/verifierProof";
 import { extractProofBundleMetaFromSvg, type ProofBundleMeta } from "../utils/sigilMetadata";
 import { tryVerifyGroth16 } from "../components/VerifierStamper/zk";
-import { isKASAuthorSig } from "../utils/authorSig";
+import { isKASAuthorSig, type KASAuthorSig } from "../utils/authorSig";
 import { verifyBundleAuthorSig } from "../utils/webauthnKAS";
 import { buildKasChallenge, isReceiveSig, verifyWebAuthnAssertion, type ReceiveSig } from "../utils/webauthnReceive";
+import { base64UrlDecode } from "../utils/sha256";
 
 /* ────────────────────────────────────────────────────────────────
    Utilities
@@ -76,6 +77,20 @@ function ellipsizeMiddle(s: string, head = 18, tail = 14): string {
   if (!t) return "—";
   if (t.length <= head + tail + 3) return t;
   return `${t.slice(0, head)}…${t.slice(t.length - tail)}`;
+}
+
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function bundleHashFromAuthorSig(authorSig: KASAuthorSig): string | null {
+  try {
+    return bytesToHex(base64UrlDecode(authorSig.challenge));
+  } catch {
+    return null;
+  }
 }
 
 function isSvgFile(file: File): boolean {
@@ -432,7 +447,15 @@ export default function VerifyPage(): ReactElement {
       const bundleHashNext = await hashBundle(bundleUnsigned);
 
       const authorSigNext = embedded?.authorSig;
-      const authorSigOk = authorSigNext ? (isKASAuthorSig(authorSigNext) ? await verifyBundleAuthorSig(bundleHashNext, authorSigNext) : false) : null;
+      let authorSigOk: boolean | null = null;
+      if (authorSigNext) {
+        if (isKASAuthorSig(authorSigNext)) {
+          const authorBundleHash = bundleHashFromAuthorSig(authorSigNext);
+          authorSigOk = await verifyBundleAuthorSig(authorBundleHash ?? bundleHashNext, authorSigNext);
+        } else {
+          authorSigOk = false;
+        }
+      }
 
       if (!active) return;
       setProofCapsule(capsule);
@@ -473,11 +496,12 @@ export default function VerifyPage(): ReactElement {
     }
 
     (async () => {
-      if (receiveSig.binds.bundleHash !== bundleHash) {
+      const receiveBundleHash = receiveSig.binds.bundleHash;
+      if (!receiveBundleHash) {
         if (active) setReceiveSigVerified(false);
         return;
       }
-      const { challengeBytes } = await buildKasChallenge("receive", bundleHash, receiveSig.nonce);
+      const { challengeBytes } = await buildKasChallenge("receive", receiveBundleHash, receiveSig.nonce);
       const ok = await verifyWebAuthnAssertion({
         assertion: receiveSig.assertion,
         expectedChallenge: challengeBytes,
@@ -570,6 +594,7 @@ export default function VerifyPage(): ReactElement {
 
   const receiveCredId = useMemo(() => (receiveSig ? receiveSig.credId : ""), [receiveSig]);
   const receiveNonce = useMemo(() => (receiveSig ? receiveSig.nonce : ""), [receiveSig]);
+  const receiveBundleHash = useMemo(() => (receiveSig?.binds.bundleHash ? receiveSig.binds.bundleHash : bundleHash || ""), [receiveSig, bundleHash]);
 
   const auditBundleText = useMemo(() => {
     if (!proofCapsule) return "";
@@ -990,13 +1015,12 @@ export default function VerifyPage(): ReactElement {
                 </div>
 
                 <div className="vmini-grid vmini-grid--3" aria-label="Receive signature status">
-                  <MiniField label="Receive signature" value={receiveSig ? "present" : "—"} />
                   <MiniField
                     label="Receive credId"
                     value={receiveCredId ? ellipsizeMiddle(receiveCredId, 12, 10) : "—"}
                     title={receiveCredId || "—"}
                   />
-                  <MiniField label="Receive bundle" value={bundleHash ? ellipsizeMiddle(bundleHash, 14, 12) : "—"} title={bundleHash || "—"} />
+                  <MiniField label="Receive bundle" value={receiveBundleHash ? ellipsizeMiddle(receiveBundleHash, 14, 12) : "—"} title={receiveBundleHash || "—"} />
                 </div>
 
                 {receiveSig ? (
@@ -1006,7 +1030,7 @@ export default function VerifyPage(): ReactElement {
                       value={receiveNonce ? ellipsizeMiddle(receiveNonce, 14, 12) : "—"}
                       title={receiveNonce || "—"}
                     />
-                    <MiniField label="Receive bundle" value={bundleHash ? ellipsizeMiddle(bundleHash, 14, 12) : "—"} title={bundleHash || "—"} />
+                    <MiniField label="Receive bundle" value={receiveBundleHash ? ellipsizeMiddle(receiveBundleHash, 14, 12) : "—"} title={receiveBundleHash || "—"} />
                   </div>
                 ) : null}
 
