@@ -173,7 +173,7 @@ function applyReceiveSigToMeta(meta: SigilMetadata, receiveSig: ReceiveSig): Sig
   if (last.receiverSignature) return meta;
   const nextLast: SigilTransfer = {
     ...last,
-    receiverSignature: receiveSig.assertion.signature,
+    receiverSignature: receiveSig.assertion.response.signature,
   };
   return { ...meta, transfers: [...transfers.slice(0, -1), nextLast] };
 }
