@@ -166,6 +166,18 @@ function readReceiveSigFromBundle(raw: unknown): ReceiveSig | null {
   return isReceiveSig(candidate) ? candidate : null;
 }
 
+function applyReceiveSigToMeta(meta: SigilMetadata, receiveSig: ReceiveSig): SigilMetadata {
+  const transfers = meta.transfers ?? [];
+  if (transfers.length === 0) return meta;
+  const last = transfers[transfers.length - 1];
+  if (last.receiverSignature) return meta;
+  const nextLast: SigilTransfer = {
+    ...last,
+    receiverSignature: receiveSig.assertion.signature,
+  };
+  return { ...meta, transfers: [...transfers.slice(0, -1), nextLast] };
+}
+
 function readExhaleInfoFromTransfer(
   transfer?: SigilTransfer
 ): { amountUsd?: string; sentPulse?: number } {
@@ -729,6 +741,7 @@ const VerifierStamperInner: React.FC = () => {
       const receiveFromBundle = readReceiveSigFromBundle(proofMetaNext?.raw);
       if (receiveFromBundle) {
         metaNext = { ...metaNext, receiveSig: receiveFromBundle };
+        metaNext = applyReceiveSigToMeta(metaNext, receiveFromBundle);
       }
       if (proofMetaNext?.raw && isRecord(proofMetaNext.raw)) {
         metaNext = { ...metaNext, proofBundleRaw: proofMetaNext.raw };
