@@ -109,7 +109,6 @@ import {
   ensureReceiverPasskey,
   getWebAuthnAssertionJson,
   isReceiveSig,
-  listStoredKasPasskeys,
   loadStoredReceiverPasskey,
   verifyWebAuthnAssertion,
   type ReceiveSig,
@@ -264,8 +263,6 @@ const VerifierStamperInner: React.FC = () => {
   const resolveReceiverPasskey = useCallback(async () => {
     const receiver = loadStoredReceiverPasskey();
     if (receiver) return receiver;
-    const kasPasskeys = listStoredKasPasskeys();
-    if (kasPasskeys.length > 0) return kasPasskeys[0];
     return ensureReceiverPasskey();
   }, []);
 
@@ -777,13 +774,6 @@ const VerifierStamperInner: React.FC = () => {
     autoUnlockRef.current = bundleHash;
     void attemptUnlock("auto");
   }, [bundleHash, unlockState.isUnlocked, unlockState.isRequired, attemptUnlock]);
-
-  useEffect(() => {
-    if (!bundleHash || receiveStatus !== "new") return;
-    if (autoReceiveRef.current === bundleHash) return;
-    autoReceiveRef.current = bundleHash;
-    void claimReceiveSig();
-  }, [bundleHash, receiveStatus, claimReceiveSig]);
 
   const handleAttach = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];

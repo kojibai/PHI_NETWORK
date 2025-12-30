@@ -29,7 +29,6 @@ import {
   ensureReceiverPasskey,
   getWebAuthnAssertionJson,
   isReceiveSig,
-  listStoredKasPasskeys,
   loadStoredReceiverPasskey,
   verifyWebAuthnAssertion,
   type ReceiveSig,
@@ -367,8 +366,6 @@ export default function VerifyPage(): ReactElement {
   const resolveReceiverPasskey = useCallback(async () => {
     const receiver = loadStoredReceiverPasskey();
     if (receiver) return receiver;
-    const kasPasskeys = listStoredKasPasskeys();
-    if (kasPasskeys.length > 0) return kasPasskeys[0];
     return ensureReceiverPasskey();
   }, []);
 
