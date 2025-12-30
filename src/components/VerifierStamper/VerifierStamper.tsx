@@ -1792,6 +1792,10 @@ const VerifierStamperInner: React.FC = () => {
     () => toScaledBig(conv.phiStringToSend || "0") > 0n && toScaledBig(conv.phiStringToSend || "0") <= remainingPhiScaled,
     [conv.phiStringToSend, remainingPhiScaled]
   );
+  const canSend = useMemo(
+    () => canExhale && (!unlockState.isRequired || unlockState.isUnlocked),
+    [canExhale, unlockState.isRequired, unlockState.isUnlocked]
+  );
 
   const downloadZip = useCallback(async () => {
     if (!meta || !svgURL) return;
@@ -1819,6 +1823,10 @@ const VerifierStamperInner: React.FC = () => {
 
   const send = async () => {
     if (!meta || !svgURL || !liveSig) return;
+    if (unlockState.isRequired && !unlockState.isUnlocked) {
+      setError("Unlock this glyph before sending.");
+      return;
+    }
 
     if (meta.kaiSignature && contentSigExpected && meta.kaiSignature.toLowerCase() !== contentSigExpected.toLowerCase()) {
       setError("Content signature mismatch — cannot send.");
@@ -3059,8 +3067,14 @@ const VerifierStamperInner: React.FC = () => {
                         className="primary"
                         onClick={send}
                         aria="Exhale (send)"
-                        titleText={canShare ? "Exhale (seal & share)" : "Exhale (seal & copy link)"}
-                        disabled={!canExhale}
+                        titleText={
+                          unlockState.isRequired && !unlockState.isUnlocked
+                            ? "Unlock glyph to send"
+                            : canShare
+                              ? "Exhale (seal & share)"
+                              : "Exhale (seal & copy link)"
+                        }
+                        disabled={!canSend}
                         small
                         path="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"
                       />
