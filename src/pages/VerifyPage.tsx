@@ -428,6 +428,7 @@ export default function VerifyPage(): ReactElement {
         const assertion = await getWebAuthnAssertionJson({
           challenge: challengeBytes,
           allowCredIds: [authorSig.credId],
+          preferInternal: true,
         });
         const ok = await verifyWebAuthnAssertion({
           assertion,
@@ -464,6 +465,7 @@ export default function VerifyPage(): ReactElement {
       const assertion = await getWebAuthnAssertionJson({
         challenge: challengeBytes,
         allowCredIds: [passkey.credId],
+        preferInternal: true,
       });
       const ok = await verifyWebAuthnAssertion({
         assertion,

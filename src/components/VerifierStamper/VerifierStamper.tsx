@@ -325,6 +325,7 @@ const VerifierStamperInner: React.FC = () => {
         const assertion = await getWebAuthnAssertionJson({
           challenge: challengeBytes,
           allowCredIds: [proofBundleMeta.authorSig.credId],
+          preferInternal: true,
         });
         const ok = await verifyWebAuthnAssertion({
           assertion,
@@ -356,6 +357,7 @@ const VerifierStamperInner: React.FC = () => {
       const assertion = await getWebAuthnAssertionJson({
         challenge: challengeBytes,
         allowCredIds: [passkey.credId],
+        preferInternal: true,
       });
       const ok = await verifyWebAuthnAssertion({
         assertion,

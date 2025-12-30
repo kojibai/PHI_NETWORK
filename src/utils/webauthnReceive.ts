@@ -88,13 +88,25 @@ export async function buildKasChallenge(
 export async function getWebAuthnAssertionJson(args: {
   challenge: Uint8Array;
   allowCredIds?: string[];
+  preferInternal?: boolean;
 }): Promise<WebAuthnAssertionJSON> {
   if (typeof navigator === "undefined" || !navigator.credentials?.get) {
     throw new Error("WebAuthn is not available in this environment.");
   }
 
+  const canUseInternal =
+    Boolean(args.preferInternal) &&
+    typeof PublicKeyCredential !== "undefined" &&
+    typeof PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable === "function"
+      ? await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()
+      : false;
+
   const allowCredentials = args.allowCredIds?.length
-    ? args.allowCredIds.map((id) => ({ id: base64UrlDecode(id), type: "public-key" as const }))
+    ? args.allowCredIds.map((id) => ({
+        id: base64UrlDecode(id),
+        type: "public-key" as const,
+        transports: canUseInternal ? ["internal"] : undefined,
+      }))
     : undefined;
 
   const assertion = (await navigator.credentials.get({
@@ -321,13 +333,14 @@ export async function ensureReceiverPasskey(): Promise<StoredPasskey> {
         displayName: "receiver",
       },
       pubKeyCredParams: [{ type: "public-key", alg: -7 }],
+      timeout: 60_000,
+      attestation: "none",
       authenticatorSelection: {
+        authenticatorAttachment: "platform",
         userVerification: "required",
         residentKey: "required",
         requireResidentKey: true,
       },
-      timeout: 60_000,
-      attestation: "none",
     },
   })) as PublicKeyCredential | null;
 
