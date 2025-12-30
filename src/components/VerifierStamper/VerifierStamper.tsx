@@ -2237,24 +2237,28 @@ const VerifierStamperInner: React.FC = () => {
               <section className="modal-body" role="tabpanel" style={S.modalBody}>
                 {tab === "summary" && (
                   <div className="summary-grid">
-                    <KV
-                      k="Receive claim:"
-                      v={
-                        receiveStatus === "already" ? (
-                          "Already received"
-                        ) : receiveStatus === "new" ? (
-                          <>
-                            New receive{" "}
-                            <button className="secondary" onClick={() => void claimReceiveSig()} disabled={receiveBusy}>
-                              {receiveBusy ? "Claiming…" : "Claim & Embed"}
-                            </button>
-                          </>
-                        ) : (
-                          "—"
-                        )
-                      }
-                    />
-                    {receiveSig && <KV k="Receive credId:" v={receiveSig.credId} wide mono />}
+                    {canonicalContext === "derivative" && (
+                      <>
+                        <KV
+                          k="Receive claim:"
+                          v={
+                            receiveStatus === "already" ? (
+                              "Already received"
+                            ) : receiveStatus === "new" ? (
+                              <>
+                                New receive{" "}
+                                <button className="secondary" onClick={() => void claimReceiveSig()} disabled={receiveBusy}>
+                                  {receiveBusy ? "Claiming…" : "Claim & Embed"}
+                                </button>
+                              </>
+                            ) : (
+                              "—"
+                            )
+                          }
+                        />
+                        {receiveSig && <KV k="Receive credId:" v={receiveSig.credId} wide mono />}
+                      </>
+                    )}
                     {unlockState.isRequired && !unlockState.isUnlocked && unlockAvailable && (
                       <KV
                         k="Unlock gate:"
