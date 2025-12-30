@@ -27,6 +27,7 @@ import { embedProofMetadata } from "../utils/svgProof";
 import {
   buildKasChallenge,
   ensureReceiverPasskey,
+  findStoredKasPasskeyByCredId,
   getWebAuthnAssertionJson,
   isReceiveSig,
   loadStoredReceiverPasskey,
@@ -267,6 +268,7 @@ export default function VerifyPage(): ReactElement {
 
   const [unlockState, setUnlockState] = useState<GlyphUnlockState>({ isRequired: false, isUnlocked: false });
   const [unlockBusy, setUnlockBusy] = useState<boolean>(false);
+  const [unlockAvailable, setUnlockAvailable] = useState<boolean>(false);
   const autoUnlockRef = useRef<string | null>(null);
   const unlockBundleRef = useRef<string | null>(null);
 
@@ -418,6 +420,7 @@ export default function VerifyPage(): ReactElement {
       if (result.status !== "ok" || !bundleHash) return;
       const authorSig = embeddedProof?.authorSig;
       if (!authorSig || !isKASAuthorSig(authorSig)) return;
+      if (!findStoredKasPasskeyByCredId(authorSig.credId)) return;
 
       setUnlockBusy(true);
       try {
@@ -572,6 +575,7 @@ export default function VerifyPage(): ReactElement {
   React.useEffect(() => {
     if (result.status !== "ok" || !bundleHash) {
       setUnlockState({ isRequired: false, isUnlocked: false });
+      setUnlockAvailable(false);
       unlockBundleRef.current = null;
       autoUnlockRef.current = null;
       return;
@@ -580,6 +584,7 @@ export default function VerifyPage(): ReactElement {
     const authorSig = embeddedProof?.authorSig;
     if (!authorSig || !isKASAuthorSig(authorSig)) {
       setUnlockState({ isRequired: false, isUnlocked: false });
+      setUnlockAvailable(false);
       unlockBundleRef.current = bundleHash;
       autoUnlockRef.current = null;
       return;
@@ -589,12 +594,14 @@ export default function VerifyPage(): ReactElement {
       unlockBundleRef.current = bundleHash;
       autoUnlockRef.current = null;
       setUnlockState({ isRequired: true, isUnlocked: false, credId: authorSig.credId });
+      setUnlockAvailable(!!findStoredKasPasskeyByCredId(authorSig.credId));
       return;
     }
 
     setUnlockState((prev) =>
       prev.isUnlocked && prev.credId === authorSig.credId ? prev : { isRequired: true, isUnlocked: false, credId: authorSig.credId }
     );
+    setUnlockAvailable(!!findStoredKasPasskeyByCredId(authorSig.credId));
   }, [result.status, bundleHash, embeddedProof?.authorSig]);
 
   React.useEffect(() => {
@@ -1171,7 +1178,7 @@ export default function VerifyPage(): ReactElement {
                   </div>
                 ) : null}
 
-                {unlockState.isRequired && !unlockState.isUnlocked ? (
+                {unlockState.isRequired && !unlockState.isUnlocked && unlockAvailable ? (
                   <div className="vfoot" aria-label="Unlock gate">
                     <div className="vfoot-left">
                       <div className="vchip">Unlock gate</div>

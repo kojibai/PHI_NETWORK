@@ -107,6 +107,7 @@ import { isKASAuthorSig } from "../../utils/authorSig";
 import {
   buildKasChallenge,
   ensureReceiverPasskey,
+  findStoredKasPasskeyByCredId,
   getWebAuthnAssertionJson,
   isReceiveSig,
   loadStoredReceiverPasskey,
@@ -245,6 +246,7 @@ const VerifierStamperInner: React.FC = () => {
 
   const [unlockState, setUnlockState] = useState<GlyphUnlockState>({ isRequired: false, isUnlocked: false });
   const [unlockBusy, setUnlockBusy] = useState<boolean>(false);
+  const [unlockAvailable, setUnlockAvailable] = useState<boolean>(false);
   const autoUnlockRef = useRef<string | null>(null);
 
   const [receiveSig, setReceiveSig] = useState<ReceiveSig | null>(null);
@@ -315,6 +317,7 @@ const VerifierStamperInner: React.FC = () => {
     async (mode: "auto" | "manual"): Promise<void> => {
       if (unlockBusy || unlockState.isUnlocked) return;
       if (!bundleHash || !proofBundleMeta?.authorSig || !isKASAuthorSig(proofBundleMeta.authorSig)) return;
+      if (!findStoredKasPasskeyByCredId(proofBundleMeta.authorSig.credId)) return;
 
       setUnlockBusy(true);
       try {
@@ -344,9 +347,9 @@ const VerifierStamperInner: React.FC = () => {
     [unlockBusy, unlockState.isUnlocked, bundleHash, proofBundleMeta?.authorSig]
   );
 
-  const claimReceiveSig = useCallback(async (): Promise<void> => {
-    if (receiveBusy || receiveStatus !== "new") return;
-    if (!bundleHash) return;
+  const claimReceiveSig = useCallback(async (): Promise<ReceiveSig | null> => {
+    if (receiveBusy || receiveStatus !== "new") return null;
+    if (!bundleHash) return null;
     setReceiveBusy(true);
     try {
       const passkey = await resolveReceiverPasskey();
@@ -364,7 +367,7 @@ const VerifierStamperInner: React.FC = () => {
       });
       if (!ok) {
         setError("Receive signature invalid.");
-        return;
+        return null;
       }
 
       const nextSig: ReceiveSig = {
@@ -380,8 +383,10 @@ const VerifierStamperInner: React.FC = () => {
       window.localStorage.setItem(`received:${bundleHash}`, JSON.stringify(nextSig));
       setReceiveSig(nextSig);
       setReceiveStatus("already");
+      return nextSig;
     } catch {
       setError("Receive claim canceled.");
+      return null;
     } finally {
       setReceiveBusy(false);
     }
@@ -722,6 +727,7 @@ const VerifierStamperInner: React.FC = () => {
   useEffect(() => {
     if (!bundleHash) {
       setUnlockState({ isRequired: false, isUnlocked: false });
+      setUnlockAvailable(false);
       autoUnlockRef.current = null;
       return;
     }
@@ -729,11 +735,13 @@ const VerifierStamperInner: React.FC = () => {
     const authorSig = proofBundleMeta?.authorSig;
     if (!authorSig || !isKASAuthorSig(authorSig)) {
       setUnlockState({ isRequired: false, isUnlocked: false });
+      setUnlockAvailable(false);
       autoUnlockRef.current = null;
       return;
     }
 
     setUnlockState((prev) => (prev.isUnlocked && prev.credId === authorSig.credId ? prev : { isRequired: true, isUnlocked: false, credId: authorSig.credId }));
+    setUnlockAvailable(!!findStoredKasPasskeyByCredId(authorSig.credId));
   }, [bundleHash, proofBundleMeta?.authorSig]);
 
   useEffect(() => {
@@ -770,10 +778,8 @@ const VerifierStamperInner: React.FC = () => {
 
   useEffect(() => {
     if (!bundleHash || unlockState.isUnlocked || !unlockState.isRequired) return;
-    if (autoUnlockRef.current === bundleHash) return;
     autoUnlockRef.current = bundleHash;
-    void attemptUnlock("auto");
-  }, [bundleHash, unlockState.isUnlocked, unlockState.isRequired, attemptUnlock]);
+  }, [bundleHash, unlockState.isUnlocked, unlockState.isRequired]);
 
   const handleAttach = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -1718,8 +1724,8 @@ const VerifierStamperInner: React.FC = () => {
   const receive = async () => {
     if (!meta || !svgURL || !liveSig) return;
     if (receiveStatus === "new" && !receiveSig) {
-      setError("Claim & embed signature before receiving.");
-      return;
+      const claimed = await claimReceiveSig();
+      if (!claimed) return;
     }
 
     if (canonicalContext === "parent") {
@@ -2231,6 +2237,37 @@ const VerifierStamperInner: React.FC = () => {
               <section className="modal-body" role="tabpanel" style={S.modalBody}>
                 {tab === "summary" && (
                   <div className="summary-grid">
+                    <KV
+                      k="Receive claim:"
+                      v={
+                        receiveStatus === "already" ? (
+                          "Already received"
+                        ) : receiveStatus === "new" ? (
+                          <>
+                            New receive{" "}
+                            <button className="secondary" onClick={() => void claimReceiveSig()} disabled={receiveBusy}>
+                              {receiveBusy ? "Claiming…" : "Claim & Embed"}
+                            </button>
+                          </>
+                        ) : (
+                          "—"
+                        )
+                      }
+                    />
+                    {receiveSig && <KV k="Receive credId:" v={receiveSig.credId} wide mono />}
+                    {unlockState.isRequired && !unlockState.isUnlocked && unlockAvailable && (
+                      <KV
+                        k="Unlock gate:"
+                        v={
+                          <>
+                            Unlock required{" "}
+                            <button className="secondary" onClick={() => void attemptUnlock("manual")} disabled={unlockBusy}>
+                              {unlockBusy ? "Unlocking…" : "Unlock"}
+                            </button>
+                          </>
+                        }
+                      />
+                    )}
                     <KV k="Now" v={pulseNow} />
                     {childDeadline && <KV k="Inhale Seal:" v={`${childDeadline.leftSteps} steps (${childDeadline.leftPulses} pulses) left`} />}
                     {canonicalContext === "derivative" &&
@@ -2269,41 +2306,6 @@ const VerifierStamperInner: React.FC = () => {
                     )}
 
                     {authorSigDisplay && <KV k="Author Sig:" v={authorSigDisplay} wide mono />}
-                    {unlockState.isRequired && (
-                      <KV
-                        k="Unlock gate:"
-                        v={
-                          unlockState.isUnlocked ? (
-                            "Unlocked"
-                          ) : (
-                            <>
-                              Unlock required{" "}
-                              <button className="secondary" onClick={() => void attemptUnlock("manual")} disabled={unlockBusy}>
-                                {unlockBusy ? "Unlocking…" : "Unlock"}
-                              </button>
-                            </>
-                          )
-                        }
-                      />
-                    )}
-                    <KV
-                      k="Receive claim:"
-                      v={
-                        receiveStatus === "already" ? (
-                          "Already received"
-                        ) : receiveStatus === "new" ? (
-                          <>
-                            New receive{" "}
-                            <button className="secondary" onClick={() => void claimReceiveSig()} disabled={receiveBusy}>
-                              {receiveBusy ? "Claiming…" : "Claim & Embed"}
-                            </button>
-                          </>
-                        ) : (
-                          "—"
-                        )
-                      }
-                    />
-                    {receiveSig && <KV k="Receive credId:" v={receiveSig.credId} wide mono />}
                     {frequencyHz && <KV k="Frequency (Hz):" v={frequencyHz} />}
                     {chakraGate && <KV k="Spiral Gate:" v={chakraGate} />}
                     {liveSig && <KV k="PROOF OF BREATH™:" v={liveSig} wide mono />}
