@@ -623,6 +623,7 @@ const VerifierStamperInner: React.FC = () => {
   }, []);
 
   const isPersistedChild = useCallback(async (m: SigilMetadata) => {
+    if (!m.canonicalHash) return false;
     const parentCanonical =
       (m.canonicalHash as string | undefined)?.toLowerCase() ||
       (await sha256Hex(`${m.pulse}|${m.beat}|${m.stepIndex}|${m.chakraDay}`)).toLowerCase();
@@ -638,7 +639,7 @@ const VerifierStamperInner: React.FC = () => {
         (await sha256Hex(`${m.pulse}|${m.beat}|${m.stepIndex}|${m.chakraDay}`)).toLowerCase();
 
       if (await isPersistedChild(m)) {
-        const childCanon = (m.canonicalHash as string).toLowerCase();
+        const childCanon = (m.canonicalHash || parentCanonical).toLowerCase();
         const used = !!(m as SigilMetadataWithOptionals).sendLock?.used;
         const lastClosed = !!(m.transfers ?? []).slice(-1)[0]?.receiverSignature;
         return { canonical: childCanon, context: used || lastClosed ? "parent" : "derivative" };
