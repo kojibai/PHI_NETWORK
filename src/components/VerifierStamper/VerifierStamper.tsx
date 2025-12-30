@@ -1909,9 +1909,56 @@ const VerifierStamperInner: React.FC = () => {
 
     let durl = await embedMetadata(svgURL, updated);
     if (receiveSigLocal) {
-      const bundleRaw = proofBundleMeta?.raw;
-      const nextBundle = isRecord(bundleRaw) ? { ...bundleRaw, receiveSig: receiveSigLocal } : { receiveSig: receiveSigLocal };
       const baseSvg = await fetch(durl).then((r) => r.text());
+      const svgHash = await hashSvgText(baseSvg);
+      const proofCapsule = proofBundleMeta?.proofCapsule;
+      const capsuleHash = proofBundleMeta?.capsuleHash ?? (proofCapsule ? await hashProofCapsuleV1(proofCapsule) : null);
+
+      let nextBundle: Record<string, unknown>;
+      if (proofBundleMeta?.raw && isRecord(proofBundleMeta.raw)) {
+        nextBundle = {
+          ...(proofBundleMeta.raw as Record<string, unknown>),
+          svgHash,
+          capsuleHash,
+          proofCapsule: proofCapsule ?? undefined,
+          receiveSig: receiveSigLocal,
+        };
+      } else if (updated.kaiSignature && typeof updated.pulse === "number") {
+        const chakraDay = normalizeChakraDay(updated.chakraDay ?? "") ?? "Crown";
+        const verifierSlug = buildVerifierSlug(updated.pulse, updated.kaiSignature);
+        const phiKey = updated.userPhiKey ?? (await derivePhiKeyFromSig(updated.kaiSignature));
+        const fallbackCapsule = {
+          v: "KPV-1" as const,
+          pulse: updated.pulse,
+          chakraDay,
+          kaiSignature: updated.kaiSignature,
+          phiKey,
+          verifierSlug,
+        };
+        const capsuleHashNext = capsuleHash ?? (await hashProofCapsuleV1(fallbackCapsule));
+        nextBundle = {
+          hashAlg: proofBundleMeta?.hashAlg ?? PROOF_HASH_ALG,
+          canon: proofBundleMeta?.canon ?? PROOF_CANON,
+          proofCapsule: fallbackCapsule,
+          capsuleHash: capsuleHashNext,
+          svgHash,
+          shareUrl: proofBundleMeta?.shareUrl,
+          verifierUrl: proofBundleMeta?.verifierUrl,
+          zkPoseidonHash: proofBundleMeta?.zkPoseidonHash,
+          zkProof: proofBundleMeta?.zkProof,
+          proofHints: proofBundleMeta?.proofHints,
+          zkPublicInputs: proofBundleMeta?.zkPublicInputs,
+          authorSig: proofBundleMeta?.authorSig ?? null,
+          receiveSig: receiveSigLocal,
+        };
+      } else {
+        nextBundle = { svgHash, capsuleHash, receiveSig: receiveSigLocal };
+      }
+
+      const bundleUnsigned = buildBundleUnsigned(nextBundle);
+      const bundleHashNext = await hashBundle(bundleUnsigned);
+      nextBundle.bundleHash = bundleHashNext;
+
       const updatedSvg = embedProofMetadata(baseSvg, nextBundle);
       durl = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(updatedSvg)))}`;
     }
