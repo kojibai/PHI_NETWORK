@@ -641,14 +641,6 @@ export default function VerifyPage(): ReactElement {
 
   React.useEffect(() => {
     if (!bundleHash || result.status !== "ok") return;
-    if (!unlockState.isRequired || unlockState.isUnlocked) return;
-    if (autoUnlockRef.current === bundleHash) return;
-    autoUnlockRef.current = bundleHash;
-    void attemptUnlock("auto");
-  }, [bundleHash, result.status, unlockState.isRequired, unlockState.isUnlocked, attemptUnlock]);
-
-  React.useEffect(() => {
-    if (!bundleHash || result.status !== "ok") return;
     if (receiveStatus !== "new") return;
     if (autoReceiveRef.current === bundleHash) return;
     autoReceiveRef.current = bundleHash;
