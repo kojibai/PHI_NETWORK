@@ -250,6 +250,17 @@ export default function VerifyPage(): ReactElement {
   const [sigilPreviewUrl, setSigilPreviewUrl] = useState<string>("");
 
   React.useEffect(() => {
+    const root = document.documentElement;
+    const body = document.body;
+    root.classList.add("verify-shell");
+    body.classList.add("verify-shell");
+    return () => {
+      root.classList.remove("verify-shell");
+      body.classList.remove("verify-shell");
+    };
+  }, []);
+
+  React.useEffect(() => {
     const raw = svgText.trim();
     if (!raw) {
       setSigilPreviewUrl("");
