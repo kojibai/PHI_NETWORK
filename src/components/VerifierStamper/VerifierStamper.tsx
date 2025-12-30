@@ -387,10 +387,10 @@ const VerifierStamperInner: React.FC = () => {
   );
 
   const attemptUnlock = useCallback(
-    async (mode: "auto" | "manual"): Promise<void> => {
-      if (unlockBusy || unlockState.isUnlocked) return;
-      if (!bundleHash || !proofBundleMeta?.authorSig || !isKASAuthorSig(proofBundleMeta.authorSig)) return;
-      if (!findStoredKasPasskeyByCredId(proofBundleMeta.authorSig.credId)) return;
+    async (mode: "auto" | "manual"): Promise<boolean> => {
+      if (unlockBusy || unlockState.isUnlocked) return unlockState.isUnlocked;
+      if (!bundleHash || !proofBundleMeta?.authorSig || !isKASAuthorSig(proofBundleMeta.authorSig)) return false;
+      if (!findStoredKasPasskeyByCredId(proofBundleMeta.authorSig.credId)) return false;
 
       setUnlockBusy(true);
       try {
@@ -408,11 +408,13 @@ const VerifierStamperInner: React.FC = () => {
         });
         if (!ok) {
           setError("Unlock failed.");
-          return;
+          return false;
         }
         setUnlockState({ isRequired: true, isUnlocked: true, credId: proofBundleMeta.authorSig.credId, unlockedAtNonce: nonce });
+        return true;
       } catch {
         if (mode === "manual") setError("Unlock canceled.");
+        return false;
       } finally {
         setUnlockBusy(false);
       }
@@ -1793,10 +1795,6 @@ const VerifierStamperInner: React.FC = () => {
     () => toScaledBig(conv.phiStringToSend || "0") > 0n && toScaledBig(conv.phiStringToSend || "0") <= remainingPhiScaled,
     [conv.phiStringToSend, remainingPhiScaled]
   );
-  const canSend = useMemo(
-    () => canExhale && (!unlockState.isRequired || unlockState.isUnlocked),
-    [canExhale, unlockState.isRequired, unlockState.isUnlocked]
-  );
 
   const downloadZip = useCallback(async () => {
     if (!meta || !svgURL) return;
@@ -1825,8 +1823,11 @@ const VerifierStamperInner: React.FC = () => {
   const send = async () => {
     if (!meta || !svgURL || !liveSig) return;
     if (unlockState.isRequired && !unlockState.isUnlocked) {
-      setError("Unlock this glyph before sending.");
-      return;
+      const unlocked = await attemptUnlock("manual");
+      if (!unlocked) {
+        setError("Unlock this glyph before sending.");
+        return;
+      }
     }
 
     if (meta.kaiSignature && contentSigExpected && meta.kaiSignature.toLowerCase() !== contentSigExpected.toLowerCase()) {
@@ -3068,14 +3069,8 @@ const VerifierStamperInner: React.FC = () => {
                         className="primary"
                         onClick={send}
                         aria="Exhale (send)"
-                        titleText={
-                          unlockState.isRequired && !unlockState.isUnlocked
-                            ? "Unlock glyph to send"
-                            : canShare
-                              ? "Exhale (seal & share)"
-                              : "Exhale (seal & copy link)"
-                        }
-                        disabled={!canSend}
+                        titleText={canShare ? "Exhale (seal & share)" : "Exhale (seal & copy link)"}
+                        disabled={!canExhale}
                         small
                         path="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"
                       />
