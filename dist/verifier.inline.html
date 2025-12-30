@@ -367,11 +367,22 @@
         <div class="stack"><label class="hint">Premium Φ</label><input id="val-premium" readonly class="out" /></div>
       </div>
       <div class="grid">
+        <div class="stack"><label class="hint">Received Amount Φ</label><input id="val-received-phi" readonly class="out" /></div>
+        <div class="stack"><label class="hint">Live USD (received)</label><input id="val-received-usd" readonly class="out" /></div>
+      </div>
+      <div class="grid">
+        <div class="stack"><label class="hint">Total USD (Φ × $/Φ)</label><input id="val-total-usd" readonly class="out" /></div>
+        <div class="stack"><label class="hint">—</label><input readonly class="out" value="" /></div>
+      </div>
+      <div class="grid">
         <div class="stack"><label class="hint">Algorithm • Policy checksum</label><input id="val-alg" readonly class="out" /></div>
         <div class="stack"><label class="hint">Computed at Pulse (frozen)</label><input id="val-computed" readonly class="out" /></div>
       </div>
       <div class="grid">
         <div class="stack"><label class="hint">Valuation Stamp (hash)</label><input id="val-stamp" readonly class="out" /></div>
+        <div class="stack"><label class="hint">USD per Φ (issuance)</label><input id="val-usd-per-phi" readonly class="out" /></div>
+      </div>
+      <div class="grid">
         <div class="stack"><label class="hint">Now (pulses/day 17,491.270421)</label><input id="val-nowpulse" readonly class="out" /></div>
       </div>
       <div class="row">
@@ -999,9 +1010,26 @@
 
       const fields = {};
       const take = (k, re) => { const v=re.exec(currentSvgText); if (v) fields[k]=isNaN(+v[1])?v[1]:+v[1]; };
-      take("pulse", /"pulse"\s*:\s*(\d+)/); take("kaiPulse", /"kaiPulse"\s*:\s*(\d+)/);
-      take("beat", /"beat"\s*:\s*(\d+)/); take("stepIndex", /"step(?:Index|index)"\s*:\s*(\d+)/);
-      take("chakraDay", /"chakraDay"\s*:\s*"([^"]+)"/); take("intention", /"intention"\s*:\s*"([^"]*)"/);
+      take("pulse", /"pulse"\s*:\s*(\d+)/);
+      take("pulse", /"pulseExact"\s*:\s*"(\d+)"/);
+      take("pulse", /data-pulse="(\d+)"/i);
+      take("kaiPulse", /"kaiPulse"\s*:\s*(\d+)/);
+      take("beat", /"beat"\s*:\s*(\d+)/);
+      take("beat", /"beatIndex"\s*:\s*(\d+)/);
+      take("beat", /data-beat="(\d+)"/i);
+      take("stepIndex", /"step(?:Index|index)"\s*:\s*(\d+)/);
+      take("stepIndex", /data-step-index="(\d+)"/i);
+      take("stepsPerBeat", /"stepsPerBeat"\s*:\s*(\d+)/);
+      take("stepsPerBeat", /data-steps-per-beat="(\d+)"/i);
+      take("transferAmountPhi", /"childAllocationPhi"\s*:\s*([0-9]*\.?[0-9]+)/);
+      take("transferAmountPhi", /"branchBasePhi"\s*:\s*([0-9]*\.?[0-9]+)/);
+      take("transferAmountPhi", /"transferAmountPhi"\s*:\s*([0-9]*\.?[0-9]+)/);
+      take("transferAmountPhi", /"amountPhi"\s*:\s*([0-9]*\.?[0-9]+)/);
+      take("transferAmountPhi", /data-transfer-amount-phi="([0-9]*\.?[0-9]+)"/i);
+      take("chakraDay", /"chakraDay"\s*:\s*"([^"]+)"/);
+      take("chakraDay", /"chakra"\s*:\s*"([^"]+)"/);
+      take("chakraDay", /data-chakra-day="([^"]+)"/i);
+      take("intention", /"intention"\s*:\s*"([^"]*)"/);
 
       // ZK info (optional)
       const zkScheme = /data-zk-scheme="([^"]+)"/i.exec(currentSvgText)?.[1] || /"zkScheme"\s*:\s*"([^"]+)"/.exec(currentSvgText)?.[1] || null;
@@ -1073,18 +1101,28 @@
       const pickNum = (re) => { const m = re.exec(txt); return m ? +m[1] : undefined; };
       const pickStr = (re) => { const m = re.exec(txt); return m ? String(m[1]) : undefined; };
       const meta = {};
-      meta.kaiPulse      = pickNum(/"kaiPulse"\s*:\s*(\d+)/) ?? pickNum(/"pulse"\s*:\s*(\d+)/);
+      meta.kaiPulse      = pickNum(/"kaiPulse"\s*:\s*(\d+)/) ?? pickNum(/"pulse"\s*:\s*(\d+)/) ?? pickNum(/"pulseExact"\s*:\s*"(\d+)"/) ?? pickNum(/data-pulse="(\d+)"/i);
       meta.kaiSignature  = pickStr(/"kaiSignature"\s*:\s*"([0-9a-fA-F]{16,})"/) || pickStr(/data-kai-signature="([0-9a-fA-F]{16,})"/i);
       meta.userPhiKey    = pickStr(/"userPhiKey"\s*:\s*"([^"]{10,})"/) || pickStr(/data-phi-key="([^"]{10,})"/i);
-      meta.beat          = pickNum(/"beat"\s*:\s*(\d+)/);
-      meta.stepIndex     = pickNum(/"step(?:Index|index)"\s*:\s*(\d+)/);
-      meta.stepsPerBeat  = pickNum(/"stepsPerBeat"\s*:\s*(\d+)/);
+      meta.beat          = pickNum(/"beat"\s*:\s*(\d+)/) ?? pickNum(/"beatIndex"\s*:\s*(\d+)/) ?? pickNum(/data-beat="(\d+)"/i);
+      meta.stepIndex     = pickNum(/"step(?:Index|index)"\s*:\s*(\d+)/) ?? pickNum(/data-step-index="(\d+)"/i);
+      meta.stepsPerBeat  = pickNum(/"stepsPerBeat"\s*:\s*(\d+)/) ?? pickNum(/data-steps-per-beat="(\d+)"/i);
       meta.seriesSize    = pickNum(/"seriesSize"\s*:\s*(\d+)/) ?? 1;
       meta.quality       = pickStr(/"quality"\s*:\s*"(low|med|high)"/) ?? "med";
       meta.creatorVerified = /"creatorVerified"\s*:\s*true/.test(txt);
       meta.creatorRep    = pickNum(/"creatorRep"\s*:\s*(0?\.\d+|1(?:\.0+)?)/) ?? 0;
       meta.frequencyHz   = pickNum(/"frequency(?:Hz|_hz|_HZ)"\s*:\s*([0-9]*\.?[0-9]+)/);
-      meta.chakraDay     = pickStr(/"chakraDay"\s*:\s*"([^"]+)"/);
+      meta.transferAmountPhi =
+        pickStr(/"childAllocationPhi"\s*:\s*"([^"]+)"/) ??
+        pickStr(/"branchBasePhi"\s*:\s*"([^"]+)"/) ??
+        pickStr(/"transferAmountPhi"\s*:\s*"([^"]+)"/) ??
+        pickStr(/"amountPhi"\s*:\s*"([^"]+)"/) ??
+        pickNum(/"childAllocationPhi"\s*:\s*([0-9]*\.?[0-9]+)/) ??
+        pickNum(/"branchBasePhi"\s*:\s*([0-9]*\.?[0-9]+)/) ??
+        pickNum(/"transferAmountPhi"\s*:\s*([0-9]*\.?[0-9]+)/) ??
+        pickNum(/"amountPhi"\s*:\s*([0-9]*\.?[0-9]+)/) ??
+        pickStr(/data-transfer-amount-phi="([0-9]*\.?[0-9]+)"/i);
+      meta.chakraDay     = pickStr(/"chakraDay"\s*:\s*"([^"]+)"/) ?? pickStr(/"chakra"\s*:\s*"([^"]+)"/) ?? pickStr(/data-chakra-day="([^"]+)"/i);
       meta.chakraGate    = pickStr(/"chakraGate"\s*:\s*"([^"]+)"/);
 
       const txBlocks = txt.match(/"transfers"\s*:\s*\[([\s\S]*?)\]/);
@@ -1308,6 +1346,232 @@
         return unsigned;
       }
 
+      /* === USD issuance (offline; matches chart/verifier stamper) === */
+      const ISSUANCE_POLICY = {
+        basePhiPerUsd: 0.10,
+        adoptionLambda: 1 / PHI,
+        premiumGamma: 1 / (PHI**2),
+        momentBoostMax: 1 / (PHI**2),
+        sizeScaleUsd: 100,
+        sizeMu: 1 / (PHI**3),
+        sizeCap: 1 + 1 / (PHI**2),
+        whaleTaper: { k: 1 / (PHI**4) },
+        streakMaxBoost: 1 / (PHI**3),
+        lifetimeTiers: [
+          { thresholdUsd: 200, boost: 0.05 },
+          { thresholdUsd: 1000, boost: 0.10 },
+          { thresholdUsd: 3000, boost: 0.16 }
+        ],
+        holdBonus: { eta: 1 / (PHI**2), rho: 1 / (PHI**3), capMultiple: 1 / PHI },
+        choir: { windowPulses: 242, maxBoost: 1/(PHI**3), wStep: 0.6, wBreath: 0.4 },
+        breath: { maxBoost: 1/(PHI**4) },
+        festival: { mode: "beatEvery", interval: 13, widthBeats: 1, bonus: 1/(PHI**4) },
+        milestones: {
+          adoption: [
+            { atAdoption: 0.10, multiplier: 0.95 },
+            { atAdoption: 0.25, multiplier: 0.90 },
+            { atAdoption: 0.50, multiplier: 1 / PHI },
+            { atAdoption: 0.75, multiplier: 1 / (PHI**1.25) }
+          ],
+          phiTransition: [
+            { atN: 18, multiplier: 0.92 },
+            { atN: 21, multiplier: 0.88 },
+            { atN: 25, multiplier: 0.82 }
+          ],
+          combine: "min",
+          interpolation: "step"
+        },
+        vow: { earlyUnlockPenalty: 0.5, stewardEpochBeats: 55, stewardSpreadBeats: 21 }
+      };
+
+      function stepIndexFromPulse(p, stepsPerBeat) {
+        const n = Math.trunc(Math.max(0, p));
+        return Math.floor(n / PULSES_PER_STEP) % Math.max(1, stepsPerBeat);
+      }
+      function breathResid(p) {
+        return Math.trunc(Math.max(0, p)) % PULSES_PER_STEP;
+      }
+      function circSim01(a, b, period) {
+        const da = ((a - b) % period + period) % period;
+        return 0.5 * (1 + Math.cos((2 * Math.PI * da) / period));
+      }
+      function phiTransitionIndexFromPulse(pulse) {
+        if (!Number.isFinite(pulse) || pulse < 1) return null;
+        const N = Math.trunc(pulse);
+        const n0 = Math.floor(Math.log(N) / Math.log(PHI));
+        for (let n = Math.max(1, n0 - 2); n <= n0 + 6; n++) {
+          const s = Math.ceil(Math.pow(PHI, n));
+          if (s === N) return n;
+        }
+        return null;
+      }
+      function stepInterp(x, entries) {
+        let m = 1;
+        for (const e of entries) if (x >= e.at) m = e.multiplier;
+        return m;
+      }
+      function linearInterp(x, entries) {
+        if (!entries.length) return 1;
+        if (x <= entries[0].at) return entries[0].multiplier;
+        for (let i = 1; i < entries.length; i++) {
+          const a = entries[i - 1], b = entries[i];
+          if (x <= b.at) {
+            const t = (x - a.at) / Math.max(1e-12, b.at - a.at);
+            return a.multiplier + t * (b.multiplier - a.multiplier);
+          }
+        }
+        return entries[entries.length - 1].multiplier;
+      }
+      function combineMilestones(values, how = "min") {
+        if (!values.length) return 1;
+        if (how === "min") return Math.min(...values);
+        if (how === "max") return Math.max(...values);
+        return values.reduce((s, v) => s * v, 1);
+      }
+      function resolveMilestoneMultiplier(entries, x, interpolation) {
+        if (!entries || !entries.length) return 1;
+        const sorted = entries.slice().sort((a, b) => a.at - b.at);
+        return interpolation === "linear" ? linearInterp(x, sorted) : stepInterp(x, sorted);
+      }
+      function computeMilestoneMultiplier(policy, nowPulse, adoption, pulsesPerBeat) {
+        const ms = policy.milestones || {};
+        const interp = ms.interpolation || "step";
+        const values = [];
+        if (ms.adoption?.length) {
+          values.push(resolveMilestoneMultiplier(
+            ms.adoption.map(m => ({ at: m.atAdoption, multiplier: m.multiplier })), adoption, interp
+          ));
+        }
+        if (ms.pulse?.length) {
+          values.push(resolveMilestoneMultiplier(
+            ms.pulse.map(m => ({ at: m.atPulse, multiplier: m.multiplier })), nowPulse, interp
+          ));
+        }
+        if (ms.beat?.length) {
+          const beat = Math.floor(nowPulse / pulsesPerBeat);
+          values.push(resolveMilestoneMultiplier(
+            ms.beat.map(m => ({ at: m.atBeat, multiplier: m.multiplier })), beat, interp
+          ));
+        }
+        if (ms.phiTransition?.length) {
+          const n = phiTransitionIndexFromPulse(nowPulse);
+          if (n !== null) {
+            values.push(resolveMilestoneMultiplier(
+              ms.phiTransition.map(m => ({ at: m.atN, multiplier: m.multiplier })), n, interp
+            ));
+          }
+        }
+        return { M_milestone: combineMilestones(values, ms.combine || "min") };
+      }
+      function choirMultiplierForPulse(nowPulse, stepsPerBeat, choir, cfg) {
+        if (!cfg || !Array.isArray(choir) || !choir.length) return 1;
+        const meStep = stepIndexFromPulse(nowPulse, stepsPerBeat);
+        const meResid = breathResid(nowPulse);
+        let sum = 0;
+        for (const n of choir) {
+          const s = stepIndexFromPulse(n.pulse, stepsPerBeat);
+          const r = breathResid(n.pulse);
+          const stepSim = circSim01(meStep, s, stepsPerBeat);
+          const breathSim = circSim01(meResid, r, PULSES_PER_STEP);
+          const pairSim = (cfg.wStep ?? 0.5) * stepSim + (cfg.wBreath ?? 0.5) * breathSim;
+          sum += pairSim;
+        }
+        const avgSim = sum / choir.length;
+        const gain = cfg.maxBoost ?? 0;
+        return q(1 + gain * (2 * avgSim - 1));
+      }
+      function breathAlignmentMultiplier(nowPulse, breathPhase01, cfg) {
+        if (!cfg || breathPhase01 == null) return 1;
+        const resid = breathResid(nowPulse) / PULSES_PER_STEP;
+        const sim = 1 - Math.abs(((breathPhase01 - resid + 1) % 1) - 0.5) * 2;
+        return q(1 + (cfg.maxBoost ?? 0) * (2 * sim - 1));
+      }
+      function festivalMultiplier(nowPulse, pulsesPerBeat, cfg) {
+        if (!cfg) return 1;
+        const beat = Math.floor(nowPulse / pulsesPerBeat);
+        if (cfg.mode === "beatEvery") {
+          const k = Math.max(1, Math.trunc(cfg.interval));
+          const half = Math.max(0, Math.trunc(cfg.widthBeats));
+          const near = (beat % k === 0) || (Math.abs(beat % k) <= half) || (Math.abs((beat % k) - k) <= half);
+          return q(near ? 1 + (cfg.bonus || 0) : 1);
+        }
+        const nApprox = Math.floor(Math.log(Math.max(1, nowPulse)) / Math.log(PHI));
+        const sN = Math.ceil(Math.pow(PHI, nApprox));
+        const k = Math.max(1, Math.trunc(cfg.interval));
+        const isEvent = (nApprox % k) === 0;
+        const half = Math.max(0, Math.trunc(cfg.widthBeats));
+        const eventBeat = Math.floor(sN / pulsesPerBeat);
+        const near = Math.abs(beat - eventBeat) <= half;
+        return q(isEvent && near ? 1 + (cfg.bonus || 0) : 1);
+      }
+      function adoptionIndex01(p) {
+        return !Number.isFinite(p) || p <= 0 ? 0 : 1 - Math.pow(PHI, -p / (PULSES_PER_DAY_EXACT * 365));
+      }
+      function rarityScore01FromPulse(p) {
+        if (!Number.isFinite(p) || p < 0) return 0;
+        const s = Math.abs(Math.trunc(p)).toString(), len = s.length;
+        const fib = isFibonacciExact(p) ? 1 : 0;
+        const luc = isLucasExact(p) ? 1 : 0;
+        const uni = allSameDigit(s) ? 1 : 0;
+        const pal = isPalindromeDigits(s) ? 1 : 0;
+        const run = longestRunSameDigit(s); const runNorm = Math.max(0, Math.min(1, (run - 2) / Math.max(3, len - 2)));
+        const seq = longestConsecutiveSequenceLen(s); const seqNorm = Math.max(0, Math.min(1, (seq - 3) / Math.max(4, len - 3)));
+        const ent = digitEntropy01(s);
+        let score = 0, w = 0;
+        score += 1.0 * fib; w += 1.0;
+        score += (1 / PHI) * luc; w += 1 / PHI;
+        score += (1 / PHI) * uni; w += 1 / PHI;
+        score += (1 / PHI**2) * pal; w += 1 / PHI**2;
+        score += (1 / PHI**2) * runNorm; w += 1 / PHI**2;
+        score += (1 / PHI**3) * seqNorm; w += 1 / PHI**3;
+        score += (1 / PHI**3) * (1 - ent); w += 1 / PHI**3;
+        if (w <= 0) return 0;
+        return Math.max(0, Math.min(1, score / w));
+      }
+      function quotePhiForUsd(ctx, policy = ISSUANCE_POLICY) {
+        const unsigned = computeIntrinsicUnsigned(ctx.meta, ctx.nowPulse);
+        const premium = unsigned.premium ?? 0;
+        const pulsesPerBeat = Number(unsigned.inputs?.pulsesPerBeat) || (DEFAULT_STEPS_PER_BEAT * PULSES_PER_STEP);
+        const claimPulse = typeof ctx.meta.kaiPulse === "number" ? ctx.meta.kaiPulse : typeof ctx.meta.pulse === "number" ? ctx.meta.pulse : ctx.nowPulse;
+
+        const usd = Math.max(0, ctx.usd || 0);
+        const adoption = adoptionIndex01(ctx.nowPulse);
+        const rarityScore = rarityScore01FromPulse(claimPulse);
+
+        const base = policy.basePhiPerUsd;
+        const M_adoption = q(Math.exp(-policy.adoptionLambda * adoption));
+        const M_premium = q(Math.pow(1 / Math.max(premium, 1e-9), policy.premiumGamma));
+        const M_moment = q(1 + policy.momentBoostMax * rarityScore);
+        const rawSize = 1 + policy.sizeMu * Math.log1p(usd / Math.max(policy.sizeScaleUsd, 1));
+        const M_size = Math.min(rawSize, policy.sizeCap);
+        const M_taper = policy.whaleTaper ? 1 / Math.sqrt(1 + policy.whaleTaper.k * usd) : 1;
+        const sizeMultiplier = q(M_size * M_taper);
+        const N = Math.max(0, ctx.currentStreakDays || 0);
+        const M_streak = q(1 + policy.streakMaxBoost * (1 - Math.pow(PHI, -N)));
+        const L = Math.max(0, (ctx.lifetimeUsdSoFar || 0) + usd);
+        const tierBoost = (policy.lifetimeTiers || []).reduce((acc, t) => (L >= t.thresholdUsd ? Math.max(acc, t.boost) : acc), 0);
+        const M_tier = q(1 + tierBoost);
+        const M_choir = q(choirMultiplierForPulse(
+          ctx.nowPulse,
+          pulsesPerBeat / PULSES_PER_STEP,
+          ctx.choirNearby ?? [],
+          policy.choir
+        ));
+        const M_breath = q(breathAlignmentMultiplier(ctx.nowPulse, ctx.breathPhase01, policy.breath));
+        const M_festival = q(festivalMultiplier(ctx.nowPulse, pulsesPerBeat, policy.festival));
+        const { M_milestone } = computeMilestoneMultiplier(policy, ctx.nowPulse, adoption, pulsesPerBeat);
+
+        const issuanceMultiplier = q(
+          M_adoption * M_premium * M_moment * sizeMultiplier * M_streak * M_tier * M_choir * M_breath * M_festival * M_milestone
+        );
+
+        const phiPerUsd = q(base * issuanceMultiplier);
+        return {
+          phiPerUsd,
+          usdPerPhi: phiPerUsd > 0 ? q(1 / phiPerUsd) : Infinity
+        };
+      }
+
       async function computeValuationAndStamp(meta){
         const nowPulse = kaiNowPulseExact();
         const unsigned = computeIntrinsicUnsigned(meta, nowPulse);
@@ -1326,8 +1590,45 @@
         return { nowPulse, unsigned, stamp };
       }
 
+      const USD_SAMPLE = 100;
+      const USD_FMT = (() => {
+        try {
+          return new Intl.NumberFormat("en-US", {
+            style: "currency",
+            currency: "USD",
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+          });
+        } catch {
+          return null;
+        }
+      })();
+      const fmtUsd = (n) => {
+        if (!Number.isFinite(n)) return "";
+        return USD_FMT ? USD_FMT.format(n) : `$${n.toFixed(2)}`;
+      };
+      const fmtPhi = (n) => {
+        if (!Number.isFinite(n)) return "";
+        return Number(n.toFixed(6)).toString();
+      };
+      function readTransferAmountPhi(meta) {
+        const candidate =
+          meta.transferAmountPhi ??
+          meta.childAllocationPhi ??
+          meta.branchBasePhi ??
+          meta.amountPhi ??
+          meta.transferAmount ??
+          meta.transferAmountPhi;
+        if (typeof candidate === "number" && Number.isFinite(candidate)) return candidate;
+        if (typeof candidate === "string") {
+          const n = Number(candidate);
+          return Number.isFinite(n) ? n : null;
+        }
+        return null;
+      }
+
       function clearValuation() {
-        for (const id of ["val-live","val-premium","val-alg","val-stamp","val-computed","val-nowpulse"]) $(id).value = "";
+        for (const id of ["val-live","val-premium","val-alg","val-stamp","val-computed","val-nowpulse","val-received-phi","val-received-usd","val-usd-per-phi","val-total-usd"]) $(id).value = "";
       }
       window.clearValuation = clearValuation;
 
@@ -1336,17 +1637,32 @@
         const txt  = $("det-raw").value || "";
         const meta = parseMetaLiteFromSvgText(txt);
         const { nowPulse, unsigned, stamp } = await computeValuationAndStamp(meta);
+        const receivedPhi = readTransferAmountPhi(meta);
+        const issuance = quotePhiForUsd({ meta, nowPulse, usd: USD_SAMPLE, currentStreakDays: 0, lifetimeUsdSoFar: 0 });
+        const usdPerPhi = issuance?.usdPerPhi ?? 0;
         const par = Number(unsigned?.inputs?.parOffset ?? 1);
         const valueGross   = Math.max(0, Number((unsigned.valuePhi + par).toFixed(6)));
         const premiumGross = Math.max(0, Number((unsigned.premium).toFixed(6)));
         const valueAdj   = Math.max(0, Number((valueGross   - DISPLAY_OFFSET).toFixed(6)));
         const premiumAdj = Math.max(0, Number((premiumGross - DISPLAY_OFFSET).toFixed(6)));
-        $("val-live").value     = String(valueAdj);
-        $("val-premium").value  = String(premiumAdj);
+        const receivedUsd = receivedPhi != null && Number.isFinite(receivedPhi) ? receivedPhi * usdPerPhi : null;
+        const totalPhi = receivedPhi != null && Number.isFinite(receivedPhi) ? receivedPhi : valueAdj;
+        const totalUsd = Number.isFinite(totalPhi) ? totalPhi * usdPerPhi : null;
+        if (receivedPhi != null && Number.isFinite(receivedPhi)) {
+          $("val-live").value     = fmtPhi(receivedPhi);
+          $("val-premium").value  = "";
+        } else {
+          $("val-live").value     = String(valueAdj);
+          $("val-premium").value  = String(premiumAdj);
+        }
         $("val-alg").value      = `${unsigned.algorithm} • ${unsigned.policyChecksum}`;
         $("val-computed").value = String(unsigned.computedAtPulse);
         $("val-nowpulse").value = String(nowPulse);
         $("val-stamp").value    = stamp;
+        $("val-received-phi").value = receivedPhi != null ? fmtPhi(receivedPhi) : "";
+        $("val-received-usd").value = receivedUsd != null ? fmtUsd(receivedUsd) : "";
+        $("val-usd-per-phi").value = Number.isFinite(usdPerPhi) ? fmtUsd(usdPerPhi) : "";
+        $("val-total-usd").value = totalUsd != null ? fmtUsd(totalUsd) : "";
       }
 
       $("val-compute-now").addEventListener("click", handleComputeNow);

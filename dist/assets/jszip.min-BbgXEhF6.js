@@ -1,0 +1,1 @@
+import{ft as e}from"./index-UCB0cA71.js";export default e();
