@@ -166,18 +166,6 @@ function readReceiveSigFromBundle(raw: unknown): ReceiveSig | null {
   return isReceiveSig(candidate) ? candidate : null;
 }
 
-function applyReceiveSigToMeta(meta: SigilMetadata, receiveSig: ReceiveSig): SigilMetadata {
-  const transfers = meta.transfers ?? [];
-  if (transfers.length === 0) return meta;
-  const last = transfers[transfers.length - 1];
-  if (last.receiverSignature) return meta;
-  const nextLast: SigilTransfer = {
-    ...last,
-    receiverSignature: receiveSig.assertion.response.signature,
-  };
-  return { ...meta, transfers: [...transfers.slice(0, -1), nextLast] };
-}
-
 function readExhaleInfoFromTransfer(
   transfer?: SigilTransfer
 ): { amountUsd?: string; sentPulse?: number } {
@@ -684,11 +672,13 @@ const VerifierStamperInner: React.FC = () => {
       typeof m.chakraDay === "string";
 
     const last = m.transfers?.slice(-1)[0];
-    const lastParty = last?.receiverSignature || last?.senderSignature || null;
+    const receiveProof = Boolean(receiveSig);
+    const sealedByProof = receiveProof && last && !last.receiverSignature;
+    const lastParty = last?.receiverSignature || (!sealedByProof ? last?.senderSignature : null) || null;
     const isOwner = lastParty && sig ? lastParty === sig : null;
     const hasTransfers = !!(m.transfers && m.transfers.length > 0);
-    const lastOpen = !!(last && !last.receiverSignature);
-    const lastClosed = !!(last && !!last.receiverSignature);
+    const lastOpen = !!(last && !last.receiverSignature && !sealedByProof);
+    const lastClosed = !!(last && (last.receiverSignature || sealedByProof));
     const isUnsigned = !m.kaiSignature;
 
     const m2 = await refreshHeadWindow(m);
@@ -741,7 +731,6 @@ const VerifierStamperInner: React.FC = () => {
       const receiveFromBundle = readReceiveSigFromBundle(proofMetaNext?.raw);
       if (receiveFromBundle) {
         metaNext = { ...metaNext, receiveSig: receiveFromBundle };
-        metaNext = applyReceiveSigToMeta(metaNext, receiveFromBundle);
       }
       if (proofMetaNext?.raw && isRecord(proofMetaNext.raw)) {
         metaNext = { ...metaNext, proofBundleRaw: proofMetaNext.raw };
@@ -1019,11 +1008,13 @@ const VerifierStamperInner: React.FC = () => {
         typeof mNew.chakraDay === "string";
 
       const lastTx = mNew.transfers?.slice(-1)[0];
-      const lastParty = lastTx?.receiverSignature || lastTx?.senderSignature || null;
+      const receiveProof = Boolean(receiveSig);
+      const sealedByProof = receiveProof && lastTx && !lastTx.receiverSignature;
+      const lastParty = lastTx?.receiverSignature || (!sealedByProof ? lastTx?.senderSignature : null) || null;
       const isOwner = lastParty && liveSig ? lastParty === liveSig : null;
       const hasTransfers = !!(mNew.transfers && mNew.transfers.length > 0);
-      const lastOpen = !!(lastTx && !lastTx.receiverSignature);
-      const lastClosed = !!(lastTx && !!lastTx.receiverSignature);
+      const lastOpen = !!(lastTx && !lastTx.receiverSignature && !sealedByProof);
+      const lastClosed = !!(lastTx && (lastTx.receiverSignature || sealedByProof));
       const isUnsigned = !mNew.kaiSignature;
 
       let effCtx: "parent" | "derivative" | null = null;
@@ -1060,8 +1051,14 @@ const VerifierStamperInner: React.FC = () => {
       });
       setUiState(next);
     },
-    [liveSig, computeEffectiveCanonical, contentSigExpected]
+    [liveSig, computeEffectiveCanonical, contentSigExpected, receiveSig]
   );
+
+  useEffect(() => {
+    if (meta) {
+      void syncMetaAndUi(meta);
+    }
+  }, [receiveSig, meta, syncMetaAndUi]);
 
   const fmtPhiCompact = useCallback((s: string) => {
     let t = (s || "").trim();
