@@ -22,6 +22,18 @@ import { extractProofBundleMetaFromSvg, type ProofBundleMeta } from "../utils/si
 import { tryVerifyGroth16 } from "../components/VerifierStamper/zk";
 import { isKASAuthorSig } from "../utils/authorSig";
 import { verifyBundleAuthorSig } from "../utils/webauthnKAS";
+import { downloadBlob } from "../lib/download";
+import { embedProofMetadata } from "../utils/svgProof";
+import {
+  buildKasChallenge,
+  ensureReceiverPasskey,
+  getWebAuthnAssertionJson,
+  isReceiveSig,
+  listStoredKasPasskeys,
+  loadStoredReceiverPasskey,
+  verifyWebAuthnAssertion,
+  type ReceiveSig,
+} from "../utils/webauthnReceive";
 
 /* ────────────────────────────────────────────────────────────────
    Utilities
@@ -35,6 +47,16 @@ function formatProofValue(value: unknown): string {
   } catch {
     return String(value);
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function readReceiveSigFromBundle(raw: unknown): ReceiveSig | null {
+  if (!isRecord(raw)) return null;
+  const candidate = raw.receiveSig;
+  return isReceiveSig(candidate) ? candidate : null;
 }
 
 function readSlugFromLocation(): string {
@@ -76,6 +98,13 @@ function isSvgFile(file: File): boolean {
 type BadgeKind = "idle" | "busy" | "ok" | "fail";
 type PanelKey = "inhale" | "capsule" | "proof" | "zk" | "audit";
 type SealState = "off" | "busy" | "valid" | "invalid" | "na";
+
+type GlyphUnlockState = {
+  isRequired: boolean;
+  isUnlocked: boolean;
+  credId?: string;
+  unlockedAtNonce?: string;
+};
 
 /* ────────────────────────────────────────────────────────────────
    Icons
@@ -237,6 +266,17 @@ export default function VerifyPage(): ReactElement {
   const [zkVerify, setZkVerify] = useState<boolean | null>(null);
   const [zkVkey, setZkVkey] = useState<unknown>(null);
 
+  const [unlockState, setUnlockState] = useState<GlyphUnlockState>({ isRequired: false, isUnlocked: false });
+  const [unlockBusy, setUnlockBusy] = useState<boolean>(false);
+  const autoUnlockRef = useRef<string | null>(null);
+  const unlockBundleRef = useRef<string | null>(null);
+
+  const [receiveSig, setReceiveSig] = useState<ReceiveSig | null>(null);
+  const [receiveStatus, setReceiveStatus] = useState<"idle" | "new" | "already">("idle");
+  const [receiveBusy, setReceiveBusy] = useState<boolean>(false);
+  const autoReceiveRef = useRef<string | null>(null);
+  const receiveBundleRef = useRef<string | null>(null);
+
   const [dragActive, setDragActive] = useState<boolean>(false);
 
   // Focus Views
@@ -324,6 +364,14 @@ export default function VerifyPage(): ReactElement {
     }
   }, []);
 
+  const resolveReceiverPasskey = useCallback(async () => {
+    const receiver = loadStoredReceiverPasskey();
+    if (receiver) return receiver;
+    const kasPasskeys = listStoredKasPasskeys();
+    if (kasPasskeys.length > 0) return kasPasskeys[0];
+    return ensureReceiverPasskey();
+  }, []);
+
   const onPickFile = useCallback(
     async (file: File): Promise<void> => {
       if (!isSvgFile(file)) {
@@ -366,6 +414,93 @@ export default function VerifyPage(): ReactElement {
       setBusy(false);
     }
   }, [slug, svgText]);
+
+  const attemptUnlock = useCallback(
+    async (mode: "auto" | "manual"): Promise<void> => {
+      if (unlockBusy || unlockState.isUnlocked) return;
+      if (result.status !== "ok" || !bundleHash) return;
+      const authorSig = embeddedProof?.authorSig;
+      if (!authorSig || !isKASAuthorSig(authorSig)) return;
+
+      setUnlockBusy(true);
+      try {
+        const { nonce, challengeBytes } = await buildKasChallenge("unlock", bundleHash);
+        const assertion = await getWebAuthnAssertionJson({
+          challenge: challengeBytes,
+          allowCredIds: [authorSig.credId],
+        });
+        const ok = await verifyWebAuthnAssertion({
+          assertion,
+          expectedChallenge: challengeBytes,
+          pubKeyJwk: authorSig.pubKeyJwk,
+          expectedCredId: authorSig.credId,
+        });
+        if (!ok) {
+          setNotice("Unlock failed.");
+          return;
+        }
+        setUnlockState({ isRequired: true, isUnlocked: true, credId: authorSig.credId, unlockedAtNonce: nonce });
+      } catch (err) {
+        if (mode === "manual") {
+          setNotice("Unlock canceled.");
+        }
+      } finally {
+        setUnlockBusy(false);
+      }
+    },
+    [unlockBusy, unlockState.isUnlocked, result.status, bundleHash, embeddedProof?.authorSig, setNotice]
+  );
+
+  const claimReceive = useCallback(async (): Promise<void> => {
+    if (receiveBusy) return;
+    if (result.status !== "ok" || !bundleHash) return;
+    if (!svgText.trim()) return;
+    if (receiveStatus !== "new") return;
+
+    setReceiveBusy(true);
+    try {
+      const passkey = await resolveReceiverPasskey();
+      const { nonce, challengeBytes } = await buildKasChallenge("receive", bundleHash);
+      const assertion = await getWebAuthnAssertionJson({
+        challenge: challengeBytes,
+        allowCredIds: [passkey.credId],
+      });
+      const ok = await verifyWebAuthnAssertion({
+        assertion,
+        expectedChallenge: challengeBytes,
+        pubKeyJwk: passkey.pubKeyJwk,
+        expectedCredId: passkey.credId,
+      });
+      if (!ok) {
+        setNotice("Receive signature invalid.");
+        return;
+      }
+      const receiveSigNext: ReceiveSig = {
+        v: "KRS-1",
+        alg: "webauthn-es256",
+        nonce,
+        binds: { bundleHash },
+        credId: passkey.credId,
+        pubKeyJwk: passkey.pubKeyJwk as ReceiveSig["pubKeyJwk"],
+        assertion,
+      };
+
+      const bundleRaw = embeddedProof?.raw;
+      const nextBundle = isRecord(bundleRaw) ? { ...bundleRaw, receiveSig: receiveSigNext } : { receiveSig: receiveSigNext };
+      const receivedSvg = embedProofMetadata(svgText, nextBundle);
+      const blob = new Blob([receivedSvg], { type: "image/svg+xml" });
+      const suffix = bundleHash.slice(0, 10);
+      downloadBlob(blob, `sigil_received_${suffix}.svg`);
+
+      window.localStorage.setItem(`received:${bundleHash}`, JSON.stringify(receiveSigNext));
+      setReceiveSig(receiveSigNext);
+      setReceiveStatus("already");
+    } catch (err) {
+      setNotice("Receive claim canceled.");
+    } finally {
+      setReceiveBusy(false);
+    }
+  }, [receiveBusy, result.status, bundleHash, svgText, receiveStatus, embeddedProof?.raw, resolveReceiverPasskey, setNotice]);
 
   // Proof bundle construction (logic unchanged)
   React.useEffect(() => {
@@ -434,6 +569,89 @@ export default function VerifyPage(): ReactElement {
       active = false;
     };
   }, [result, slug.raw, svgText]);
+
+  React.useEffect(() => {
+    if (result.status !== "ok" || !bundleHash) {
+      setUnlockState({ isRequired: false, isUnlocked: false });
+      unlockBundleRef.current = null;
+      autoUnlockRef.current = null;
+      return;
+    }
+
+    const authorSig = embeddedProof?.authorSig;
+    if (!authorSig || !isKASAuthorSig(authorSig)) {
+      setUnlockState({ isRequired: false, isUnlocked: false });
+      unlockBundleRef.current = bundleHash;
+      autoUnlockRef.current = null;
+      return;
+    }
+
+    if (unlockBundleRef.current !== bundleHash) {
+      unlockBundleRef.current = bundleHash;
+      autoUnlockRef.current = null;
+      setUnlockState({ isRequired: true, isUnlocked: false, credId: authorSig.credId });
+      return;
+    }
+
+    setUnlockState((prev) =>
+      prev.isUnlocked && prev.credId === authorSig.credId ? prev : { isRequired: true, isUnlocked: false, credId: authorSig.credId }
+    );
+  }, [result.status, bundleHash, embeddedProof?.authorSig]);
+
+  React.useEffect(() => {
+    if (result.status !== "ok" || !bundleHash) {
+      setReceiveSig(null);
+      setReceiveStatus("idle");
+      receiveBundleRef.current = null;
+      autoReceiveRef.current = null;
+      return;
+    }
+
+    if (receiveBundleRef.current !== bundleHash) {
+      receiveBundleRef.current = bundleHash;
+      autoReceiveRef.current = null;
+    }
+
+    const key = `received:${bundleHash}`;
+    const storedRaw = window.localStorage.getItem(key);
+    if (storedRaw) {
+      try {
+        const parsed = JSON.parse(storedRaw) as unknown;
+        const stored = isReceiveSig(parsed) ? parsed : null;
+        setReceiveSig(stored);
+      } catch {
+        setReceiveSig(null);
+      }
+      setReceiveStatus("already");
+      return;
+    }
+
+    const embeddedReceive = readReceiveSigFromBundle(embeddedProof?.raw);
+    if (embeddedReceive) {
+      setReceiveSig(embeddedReceive);
+      setReceiveStatus("already");
+      return;
+    }
+
+    setReceiveSig(null);
+    setReceiveStatus("new");
+  }, [result.status, bundleHash, embeddedProof?.raw]);
+
+  React.useEffect(() => {
+    if (!bundleHash || result.status !== "ok") return;
+    if (!unlockState.isRequired || unlockState.isUnlocked) return;
+    if (autoUnlockRef.current === bundleHash) return;
+    autoUnlockRef.current = bundleHash;
+    void attemptUnlock("auto");
+  }, [bundleHash, result.status, unlockState.isRequired, unlockState.isUnlocked, attemptUnlock]);
+
+  React.useEffect(() => {
+    if (!bundleHash || result.status !== "ok") return;
+    if (receiveStatus !== "new") return;
+    if (autoReceiveRef.current === bundleHash) return;
+    autoReceiveRef.current = bundleHash;
+    void claimReceive();
+  }, [bundleHash, result.status, receiveStatus, claimReceive]);
 
   // Groth16 verify (logic unchanged)
   React.useEffect(() => {
@@ -510,6 +728,20 @@ export default function VerifyPage(): ReactElement {
     if (zkVerify === null) return "na";
     return zkVerify ? "valid" : "invalid";
   }, [busy, zkMeta?.zkPoseidonHash, zkVerify]);
+
+  const unlockStatus = useMemo(() => {
+    if (!unlockState.isRequired) return "—";
+    return unlockState.isUnlocked ? "Unlocked" : "Unlock required";
+  }, [unlockState.isRequired, unlockState.isUnlocked]);
+
+  const receiveStatusText = useMemo(() => {
+    if (receiveStatus === "already") return "Already received";
+    if (receiveStatus === "new") return "New receive";
+    return "—";
+  }, [receiveStatus]);
+
+  const receiveCredId = useMemo(() => (receiveSig ? receiveSig.credId : ""), [receiveSig]);
+  const receiveNonce = useMemo(() => (receiveSig ? receiveSig.nonce : ""), [receiveSig]);
 
   const auditBundleText = useMemo(() => {
     if (!proofCapsule) return "";
@@ -926,6 +1158,53 @@ export default function VerifyPage(): ReactElement {
                   <MiniField label="vesselHash parity" value={embeddedProof?.capsuleHash ? String(embeddedProof.capsuleHash === capsuleHash) : "n/a"} />
                   <MiniField label="bundleHash parity" value={embeddedProof?.bundleHash ? String(embeddedProof.bundleHash === bundleHash) : "n/a"} />
                 </div>
+
+                <div className="vmini-grid vmini-grid--3" aria-label="Unlock and receive status">
+                  <MiniField label="Unlock status" value={unlockStatus} />
+                  <MiniField label="Receive status" value={receiveStatusText} />
+                  <MiniField
+                    label="Receive credId"
+                    value={receiveCredId ? ellipsizeMiddle(receiveCredId, 12, 10) : "—"}
+                    title={receiveCredId || "—"}
+                  />
+                </div>
+
+                {receiveSig ? (
+                  <div className="vmini-grid vmini-grid--2" aria-label="Receive signature summary">
+                    <MiniField
+                      label="Receive nonce"
+                      value={receiveNonce ? ellipsizeMiddle(receiveNonce, 14, 12) : "—"}
+                      title={receiveNonce || "—"}
+                    />
+                    <MiniField label="Receive bundle" value={bundleHash ? ellipsizeMiddle(bundleHash, 14, 12) : "—"} title={bundleHash || "—"} />
+                  </div>
+                ) : null}
+
+                {unlockState.isRequired && !unlockState.isUnlocked ? (
+                  <div className="vfoot" aria-label="Unlock gate">
+                    <div className="vfoot-left">
+                      <div className="vchip">Unlock gate</div>
+                    </div>
+                    <div className="vfoot-right">
+                      <button type="button" className="vcta vcta--ghost" onClick={() => void attemptUnlock("manual")} disabled={unlockBusy}>
+                        {unlockBusy ? "Unlocking…" : "Unlock"}
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+
+                {receiveStatus === "new" ? (
+                  <div className="vfoot" aria-label="Receive claim">
+                    <div className="vfoot-left">
+                      <div className="vchip">Receive</div>
+                    </div>
+                    <div className="vfoot-right">
+                      <button type="button" className="vcta" onClick={() => void claimReceive()} disabled={receiveBusy}>
+                        {receiveBusy ? "Claiming…" : "Claim & Embed Signature"}
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
 
                 <div className="vfoot" aria-label="Audit actions">
                   <div className="vfoot-left">
