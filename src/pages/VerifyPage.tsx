@@ -812,8 +812,8 @@ export default function VerifyPage(): ReactElement {
 
                   <div className="vstack">
                     <div className="vmini-grid vmini-grid--3" aria-label="Slug and embed checks">
-                      <MiniField label="proofMark pulse" value={result.status === "ok" ? (result.checks.slugPulseMatches === null ? "n/a" : String(result.checks.slugPulseMatches)) : "—"} />
-                      <MiniField label="proofMark sig" value={result.status === "ok" ? (result.checks.slugShortSigMatches === null ? "n/a" : String(result.checks.slugShortSigMatches)) : "—"} />
+                      <MiniField label="pathMark pulse" value={result.status === "ok" ? (result.checks.slugPulseMatches === null ? "n/a" : String(result.checks.slugPulseMatches)) : "—"} />
+                      <MiniField label="pathMark sig" value={result.status === "ok" ? (result.checks.slugShortSigMatches === null ? "n/a" : String(result.checks.slugShortSigMatches)) : "—"} />
                       <MiniField label="Φ-Key seal" value={result.status === "ok" ? (result.checks.derivedPhiKeyMatchesEmbedded === null ? "n/a" : String(result.checks.derivedPhiKeyMatchesEmbedded)) : "—"} />
                     </div>
 
@@ -1020,7 +1020,6 @@ export default function VerifyPage(): ReactElement {
                     value={receiveCredId ? ellipsizeMiddle(receiveCredId, 12, 10) : "—"}
                     title={receiveCredId || "—"}
                   />
-                  <MiniField label="Receive bundle" value={receiveBundleHash ? ellipsizeMiddle(receiveBundleHash, 14, 12) : "—"} title={receiveBundleHash || "—"} />
                 </div>
 
                 {receiveSig ? (
