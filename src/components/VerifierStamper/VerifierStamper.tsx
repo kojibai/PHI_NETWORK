@@ -106,6 +106,7 @@ import { buildBundleUnsigned, buildVerifierSlug, hashBundle, hashProofCapsuleV1,
 import { isKASAuthorSig } from "../../utils/authorSig";
 import { computeZkPoseidonHash } from "../../utils/kai";
 import { generateZkProofFromPoseidonHash } from "../../utils/zkProof";
+import type { SigilProofHints } from "../../types/sigil";
 import {
   buildKasChallenge,
   ensureReceiverPasskey,
@@ -148,6 +149,15 @@ function readPhiAmountFromMeta(meta: SigilMetadataWithOptionals): string | undef
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function isSigilProofHints(value: unknown): value is SigilProofHints {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.scheme === "string" &&
+    typeof value.api === "string" &&
+    typeof value.explorer === "string"
+  );
 }
 
 function readReceiveSigFromBundle(raw: unknown): ReceiveSig | null {
@@ -732,7 +742,7 @@ const VerifierStamperInner: React.FC = () => {
             const generated = await generateZkProofFromPoseidonHash({
               poseidonHash,
               secret: computed.secret,
-              proofHints: typeof metaNext.proofHints === "object" && metaNext.proofHints !== null ? metaNext.proofHints : undefined,
+              proofHints: isSigilProofHints(metaNext.proofHints) ? metaNext.proofHints : undefined,
             });
             if (generated) {
               metaNext = { ...metaNext, zkProof: generated.proof, zkPublicInputs: generated.zkPublicInputs, proofHints: generated.proofHints };
