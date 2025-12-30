@@ -1579,7 +1579,7 @@ $("pv-pdf")?.addEventListener("change", (e) => {
         return Math.max(0, Math.min(1, score / w));
       }
       function quotePhiForUsd(ctx, policy = ISSUANCE_POLICY) {
-        const { unsigned } = computeIntrinsicUnsigned(ctx.meta, ctx.nowPulse);
+        const unsigned = computeIntrinsicUnsigned(ctx.meta, ctx.nowPulse);
         const premium = unsigned.premium ?? 0;
         const pulsesPerBeat = Number(unsigned.inputs?.pulsesPerBeat) || (DEFAULT_STEPS_PER_BEAT * PULSES_PER_STEP);
         const claimPulse = typeof ctx.meta.kaiPulse === "number" ? ctx.meta.kaiPulse : typeof ctx.meta.pulse === "number" ? ctx.meta.pulse : ctx.nowPulse;
