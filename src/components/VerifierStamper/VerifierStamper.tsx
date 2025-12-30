@@ -96,15 +96,39 @@ import { buildMerkleRoot, merkleProof, verifyProof } from "./merkle";
 import { sealCurrentWindowIntoSegment } from "./segments";
 import { verifyHistorical } from "./verifyHistorical";
 import { verifyZkOnHead } from "./zk";
+import { embedProofMetadata } from "../../utils/svgProof";
+import { extractProofBundleMetaFromSvg, type ProofBundleMeta } from "../../utils/sigilMetadata";
 import { DEFAULT_ISSUANCE_POLICY, quotePhiForUsd } from "../../utils/phi-issuance";
 import { BREATH_MS } from "../valuation/constants";
 import { recordSend, getSpentScaledFor, markConfirmedByLeaf } from "../../utils/sendLedger";
 import { recordSigilTransferMovement } from "../../utils/sigilTransferRegistry";
+import { buildBundleUnsigned, buildVerifierSlug, hashBundle, hashProofCapsuleV1, hashSvgText, normalizeChakraDay, PROOF_CANON, PROOF_HASH_ALG } from "../KaiVoh/verifierProof";
+import { isKASAuthorSig } from "../../utils/authorSig";
+import { computeZkPoseidonHash } from "../../utils/kai";
+import { generateZkProofFromPoseidonHash } from "../../utils/zkProof";
+import type { SigilProofHints } from "../../types/sigil";
+import {
+  buildKasChallenge,
+  ensureReceiverPasskey,
+  findStoredKasPasskeyByCredId,
+  getWebAuthnAssertionJson,
+  isReceiveSig,
+  loadStoredReceiverPasskey,
+  verifyWebAuthnAssertion,
+  type ReceiveSig,
+} from "../../utils/webauthnReceive";
 
 /* Live chart popover (stay inside Verifier modal) */
 import LiveChart from "../valuation/chart/LiveChart";
 import InhaleUploadIcon from "../InhaleUploadIcon";
 import type { PhiMoveSuccessDetail, SigilMetadataLiteExtended } from "./types";
+
+type GlyphUnlockState = {
+  isRequired: boolean;
+  isUnlocked: boolean;
+  credId?: string;
+  unlockedAtNonce?: string;
+};
 
 function readPhiAmountFromMeta(meta: SigilMetadataWithOptionals): string | undefined {
   const candidate =
@@ -121,6 +145,25 @@ function readPhiAmountFromMeta(meta: SigilMetadataWithOptionals): string | undef
     return trimmed ? trimmed : undefined;
   }
   return undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isSigilProofHints(value: unknown): value is SigilProofHints {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.scheme === "string" &&
+    typeof value.api === "string" &&
+    typeof value.explorer === "string"
+  );
+}
+
+function readReceiveSigFromBundle(raw: unknown): ReceiveSig | null {
+  if (!isRecord(raw)) return null;
+  const candidate = raw.receiveSig;
+  return isReceiveSig(candidate) ? candidate : null;
 }
 
 function readExhaleInfoFromTransfer(
@@ -210,6 +253,18 @@ const VerifierStamperInner: React.FC = () => {
   const [valuationOpen, setValuationOpen] = useState<boolean>(false);
   const [noteOpen, setNoteOpen] = useState<boolean>(false);
   const [sigilSvgRaw, setSigilSvgRaw] = useState<string | null>(null);
+  const [proofBundleMeta, setProofBundleMeta] = useState<ProofBundleMeta | null>(null);
+  const [bundleHash, setBundleHash] = useState<string | null>(null);
+
+  const [unlockState, setUnlockState] = useState<GlyphUnlockState>({ isRequired: false, isUnlocked: false });
+  const [unlockBusy, setUnlockBusy] = useState<boolean>(false);
+  const [unlockAvailable, setUnlockAvailable] = useState<boolean>(false);
+  const autoUnlockRef = useRef<string | null>(null);
+
+  const [receiveSig, setReceiveSig] = useState<ReceiveSig | null>(null);
+  const [receiveStatus, setReceiveStatus] = useState<"idle" | "new" | "already">("idle");
+  const [receiveBusy, setReceiveBusy] = useState<boolean>(false);
+  const autoReceiveRef = useRef<string | null>(null);
 
   const [rotateOut, setRotateOut] = useState<boolean>(false);
   useEffect(() => {
@@ -218,6 +273,136 @@ const VerifierStamperInner: React.FC = () => {
     if (rotateOut) d.setAttribute("data-rotate", "true");
     else d.removeAttribute("data-rotate");
   }, [rotateOut]);
+
+  const resolveReceiverPasskey = useCallback(async () => {
+    const receiver = loadStoredReceiverPasskey();
+    if (receiver) return receiver;
+    return ensureReceiverPasskey();
+  }, []);
+
+  const computeBundleHashFromSvg = useCallback(
+    async (svgText: string, metaValue: SigilMetadata, proofMetaValue: ProofBundleMeta | null): Promise<string | null> => {
+      if (!svgText.trim()) return null;
+      const svgHash = await hashSvgText(svgText);
+      const proofCapsule = proofMetaValue?.proofCapsule;
+      const capsuleHash = proofMetaValue?.capsuleHash ?? (proofCapsule ? await hashProofCapsuleV1(proofCapsule) : null);
+      let bundleSeed: Record<string, unknown> | null = null;
+      if (proofMetaValue?.raw && isRecord(proofMetaValue.raw)) {
+        bundleSeed = { ...(proofMetaValue.raw as Record<string, unknown>), svgHash, capsuleHash, proofCapsule: proofCapsule ?? undefined };
+      } else if (metaValue.kaiSignature && typeof metaValue.pulse === "number") {
+        const chakraDay = normalizeChakraDay(metaValue.chakraDay ?? "") ?? "Crown";
+        const verifierSlug = buildVerifierSlug(metaValue.pulse, metaValue.kaiSignature);
+        const phiKey = metaValue.userPhiKey ?? (await derivePhiKeyFromSig(metaValue.kaiSignature));
+        const fallbackCapsule = {
+          v: "KPV-1" as const,
+          pulse: metaValue.pulse,
+          chakraDay,
+          kaiSignature: metaValue.kaiSignature,
+          phiKey,
+          verifierSlug,
+        };
+        const capsuleHashNext = capsuleHash ?? (await hashProofCapsuleV1(fallbackCapsule));
+        bundleSeed = {
+          hashAlg: proofMetaValue?.hashAlg ?? PROOF_HASH_ALG,
+          canon: proofMetaValue?.canon ?? PROOF_CANON,
+          proofCapsule: fallbackCapsule,
+          capsuleHash: capsuleHashNext,
+          svgHash,
+          shareUrl: proofMetaValue?.shareUrl,
+          verifierUrl: proofMetaValue?.verifierUrl,
+          zkPoseidonHash: proofMetaValue?.zkPoseidonHash,
+          zkProof: proofMetaValue?.zkProof,
+          proofHints: proofMetaValue?.proofHints,
+          zkPublicInputs: proofMetaValue?.zkPublicInputs,
+          authorSig: proofMetaValue?.authorSig ?? null,
+        };
+      }
+
+      if (!bundleSeed) return null;
+      const bundleUnsigned = buildBundleUnsigned(bundleSeed);
+      return hashBundle(bundleUnsigned);
+    },
+    []
+  );
+
+  const attemptUnlock = useCallback(
+    async (mode: "auto" | "manual"): Promise<void> => {
+      if (unlockBusy || unlockState.isUnlocked) return;
+      if (!bundleHash || !proofBundleMeta?.authorSig || !isKASAuthorSig(proofBundleMeta.authorSig)) return;
+      if (!findStoredKasPasskeyByCredId(proofBundleMeta.authorSig.credId)) return;
+
+      setUnlockBusy(true);
+      try {
+        const { nonce, challengeBytes } = await buildKasChallenge("unlock", bundleHash);
+        const assertion = await getWebAuthnAssertionJson({
+          challenge: challengeBytes,
+          allowCredIds: [proofBundleMeta.authorSig.credId],
+          preferInternal: true,
+        });
+        const ok = await verifyWebAuthnAssertion({
+          assertion,
+          expectedChallenge: challengeBytes,
+          pubKeyJwk: proofBundleMeta.authorSig.pubKeyJwk,
+          expectedCredId: proofBundleMeta.authorSig.credId,
+        });
+        if (!ok) {
+          setError("Unlock failed.");
+          return;
+        }
+        setUnlockState({ isRequired: true, isUnlocked: true, credId: proofBundleMeta.authorSig.credId, unlockedAtNonce: nonce });
+      } catch {
+        if (mode === "manual") setError("Unlock canceled.");
+      } finally {
+        setUnlockBusy(false);
+      }
+    },
+    [unlockBusy, unlockState.isUnlocked, bundleHash, proofBundleMeta?.authorSig]
+  );
+
+  const claimReceiveSig = useCallback(async (): Promise<ReceiveSig | null> => {
+    if (receiveBusy || receiveStatus !== "new") return null;
+    if (!bundleHash) return null;
+    setReceiveBusy(true);
+    try {
+      const passkey = await resolveReceiverPasskey();
+      const { nonce, challengeBytes } = await buildKasChallenge("receive", bundleHash);
+      const assertion = await getWebAuthnAssertionJson({
+        challenge: challengeBytes,
+        allowCredIds: [passkey.credId],
+        preferInternal: true,
+      });
+      const ok = await verifyWebAuthnAssertion({
+        assertion,
+        expectedChallenge: challengeBytes,
+        pubKeyJwk: passkey.pubKeyJwk,
+        expectedCredId: passkey.credId,
+      });
+      if (!ok) {
+        setError("Receive signature invalid.");
+        return null;
+      }
+
+      const nextSig: ReceiveSig = {
+        v: "KRS-1",
+        alg: "webauthn-es256",
+        nonce,
+        binds: { bundleHash },
+        credId: passkey.credId,
+        pubKeyJwk: passkey.pubKeyJwk as ReceiveSig["pubKeyJwk"],
+        assertion,
+      };
+
+      window.localStorage.setItem(`received:${bundleHash}`, JSON.stringify(nextSig));
+      setReceiveSig(nextSig);
+      setReceiveStatus("already");
+      return nextSig;
+    } catch {
+      setError("Receive claim canceled.");
+      return null;
+    } finally {
+      setReceiveBusy(false);
+    }
+  }, [receiveBusy, receiveStatus, bundleHash, resolveReceiverPasskey]);
 
   const [me, setMe] = useState<Keypair | null>(null);
   useEffect(() => {
@@ -426,8 +611,10 @@ const VerifierStamperInner: React.FC = () => {
     const f = e.target.files?.[0];
     if (!f) return;
 
+    let rawSvg = "";
     try {
-      setSigilSvgRaw(await f.text());
+      rawSvg = await f.text();
+      setSigilSvgRaw(rawSvg);
     } catch (err) {
       logError("handleSvg.readFile", err);
       setSigilSvgRaw(null);
@@ -485,11 +672,13 @@ const VerifierStamperInner: React.FC = () => {
       typeof m.chakraDay === "string";
 
     const last = m.transfers?.slice(-1)[0];
-    const lastParty = last?.receiverSignature || last?.senderSignature || null;
+    const receiveProof = Boolean(receiveSig);
+    const sealedByProof = receiveProof && last && !last.receiverSignature;
+    const lastParty = last?.receiverSignature || (!sealedByProof ? last?.senderSignature : null) || null;
     const isOwner = lastParty && sig ? lastParty === sig : null;
     const hasTransfers = !!(m.transfers && m.transfers.length > 0);
-    const lastOpen = !!(last && !last.receiverSignature);
-    const lastClosed = !!(last && !!last.receiverSignature);
+    const lastOpen = !!(last && !last.receiverSignature && !sealedByProof);
+    const lastClosed = !!(last && (last.receiverSignature || sealedByProof));
     const isUnsigned = !m.kaiSignature;
 
     const m2 = await refreshHeadWindow(m);
@@ -509,8 +698,7 @@ const VerifierStamperInner: React.FC = () => {
     const { used: childUsed, expired: childExpired } = getChildLockInfo(m2, kaiPulseNow());
     const { expired: parentOpenExpired } = getParentOpenExpiry(m2, kaiPulseNow());
 
-    setMeta(m2);
-    setRawMeta(JSON.stringify(m2, null, 2));
+    let metaNext = m2;
 
     const nextUi: UiState = deriveState({
       contextOk,
@@ -535,9 +723,105 @@ const VerifierStamperInner: React.FC = () => {
 
     openVerifier();
 
+    if (rawSvg) {
+      const proofMetaNext = extractProofBundleMetaFromSvg(rawSvg);
+      setProofBundleMeta(proofMetaNext);
+      const bundleHashNext = await computeBundleHashFromSvg(rawSvg, m2, proofMetaNext);
+      setBundleHash(bundleHashNext);
+      const receiveFromBundle = readReceiveSigFromBundle(proofMetaNext?.raw);
+      if (receiveFromBundle) {
+        metaNext = { ...metaNext, receiveSig: receiveFromBundle };
+      }
+      if (proofMetaNext?.raw && isRecord(proofMetaNext.raw)) {
+        metaNext = { ...metaNext, proofBundleRaw: proofMetaNext.raw };
+      }
+      const poseidonHash = typeof metaNext.zkPoseidonHash === "string" ? metaNext.zkPoseidonHash : undefined;
+      const payloadHashHex = typeof metaNext.payloadHashHex === "string" ? metaNext.payloadHashHex : undefined;
+      if (poseidonHash && !metaNext.zkProof && payloadHashHex) {
+        try {
+          const computed = await computeZkPoseidonHash(payloadHashHex);
+          if (computed.hash === poseidonHash) {
+            const generated = await generateZkProofFromPoseidonHash({
+              poseidonHash,
+              secret: computed.secret,
+              proofHints: isSigilProofHints(metaNext.proofHints) ? metaNext.proofHints : undefined,
+            });
+            if (generated) {
+              metaNext = { ...metaNext, zkProof: generated.proof, zkPublicInputs: generated.zkPublicInputs, proofHints: generated.proofHints };
+            }
+          }
+        } catch (err) {
+          logError("zk.generateFromPoseidon", err);
+        }
+      }
+    } else {
+      setProofBundleMeta(null);
+      setBundleHash(null);
+    }
+
+    setMeta(metaNext);
+    setRawMeta(JSON.stringify(metaNext, null, 2));
+
     // 🔑 Important: clear the input so choosing the same file again fires onChange
     if (e.target) e.target.value = "";
   };
+
+  useEffect(() => {
+    if (!bundleHash) {
+      setUnlockState({ isRequired: false, isUnlocked: false });
+      setUnlockAvailable(false);
+      autoUnlockRef.current = null;
+      return;
+    }
+
+    const authorSig = proofBundleMeta?.authorSig;
+    if (!authorSig || !isKASAuthorSig(authorSig)) {
+      setUnlockState({ isRequired: false, isUnlocked: false });
+      setUnlockAvailable(false);
+      autoUnlockRef.current = null;
+      return;
+    }
+
+    setUnlockState((prev) => (prev.isUnlocked && prev.credId === authorSig.credId ? prev : { isRequired: true, isUnlocked: false, credId: authorSig.credId }));
+    setUnlockAvailable(!!findStoredKasPasskeyByCredId(authorSig.credId));
+  }, [bundleHash, proofBundleMeta?.authorSig]);
+
+  useEffect(() => {
+    if (!bundleHash) {
+      setReceiveSig(null);
+      setReceiveStatus("idle");
+      autoReceiveRef.current = null;
+      return;
+    }
+
+    const key = `received:${bundleHash}`;
+    const stored = window.localStorage.getItem(key);
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored) as unknown;
+        setReceiveSig(isReceiveSig(parsed) ? parsed : null);
+      } catch {
+        setReceiveSig(null);
+      }
+      setReceiveStatus("already");
+      return;
+    }
+
+    const embedded = readReceiveSigFromBundle(proofBundleMeta?.raw);
+    if (embedded) {
+      setReceiveSig(embedded);
+      setReceiveStatus("already");
+      return;
+    }
+
+    setReceiveSig(null);
+    setReceiveStatus("new");
+  }, [bundleHash, proofBundleMeta?.raw]);
+
+  useEffect(() => {
+    if (!bundleHash || unlockState.isUnlocked || !unlockState.isRequired) return;
+    autoUnlockRef.current = bundleHash;
+  }, [bundleHash, unlockState.isUnlocked, unlockState.isRequired]);
 
   const handleAttach = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -724,11 +1008,13 @@ const VerifierStamperInner: React.FC = () => {
         typeof mNew.chakraDay === "string";
 
       const lastTx = mNew.transfers?.slice(-1)[0];
-      const lastParty = lastTx?.receiverSignature || lastTx?.senderSignature || null;
+      const receiveProof = Boolean(receiveSig);
+      const sealedByProof = receiveProof && lastTx && !lastTx.receiverSignature;
+      const lastParty = lastTx?.receiverSignature || (!sealedByProof ? lastTx?.senderSignature : null) || null;
       const isOwner = lastParty && liveSig ? lastParty === liveSig : null;
       const hasTransfers = !!(mNew.transfers && mNew.transfers.length > 0);
-      const lastOpen = !!(lastTx && !lastTx.receiverSignature);
-      const lastClosed = !!(lastTx && !!lastTx.receiverSignature);
+      const lastOpen = !!(lastTx && !lastTx.receiverSignature && !sealedByProof);
+      const lastClosed = !!(lastTx && (lastTx.receiverSignature || sealedByProof));
       const isUnsigned = !mNew.kaiSignature;
 
       let effCtx: "parent" | "derivative" | null = null;
@@ -765,8 +1051,14 @@ const VerifierStamperInner: React.FC = () => {
       });
       setUiState(next);
     },
-    [liveSig, computeEffectiveCanonical, contentSigExpected]
+    [liveSig, computeEffectiveCanonical, contentSigExpected, receiveSig]
   );
+
+  useEffect(() => {
+    if (meta) {
+      void syncMetaAndUi(meta);
+    }
+  }, [receiveSig, meta, syncMetaAndUi]);
 
   const fmtPhiCompact = useCallback((s: string) => {
     let t = (s || "").trim();
@@ -1481,6 +1773,11 @@ const VerifierStamperInner: React.FC = () => {
 
   const receive = async () => {
     if (!meta || !svgURL || !liveSig) return;
+    let receiveSigLocal = receiveSig ?? null;
+    if (receiveStatus === "new" && !receiveSigLocal) {
+      receiveSigLocal = await claimReceiveSig();
+      if (!receiveSigLocal) return;
+    }
 
     if (canonicalContext === "parent") {
       const { expired: parentExpired } = getParentOpenExpiry(meta, kaiPulseNow());
@@ -1610,7 +1907,61 @@ const VerifierStamperInner: React.FC = () => {
       logError("receive.recordTransferMovement", err);
     }
 
-    const durl = await embedMetadata(svgURL, updated);
+    let durl = await embedMetadata(svgURL, updated);
+    if (receiveSigLocal) {
+      const baseSvg = await fetch(durl).then((r) => r.text());
+      const svgHash = await hashSvgText(baseSvg);
+      const proofCapsule = proofBundleMeta?.proofCapsule;
+      const capsuleHash = proofBundleMeta?.capsuleHash ?? (proofCapsule ? await hashProofCapsuleV1(proofCapsule) : null);
+
+      let nextBundle: Record<string, unknown>;
+      if (proofBundleMeta?.raw && isRecord(proofBundleMeta.raw)) {
+        nextBundle = {
+          ...(proofBundleMeta.raw as Record<string, unknown>),
+          svgHash,
+          capsuleHash,
+          proofCapsule: proofCapsule ?? undefined,
+          receiveSig: receiveSigLocal,
+        };
+      } else if (updated.kaiSignature && typeof updated.pulse === "number") {
+        const chakraDay = normalizeChakraDay(updated.chakraDay ?? "") ?? "Crown";
+        const verifierSlug = buildVerifierSlug(updated.pulse, updated.kaiSignature);
+        const phiKey = updated.userPhiKey ?? (await derivePhiKeyFromSig(updated.kaiSignature));
+        const fallbackCapsule = {
+          v: "KPV-1" as const,
+          pulse: updated.pulse,
+          chakraDay,
+          kaiSignature: updated.kaiSignature,
+          phiKey,
+          verifierSlug,
+        };
+        const capsuleHashNext = capsuleHash ?? (await hashProofCapsuleV1(fallbackCapsule));
+        nextBundle = {
+          hashAlg: proofBundleMeta?.hashAlg ?? PROOF_HASH_ALG,
+          canon: proofBundleMeta?.canon ?? PROOF_CANON,
+          proofCapsule: fallbackCapsule,
+          capsuleHash: capsuleHashNext,
+          svgHash,
+          shareUrl: proofBundleMeta?.shareUrl,
+          verifierUrl: proofBundleMeta?.verifierUrl,
+          zkPoseidonHash: proofBundleMeta?.zkPoseidonHash,
+          zkProof: proofBundleMeta?.zkProof,
+          proofHints: proofBundleMeta?.proofHints,
+          zkPublicInputs: proofBundleMeta?.zkPublicInputs,
+          authorSig: proofBundleMeta?.authorSig ?? null,
+          receiveSig: receiveSigLocal,
+        };
+      } else {
+        nextBundle = { svgHash, capsuleHash, receiveSig: receiveSigLocal };
+      }
+
+      const bundleUnsigned = buildBundleUnsigned(nextBundle);
+      const bundleHashNext = await hashBundle(bundleUnsigned);
+      nextBundle.bundleHash = bundleHashNext;
+
+      const updatedSvg = embedProofMetadata(baseSvg, nextBundle);
+      durl = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(updatedSvg)))}`;
+    }
     const sigilPulse = updated.pulse ?? 0;
     download(durl, `${pulseFilename("sigil_receive", sigilPulse, nowPulse)}.svg`);
     const receivedPhi = readPhiAmountFromMeta(updated);
@@ -1723,13 +2074,15 @@ const VerifierStamperInner: React.FC = () => {
   const chakraDayDisplay = useMemo<ChakraDay | null>(() => resolveChakraDay(meta ?? {}), [meta]);
 
   const childDeadline = useMemo(() => {
-    if (canonicalContext !== "derivative") return null;
+    const last = meta?.transfers?.slice(-1)[0];
+    const hasOpenTransfer = !!last && !last.receiverSignature;
+    if (!hasOpenTransfer) return null;
     const info = getChildLockInfo(meta, pulseNow);
     if (!info.expireAt) return null;
     const leftPulses = Math.max(0, info.expireAt - pulseNow);
     const leftSteps = Math.ceil(leftPulses / PULSES_PER_STEP);
     return { leftPulses, leftSteps, expireAt: info.expireAt };
-  }, [meta, pulseNow, canonicalContext]);
+  }, [meta, pulseNow]);
 
   const { used: childUsed, expired: childExpired } = useMemo(() => getChildLockInfo(meta, pulseNow), [meta, pulseNow]);
   const parentOpenExp = useMemo(() => getParentOpenExpiry(meta, pulseNow).expired, [meta, pulseNow]);
@@ -1984,13 +2337,46 @@ const VerifierStamperInner: React.FC = () => {
               <section className="modal-body" role="tabpanel" style={S.modalBody}>
                 {tab === "summary" && (
                   <div className="summary-grid">
+                    {canonicalContext === "derivative" && (
+                      <>
+                        <KV
+                          k="Receive claim:"
+                          v={
+                            receiveStatus === "already" ? (
+                              "Already received"
+                            ) : receiveStatus === "new" ? (
+                              <>
+                                New receive{" "}
+                                <button className="secondary" onClick={() => void claimReceiveSig()} disabled={receiveBusy}>
+                                  {receiveBusy ? "Claiming…" : "Claim & Embed"}
+                                </button>
+                              </>
+                            ) : (
+                              "—"
+                            )
+                          }
+                        />
+                        {receiveSig && <KV k="Receive credId:" v={receiveSig.credId} wide mono />}
+                      </>
+                    )}
+                    {unlockState.isRequired && !unlockState.isUnlocked && unlockAvailable && (
+                      <KV
+                        k="Unlock gate:"
+                        v={
+                          <>
+                            Unlock required{" "}
+                            <button className="secondary" onClick={() => void attemptUnlock("manual")} disabled={unlockBusy}>
+                              {unlockBusy ? "Unlocking…" : "Unlock"}
+                            </button>
+                          </>
+                        }
+                      />
+                    )}
                     <KV k="Now" v={pulseNow} />
                     {childDeadline && <KV k="Inhale Seal:" v={`${childDeadline.leftSteps} steps (${childDeadline.leftPulses} pulses) left`} />}
-                    {canonicalContext === "derivative" &&
-                      (() => {
-                        const { expireAt } = getChildLockInfo(meta, pulseNow);
-                        return typeof expireAt === "number" && Number.isFinite(expireAt) ? <KV k="Inhale by:" v={expireAt} /> : null;
-                      })()}
+                    {childDeadline && typeof childDeadline.expireAt === "number" && Number.isFinite(childDeadline.expireAt) ? (
+                      <KV k="Inhale by:" v={childDeadline.expireAt} />
+                    ) : null}
 
                     {meta.userPhiKey && (
                       <KV
