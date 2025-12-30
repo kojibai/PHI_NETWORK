@@ -115,7 +115,6 @@ import { memoryRegistry, isOnline } from "../SigilExplorer/registryStore";
 import {
   buildKasChallenge,
   ensureReceiverPasskey,
-  findStoredKasPasskeyByCredId,
   getWebAuthnAssertionJson,
   isReceiveSig,
   loadStoredReceiverPasskey,
@@ -390,7 +389,6 @@ const VerifierStamperInner: React.FC = () => {
     async (mode: "auto" | "manual"): Promise<boolean> => {
       if (unlockBusy || unlockState.isUnlocked) return unlockState.isUnlocked;
       if (!bundleHash || !proofBundleMeta?.authorSig || !isKASAuthorSig(proofBundleMeta.authorSig)) return false;
-      if (!findStoredKasPasskeyByCredId(proofBundleMeta.authorSig.credId)) return false;
 
       setUnlockBusy(true);
       try {
@@ -1072,7 +1070,7 @@ const VerifierStamperInner: React.FC = () => {
     }
 
     setUnlockState((prev) => (prev.isUnlocked && prev.credId === authorSig.credId ? prev : { isRequired: true, isUnlocked: false, credId: authorSig.credId }));
-    setUnlockAvailable(!!findStoredKasPasskeyByCredId(authorSig.credId));
+    setUnlockAvailable(true);
   }, [bundleHash, proofBundleMeta?.authorSig]);
 
   useEffect(() => {
