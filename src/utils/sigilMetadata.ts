@@ -379,7 +379,7 @@ function extractFromParsedSvg(parsed: Record<string, unknown>): EmbeddedMeta | n
 }
 
 function getAttr(svg: string, key: string): string | undefined {
-  const pattern = `${key}\\s*=\\s*(\"([^\"]*)\"|'([^']*)')`;
+  const pattern = `${key}\\s*=\\s*("([^"]*)"|'([^']*)')`;
   const match = svg.match(new RegExp(pattern, "i"));
   if (!match) return undefined;
   return match[2] ?? match[3];

@@ -787,7 +787,7 @@ useEffect(() => {
     const chakra = (deferredPayload?.chakraDay ?? "Throat") as SigilPayload["chakraDay"];
     const ownerShort = (deferredPayload?.userPhiKey ?? "").slice(0, 12);
     const pulseStr = (deferredPayload?.pulse ?? 0).toLocaleString();
-    const t = `Kai Sigil — ${hash ? hash.slice(0, 16) : "—"}`;
+    const t = `☤Kai Sigil-Glyph — ${hash ? hash.slice(0, 16) : "—"}`;
     const d = deferredPayload
       ? `Sealed Sigil-Glyph • Pulse ${pulseStr} • Beat ${deferredPayload.beat}/36 • Step ${
           stepIdx
@@ -2599,7 +2599,7 @@ useEffect(() => {
     <main
       className="sigilpage"
       role="main"
-      aria-label="Kai Sigil Page"
+      aria-label="☤Kai Sigil Page"
       data-owner-verified={ownerVerified}
       data-archived={isArchived}
       data-old-link={oldLinkDetected ? "true" : "false"}

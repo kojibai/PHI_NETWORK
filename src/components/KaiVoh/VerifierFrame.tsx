@@ -3,20 +3,11 @@
 
 /**
  * VerifierFrame — Kai-Sigil Verification Panel
- * v2.4 — KPV-1 Capsule Hash (payload-bound proof capsule)
+ * v3.2 — True Top Bar (QR + Chip Rail) + No-Wrap Chips
  *
- * Guarantees:
- * ✅ Default verifier base is ALWAYS current app origin (+ Vite BASE_URL subpath) + "/verify"
- * ✅ verifierUrl is always a non-empty string (even on localhost)
- * ✅ "Copy Proof" copies a JSON capsule including:
- *    - canonical chakraDay
- *    - verifierSlug (domain-stable)
- *    - proofCapsule (KPV-1)
- *    - capsuleHash (SHA-256 over the capsule)
- *
- * Note:
- * - verifierUrl is convenience/QR and may change across hosts.
- * - capsuleHash binds the capsule fields (pulse/chakra/signature/phiKey/slug), not the host URL.
+ * ✅ Mobile-first, never cramped
+ * ✅ QR fallback never prints URL
+ * ✅ 💠 Remember Proof exports KVPF-1 payload (hashAlg/canon + KPV-1 capsule + capsuleHash)
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -32,21 +23,18 @@ import {
   hashProofCapsuleV1,
   normalizeChakraDay,
   shortKaiSig10,
+  PROOF_CANON,
+  PROOF_HASH_ALG,
   type ProofCapsuleV1,
 } from "./verifierProof";
 
 export interface VerifierFrameProps {
   pulse: number;
-  kaiSignature: string; // full signature (we will shorten for display + slug)
+  kaiSignature: string;
   phiKey: string;
   caption?: string;
-
-  /** Accept either raw string or canonical ChakraDay; we normalize → ChakraDay | undefined */
   chakraDay?: ChakraDay | string;
-
   compact?: boolean;
-
-  /** Optional override for the base verify URL (rare). Example: "https://example.com/verify" */
   verifierBaseUrl?: string;
 }
 
@@ -77,10 +65,12 @@ function pickQrComponent(mod: unknown): QRCodeComponent {
   }
   if (isFn(mod)) return mod as unknown as QRCodeComponent;
 
-  return function QRCodeFallback({ value }: QRCodeProps): ReactElement {
+  // NEVER print the URL here (it causes visual clutter).
+  return function QRCodeFallback(): ReactElement {
     return (
-      <div className="kv-verifier__qr-fallback" aria-label="QR unavailable">
-        {value}
+      <div className="kv-qr-fallback" aria-label="QR unavailable">
+        <div className="kv-qr-fallback__mark">QR</div>
+        <div className="kv-qr-fallback__sub">Open link</div>
       </div>
     );
   };
@@ -88,7 +78,7 @@ function pickQrComponent(mod: unknown): QRCodeComponent {
 
 const QR = pickQrComponent(ReactQrCodeModule);
 
-function truncateMiddle(value: string, head = 6, tail = 6): string {
+function truncateMiddle(value: string, head = 10, tail = 10): string {
   if (!value) return "";
   if (value.length <= head + tail + 3) return value;
   return `${value.slice(0, head)}…${value.slice(-tail)}`;
@@ -100,7 +90,39 @@ function truncateHash(h: string, head = 10, tail = 10): string {
   return `${h.slice(0, head)}…${h.slice(-tail)}`;
 }
 
+async function safeClipboardWrite(text: string): Promise<boolean> {
+  try {
+    if (typeof navigator === "undefined" || !navigator.clipboard?.writeText) return false;
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function ExternalIcon(): ReactElement {
+  return (
+    <svg className="kv-ic" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M14 5h5v5" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M10 14 19 5" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M19 14v4a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h4" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function RememberIcon(): ReactElement {
+  return (
+    <span className="kv-remember" aria-hidden="true">
+      💠
+    </span>
+  );
+}
+
 export type ProofCopy = Readonly<{
+  v: "KVPF-1";
+  hashAlg: string;
+  canon: string;
+
   verifierUrl: string;
   verifierBaseUrl: string;
   verifierSlug: string;
@@ -112,11 +134,8 @@ export type ProofCopy = Readonly<{
   kaiSignatureShort: string;
   phiKey: string;
 
-  /** KPV-1: canonical capsule that gets hashed */
   proofCapsule: ProofCapsuleV1 | null;
-
-  /** KPV-1: SHA-256 over proofCapsule (hex) */
-  proofHash?: string;
+  capsuleHash?: string;
 }>;
 
 export default function VerifierFrame({
@@ -128,9 +147,9 @@ export default function VerifierFrame({
   compact = false,
   verifierBaseUrl,
 }: VerifierFrameProps): ReactElement {
-  const [copyStatus, setCopyStatus] = useState<"idle" | "ok" | "error">("idle");
+  const [copyLinkStatus, setCopyLinkStatus] = useState<"idle" | "ok" | "error">("idle");
   const [copyProofStatus, setCopyProofStatus] = useState<"idle" | "ok" | "error">("idle");
-  const [proofHash, setProofHash] = useState<string | null>(null);
+  const [capsuleHash, setCapsuleHash] = useState<string | null>(null);
 
   const proof = useMemo<ProofCopy>(() => {
     const baseRaw = verifierBaseUrl ?? defaultHostedVerifierBaseUrl();
@@ -149,27 +168,23 @@ export default function VerifierFrame({
 
     const capsule: ProofCapsuleV1 | null =
       pulse > 0 && sigFull.length > 0 && phiKeyClean.length > 0 && chakraNorm
-        ? {
-            v: "KPV-1",
-            pulse,
-            chakraDay: chakraNorm,
-            kaiSignature: sigFull,
-            phiKey: phiKeyClean,
-            verifierSlug: slug,
-          }
+        ? { v: "KPV-1", pulse, chakraDay: chakraNorm, kaiSignature: sigFull, phiKey: phiKeyClean, verifierSlug: slug }
         : null;
 
     return {
+      v: "KVPF-1",
+      hashAlg: PROOF_HASH_ALG,
+      canon: PROOF_CANON,
       verifierUrl: url,
       verifierBaseUrl: base,
       verifierSlug: slug,
       pulse,
-      chakraDay: chakraNorm,
+      chakraDay: chakraNorm ?? undefined,
       kaiSignature: sigFull,
       kaiSignatureShort: sigShort,
       phiKey: phiKeyClean,
       proofCapsule: capsule,
-      proofHash: undefined,
+      capsuleHash: undefined,
     };
   }, [chakraDay, kaiSignature, phiKey, pulse, verifierBaseUrl]);
 
@@ -178,14 +193,14 @@ export default function VerifierFrame({
 
     (async (): Promise<void> => {
       if (!proof.proofCapsule) {
-        setProofHash(null);
+        setCapsuleHash(null);
         return;
       }
       try {
         const h = await hashProofCapsuleV1(proof.proofCapsule);
-        if (!cancelled) setProofHash(h);
+        if (!cancelled) setCapsuleHash(h);
       } catch {
-        if (!cancelled) setProofHash(null);
+        if (!cancelled) setCapsuleHash(null);
       }
     })();
 
@@ -194,150 +209,145 @@ export default function VerifierFrame({
     };
   }, [proof.proofCapsule]);
 
-  const qrSize = compact ? 96 : 160;
+  const qrSize = compact ? 92 : 128;
+  const rootClass = compact ? "kv-verifier kv-verifier--compact" : "kv-verifier";
+
+  const pulseLabel = Number.isFinite(pulse) && pulse > 0 ? String(pulse) : "—";
+  const captionClean = typeof caption === "string" ? caption.trim() : "";
+
+  const phiKeyDisplay = truncateMiddle(proof.phiKey, compact ? 10 : 12, compact ? 10 : 12);
+  const hashDisplay = capsuleHash ? truncateHash(capsuleHash, compact ? 10 : 12, compact ? 10 : 12) : "—";
+  const sealOk = Boolean(proof.proofCapsule) && Boolean(capsuleHash);
 
   const handleCopyLink = async (): Promise<void> => {
-    if (typeof navigator === "undefined" || !navigator.clipboard) {
-      setCopyStatus("error");
-      return;
-    }
-    try {
-      await navigator.clipboard.writeText(proof.verifierUrl);
-      setCopyStatus("ok");
-      window.setTimeout(() => setCopyStatus("idle"), 2000);
-    } catch {
-      setCopyStatus("error");
-    }
+    const ok = await safeClipboardWrite(proof.verifierUrl);
+    setCopyLinkStatus(ok ? "ok" : "error");
+    window.setTimeout(() => setCopyLinkStatus("idle"), 1600);
   };
 
   const handleCopyProof = async (): Promise<void> => {
-    if (typeof navigator === "undefined" || !navigator.clipboard) {
-      setCopyProofStatus("error");
-      return;
-    }
     try {
-      let h: string | undefined = proofHash ?? undefined;
+      let h: string | undefined = capsuleHash ?? undefined;
       if (!h && proof.proofCapsule) {
         h = await hashProofCapsuleV1(proof.proofCapsule);
-        setProofHash(h);
+        setCapsuleHash(h);
       }
 
-      const payload: ProofCopy = {
-        ...proof,
-        proofHash: h,
-      };
-
-      await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
-      setCopyProofStatus("ok");
-      window.setTimeout(() => setCopyProofStatus("idle"), 2000);
+      const payload: ProofCopy = { ...proof, capsuleHash: h };
+      const ok = await safeClipboardWrite(JSON.stringify(payload, null, 2));
+      setCopyProofStatus(ok ? "ok" : "error");
+      window.setTimeout(() => setCopyProofStatus("idle"), 1600);
     } catch {
       setCopyProofStatus("error");
+      window.setTimeout(() => setCopyProofStatus("idle"), 1600);
     }
   };
 
-  const rootClass = compact ? "kv-verifier kv-verifier--compact" : "kv-verifier";
-  const pulseLabel = Number.isFinite(pulse) && pulse > 0 ? String(pulse) : "—";
-  const captionClean = typeof caption === "string" ? caption.trim() : "";
-  const truncatedPhiKey = truncateMiddle(proof.phiKey);
-  const hashDisplay = proofHash ? truncateHash(proofHash) : "—";
-
   return (
-    <section className={rootClass} aria-label="Kai-Sigil verification frame" data-role="verifier-frame">
-      <div
-        className="kv-verifier__qr-shell"
-        role="img"
-        aria-label={`QR code linking to Kai-Sigil verifier for pulse ${pulseLabel} and signature ${proof.kaiSignatureShort}`}
-      >
-        <div className="kv-verifier__qr-inner">
-          <QR value={proof.verifierUrl} size={qrSize} bgColor="#00000000" fgColor="#ffffff" />
-        </div>
-      </div>
+    <section className={rootClass} aria-label="Kai-Sigil verification frame" data-role="verifier-frame" data-seal={sealOk ? "ok" : "off"}>
+      <div className="kv-topline" aria-hidden="true" />
 
-      <div className="kv-verifier__content">
-        <header className="kv-verifier__header">
-          <h3 className="kv-verifier__title">☤Kai-Sigil Verifier</h3>
-          <p className="kv-verifier__subtitle">
-            Scan or open the verifier link to confirm this post was sealed by this Φ-Key (KPV-1 payload-bound proof).
-          </p>
-        </header>
-
-        <dl className="kv-verifier__meta">
-          <div className="kv-verifier__meta-row">
-            <dt className="kv-verifier__meta-label">🌀 Pulse</dt>
-            <dd className="kv-verifier__meta-value">{pulseLabel}</dd>
-          </div>
-
-          <div className="kv-verifier__meta-row">
-            <dt className="kv-verifier__meta-label">☤Kai Signature</dt>
-            <dd className="kv-verifier__meta-value kv-verifier__mono">{proof.kaiSignatureShort}</dd>
-          </div>
-
-          <div className="kv-verifier__meta-row">
-            <dt className="kv-verifier__meta-label">Φ-Key</dt>
-            <dd className="kv-verifier__meta-value kv-verifier__mono" title={proof.phiKey}>
-              {truncatedPhiKey || "—"}
-            </dd>
-          </div>
-
-          {proof.chakraDay ? (
-            <div className="kv-verifier__meta-row">
-              <dt className="kv-verifier__meta-label">🧬 Chakra Day</dt>
-              <dd className="kv-verifier__meta-value">{proof.chakraDay}</dd>
+      <div className="kv-wrap">
+        {/* TOP BAR: QR + chip rail (never cramped) */}
+        <div className="kv-topbar" aria-label="Verifier top bar">
+          <div className="kv-qr-shell" role="img" aria-label={`QR code for verifier pulse ${pulseLabel}`} title="Scan to open verifier">
+            <div className="kv-qr-inner">
+              <QR value={proof.verifierUrl} size={qrSize} bgColor="#00000000" fgColor="#ffffff" level="M" />
             </div>
-          ) : null}
-
-          <div className="kv-verifier__meta-row">
-            <dt className="kv-verifier__meta-label">🔒 Capsule Hash</dt>
-            <dd className="kv-verifier__meta-value kv-verifier__mono" title={proofHash ?? ""}>
-              {hashDisplay}
-            </dd>
           </div>
-        </dl>
 
-        {captionClean.length > 0 ? (
-          <p className="kv-verifier__caption" aria-label="Post caption">
-            “{captionClean}”
-          </p>
-        ) : null}
+          <div className="kv-chipbar" aria-label="Seal chips">
+            <div className={sealOk ? "kv-chip kv-chip--ok" : "kv-chip"} title="KPV-1 capsule binding">
+              <span className="kv-chip__dot" aria-hidden="true" />
+              <span className="kv-chip__txt">KPV-1</span>
+            </div>
 
-        <div className="kv-verifier__actions">
-          <a
-            href={proof.verifierUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="kv-verifier__btn kv-verifier__btn--primary"
-            data-role="verifier-open-link"
-          >
-            Open Verifier
-          </a>
+            <div className="kv-chip" title="Hash algorithm">
+              <span className="kv-chip__txt">{PROOF_HASH_ALG.toUpperCase()}</span>
+            </div>
 
-          <button
-            type="button"
-            onClick={() => void handleCopyLink()}
-            className="kv-verifier__btn kv-verifier__btn--ghost"
-            data-role="verifier-copy-link"
-          >
-            {copyStatus === "ok" ? "Remembered!" : copyStatus === "error" ? "Remember failed" : "Remember Link"}
-          </button>
+            <div className="kv-chip" title="Canonicalization">
+              <span className="kv-chip__txt">{PROOF_CANON}</span>
+            </div>
 
-          <button
-            type="button"
-            onClick={() => void handleCopyProof()}
-            className="kv-verifier__btn kv-verifier__btn--ghost"
-            data-role="verifier-copy-proof"
-          >
-            {copyProofStatus === "ok"
-              ? "Proof Remembered!"
-              : copyProofStatus === "error"
-                ? "Remember failed"
-                : "Remember Proof"}
-          </button>
+            <div className={sealOk ? "kv-chip kv-chip--status kv-chip--ok" : "kv-chip kv-chip--status"} title="Seal status">
+              <span className="kv-chip__txt">{sealOk ? "OFFICIAL SEAL" : "INCOMPLETE"}</span>
+            </div>
+          </div>
         </div>
 
-        <p className="kv-verifier__url" aria-label="Verifier URL">
-          <span className="kv-verifier__url-label">Verifier URL:</span>
-          <span className="kv-verifier__url-value">{proof.verifierUrl}</span>
-        </p>
+        {/* BODY */}
+        <div className="kv-body">
+          <header className="kv-head">
+            <h3 className="kv-title">☤Kai Sigil-Glyph Verifier</h3>
+            <p className="kv-sub">Payload-bound proof vessel (capsule). Inhale to affirm this Φ-Key sealed this moment.</p>
+          </header>
+
+          <dl className="kv-meta" aria-label="Verification fields">
+            <div className="kv-row">
+              <dt className="kv-k">☤Kai (Pulse)</dt>
+              <dd className="kv-v">{pulseLabel}</dd>
+            </div>
+
+            <div className="kv-row">
+              <dt className="kv-k">☤Kai-Sig</dt>
+              <dd className="kv-v kv-mono">{proof.kaiSignatureShort || "—"}</dd>
+            </div>
+
+            <div className="kv-row">
+              <dt className="kv-k">Φ-Key</dt>
+              <dd className="kv-v kv-mono" title={proof.phiKey}>
+                {phiKeyDisplay || "—"}
+              </dd>
+            </div>
+
+            <div className="kv-row">
+              <dt className="kv-k">Spiral (Chakra)</dt>
+              <dd className="kv-v">{proof.chakraDay ?? "—"}</dd>
+            </div>
+
+            <div className="kv-row kv-row--wide">
+              <dt className="kv-k">Vessel Hash</dt>
+              <dd className="kv-v kv-mono" title={capsuleHash ?? ""}>
+                {hashDisplay}
+              </dd>
+            </div>
+          </dl>
+
+          {captionClean ? <p className="kv-caption">“{captionClean}”</p> : null}
+
+          <div className="kv-actions" aria-label="Actions">
+            <a href={proof.verifierUrl} target="_blank" rel="noopener noreferrer" className="kv-btn kv-btn--primary">
+              <ExternalIcon />
+              <span className="kv-btn__txt">Open</span>
+            </a>
+
+            <button type="button" onClick={() => void handleCopyLink()} className="kv-btn kv-btn--ghost" title="💠 Remember Link">
+              <RememberIcon />
+              <span className="kv-btn__txt">{copyLinkStatus === "ok" ? "Remembered" : "Link"}</span>
+            </button>
+
+            <button type="button" onClick={() => void handleCopyProof()} className="kv-btn kv-btn--ghost" title="💠 Remember Proof">
+              <RememberIcon />
+              <span className="kv-btn__txt">{copyProofStatus === "ok" ? "Remembered" : "Proof"}</span>
+            </button>
+
+            <div className="kv-toast" aria-live="polite">
+              {copyProofStatus === "error" || copyLinkStatus === "error"
+                ? "Remember failed"
+                : copyProofStatus === "ok"
+                  ? "Proof remembered"
+                  : copyLinkStatus === "ok"
+                    ? "Link remembered"
+                    : ""}
+            </div>
+          </div>
+
+          <div className="kv-url" aria-label="Verifier URL">
+            <span className="kv-url__k">Verifier:</span>
+            <span className="kv-url__v">{proof.verifierUrl}</span>
+          </div>
+        </div>
       </div>
     </section>
   );

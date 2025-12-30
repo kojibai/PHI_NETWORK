@@ -359,7 +359,7 @@ export default function VerifySigil(): React.JSX.Element {
               scheme: zkScheme,
               poseidonHash: payload.zkPoseidonHash,
               verified: null,
-              hint: "Verifying key not loaded.",
+              hint: "Verifying Φkey not inhaled.",
             });
           }
           return;
@@ -440,7 +440,7 @@ export default function VerifySigil(): React.JSX.Element {
       const isSvg =
         /image\/svg\+xml/i.test(file.type) || /\.svg$/i.test(file.name);
       if (!isSvg) {
-        setError("Unsupported file. Upload a Kai Sigil as .svg only.");
+        setError("Unsupported file. Inhale a ☤Kai Sigil-Glyph as .svg only.");
         return;
       }
 
@@ -482,7 +482,7 @@ export default function VerifySigil(): React.JSX.Element {
       case "mismatch":
         return "Out of Sync";
       case "no-sigil":
-        return "No Sigil Loaded";
+        return "No ΦKey Inhaled";
       case "checking":
       default:
         return "Checking…";
@@ -496,8 +496,8 @@ export default function VerifySigil(): React.JSX.Element {
   }, [status]);
 
   const sourceLabel = useMemo(() => {
-    if (source === "upload" && fileName) return `Source · Uploaded: ${fileName}`;
-    if (source === "query") return "Source · URL payload (?p=…)";
+    if (source === "upload" && fileName) return `Source · Inhaled: ${fileName}`;
+    if (source === "query") return "Source · Sigil-Glyph payload (?p=…)";
     return "Source · None";
   }, [source, fileName]);
 
@@ -518,7 +518,7 @@ export default function VerifySigil(): React.JSX.Element {
     <main
       className="sigilpage verify-sigil-page"
       role="main"
-      aria-label="Verify Kai Sigil"
+      aria-label="Verify ☤Kai Sigil-Glyph"
       data-version="verify-v1"
     >
       <div className="sp-veil" aria-hidden="true" />
@@ -528,10 +528,10 @@ export default function VerifySigil(): React.JSX.Element {
         <section className="sp-shell" data-center>
           {/* Header */}
           <header className="sp-header">
-            <h1 className="sp-title">Verify Kai Sigil</h1>
+            <h1 className="sp-title">Verify ☤Kai Sigil-Glyph</h1>
             <p className="sp-subtitle">
-              Proof-of-Breath™ verifier for Kairos Sigil-Glyphs. Upload a Sigil
-              SVG or open this page with a <code>?p=</code> payload to verify its
+              Proof-of-Breath™ verifier for Kairos Sigil-Glyphs. Inhale a Sigil
+              ΦKey or open this page with a <code>?p=</code> payload to verify its
               seal.
             </p>
           </header>
@@ -680,7 +680,7 @@ export default function VerifySigil(): React.JSX.Element {
                 </div>
 
                 <div className="verify-proof-block">
-                  <h3>σ · Kai Signature</h3>
+                  <h3>σ · ☤Kai-Signature</h3>
                   <ul>
                     <li>
                       <span className="label">Computed σ-string</span>
@@ -783,7 +783,7 @@ export default function VerifySigil(): React.JSX.Element {
 
             {!breathProof && !urlLoading && !payload && !error && (
               <p className="verify-proof-empty">
-                Once a Sigil is loaded, this section will show the full Breath
+                Once a Sigil is inhaled, this panel will show the full Breath
                 Proof: σ-string, σ-hash, and derived Φ-key.
               </p>
             )}
