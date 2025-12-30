@@ -18,6 +18,8 @@ import {
   attachValuation,
   type SigilMetadataLite,
 } from "../utils/valuation";
+import { getSpentScaledFor } from "../utils/sendLedger";
+import { snap6, toStr6 } from "../utils/phi-precision";
 
 import {
   validateMeta as verifierValidateMeta,
@@ -137,6 +139,7 @@ export default function GlyphImportModal({
     pulse: number;
   } | null>(null);
   const [depositPhi, setDepositPhi] = useState<number>(0);
+  const [spentPhi, setSpentPhi] = useState<number>(0);
   const [fileName, setFileName] = useState<string | null>(null);
 
   const triggerUpload = useCallback(() => inputRef.current?.click(), []);
@@ -160,6 +163,7 @@ export default function GlyphImportModal({
       setUnsigned(false);
       setPreview(null);
       setDepositPhi(0);
+      setSpentPhi(0);
       setFileName(null);
     }
   }, [open]);
@@ -228,7 +232,10 @@ export default function GlyphImportModal({
           meta,
           nowPulse
         );
-        const valPhi = unsignedVal.valuePhi;
+        const basePhi = unsignedVal.valuePhi;
+        const spentScaled = getSpentScaledFor(hash);
+        const spentPhiNext = Number(toStr6(spentScaled));
+        const valPhi = snap6(Math.max(0, basePhi - spentPhiNext));
         const pulseCreated = (meta.pulse as number | undefined) ?? 0;
 
         const importedGlyph: Glyph = {
@@ -241,6 +248,7 @@ export default function GlyphImportModal({
         setGlyph(importedGlyph);
         setUnsigned(Boolean(res.unsigned));
         setPreview({ hash, value: valPhi, pulse: pulseCreated });
+        setSpentPhi(spentPhiNext);
         setStatus(res.unsigned ? "warn" : "ok");
       } catch (err: unknown) {
         // eslint-disable-next-line no-console
@@ -329,11 +337,12 @@ export default function GlyphImportModal({
       // 2) Build valuation seal over the (possibly) augmented metadata
       const { seal } = await buildValueSeal(metaWithLedger, nowPulse, sha256Hex);
       const metaWithVal = attachValuation(metaWithLedger, seal);
+      const adjustedValue = snap6(Math.max(0, seal.valuePhi - spentPhi));
 
       // 3) Final glyph mirrors the seal value; keep original canonical hash
       const finalizedGlyph: Glyph = {
         ...glyph,
-        value: seal.valuePhi,
+        value: adjustedValue,
         meta: metaWithVal,
       };
 
