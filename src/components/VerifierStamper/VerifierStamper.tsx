@@ -1468,10 +1468,6 @@ const VerifierStamperInner: React.FC = () => {
 
   const send = async () => {
     if (!meta || !svgURL || !liveSig) return;
-    if (unlockState.isRequired && !unlockState.isUnlocked) {
-      setError("Unlock required before sending.");
-      return;
-    }
 
     if (meta.kaiSignature && contentSigExpected && meta.kaiSignature.toLowerCase() !== contentSigExpected.toLowerCase()) {
       setError("Content signature mismatch — cannot send.");
@@ -1731,10 +1727,6 @@ const VerifierStamperInner: React.FC = () => {
 
   const receive = async () => {
     if (!meta || !svgURL || !liveSig) return;
-    if (unlockState.isRequired && !unlockState.isUnlocked) {
-      setError("Unlock required before receiving.");
-      return;
-    }
     if (receiveStatus === "new" && !receiveSig) {
       setError("Claim & embed signature before receiving.");
       return;
