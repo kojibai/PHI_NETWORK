@@ -97,8 +97,7 @@ body{
 
 /* Optional: smooth breath mantle variables */
 @supports (background: paint(something)) or (offset: path("M0,0")){
-  @property --sf-breath-scale { syntax:"<number>"; inherits:false; initial-value:0; }
-  @property --sf-breath-hue   { syntax:"<angle>";  inherits:false; initial-value:0deg; }
+  /* @property is not supported by lightningcss minifier. */
 }
 
 /* ========== 2) BACKGROUND ===================================== */
