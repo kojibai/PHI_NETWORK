@@ -371,6 +371,10 @@
         <div class="stack"><label class="hint">Live USD (received)</label><input id="val-received-usd" readonly class="out" /></div>
       </div>
       <div class="grid">
+        <div class="stack"><label class="hint">Total USD (Φ × $/Φ)</label><input id="val-total-usd" readonly class="out" /></div>
+        <div class="stack"><label class="hint">—</label><input readonly class="out" value="" /></div>
+      </div>
+      <div class="grid">
         <div class="stack"><label class="hint">Algorithm • Policy checksum</label><input id="val-alg" readonly class="out" /></div>
         <div class="stack"><label class="hint">Computed at Pulse (frozen)</label><input id="val-computed" readonly class="out" /></div>
       </div>
@@ -1678,7 +1682,7 @@ $("pv-pdf")?.addEventListener("change", (e) => {
       }
 
       function clearValuation() {
-        for (const id of ["val-live","val-premium","val-alg","val-stamp","val-computed","val-nowpulse","val-received-phi","val-received-usd","val-usd-per-phi","val-usd-sample"]) $(id).value = "";
+        for (const id of ["val-live","val-premium","val-alg","val-stamp","val-computed","val-nowpulse","val-received-phi","val-received-usd","val-usd-per-phi","val-usd-sample","val-total-usd"]) $(id).value = "";
       }
       window.clearValuation = clearValuation;
 
@@ -1691,6 +1695,8 @@ $("pv-pdf")?.addEventListener("change", (e) => {
         const issuance = quotePhiForUsd({ meta, nowPulse, usd: USD_SAMPLE, currentStreakDays: 0, lifetimeUsdSoFar: 0 });
         const usdPerPhi = issuance?.usdPerPhi ?? 0;
         const receivedUsd = receivedPhi != null && Number.isFinite(receivedPhi) ? receivedPhi * usdPerPhi : null;
+        const totalPhi = receivedPhi != null && Number.isFinite(receivedPhi) ? receivedPhi : valueAdj;
+        const totalUsd = Number.isFinite(totalPhi) ? totalPhi * usdPerPhi : null;
         const par = Number(unsigned?.inputs?.parOffset ?? 1);
         const valueGross   = Math.max(0, Number((unsigned.valuePhi + par).toFixed(6)));
         const premiumGross = Math.max(0, Number((unsigned.premium).toFixed(6)));
@@ -1711,6 +1717,7 @@ $("pv-pdf")?.addEventListener("change", (e) => {
         $("val-received-usd").value = receivedUsd != null ? fmtUsd(receivedUsd) : "";
         $("val-usd-per-phi").value = Number.isFinite(usdPerPhi) ? fmtUsd(usdPerPhi) : "";
         $("val-usd-sample").value = String(USD_SAMPLE);
+        $("val-total-usd").value = totalUsd != null ? fmtUsd(totalUsd) : "";
       }
 
       $("val-compute-now").addEventListener("click", handleComputeNow);
