@@ -43,7 +43,7 @@
 *{ box-sizing: border-box; }
 .mono{ font-family: var(--mono); }
 
-html, body{
+html.verify-page, body.verify-page{
   height: 100%;
   margin: 0;
   background: #02070a;

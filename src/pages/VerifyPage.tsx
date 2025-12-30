@@ -1,7 +1,7 @@
 // src/pages/VerifyPage.tsx
 "use client";
 
-import React, { useCallback, useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
 import "./VerifyPage.css";
 
 import VerifierFrame from "../components/KaiVoh/VerifierFrame";
@@ -76,6 +76,19 @@ function isSvgFile(file: File): boolean {
 type BadgeKind = "idle" | "busy" | "ok" | "fail";
 type PanelKey = "inhale" | "capsule" | "proof" | "zk" | "audit";
 type SealState = "off" | "busy" | "valid" | "invalid" | "na";
+
+function useVerifyPageScrollLock(): void {
+  useEffect(() => {
+    const root = document.documentElement;
+    const body = document.body;
+    root.classList.add("verify-page");
+    body.classList.add("verify-page");
+    return () => {
+      root.classList.remove("verify-page");
+      body.classList.remove("verify-page");
+    };
+  }, []);
+}
 
 /* ────────────────────────────────────────────────────────────────
    Icons
@@ -213,6 +226,7 @@ function Modal(props: { open: boolean; title: string; subtitle?: string; onClose
 ─────────────────────────────────────────────────────────────── */
 
 export default function VerifyPage(): ReactElement {
+  useVerifyPageScrollLock();
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   const slugRaw = useMemo(() => readSlugFromLocation(), []);
