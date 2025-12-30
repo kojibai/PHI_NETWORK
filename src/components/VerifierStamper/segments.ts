@@ -63,10 +63,18 @@ export async function sealCurrentWindowIntoSegment(meta: SigilMetadata) {
   const live = meta.transfers ?? [];
   if (live.length === 0) return { meta, segmentFileBlob: null as Blob | null };
 
+  const last = live[live.length - 1];
+  const hasOpenTransfer = !!last && !last.receiverSignature;
+  const segmentTransfers = hasOpenTransfer ? live.slice(0, -1) : live.slice();
+  const headTransfers = hasOpenTransfer ? [last] : [];
+  if (segmentTransfers.length === 0) {
+    return { meta, segmentFileBlob: null as Blob | null };
+  }
+
   /* ── NEW: compute pivot (last closed transfer in this head window) */
   let pivotIdx = -1;
-  for (let i = live.length - 1; i >= 0; i--) {
-    if (live[i]?.receiverSignature) {
+  for (let i = segmentTransfers.length - 1; i >= 0; i--) {
+    if (segmentTransfers[i]?.receiverSignature) {
       pivotIdx = i;
       break;
     }
@@ -74,8 +82,8 @@ export async function sealCurrentWindowIntoSegment(meta: SigilMetadata) {
 
   /* ── NEW: Φ spent after pivot within THIS window */
   let spentInWindow = 0n;
-  for (let i = Math.max(0, pivotIdx + 1); i < live.length; i++) {
-    spentInWindow += exhalePhiFromTransferScaled(live[i]);
+  for (let i = Math.max(0, pivotIdx + 1); i < segmentTransfers.length; i++) {
+    spentInWindow += exhalePhiFromTransferScaled(segmentTransfers[i]);
   }
 
   /* ── NEW: establish/keep branch base Φ (once per branch) */
@@ -83,7 +91,7 @@ export async function sealCurrentWindowIntoSegment(meta: SigilMetadata) {
   if (branchBaseScaled === 0n) {
     if (pivotIdx >= 0) {
       // Parent's sent Φ at pivot
-      branchBaseScaled = exhalePhiFromTransferScaled(live[pivotIdx]);
+      branchBaseScaled = exhalePhiFromTransferScaled(segmentTransfers[pivotIdx]);
     } else {
       // Fallback to initial glyph valuation (if present)
       const val = (meta as { valuation?: { valuePhi?: unknown } }).valuation;
@@ -102,11 +110,11 @@ export async function sealCurrentWindowIntoSegment(meta: SigilMetadata) {
   // ───────────────────────────────────────────────────────────────
   const segmentIndex = meta.segments?.length ?? 0;
   const startGlobal = meta.cumulativeTransfers ?? 0;
-  const endGlobal = startGlobal + live.length - 1;
+  const endGlobal = startGlobal + segmentTransfers.length - 1;
 
   // hash leaves (transfer minified)
   const leaves = await Promise.all(
-    live.map(async (t: SigilTransfer) => {
+    segmentTransfers.map(async (t: SigilTransfer) => {
       const obj: Record<string, unknown> = {
         senderSignature: t.senderSignature,
         senderStamp: t.senderStamp,
@@ -130,7 +138,7 @@ export async function sealCurrentWindowIntoSegment(meta: SigilMetadata) {
     segmentRoot,
     headHashAtSeal,
     leafHash: "sha256",
-    transfers: live,
+    transfers: segmentTransfers,
   };
   const segmentJson = JSON.stringify(segmentFile);
   const cid = await sha256Hex(segmentJson);
@@ -139,7 +147,7 @@ export async function sealCurrentWindowIntoSegment(meta: SigilMetadata) {
   // Update head/meta
   const newSegments: SegmentEntry[] = [
     ...(meta.segments ?? []),
-    { index: segmentIndex, root: segmentRoot, cid, count: live.length },
+    { index: segmentIndex, root: segmentRoot, cid, count: segmentTransfers.length },
   ];
   const segmentRoots = newSegments.map((s) => s.root);
   const segmentsMerkleRoot = await buildMerkleRoot(segmentRoots);
@@ -148,8 +156,8 @@ export async function sealCurrentWindowIntoSegment(meta: SigilMetadata) {
     ...meta,
     segments: newSegments,
     segmentsMerkleRoot,
-    cumulativeTransfers: (meta.cumulativeTransfers ?? 0) + live.length,
-    transfers: [], // clear head window
+    cumulativeTransfers: (meta.cumulativeTransfers ?? 0) + segmentTransfers.length,
+    transfers: headTransfers,
     transfersWindowRoot: undefined,
     headHashAtSeal,
     segmentSize: meta.segmentSize ?? SEGMENT_SIZE,

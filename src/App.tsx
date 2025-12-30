@@ -1274,7 +1274,7 @@ export function AppChrome(): React.JSX.Element {
           </div>
         </div>
 
-        <div className="topbar-right" aria-label="Live Kai clock">
+        <div className="topbar-right" aria-label="Live Kai Klok">
           <LiveKaiButton
             onOpenKlock={openKlock}
             breathS={BREATH_S}

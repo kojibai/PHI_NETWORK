@@ -81,7 +81,7 @@ import type { BanknoteInputs as NoteBanknoteInputs, VerifierBridge } from "../ex
 import { kaiPulseNow, SIGIL_CTX, SIGIL_TYPE, SEGMENT_SIZE } from "./constants";
 import { sha256Hex, phiFromPublicKey } from "./crypto";
 import { loadOrCreateKeypair, signB64u, type Keypair } from "./keys";
-import { parseSvgFile, centrePixelSignature, embedMetadata, pngBlobFromSvgDataUrl } from "./svg";
+import { parseSvgFile, centrePixelSignature, embedMetadata, embedMetadataText, pngBlobFromSvgDataUrl } from "./svg";
 import { pulseFilename, safeFilename, download, fileToPayload } from "./files";
 import {
   computeKaiSignature,
@@ -164,6 +164,18 @@ function readReceiveSigFromBundle(raw: unknown): ReceiveSig | null {
   if (!isRecord(raw)) return null;
   const candidate = raw.receiveSig;
   return isReceiveSig(candidate) ? candidate : null;
+}
+
+function collectReceiveSigHistory(raw: Record<string, unknown>, nextSig?: ReceiveSig | null): ReceiveSig[] {
+  const history: ReceiveSig[] = [];
+  const existing = raw.receiveSigHistory;
+  if (Array.isArray(existing)) {
+    for (const item of existing) {
+      if (isReceiveSig(item)) history.push(item);
+    }
+  }
+  if (nextSig) history.push(nextSig);
+  return history;
 }
 
 function readExhaleInfoFromTransfer(
@@ -1581,12 +1593,13 @@ const VerifierStamperInner: React.FC = () => {
       senderKaiPulse: nowPulse,
       payload: chosenPayload ?? undefined,
     };
+    const transferNonce = genNonce();
     const updated: SigilMetadata = {
       ...m,
       ["@context"]: m["@context"] ?? SIGIL_CTX,
       type: m.type ?? SIGIL_TYPE,
       canonicalHash: m.canonicalHash || undefined,
-      transferNonce: m.transferNonce || genNonce(),
+      transferNonce,
       transfers: [...(m.transfers ?? []), transfer],
       segmentSize: m.segmentSize ?? SEGMENT_SIZE,
     };
@@ -1728,7 +1741,41 @@ const VerifierStamperInner: React.FC = () => {
       allocationPhiStr: validPhi6,
       issuedPulse: nowPulse,
     });
-    const childDataUrl = await embedMetadata(svgURL, childMeta);
+    const baseSvgText = await fetch(svgURL).then((r) => r.text());
+    const childSvgText = embedMetadataText(baseSvgText, childMeta);
+    let childSvgWithProof = childSvgText;
+
+    try {
+      const rawBundle = proofBundleMeta?.raw;
+      if (rawBundle && isRecord(rawBundle)) {
+        const priorReceiveSig = readReceiveSigFromBundle(rawBundle);
+        const receiveSigHistory = collectReceiveSigHistory(rawBundle, priorReceiveSig);
+        const proofCapsule = proofBundleMeta?.proofCapsule;
+        const capsuleHash = proofBundleMeta?.capsuleHash ?? (proofCapsule ? await hashProofCapsuleV1(proofCapsule) : null);
+        const svgHash = await hashSvgText(childSvgText);
+
+        const nextBundle: Record<string, unknown> = {
+          ...(rawBundle as Record<string, unknown>),
+          svgHash,
+          capsuleHash,
+          proofCapsule: proofCapsule ?? undefined,
+        };
+        if (receiveSigHistory.length > 0) {
+          nextBundle.receiveSigHistory = receiveSigHistory;
+        }
+        delete nextBundle.receiveSig;
+        delete nextBundle.bundleHash;
+
+        const bundleUnsigned = buildBundleUnsigned(nextBundle);
+        const bundleHashNext = await hashBundle(bundleUnsigned);
+        nextBundle.bundleHash = bundleHashNext;
+        childSvgWithProof = embedProofMetadata(childSvgText, nextBundle);
+      }
+    } catch (err) {
+      logError("send.embedProofBundle", err);
+    }
+
+    const childDataUrl = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(childSvgWithProof)))}`;
     const sigilPulse = updated.pulse ?? 0;
     download(childDataUrl, `${pulseFilename("sigil_send", sigilPulse, nowPulse)}.svg`);
     const phiAmountNumber = Number(validPhi6);
@@ -1908,60 +1955,58 @@ const VerifierStamperInner: React.FC = () => {
     }
 
     let durl = await embedMetadata(svgURL, updated);
-    if (receiveSigLocal) {
-      const baseSvg = await fetch(durl).then((r) => r.text());
-      const svgHash = await hashSvgText(baseSvg);
-      const proofCapsule = proofBundleMeta?.proofCapsule;
-      const capsuleHash = proofBundleMeta?.capsuleHash ?? (proofCapsule ? await hashProofCapsuleV1(proofCapsule) : null);
+    const baseSvg = await fetch(durl).then((r) => r.text());
+    const svgHash = await hashSvgText(baseSvg);
+    const proofCapsule = proofBundleMeta?.proofCapsule;
+    const capsuleHash = proofBundleMeta?.capsuleHash ?? (proofCapsule ? await hashProofCapsuleV1(proofCapsule) : null);
 
-      let nextBundle: Record<string, unknown>;
-      if (proofBundleMeta?.raw && isRecord(proofBundleMeta.raw)) {
-        nextBundle = {
-          ...(proofBundleMeta.raw as Record<string, unknown>),
-          svgHash,
-          capsuleHash,
-          proofCapsule: proofCapsule ?? undefined,
-          receiveSig: receiveSigLocal,
-        };
-      } else if (updated.kaiSignature && typeof updated.pulse === "number") {
-        const chakraDay = normalizeChakraDay(updated.chakraDay ?? "") ?? "Crown";
-        const verifierSlug = buildVerifierSlug(updated.pulse, updated.kaiSignature);
-        const phiKey = updated.userPhiKey ?? (await derivePhiKeyFromSig(updated.kaiSignature));
-        const fallbackCapsule = {
-          v: "KPV-1" as const,
-          pulse: updated.pulse,
-          chakraDay,
-          kaiSignature: updated.kaiSignature,
-          phiKey,
-          verifierSlug,
-        };
-        const capsuleHashNext = capsuleHash ?? (await hashProofCapsuleV1(fallbackCapsule));
-        nextBundle = {
-          hashAlg: proofBundleMeta?.hashAlg ?? PROOF_HASH_ALG,
-          canon: proofBundleMeta?.canon ?? PROOF_CANON,
-          proofCapsule: fallbackCapsule,
-          capsuleHash: capsuleHashNext,
-          svgHash,
-          shareUrl: proofBundleMeta?.shareUrl,
-          verifierUrl: proofBundleMeta?.verifierUrl,
-          zkPoseidonHash: proofBundleMeta?.zkPoseidonHash,
-          zkProof: proofBundleMeta?.zkProof,
-          proofHints: proofBundleMeta?.proofHints,
-          zkPublicInputs: proofBundleMeta?.zkPublicInputs,
-          authorSig: proofBundleMeta?.authorSig ?? null,
-          receiveSig: receiveSigLocal,
-        };
-      } else {
-        nextBundle = { svgHash, capsuleHash, receiveSig: receiveSigLocal };
-      }
-
-      const bundleUnsigned = buildBundleUnsigned(nextBundle);
-      const bundleHashNext = await hashBundle(bundleUnsigned);
-      nextBundle.bundleHash = bundleHashNext;
-
-      const updatedSvg = embedProofMetadata(baseSvg, nextBundle);
-      durl = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(updatedSvg)))}`;
+    let nextBundle: Record<string, unknown>;
+    if (proofBundleMeta?.raw && isRecord(proofBundleMeta.raw)) {
+      nextBundle = {
+        ...(proofBundleMeta.raw as Record<string, unknown>),
+        svgHash,
+        capsuleHash,
+        proofCapsule: proofCapsule ?? undefined,
+        ...(receiveSigLocal ? { receiveSig: receiveSigLocal } : {}),
+      };
+    } else if (updated.kaiSignature && typeof updated.pulse === "number") {
+      const chakraDay = normalizeChakraDay(updated.chakraDay ?? "") ?? "Crown";
+      const verifierSlug = buildVerifierSlug(updated.pulse, updated.kaiSignature);
+      const phiKey = updated.userPhiKey ?? (await derivePhiKeyFromSig(updated.kaiSignature));
+      const fallbackCapsule = {
+        v: "KPV-1" as const,
+        pulse: updated.pulse,
+        chakraDay,
+        kaiSignature: updated.kaiSignature,
+        phiKey,
+        verifierSlug,
+      };
+      const capsuleHashNext = capsuleHash ?? (await hashProofCapsuleV1(fallbackCapsule));
+      nextBundle = {
+        hashAlg: proofBundleMeta?.hashAlg ?? PROOF_HASH_ALG,
+        canon: proofBundleMeta?.canon ?? PROOF_CANON,
+        proofCapsule: fallbackCapsule,
+        capsuleHash: capsuleHashNext,
+        svgHash,
+        shareUrl: proofBundleMeta?.shareUrl,
+        verifierUrl: proofBundleMeta?.verifierUrl,
+        zkPoseidonHash: proofBundleMeta?.zkPoseidonHash,
+        zkProof: proofBundleMeta?.zkProof,
+        proofHints: proofBundleMeta?.proofHints,
+        zkPublicInputs: proofBundleMeta?.zkPublicInputs,
+        authorSig: proofBundleMeta?.authorSig ?? null,
+        ...(receiveSigLocal ? { receiveSig: receiveSigLocal } : {}),
+      };
+    } else {
+      nextBundle = { svgHash, capsuleHash, ...(receiveSigLocal ? { receiveSig: receiveSigLocal } : {}) };
     }
+
+    const bundleUnsigned = buildBundleUnsigned(nextBundle);
+    const bundleHashNext = await hashBundle(bundleUnsigned);
+    nextBundle.bundleHash = bundleHashNext;
+
+    const updatedSvg = embedProofMetadata(baseSvg, nextBundle);
+    durl = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(updatedSvg)))}`;
     const sigilPulse = updated.pulse ?? 0;
     download(durl, `${pulseFilename("sigil_receive", sigilPulse, nowPulse)}.svg`);
     const receivedPhi = readPhiAmountFromMeta(updated);
