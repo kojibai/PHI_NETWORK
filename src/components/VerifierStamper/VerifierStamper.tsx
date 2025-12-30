@@ -283,7 +283,7 @@ const VerifierStamperInner: React.FC = () => {
         const verifierSlug = buildVerifierSlug(metaValue.pulse, metaValue.kaiSignature);
         const phiKey = metaValue.userPhiKey ?? (await derivePhiKeyFromSig(metaValue.kaiSignature));
         const fallbackCapsule = {
-          v: "KPV-1",
+          v: "KPV-1" as const,
           pulse: metaValue.pulse,
           chakraDay,
           kaiSignature: metaValue.kaiSignature,

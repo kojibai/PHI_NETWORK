@@ -60,6 +60,12 @@ function randomNonceB64u(): string {
   return base64UrlEncode(bytes);
 }
 
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const buf = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(buf).set(bytes);
+  return buf;
+}
+
 export function isReceiveSig(value: unknown): value is ReceiveSig {
   if (!isRecord(value)) return false;
   return (
@@ -101,17 +107,18 @@ export async function getWebAuthnAssertionJson(args: {
       ? await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()
       : false;
 
+  const transports = canUseInternal ? (["internal"] as AuthenticatorTransport[]) : undefined;
   const allowCredentials = args.allowCredIds?.length
     ? args.allowCredIds.map((id) => ({
-        id: base64UrlDecode(id),
+        id: toArrayBuffer(base64UrlDecode(id)),
         type: "public-key" as const,
-        transports: canUseInternal ? ["internal"] : undefined,
+        transports,
       }))
     : undefined;
 
   const assertion = (await navigator.credentials.get({
     publicKey: {
-      challenge: args.challenge,
+      challenge: toArrayBuffer(args.challenge),
       allowCredentials,
       userVerification: "required",
     },
@@ -143,12 +150,6 @@ function concatBytes(a: Uint8Array, b: Uint8Array): Uint8Array {
   out.set(a, 0);
   out.set(b, a.length);
   return out;
-}
-
-function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
-  const buf = new ArrayBuffer(bytes.byteLength);
-  new Uint8Array(buf).set(bytes);
-  return buf;
 }
 
 function derToRawSignature(signature: Uint8Array, size: number): Uint8Array | null {
