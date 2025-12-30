@@ -62,8 +62,10 @@ textarea, input, select{ font-size: 16px; }
 /* App shell */
 .vapp{
   position: relative;
-  height: 100dvh;
   height: 100vh;
+  height: 100dvh;
+  height: 100svh;
+  min-height: 100svh;
   width: 100vw;
   padding:
     calc(var(--pad) + var(--safeTop))
@@ -269,6 +271,26 @@ textarea, input, select{ font-size: 16px; }
   .vseals{ justify-content: flex-start; }
   .official{ justify-self: start; }
   .vkpis{ grid-template-columns: 1fr; }
+}
+
+@media (max-width: 600px){
+  .vhead{
+    padding: calc(var(--pad) - 2px);
+    gap: 8px;
+  }
+  .vtitle{ font-size: 0.98rem; }
+  .vsub{ font-size: 0.78rem; }
+  .official{
+    width: 100%;
+    padding: 8px 10px;
+  }
+  .official-ring{ width: 18px; height: 18px; }
+  .official-title{ font-size: 0.70rem; letter-spacing: 0.12em; }
+  .official-sub{ font-size: 0.72rem; }
+  .seal{ padding: 4px 8px; }
+  .seal-ic{ width: 16px; height: 16px; font-size: 0.72rem; }
+  .seal-lbl,
+  .seal-txt{ font-size: 0.66rem; }
 }
 
 /* Body layout */
@@ -611,7 +633,7 @@ textarea, input, select{ font-size: 16px; }
   display:flex;
   align-items:center;
   gap: var(--tabGap);
-  padding: 10px 10px calc(10px + var(--safeBot)) 10px;
+  padding: 10px 10px calc(10px + max(var(--safeBot), 8px)) 10px;
   border-radius: 18px;
   border: 1px solid rgba(255,255,255,0.12);
   background: rgba(0,0,0,0.18);
