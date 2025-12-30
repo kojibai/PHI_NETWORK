@@ -22,7 +22,7 @@ import { extractProofBundleMetaFromSvg, type ProofBundleMeta } from "../utils/si
 import { tryVerifyGroth16 } from "../components/VerifierStamper/zk";
 import { isKASAuthorSig } from "../utils/authorSig";
 import { verifyBundleAuthorSig } from "../utils/webauthnKAS";
-import { isReceiveSig, type ReceiveSig } from "../utils/webauthnReceive";
+import { buildKasChallenge, isReceiveSig, verifyWebAuthnAssertion, type ReceiveSig } from "../utils/webauthnReceive";
 
 /* ────────────────────────────────────────────────────────────────
    Utilities
@@ -244,6 +244,7 @@ export default function VerifyPage(): ReactElement {
   const [notice, setNotice] = useState<string>("");
 
   const [authorSigVerified, setAuthorSigVerified] = useState<boolean | null>(null);
+  const [receiveSigVerified, setReceiveSigVerified] = useState<boolean | null>(null);
 
   const [zkVerify, setZkVerify] = useState<boolean | null>(null);
   const [zkVkey, setZkVkey] = useState<unknown>(null);
@@ -451,6 +452,7 @@ export default function VerifyPage(): ReactElement {
   React.useEffect(() => {
     if (result.status !== "ok" || !bundleHash) {
       setReceiveSig(null);
+      setReceiveSigVerified(null);
       return;
     }
     const embeddedReceive = readReceiveSigFromBundle(embeddedProof?.raw);
@@ -460,7 +462,35 @@ export default function VerifyPage(): ReactElement {
     }
 
     setReceiveSig(null);
+    setReceiveSigVerified(null);
   }, [result.status, bundleHash, embeddedProof?.raw]);
+
+  React.useEffect(() => {
+    let active = true;
+    if (!receiveSig || !bundleHash) {
+      setReceiveSigVerified(null);
+      return;
+    }
+
+    (async () => {
+      if (receiveSig.binds.bundleHash !== bundleHash) {
+        if (active) setReceiveSigVerified(false);
+        return;
+      }
+      const { challengeBytes } = await buildKasChallenge("receive", bundleHash, receiveSig.nonce);
+      const ok = await verifyWebAuthnAssertion({
+        assertion: receiveSig.assertion,
+        expectedChallenge: challengeBytes,
+        pubKeyJwk: receiveSig.pubKeyJwk,
+        expectedCredId: receiveSig.credId,
+      });
+      if (active) setReceiveSigVerified(ok);
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [receiveSig, bundleHash]);
 
   // Groth16 verify (logic unchanged)
   React.useEffect(() => {
@@ -952,6 +982,8 @@ export default function VerifyPage(): ReactElement {
                   <MiniField label="Attestation bundle" value={embeddedProof ? "present" : "—"} />
                   <MiniField label="Author signature" value={embeddedProof?.authorSig ? "present" : "—"} />
                   <MiniField label="Author verified" value={authorSigVerified === null ? "n/a" : authorSigVerified ? "true" : "false"} />
+                  <MiniField label="Receive signature" value={receiveSig ? "present" : "—"} />
+                  <MiniField label="Receive verified" value={receiveSigVerified === null ? "n/a" : receiveSigVerified ? "true" : "false"} />
                   <MiniField label="sigilHash parity" value={embeddedProof?.svgHash ? String(embeddedProof.svgHash === svgHash) : "n/a"} />
                   <MiniField label="vesselHash parity" value={embeddedProof?.capsuleHash ? String(embeddedProof.capsuleHash === capsuleHash) : "n/a"} />
                   <MiniField label="bundleHash parity" value={embeddedProof?.bundleHash ? String(embeddedProof.bundleHash === bundleHash) : "n/a"} />
