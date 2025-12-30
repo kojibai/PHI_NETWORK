@@ -395,6 +395,7 @@ const VerifierStamperInner: React.FC = () => {
         const { nonce, challengeBytes } = await buildKasChallenge("unlock", bundleHash);
         const assertion = await getWebAuthnAssertionJson({
           challenge: challengeBytes,
+          allowCredIds: [proofBundleMeta.authorSig.credId],
           preferInternal: true,
         });
         const ok = await verifyWebAuthnAssertion({
