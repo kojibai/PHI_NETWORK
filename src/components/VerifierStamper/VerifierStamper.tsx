@@ -1773,9 +1773,10 @@ const VerifierStamperInner: React.FC = () => {
 
   const receive = async () => {
     if (!meta || !svgURL || !liveSig) return;
-    if (receiveStatus === "new" && !receiveSig) {
-      const claimed = await claimReceiveSig();
-      if (!claimed) return;
+    let receiveSigLocal = receiveSig ?? null;
+    if (receiveStatus === "new" && !receiveSigLocal) {
+      receiveSigLocal = await claimReceiveSig();
+      if (!receiveSigLocal) return;
     }
 
     if (canonicalContext === "parent") {
@@ -1907,9 +1908,9 @@ const VerifierStamperInner: React.FC = () => {
     }
 
     let durl = await embedMetadata(svgURL, updated);
-    if (receiveSig) {
+    if (receiveSigLocal) {
       const bundleRaw = proofBundleMeta?.raw;
-      const nextBundle = isRecord(bundleRaw) ? { ...bundleRaw, receiveSig } : { receiveSig };
+      const nextBundle = isRecord(bundleRaw) ? { ...bundleRaw, receiveSig: receiveSigLocal } : { receiveSig: receiveSigLocal };
       const baseSvg = sigilSvgRaw?.trim() ? sigilSvgRaw : await fetch(svgURL).then((r) => r.text());
       const updatedSvg = embedProofMetadata(baseSvg, nextBundle);
       durl = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(updatedSvg)))}`;
