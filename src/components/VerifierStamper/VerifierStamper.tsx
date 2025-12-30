@@ -166,6 +166,18 @@ function readReceiveSigFromBundle(raw: unknown): ReceiveSig | null {
   return isReceiveSig(candidate) ? candidate : null;
 }
 
+function collectReceiveSigHistory(raw: Record<string, unknown>, nextSig?: ReceiveSig | null): ReceiveSig[] {
+  const history: ReceiveSig[] = [];
+  const existing = raw.receiveSigHistory;
+  if (Array.isArray(existing)) {
+    for (const item of existing) {
+      if (isReceiveSig(item)) history.push(item);
+    }
+  }
+  if (nextSig) history.push(nextSig);
+  return history;
+}
+
 function readExhaleInfoFromTransfer(
   transfer?: SigilTransfer
 ): { amountUsd?: string; sentPulse?: number } {
@@ -1731,7 +1743,39 @@ const VerifierStamperInner: React.FC = () => {
     });
     const baseSvgText = await fetch(svgURL).then((r) => r.text());
     const childSvgText = embedMetadataText(baseSvgText, childMeta);
-    const childDataUrl = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(childSvgText)))}`;
+    let childSvgWithProof = childSvgText;
+
+    try {
+      const rawBundle = proofBundleMeta?.raw;
+      if (rawBundle && isRecord(rawBundle)) {
+        const priorReceiveSig = readReceiveSigFromBundle(rawBundle);
+        const receiveSigHistory = collectReceiveSigHistory(rawBundle, priorReceiveSig);
+        const proofCapsule = proofBundleMeta?.proofCapsule;
+        const capsuleHash = proofBundleMeta?.capsuleHash ?? (proofCapsule ? await hashProofCapsuleV1(proofCapsule) : null);
+        const svgHash = await hashSvgText(childSvgText);
+
+        const nextBundle: Record<string, unknown> = {
+          ...(rawBundle as Record<string, unknown>),
+          svgHash,
+          capsuleHash,
+          proofCapsule: proofCapsule ?? undefined,
+        };
+        if (receiveSigHistory.length > 0) {
+          nextBundle.receiveSigHistory = receiveSigHistory;
+        }
+        delete nextBundle.receiveSig;
+        delete nextBundle.bundleHash;
+
+        const bundleUnsigned = buildBundleUnsigned(nextBundle);
+        const bundleHashNext = await hashBundle(bundleUnsigned);
+        nextBundle.bundleHash = bundleHashNext;
+        childSvgWithProof = embedProofMetadata(childSvgText, nextBundle);
+      }
+    } catch (err) {
+      logError("send.embedProofBundle", err);
+    }
+
+    const childDataUrl = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(childSvgWithProof)))}`;
     const sigilPulse = updated.pulse ?? 0;
     download(childDataUrl, `${pulseFilename("sigil_send", sigilPulse, nowPulse)}.svg`);
     const phiAmountNumber = Number(validPhi6);
