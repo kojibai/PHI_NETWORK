@@ -6,7 +6,8 @@
    ✅ Tabs pinned to bottom; single row (scroll only on ultra-small)
 */
 
-:root{
+html.verify-shell,
+body.verify-shell{
   --ink: rgba(242, 255, 252, 0.92);
   --inkDim: rgba(242, 255, 252, 0.72);
   --inkFaint: rgba(242, 255, 252, 0.52);
@@ -40,8 +41,8 @@
   --tabGap: clamp(6px, 1.2vw, 8px);
 }
 
-*{ box-sizing: border-box; }
-.mono{ font-family: var(--mono); }
+.verify-shell *, .verify-shell *::before, .verify-shell *::after{ box-sizing: border-box; }
+.verify-shell .mono{ font-family: var(--mono); }
 
 html.verify-shell, body.verify-shell{
   height: 100%;
@@ -52,12 +53,17 @@ html.verify-shell, body.verify-shell{
   overflow: hidden; /* ✅ never page scroll */
 }
 
-textarea, input, select, button{
+.verify-shell textarea,
+.verify-shell input,
+.verify-shell select,
+.verify-shell button{
   -webkit-text-size-adjust: 100%;
   touch-action: manipulation;
 }
 
-textarea, input, select{ font-size: 16px; }
+.verify-shell textarea,
+.verify-shell input,
+.verify-shell select{ font-size: 16px; }
 
 /* App shell */
 .vapp{
