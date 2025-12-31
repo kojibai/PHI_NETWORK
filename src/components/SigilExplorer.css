@@ -876,6 +876,61 @@
   text-shadow: 0 1px 0 rgba(0,0,0,0.25);
 }
 
+.phi-mark{
+  width: 12px;
+  height: 12px;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.phi-pill__label{
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: 6px;
+}
+
+.phi-pill__mark{
+  filter: drop-shadow(0 0 6px rgba(255, 215, 128, 0.35));
+}
+
+.phi-tagline__mark{
+  width: 13px;
+  height: 13px;
+  vertical-align: -2px;
+}
+
+.phi-amount{
+  display: inline-flex;
+  align-items: center;
+}
+
+.phi-amount__sign{
+  font-weight: 700;
+  margin-right: 2px;
+}
+
+.phi-amount__value{
+  font-variant-numeric: tabular-nums;
+  margin-right: 4px;
+}
+
+.phi-amount__mark{
+  filter: drop-shadow(0 0 6px rgba(255, 215, 128, 0.35));
+}
+
+.phi-detail__label{
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.phi-detail__mark{
+  width: 11px;
+  height: 11px;
+  filter: drop-shadow(0 0 5px rgba(255, 215, 128, 0.32));
+}
+
 .phi-pill--live{
   border-color: rgba(120, 255, 200, 0.6);
   background:
@@ -969,6 +1024,8 @@
 }
 
 .phi-move__amount{
+  display: inline-flex;
+  align-items: center;
   font-variant-numeric: tabular-nums;
 }
 
