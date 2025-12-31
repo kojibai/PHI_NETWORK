@@ -291,6 +291,14 @@
   opacity: 0.92;
 }
 
+.kx-origin-note{
+  margin: 0;
+  color: color-mix(in oklab, var(--sx-text-dim) 82%, white);
+  font-size: 12px;
+  line-height: 1.4;
+  max-width: 46ch;
+}
+
 /* Controls */
 .kx-controls{
   display: grid;
