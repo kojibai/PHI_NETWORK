@@ -760,6 +760,9 @@ function SigilTreeNode({
               {transferStatus === "received" && transferMove.amountUsd !== undefined && (
                 <span className="phi-move__usd">${formatUsd(transferMove.amountUsd)}</span>
               )}
+              {transferStatus === "pending" && liveUsd !== null && (
+                <span className="phi-move__usd">${formatUsd(liveUsd)}</span>
+              )}
             </span>
           )}
           {transferStatus && (
