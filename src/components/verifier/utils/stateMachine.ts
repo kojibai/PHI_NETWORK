@@ -42,8 +42,6 @@ export function deriveState(params: {
     lastClosed,
     isUnsigned,
     childUsed,
-    childExpired,
-    parentOpenExpired,
     isChildContext,
   } = params;
 
@@ -55,8 +53,6 @@ export function deriveState(params: {
 
   // An open transfer exists
   if (lastOpen) {
-    // If expired (child or parent), it's effectively sealed
-    if (childExpired || parentOpenExpired) return "complete";
     return "readyReceive";
   }
 
