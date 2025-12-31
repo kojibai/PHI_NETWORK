@@ -731,9 +731,11 @@ function SigilTreeNode({
       ? transferMove.amountUsd ?? (valueSnapshot?.usdPerPhi != null ? transferMove.amount * valueSnapshot.usdPerPhi : null)
       : liveUsd;
   const pendingFromChildren = valueSnapshot?.pendingFromChildren ?? 0;
+  const pendingFromParent = valueSnapshot?.pendingFromParent ?? 0;
   const derivedFromChildren = valueSnapshot?.receivedFromChildren ?? 0;
   const exhaleTotal = pendingFromChildren + derivedFromChildren;
   const derivedRatio = exhaleTotal > 0 ? derivedFromChildren / exhaleTotal : 0;
+  const pendingTotal = pendingFromChildren + pendingFromParent;
   const mixExhaleColor =
     pendingFromChildren > 0 && derivedFromChildren > 0
       ? {
@@ -742,12 +744,20 @@ function SigilTreeNode({
           )},${Math.round(80 * (1 - derivedRatio) + 110 * derivedRatio)}`,
         }
       : undefined;
-  const pendingTitle =
-    pendingFromChildren > 0 && displayLivePhi !== null
-      ? `Pending exhales: -${formatPhi(pendingFromChildren)} ${PHI_TEXT} • Live ${formatPhi(Math.max(0, displayLivePhi))} ${PHI_TEXT}`
-      : pendingFromChildren > 0
-        ? `Pending exhales: -${formatPhi(pendingFromChildren)} ${PHI_TEXT}`
-        : undefined;
+  const pendingTitle = (() => {
+    if (pendingTotal === 0) return undefined;
+    const parts: string[] = [];
+    if (pendingFromChildren > 0) {
+      parts.push(`Pending exhales: -${formatPhi(pendingFromChildren)} ${PHI_TEXT}`);
+      if (displayLivePhi !== null) {
+        parts.push(`Live ${formatPhi(Math.max(0, displayLivePhi))} ${PHI_TEXT}`);
+      }
+    }
+    if (pendingFromParent > 0) {
+      parts.push(`Pending sends: -${formatPhi(pendingFromParent)} ${PHI_TEXT}`);
+    }
+    return parts.join(" • ");
+  })();
   const derivedTitle =
     derivedFromChildren > 0
       ? `Derived exhales: -${formatPhi(derivedFromChildren)} ${PHI_TEXT}${
@@ -766,6 +776,27 @@ function SigilTreeNode({
       : transferMove
         ? { direction: "pending" as const, sign: "-", titleVerb: inhaleLabel === "inhale" ? "inhaled" : "exhaled" }
         : null;
+  const childExhaleStatus =
+    pendingFromChildren > 0 && derivedFromChildren > 0
+      ? "exhale-mix"
+      : derivedFromChildren > 0
+        ? "exhale-derived"
+        : pendingFromChildren > 0
+          ? "pending"
+          : null;
+  const exhaleStatusTitle =
+    childExhaleStatus === "exhale-mix"
+      ? `Exhale mix: ${formatPhi(derivedFromChildren)} derived • ${formatPhi(pendingFromChildren)} pending`
+      : childExhaleStatus === "exhale-derived"
+        ? `Exhale derived: ${formatPhi(derivedFromChildren)} ${PHI_TEXT}`
+        : childExhaleStatus === "pending"
+          ? `Exhale pending: ${formatPhi(pendingFromChildren)} ${PHI_TEXT}`
+          : transferStatus
+            ? `Exhale ${transferStatus}`
+            : undefined;
+  const showExhaleBadge =
+    inhaleLabel === "exhale" ? Boolean(childExhaleStatus || transferStatus) : inhaleLabel !== "inhale" && exhaleTotal > 0;
+  const exhaleBadgeClass = childExhaleStatus ?? (transferStatus ?? "received");
 
   return (
     <div className="node" style={chakraTintStyle(chakraDay)} data-chakra={String(chakraDay ?? "")} data-node-id={node.id}>
@@ -818,21 +849,10 @@ function SigilTreeNode({
               )}
             </span>
           )}
-          {transferMove && inhaleLabel === "exhale" && transferStatus && (
-            <span className={`phi-status phi-status--${transferStatus}`} title={`Exhale ${transferStatus}`}>
-              Exhale
-            </span>
-          )}
-          {!transferMove && inhaleLabel !== "inhale" && exhaleTotal > 0 && (
+          {showExhaleBadge && (
             <span
-              className={`phi-status phi-status--${pendingFromChildren > 0 && derivedFromChildren > 0 ? "exhale-mix" : "received"}`}
-              title={
-                pendingFromChildren > 0 && derivedFromChildren > 0
-                  ? `Exhale mix: ${formatPhi(derivedFromChildren)} derived • ${formatPhi(pendingFromChildren)} pending`
-                  : pendingFromChildren > 0
-                    ? `Exhale pending: ${formatPhi(pendingFromChildren)} ${PHI_TEXT}`
-                    : `Exhale derived: ${formatPhi(derivedFromChildren)} ${PHI_TEXT}`
-              }
+              className={`phi-status phi-status--${exhaleBadgeClass}`}
+              title={exhaleStatusTitle}
               style={mixExhaleColor as React.CSSProperties}
             >
               Exhale
@@ -863,14 +883,9 @@ function SigilTreeNode({
               Derived {renderPhiAmount(derivedFromChildren, { sign: "-" })}
             </span>
           )}
-          {pendingFromChildren > 0 && !(transferStatus === "pending" && inhaleLabel === "exhale") && (
+          {pendingTotal > 0 && (
             <span className="phi-pill phi-pill--pending" title={pendingTitle}>
-              Pending {renderPhiAmount(pendingFromChildren, { sign: "-" })}
-            </span>
-          )}
-          {transferStatus === "pending" && transferMove && inhaleLabel === "exhale" && (
-            <span className="phi-pill phi-pill--pending" title="Pending exhale">
-              Pending {renderPhiAmount(transferMove.amount, { sign: "-" })}
+              Pending {renderPhiAmount(pendingTotal, { sign: "-" })}
             </span>
           )}
           {transferStatus === "received" && transferMove && inhaleLabel === "exhale" && (
