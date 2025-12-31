@@ -49,6 +49,15 @@ function readStringField(obj: unknown, key: string): string | undefined {
   return typeof v === "string" && v.trim().length > 0 ? v.trim() : undefined;
 }
 
+function readParentUrl(payload: SigilSharePayloadLoose): string | undefined {
+  const record = payload as unknown as Record<string, unknown>;
+  const direct = readStringField(record, "parentUrl") ?? readStringField(record, "parent");
+  if (direct) return direct;
+  const feed = record.feed;
+  if (!isRecord(feed)) return undefined;
+  return readStringField(feed, "parentUrl") ?? readStringField(feed, "parent");
+}
+
 function buildContentIndex(reg: Registry): Map<string, ContentEntry> {
   const urlToContentId = new Map<string, string>();
   const idToAgg = new Map<string, ContentAgg>();
@@ -169,7 +178,7 @@ function buildContentIndex(reg: Registry): Map<string, ContentEntry> {
     if (e.id !== momentParentId) {
       parentId = momentParentId;
     } else {
-      const parentUrlRaw = readStringField(e.payload as unknown, "parentUrl");
+      const parentUrlRaw = readParentUrl(e.payload);
       if (parentUrlRaw) {
         const parentUrl = canonicalizeUrl(parentUrlRaw);
         const parentAnyId = urlToContentId.get(parentUrl);
