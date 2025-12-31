@@ -864,6 +864,7 @@ const VerifierStamperInner: React.FC = () => {
         parentUrl = u.toString();
       }
 
+      const lastTransfer = m.transfers?.slice(-1)[0];
       const enriched = {
         ...sharePayload,
         parentUrl,
@@ -877,6 +878,13 @@ const VerifierStamperInner: React.FC = () => {
               phiDelta: amountPhi,
             }
           : { transferDirection: "receive" }),
+        ...(lastTransfer?.receiverSignature
+          ? {
+              receiverSignature: lastTransfer.receiverSignature,
+              receiverStamp: lastTransfer.receiverStamp,
+              receiverKaiPulse: lastTransfer.receiverKaiPulse,
+            }
+          : {}),
       };
 
       let base = "";
