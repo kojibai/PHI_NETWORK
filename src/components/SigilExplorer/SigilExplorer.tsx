@@ -1842,7 +1842,9 @@ const SigilExplorer: React.FC = () => {
   const valueSnapshots = useMemo(() => {
     const out = new Map<string, NodeValueSnapshot>();
 
-    const walk = (node: SigilNode): { receivedFromParent: number; pendingFromParent: number } => {
+    const walk = (
+      node: SigilNode,
+    ): { receivedFromParent: number; pendingFromParent: number; liftToParent: number } => {
       const basePhi = computeLivePhi(node.payload, nowPulse);
       const usdPerPhi = computeUsdPerPhi(node.payload, nowPulse);
       const transferMove = resolveTransferMoveForNode(node, transferRegistry) ?? null;
@@ -1852,14 +1854,16 @@ const SigilExplorer: React.FC = () => {
 
       let childReceivedTotal = 0;
       let childPendingTotal = 0;
+      let childLiftTotal = 0;
       for (const child of node.children) {
         const childSummary = walk(child);
         childReceivedTotal += childSummary.receivedFromParent;
         childPendingTotal += childSummary.pendingFromParent;
+        childLiftTotal += childSummary.liftToParent;
       }
 
       const pendingOutgoing = transferStatus === "pending" && transferMove?.direction === "send" ? transferMove.amount : 0;
-      const netPhi = Math.max(0, baseValue - childReceivedTotal - childPendingTotal - pendingOutgoing);
+      const netPhi = Math.max(0, baseValue + childLiftTotal - childReceivedTotal - childPendingTotal - pendingOutgoing);
       const usdValue =
         transferStatus === "received" && transferMove?.amountUsd
           ? transferMove.amountUsd
@@ -1868,6 +1872,7 @@ const SigilExplorer: React.FC = () => {
             : null;
 
       const pendingFromParent = pendingOutgoing;
+      const liftToParent = transferMove ? 0 : netPhi;
       out.set(node.id, {
         basePhi,
         netPhi: Number.isFinite(netPhi) ? netPhi : null,
@@ -1883,6 +1888,7 @@ const SigilExplorer: React.FC = () => {
       return {
         receivedFromParent: receivedAmount,
         pendingFromParent,
+        liftToParent,
       };
     };
 
