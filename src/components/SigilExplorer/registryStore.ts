@@ -6,7 +6,7 @@ import type { Registry, SigilSharePayloadLoose } from "./types";
 import { USERNAME_CLAIM_KIND, type UsernameClaimPayload } from "../../types/usernameClaim";
 import { ingestUsernameClaimGlyph } from "../../utils/usernameClaimRegistry";
 import { normalizeClaimGlyphRef, normalizeUsername } from "../../utils/usernameClaim";
-import { makeSigilUrlLoose, resolveLineageBackwards } from "../../utils/sigilUrl";
+import { makeSigilUrlLoose, momentFromPulse, resolveLineageBackwards, type SigilSharePayload as SigilSharePayloadCore, type SigilSharePayloadLoose as SigilSharePayloadLooseCore } from "../../utils/sigilUrl";
 import type { SigilTransferRecord } from "../../utils/sigilTransferRegistry";
 import { getInMemorySigilUrls } from "../../utils/sigilRegistry";
 import { markConfirmedByNonce } from "../../utils/sendLedger";
@@ -507,8 +507,23 @@ export function promoteTransferRecord(record: SigilTransferRecord): boolean {
   }
   if (!basePayload) return false;
 
-  const nextPayload: SigilSharePayloadLoose = {
-    ...basePayload,
+  const pulse = Number(basePayload.pulse ?? 0);
+  const beat = Number(basePayload.beat ?? 0);
+  const stepIndex = Number(basePayload.stepIndex ?? 0);
+  const chakraDay =
+    (basePayload.chakraDay as SigilSharePayloadCore["chakraDay"] | undefined) ??
+    momentFromPulse(pulse).chakraDay;
+
+  const nextPayload: SigilSharePayloadLooseCore = {
+    ...(basePayload as SigilSharePayloadLooseCore),
+    pulse,
+    beat,
+    stepIndex,
+    chakraDay,
+    stepsPerBeat:
+      typeof basePayload.stepsPerBeat === "number" && Number.isFinite(basePayload.stepsPerBeat)
+        ? basePayload.stepsPerBeat
+        : 44,
     transferDirection: record.direction,
     transferAmountPhi: record.amountPhi,
     transferAmountUsd: record.amountUsd,
