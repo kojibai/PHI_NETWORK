@@ -23,12 +23,15 @@ import "../SigilExplorer.css";
 import {
   memoryRegistry,
   addUrl,
+  clearRegistryStorage,
   ensureRegistryHydrated,
   persistRegistryToStorage,
   parseImportedJson,
   REGISTRY_LS_KEY,
   MODAL_FALLBACK_LS_KEY,
   isOnline,
+  setRegistryStorageEnabled,
+  isRegistryStorageEnabled,
 } from "./registryStore";
 
 /** Breath cadence + chakra tinting */
@@ -655,7 +658,7 @@ async function copyText(text: string): Promise<void> {
 async function prefetchViewUrl(u: string): Promise<void> {
   if (!hasWindow) return;
   try {
-    await fetch(u, { method: "GET", cache: "force-cache", mode: "cors", credentials: "omit", redirect: "follow" });
+    await fetch(u, { method: "GET", cache: "no-store", mode: "cors", credentials: "omit", redirect: "follow" });
   } catch {}
 }
 
@@ -1595,6 +1598,8 @@ const SigilExplorer: React.FC = () => {
   useEffect(() => {
     unmounted.current = false;
 
+    setRegistryStorageEnabled(false);
+    clearRegistryStorage();
     loadApiBackupDeadUntil();
     loadApiBaseHint();
 
@@ -1673,6 +1678,7 @@ const SigilExplorer: React.FC = () => {
 
     // Storage hydration (registry + modal fallback + transfers)
     const onStorage = (ev: StorageEvent) => {
+      if (!isRegistryStorageEnabled()) return;
       if (!ev.key) return;
       const isRegistryKey = ev.key === REGISTRY_LS_KEY;
       const isModalKey = ev.key === MODAL_FALLBACK_LS_KEY;

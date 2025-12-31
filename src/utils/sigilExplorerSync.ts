@@ -2,9 +2,11 @@
 
 import {
   addUrl,
+  clearRegistryStorage,
   ensureRegistryHydrated,
   isOnline,
   memoryRegistry,
+  setRegistryStorageEnabled,
 } from "../components/SigilExplorer/registryStore";
 import {
   enqueueInhaleRawKrystal,
@@ -110,6 +112,8 @@ export function startSigilExplorerSync(): () => void {
   let remoteSeal: string | null = null;
   let lastFullSeedSeal: string | null = null;
 
+  setRegistryStorageEnabled(false);
+  clearRegistryStorage();
   loadApiBackupDeadUntil();
   loadApiBaseHint();
   loadInhaleQueueFromStorage();

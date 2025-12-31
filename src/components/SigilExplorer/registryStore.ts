@@ -29,6 +29,29 @@ const WITNESS_ADD_MAX = 512;
 const hasWindow = typeof window !== "undefined";
 const canStorage = hasWindow && typeof window.localStorage !== "undefined";
 let registryHydrated = false;
+let registryStorageEnabled = true;
+
+export function setRegistryStorageEnabled(enabled: boolean): void {
+  registryStorageEnabled = enabled;
+}
+
+export function isRegistryStorageEnabled(): boolean {
+  return registryStorageEnabled;
+}
+
+function canUseRegistryStorage(): boolean {
+  return registryStorageEnabled && canStorage;
+}
+
+export function clearRegistryStorage(): void {
+  if (!canStorage) return;
+  try {
+    localStorage.removeItem(REGISTRY_LS_KEY);
+    localStorage.removeItem(MODAL_FALLBACK_LS_KEY);
+  } catch {
+    // ignore
+  }
+}
 
 export const memoryRegistry: Registry = new Map();
 const channel = hasWindow && "BroadcastChannel" in window ? new BroadcastChannel(BC_NAME) : null;
@@ -309,7 +332,7 @@ function synthesizeEdgesFromWitnessChain(chain: readonly string[], leafUrl: stri
  *  ─────────────────────────────────────────────────────────────────── */
 
 export function persistRegistryToStorage(): void {
-  if (!canStorage) return;
+  if (!canUseRegistryStorage()) return;
   const urls = Array.from(memoryRegistry.keys());
   try {
     localStorage.setItem(REGISTRY_LS_KEY, JSON.stringify(urls));
@@ -351,8 +374,8 @@ export function hydrateRegistryFromStorage(): boolean {
     }
   };
 
-  const changedA = canStorage ? ingestList(localStorage.getItem(REGISTRY_LS_KEY)) : false;
-  const changedB = canStorage ? ingestList(localStorage.getItem(MODAL_FALLBACK_LS_KEY)) : false;
+  const changedA = canUseRegistryStorage() ? ingestList(localStorage.getItem(REGISTRY_LS_KEY)) : false;
+  const changedB = canUseRegistryStorage() ? ingestList(localStorage.getItem(MODAL_FALLBACK_LS_KEY)) : false;
   const changedC = ingestList(JSON.stringify(getInMemorySigilUrls()));
 
   if (changedA || changedB || changedC) persistRegistryToStorage();
