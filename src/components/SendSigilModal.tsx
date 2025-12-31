@@ -26,6 +26,7 @@ import {
   type SigilSharePayload,
   registerSigilUrl,
 } from "../utils/sigilUrl";
+import { rewriteUrlPayload } from "./verifier/utils/urlPayload";
 
 /* Import verifier constants so our embedded <metadata> matches exactly */
 import { SIGIL_CTX, SIGIL_TYPE, SEGMENT_SIZE } from "../components/VerifierStamper/constants";
@@ -487,8 +488,19 @@ export default function SendSigilModal({
           autoInferParent: true,
         });
 
-      // 5) Attach compact claim token for deduction flow
-      const rotatedUrl = attachClaimToken(canonicalUrl, {
+      // 5) Attach transfer nonce to share payload + compact claim token for deduction flow
+      const transferNonce = genNonce();
+      const shareUrlBase = rewriteUrlPayload(
+        canonicalUrl,
+        {
+          ...basePayload,
+          canonicalHash: readyHash,
+          transferNonce,
+          transferDirection: "send",
+        },
+        transferNonce
+      );
+      const rotatedUrl = attachClaimToken(shareUrlBase, {
         amountPhi: amt,
         sendPulse: nowPulse,
         senderStamp,
@@ -547,7 +559,7 @@ export default function SendSigilModal({
         creatorPublicKey: seed.creatorPublicKey ?? undefined,
         kaiPulse: nowPulse, // seal anchor
         canonicalHash: readyHash,
-        transferNonce: genNonce(),
+        transferNonce,
         segmentSize: SEGMENT_SIZE,
         transfers: [transferLite],
         // keep the canonical (non-rotated) for reference; rotated shared via claim token
