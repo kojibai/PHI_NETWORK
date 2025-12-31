@@ -26,6 +26,8 @@ import {
   type UsernameClaimGlyphEvidence,
   type UsernameClaimPayload,
 } from "../types/usernameClaim";
+import type { AuthorSig } from "./authorSig";
+import { parseAuthorSig } from "./authorSig";
 
 /* ───────── Core Types ───────── */
 
@@ -124,6 +126,7 @@ export type FeedPostPayload = {
   sigilId?: string; // short glyph/sigil identifier
   phiKey?: string; // optional ΦKey (short)
   kaiSignature?: string; // optional Kai Signature (short)
+  authorSig?: AuthorSig | null; // optional auth signature (proof bundle)
 
   /** Legacy parent field (can be sigil or stream URL). Prefer parentUrl. */
   parent?: string;
@@ -155,6 +158,7 @@ export type FeedPostPayloadLegacy = {
   sigilId?: string;
   phiKey?: string;
   kaiSignature?: string;
+  authorSig?: AuthorSig | null;
   parent?: string;
   parentUrl?: string;
   originUrl?: string;
@@ -178,6 +182,10 @@ function isOptionalString(x: unknown): x is string | undefined {
 }
 function isOptionalNumber(x: unknown): x is number | undefined {
   return x === undefined || isNumber(x);
+}
+function isOptionalAuthorSig(x: unknown): x is AuthorSig | null | undefined {
+  if (x === undefined || x === null) return true;
+  return parseAuthorSig(x) !== null;
 }
 function isValidSource(x: unknown): x is FeedSource | undefined {
   return x === undefined || x === "x" || x === "manual";
@@ -302,6 +310,7 @@ export function isFeedPostPayload(x: unknown): x is FeedPostPayload {
     isOptionalString(x["sigilId"]) &&
     isOptionalString(x["phiKey"]) &&
     isOptionalString(x["kaiSignature"]) &&
+    isOptionalAuthorSig(x["authorSig"]) &&
     isOptionalString(x["parent"]) &&
     isOptionalString(x["parentUrl"]) &&
     isOptionalString(x["originUrl"]) &&
@@ -325,6 +334,7 @@ export function isFeedPostPayloadLegacy(x: unknown): x is FeedPostPayloadLegacy 
     isOptionalString(x["sigilId"]) &&
     isOptionalString(x["phiKey"]) &&
     isOptionalString(x["kaiSignature"]) &&
+    isOptionalAuthorSig(x["authorSig"]) &&
     isOptionalString(x["parent"]) &&
     isOptionalString(x["parentUrl"]) &&
     isOptionalString(x["originUrl"]) &&
@@ -936,6 +946,7 @@ export function makeBasePayload(args: {
   sigilId?: string;
   phiKey?: string;
   kaiSignature?: string;
+  authorSig?: AuthorSig | null;
 
   /** Legacy parent; if parentUrl not provided, we mirror this into parentUrl. */
   parent?: string;
@@ -974,6 +985,7 @@ export function makeBasePayload(args: {
     sigilId: args.sigilId,
     phiKey: args.phiKey,
     kaiSignature: args.kaiSignature,
+    authorSig: args.authorSig,
     parent: args.parent,
     parentUrl,
     originUrl: args.originUrl,

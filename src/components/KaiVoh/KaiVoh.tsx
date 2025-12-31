@@ -53,6 +53,7 @@ import { getOriginUrl } from "../../utils/sigilUrl";
 import { sealEnvelopeV1, makeSealSaltB64Url, type GlyphCredential, type SealedEnvelopeV1 } from "../../utils/postSeal";
 import { extractSigilAuthFromSvg } from "../../utils/sigilAuthExtract";
 import { deriveKaiSignatureB64Url } from "../../utils/derivedGlyph";
+import { parseAuthorSig, type AuthorSig } from "../../utils/authorSig";
 
 /* ───────────────────────── Props ───────────────────────── */
 
@@ -163,6 +164,40 @@ function base64UrlEncodeBytes(buf: ArrayBuffer): string {
   }
 
   return outParts.join("").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function readAuthorSigFromMeta(meta: unknown, depth = 0): AuthorSig | null {
+  if (depth > 4) return null;
+  if (!meta || typeof meta !== "object") return null;
+
+  const rec = meta as Record<string, unknown>;
+  const direct = parseAuthorSig(rec["authorSig"]) ?? parseAuthorSig(rec["authSig"]);
+  if (direct) return direct;
+
+  const nestedKeys = [
+    "proofBundle",
+    "proofBundleRaw",
+    "proof",
+    "meta",
+    "metadata",
+    "bundle",
+    "verifierData",
+    "embedded",
+  ] as const;
+
+  for (const key of nestedKeys) {
+    const next = readAuthorSigFromMeta(rec[key], depth + 1);
+    if (next) return next;
+  }
+
+  return null;
+}
+
+function extractAuthorSigFromSvg(svgText?: string | null): AuthorSig | null {
+  if (!svgText) return null;
+  const material = extractSigilAuthFromSvg(svgText);
+  if (!material.meta) return null;
+  return readAuthorSigFromMeta(material.meta);
 }
 
 /** Read string/number from object or nested meta, safely */
@@ -541,6 +576,7 @@ async function encodeTokenWorkerFirst(payload: FeedPostPayload): Promise<EncodeW
 export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExhale }: KaiVohProps): ReactElement {
   const { auth } = useSigilAuth();
   const sigilMeta = auth.meta;
+  const authSig = useMemo(() => extractAuthorSigFromSvg(auth.svgText), [auth.svgText]);
 
   // ✅ Latest aligned pulse (KaiStatus-identical source), without re-rendering KaiVoh
   const kaiPulseRef = useRef<number>(Number.NaN);
@@ -1112,6 +1148,7 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
         sigilId,
         phiKey: hasVerifiedSigil && phiKey ? phiKey : undefined,
         kaiSignature: hasVerifiedSigil && kaiSignature ? kaiSignature : undefined,
+        authorSig: hasVerifiedSigil && authSig ? authSig : undefined,
         ts,
         attachments: mergedAttachments,
         parentUrl,
