@@ -320,6 +320,9 @@ type NodeValueSnapshot = {
   usdPerPhi: number | null;
   transferMove: TransferMove | null;
   receivedAmount: number;
+  receivedFromChildren: number;
+  pendingFromChildren: number;
+  pendingFromParent: number;
 };
 
 function resolveTransferMoveForNode(
@@ -442,6 +445,9 @@ function buildDetailEntries(
   }
   if (valueSnapshot?.usdValue !== null && valueSnapshot?.usdValue !== undefined) {
     entries.push({ label: "Live USD", value: `$${formatUsd(valueSnapshot.usdValue)}` });
+  }
+  if (valueSnapshot?.pendingFromChildren) {
+    entries.push({ label: "Pending inhales", value: `-${formatPhi(valueSnapshot.pendingFromChildren)} Φ` });
   }
 
   const phiSelf = getPhiFromPayload(node.payload);
@@ -643,6 +649,13 @@ function SigilTreeNode({
   const transferStatus = resolveTransferStatusForNode(node, transferRegistry, receiveLocks);
   const livePhi = valueSnapshot?.netPhi ?? null;
   const liveUsd = valueSnapshot?.usdValue ?? null;
+  const pendingOut = valueSnapshot?.pendingFromChildren ?? 0;
+  const pendingTitle =
+    pendingOut > 0 && livePhi !== null
+      ? `Pending inhales: -${formatPhi(pendingOut)} Φ • Remaining ${formatPhi(Math.max(0, livePhi - pendingOut))} Φ`
+      : pendingOut > 0
+        ? `Pending inhales: -${formatPhi(pendingOut)} Φ`
+        : undefined;
   const liveTitle =
     livePhi !== null
       ? `Live value: ${formatPhi(livePhi)} Φ${liveUsd !== null ? ` • $${formatUsd(liveUsd)}` : ""}`
@@ -712,6 +725,11 @@ function SigilTreeNode({
           {liveUsd !== null && (
             <span className="phi-pill phi-pill--usd" title={liveTitle}>
               ${formatUsd(liveUsd)}
+            </span>
+          )}
+          {pendingOut > 0 && (
+            <span className="phi-pill phi-pill--pending" title={pendingTitle}>
+              Pending -{formatPhi(pendingOut)}Φ
             </span>
           )}
 
@@ -807,9 +825,11 @@ function OriginPanel({
 
   const branchValue = useMemo(() => {
     let derivedPhi = 0;
+    let pendingPhi = 0;
     for (const child of root.children) {
       const snap = valueSnapshots.get(child.id);
       if (snap?.receivedAmount) derivedPhi += snap.receivedAmount;
+      if (snap?.pendingFromParent) pendingPhi += snap.pendingFromParent;
     }
 
     const basePhi = rootSnapshot?.basePhi ?? null;
@@ -817,7 +837,7 @@ function OriginPanel({
     const usdPerPhi = rootSnapshot?.usdPerPhi ?? null;
     const usdValue = netPhi != null && usdPerPhi != null ? netPhi * usdPerPhi : null;
 
-    return { basePhi, netPhi, usdValue, derivedPhi };
+    return { basePhi, netPhi, usdValue, derivedPhi, pendingPhi };
   }, [root, rootSnapshot, valueSnapshots]);
 
   const originLiveTitle =
@@ -826,6 +846,12 @@ function OriginPanel({
           branchValue.usdValue != null ? ` • $${formatUsd(branchValue.usdValue)}` : ""
         }`
       : undefined;
+  const originPendingTitle =
+    branchValue.pendingPhi > 0 && branchValue.netPhi != null
+      ? `Pending inhales: -${formatPhi(branchValue.pendingPhi)} Φ • Remaining ${formatPhi(Math.max(0, branchValue.netPhi - branchValue.pendingPhi))} Φ`
+      : branchValue.pendingPhi > 0
+        ? `Pending inhales: -${formatPhi(branchValue.pendingPhi)} Φ`
+        : undefined;
 
   return (
     <section className="origin" aria-label="Sigil origin stream" style={chakraTintStyle(chakraDay)} data-chakra={String(chakraDay ?? "")} data-node-id={root.id}>
@@ -852,6 +878,11 @@ function OriginPanel({
           {branchValue.usdValue != null && (
             <span className="phi-pill phi-pill--usd" title={originLiveTitle}>
               ${formatUsd(branchValue.usdValue)}
+            </span>
+          )}
+          {branchValue.pendingPhi > 0 && (
+            <span className="phi-pill phi-pill--pending" title={originPendingTitle}>
+              Pending -{formatPhi(branchValue.pendingPhi)}Φ
             </span>
           )}
           {branchValue.derivedPhi > 0 && (
@@ -1679,7 +1710,7 @@ const SigilExplorer: React.FC = () => {
   const valueSnapshots = useMemo(() => {
     const out = new Map<string, NodeValueSnapshot>();
 
-    const walk = (node: SigilNode): number => {
+    const walk = (node: SigilNode): { receivedFromParent: number; pendingFromParent: number } => {
       const basePhi = computeLivePhi(node.payload, nowPulse);
       const usdPerPhi = computeUsdPerPhi(node.payload, nowPulse);
       const transferMove = resolveTransferMoveForNode(node, transferRegistry) ?? null;
@@ -1687,12 +1718,15 @@ const SigilExplorer: React.FC = () => {
       const receivedAmount = transferStatus === "received" && transferMove ? transferMove.amount : 0;
       const baseValue = receivedAmount > 0 ? receivedAmount : basePhi ?? 0;
 
-      let childDeductions = 0;
+      let childReceivedTotal = 0;
+      let childPendingTotal = 0;
       for (const child of node.children) {
-        childDeductions += walk(child);
+        const childSummary = walk(child);
+        childReceivedTotal += childSummary.receivedFromParent;
+        childPendingTotal += childSummary.pendingFromParent;
       }
 
-      const netPhi = Math.max(0, baseValue - childDeductions);
+      const netPhi = Math.max(0, baseValue - childReceivedTotal - childPendingTotal);
       const usdValue =
         transferStatus === "received" && transferMove?.amountUsd
           ? transferMove.amountUsd
@@ -1700,6 +1734,7 @@ const SigilExplorer: React.FC = () => {
             ? netPhi * usdPerPhi
             : null;
 
+      const pendingFromParent = transferStatus === "pending" && transferMove ? transferMove.amount : 0;
       out.set(node.id, {
         basePhi,
         netPhi: Number.isFinite(netPhi) ? netPhi : null,
@@ -1707,9 +1742,15 @@ const SigilExplorer: React.FC = () => {
         usdPerPhi,
         transferMove,
         receivedAmount,
+        receivedFromChildren: childReceivedTotal,
+        pendingFromChildren: childPendingTotal,
+        pendingFromParent,
       });
 
-      return receivedAmount;
+      return {
+        receivedFromParent: receivedAmount,
+        pendingFromParent,
+      };
     };
 
     for (const root of forest) walk(root);
