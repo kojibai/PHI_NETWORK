@@ -54,6 +54,16 @@ export function setUrlHealth(u: string, h: UrlHealthScore): boolean {
   return true;
 }
 
+export function clearUrlHealthCache(): void {
+  urlHealth.clear();
+  if (!canStorage) return;
+  try {
+    localStorage.removeItem(URL_HEALTH_LS_KEY);
+  } catch {
+    // ignore
+  }
+}
+
 function isCanonicalHost(host: string): boolean {
   const liveHost = new URL(LIVE_BASE_URL).host;
   const backupHost = new URL(LIVE_BACKUP_URL).host;

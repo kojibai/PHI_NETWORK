@@ -176,8 +176,27 @@ type WitnessCtx = {
   parentUrl?: string;
 };
 
-function deriveWitnessContext(url: string): WitnessCtx {
-  const chain = extractWitnessChainFromUrl(url);
+function normalizeWitnessChain(chain: string[], payload?: SigilSharePayloadLoose | null): string[] {
+  if (!payload || chain.length === 0) return chain;
+
+  const originRaw = payload.originUrl ? canonicalizeUrl(payload.originUrl) : null;
+  const parentRaw = payload.parentUrl ? canonicalizeUrl(payload.parentUrl) : null;
+
+  let next = chain.slice();
+
+  if (originRaw && next.includes(originRaw)) {
+    next = [originRaw, ...next.filter((u) => u !== originRaw)];
+  }
+
+  if (parentRaw && next.includes(parentRaw)) {
+    next = [...next.filter((u) => u !== parentRaw), parentRaw];
+  }
+
+  return next;
+}
+
+function deriveWitnessContext(url: string, payload?: SigilSharePayloadLoose | null): WitnessCtx {
+  const chain = normalizeWitnessChain(extractWitnessChainFromUrl(url), payload);
   if (chain.length === 0) return { chain: [] };
   return {
     chain,
@@ -201,7 +220,7 @@ function forceInhaleUrls(urls: readonly string[]): void {
     const p0 = memoryRegistry.get(abs) ?? extractPayloadFromUrl(abs);
     if (!p0) continue;
 
-    const ctx = deriveWitnessContext(abs);
+    const ctx = deriveWitnessContext(abs, p0);
     const merged = mergeDerivedContext(p0, ctx);
     enqueueInhaleKrystal(abs, merged);
   }
@@ -283,7 +302,7 @@ export function enqueueInhaleUrl(url: string): void {
   const abs = canonicalizeUrl(url);
   const p0 = memoryRegistry.get(abs) ?? extractPayloadFromUrl(abs);
   if (!p0) return;
-  const ctx = deriveWitnessContext(abs);
+  const ctx = deriveWitnessContext(abs, p0);
   const merged = mergeDerivedContext(p0, ctx);
   enqueueInhaleKrystal(abs, merged);
 }

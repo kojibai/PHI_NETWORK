@@ -6,7 +6,8 @@ import type { Registry, SigilSharePayloadLoose } from "./types";
 import { USERNAME_CLAIM_KIND, type UsernameClaimPayload } from "../../types/usernameClaim";
 import { ingestUsernameClaimGlyph } from "../../utils/usernameClaimRegistry";
 import { normalizeClaimGlyphRef, normalizeUsername } from "../../utils/usernameClaim";
-import { resolveLineageBackwards } from "../../utils/sigilUrl";
+import { makeSigilUrlLoose, resolveLineageBackwards } from "../../utils/sigilUrl";
+import type { SigilTransferRecord } from "../../utils/sigilTransferRegistry";
 import { getInMemorySigilUrls } from "../../utils/sigilRegistry";
 import { markConfirmedByNonce } from "../../utils/sendLedger";
 import {
@@ -14,6 +15,7 @@ import {
   extractPayloadFromUrl,
   isPTildeUrl,
   looksLikeBareToken,
+  parseHashFromUrl,
   parseStreamToken,
   streamUrlFromToken,
 } from "./url";
@@ -134,8 +136,30 @@ function extractWitnessChainFromUrl(url: string): string[] {
   }
 }
 
-function deriveWitnessContext(url: string): WitnessCtx {
-  const chain = extractWitnessChainFromUrl(url);
+function normalizeWitnessChain(
+  chain: string[],
+  payload?: SigilSharePayloadLoose | null,
+): string[] {
+  if (!payload || chain.length === 0) return chain;
+
+  const originRaw = payload.originUrl ? canonicalizeUrl(payload.originUrl) : null;
+  const parentRaw = payload.parentUrl ? canonicalizeUrl(payload.parentUrl) : null;
+
+  let next = chain.slice();
+
+  if (originRaw && next.includes(originRaw)) {
+    next = [originRaw, ...next.filter((u) => u !== originRaw)];
+  }
+
+  if (parentRaw && next.includes(parentRaw)) {
+    next = [...next.filter((u) => u !== parentRaw), parentRaw];
+  }
+
+  return next;
+}
+
+function deriveWitnessContext(url: string, payload?: SigilSharePayloadLoose | null): WitnessCtx {
+  const chain = normalizeWitnessChain(extractWitnessChainFromUrl(url), payload);
   if (chain.length === 0) return { chain: [] };
   return {
     chain,
@@ -383,7 +407,7 @@ export function addUrl(url: string, opts?: AddUrlOptions): boolean {
 
   let changed = false;
 
-  const ctx = deriveWitnessContext(abs);
+  const ctx = deriveWitnessContext(abs, extracted);
   const mergedLeaf = mergeDerivedContext(mergePayloadLineage(extracted), ctx);
   changed = upsertRegistryPayload(abs, mergedLeaf) || changed;
 
@@ -405,7 +429,7 @@ export function addUrl(url: string, opts?: AddUrlOptions): boolean {
       const key = canonicalizeUrl(link);
       const p = extractPayloadFromUrl(key);
       if (!p) continue;
-      const pCtx = deriveWitnessContext(key);
+      const pCtx = deriveWitnessContext(key, p);
       const merged = mergeDerivedContext(p, pCtx);
       changed = upsertRegistryPayload(key, merged) || changed;
     }
@@ -422,6 +446,83 @@ export function addUrl(url: string, opts?: AddUrlOptions): boolean {
   }
 
   return changed;
+}
+
+function readTransferAmountPhi(payload: SigilSharePayloadLoose): number | null {
+  const record = payload as Record<string, unknown>;
+  const raw =
+    record.transferAmountPhi ??
+    record.transferPhi ??
+    record.amountPhi ??
+    record.phiAmount ??
+    record.childAllocationPhi ??
+    record.branchBasePhi;
+  if (raw == null) return null;
+  const num = typeof raw === "number" ? raw : Number(String(raw));
+  if (!Number.isFinite(num) || Math.abs(num) < 1e-12) return null;
+  return Math.abs(num);
+}
+
+function readTransferPulse(payload: SigilSharePayloadLoose): number | undefined {
+  const record = payload as Record<string, unknown>;
+  const raw = record.transferPulse ?? record.sentPulse ?? record.senderKaiPulse;
+  if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) return raw;
+  if (typeof raw === "string") {
+    const n = Number(raw);
+    if (!Number.isNaN(n) && n > 0) return n;
+  }
+  return undefined;
+}
+
+function hasTransferPayloadForHash(hash: string, record: SigilTransferRecord): boolean {
+  for (const [url, payload] of memoryRegistry) {
+    const urlHash = parseHashFromUrl(url);
+    if (!urlHash || urlHash.toLowerCase() !== hash.toLowerCase()) continue;
+    const dir = readTransferDirectionFromPayload(payload);
+    const amt = readTransferAmountPhi(payload);
+    if (!dir || !amt) continue;
+    if (dir !== record.direction) continue;
+    const recordAmt = Number(record.amountPhi);
+    if (!Number.isFinite(recordAmt)) continue;
+    if (Math.abs(amt - recordAmt) > 1e-9) continue;
+
+    const pulse = readTransferPulse(payload);
+    if (record.sentPulse != null && pulse !== record.sentPulse) continue;
+    return true;
+  }
+  return false;
+}
+
+export function promoteTransferRecord(record: SigilTransferRecord): boolean {
+  const hash = record.hash?.trim();
+  if (!hash) return false;
+  if (hasTransferPayloadForHash(hash, record)) return false;
+
+  let basePayload: SigilSharePayloadLoose | null = null;
+  for (const [url, payload] of memoryRegistry) {
+    const urlHash = parseHashFromUrl(url);
+    if (!urlHash || urlHash.toLowerCase() !== hash.toLowerCase()) continue;
+    basePayload = payload;
+    break;
+  }
+  if (!basePayload) return false;
+
+  const nextPayload: SigilSharePayloadLoose = {
+    ...basePayload,
+    transferDirection: record.direction,
+    transferAmountPhi: record.amountPhi,
+    transferAmountUsd: record.amountUsd,
+    transferPulse: record.sentPulse,
+  };
+
+  const nextUrl = makeSigilUrlLoose(hash, nextPayload, { absolute: false });
+  return addUrl(nextUrl, {
+    includeAncestry: true,
+    broadcast: true,
+    persist: true,
+    source: "local",
+    enqueueToApi: true,
+  });
 }
 
 /* ─────────────────────────────────────────────────────────────────────

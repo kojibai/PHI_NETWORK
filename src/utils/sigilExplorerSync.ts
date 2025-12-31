@@ -5,6 +5,7 @@ import {
   ensureRegistryHydrated,
   isOnline,
   memoryRegistry,
+  promoteTransferRecord,
 } from "../components/SigilExplorer/registryStore";
 import {
   enqueueInhaleRawKrystal,
@@ -23,6 +24,7 @@ import {
 import { canonicalizeUrl } from "../components/SigilExplorer/url";
 import { SIGIL_EXPLORER_OPEN_EVENT } from "../constants/sigilExplorer";
 import { subscribeSigilRegistry } from "./sigilRegistry";
+import { readSigilTransferRegistry, SIGIL_TRANSFER_EVENT, type SigilTransferRecord } from "./sigilTransferRegistry";
 
 type SyncReason = "open" | "pulse" | "visible" | "focus" | "online" | "event";
 
@@ -157,12 +159,22 @@ export function startSigilExplorerSync(): () => void {
   };
   window.addEventListener("sigil:sent", onSentEvent as EventListener);
 
+  const onTransferEvent = (event: Event): void => {
+    const detail = (event as CustomEvent<unknown>).detail as SigilTransferRecord | undefined;
+    if (detail && detail.hash) promoteTransferRecord(detail);
+  };
+  window.addEventListener(SIGIL_TRANSFER_EVENT, onTransferEvent as EventListener);
+
   const onExplorerOpen = (): void => {
     resnapBreath();
     void inhaleOnce();
     void exhaleOnce("open");
   };
   window.addEventListener(SIGIL_EXPLORER_OPEN_EVENT, onExplorerOpen as EventListener);
+
+  for (const [, record] of readSigilTransferRegistry()) {
+    promoteTransferRecord(record);
+  }
 
   const ac = new AbortController();
 
@@ -179,6 +191,7 @@ export function startSigilExplorerSync(): () => void {
 
     syncInFlight = true;
     try {
+      await flushInhaleQueue();
       const prevSeal = remoteSeal;
 
       const res = await apiFetchWithFailover((base) => new URL(API_SEAL_PATH, base).toString(), {
@@ -289,6 +302,7 @@ export function startSigilExplorerSync(): () => void {
 
     if (bag.registerSend === onSendRecord) bag.registerSend = prevSend;
     window.removeEventListener("sigil:sent", onSentEvent as EventListener);
+    window.removeEventListener(SIGIL_TRANSFER_EVENT, onTransferEvent as EventListener);
     window.removeEventListener(SIGIL_EXPLORER_OPEN_EVENT, onExplorerOpen as EventListener);
     window.removeEventListener("focus", onFocus);
     window.removeEventListener("online", onOnline);

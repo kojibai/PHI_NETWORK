@@ -24,6 +24,7 @@ import {
   memoryRegistry,
   addUrl,
   ensureRegistryHydrated,
+  promoteTransferRecord,
   persistRegistryToStorage,
   parseImportedJson,
   REGISTRY_LS_KEY,
@@ -54,7 +55,7 @@ import { computeIntrinsicUnsigned, type SigilMetadataLite } from "../../utils/va
 import { getKaiPulseEternalInt } from "../../SovereignSolar";
 
 /** URL health probing */
-import { loadUrlHealthFromStorage, probeUrl, setUrlHealth, urlHealth } from "./urlHealth";
+import { clearUrlHealthCache, loadUrlHealthFromStorage, probeUrl, setUrlHealth, urlHealth } from "./urlHealth";
 
 /** Remote API client */
 import {
@@ -125,6 +126,7 @@ const IMPORT_WORKER_THRESHOLD = 250_000;
 const URL_PROBE_MAX_PER_REFRESH = 18;
 const INHALE_INTERVAL_MS = 3236;
 const EXHALE_INTERVAL_MS = 2000;
+const EXPLORER_PREFETCH_CACHE = "sigil-explorer-prefetch-v2";
 
 function getLatestPulseFromRegistry(): number | undefined {
   let latest: number | undefined;
@@ -635,8 +637,33 @@ async function copyText(text: string): Promise<void> {
 async function prefetchViewUrl(u: string): Promise<void> {
   if (!hasWindow) return;
   try {
-    await fetch(u, { method: "GET", cache: "force-cache", mode: "cors", credentials: "omit", redirect: "follow" });
+    const res = await fetch(u, {
+      method: "GET",
+      cache: "no-store",
+      mode: "cors",
+      credentials: "omit",
+      redirect: "follow",
+    });
+    if (res && res.ok && "caches" in window && typeof caches.open === "function") {
+      try {
+        const cache = await caches.open(EXPLORER_PREFETCH_CACHE);
+        await cache.put(new Request(u), res.clone());
+      } catch {
+        // ignore cache failures
+      }
+    }
   } catch {}
+}
+
+async function clearPrefetchCache(): Promise<void> {
+  if (!hasWindow) return;
+  if ("caches" in window && typeof caches.delete === "function") {
+    try {
+      await caches.delete(EXPLORER_PREFETCH_CACHE);
+    } catch {
+      // ignore cache failures
+    }
+  }
 }
 
 /* ─────────────────────────────────────────────────────────────────────
@@ -1113,6 +1140,7 @@ const SigilExplorer: React.FC = () => {
 
   const unmounted = useRef(false);
   const prefetchedRef = useRef<Set<string>>(new Set());
+  const promotedTransfersRef = useRef<Set<string>>(new Set());
 
   // Scroll safety guards
   const scrollElRef = useRef<HTMLDivElement | null>(null);
@@ -1611,6 +1639,7 @@ const SigilExplorer: React.FC = () => {
 
       syncInFlightRef.current = true;
       try {
+        await flushInhaleQueue();
         const prevSeal = remoteSealRef.current;
 
         const res = await apiFetchWithFailover((base) => new URL(API_SEAL_PATH, base).toString(), {
@@ -1644,6 +1673,8 @@ const SigilExplorer: React.FC = () => {
         }
 
         const importedRes = await pullAndImportRemoteUrls(ac.signal);
+        const sealChanged = !!nextSeal && nextSeal !== prevSeal;
+        const shouldInvalidateCache = sealChanged || importedRes.imported > 0;
 
         if (importedRes.pulled) {
           remoteSealRef.current = importedRes.remoteSeal ?? nextSeal ?? prevSeal ?? null;
@@ -1652,6 +1683,12 @@ const SigilExplorer: React.FC = () => {
         if (importedRes.imported > 0) {
           setLastAddedSafe(undefined);
           bump();
+        }
+
+        if (shouldInvalidateCache) {
+          prefetchedRef.current.clear();
+          void clearPrefetchCache();
+          clearUrlHealthCache();
         }
 
         const sealNow = remoteSealRef.current;
@@ -1788,6 +1825,23 @@ const SigilExplorer: React.FC = () => {
   const forest = useMemo(() => buildForest(memoryRegistry), [registryRev]);
   const transferRegistry = useMemo(() => readSigilTransferRegistry(), [transferRev]);
   const receiveLocks = useMemo(() => buildReceiveLockIndex(memoryRegistry), [registryRev, transferRev]);
+
+  useEffect(() => {
+    let changed = false;
+    for (const [, record] of transferRegistry) {
+      const key = `${record.hash}:${record.direction}:${record.amountPhi}:${record.amountUsd ?? ""}:${record.sentPulse ?? ""}`;
+      if (promotedTransfersRef.current.has(key)) continue;
+      const promoted = promoteTransferRecord(record);
+      if (promoted) {
+        promotedTransfersRef.current.add(key);
+        changed = true;
+      }
+    }
+    if (changed) {
+      setLastAddedSafe(undefined);
+      bump();
+    }
+  }, [transferRegistry, bump, setLastAddedSafe]);
 
   const totalKeys = useMemo(() => {
     let n = 0;
