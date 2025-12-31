@@ -735,7 +735,8 @@ function SigilTreeNode({
   const derivedFromChildren = valueSnapshot?.receivedFromChildren ?? 0;
   const exhaleTotal = pendingFromChildren + derivedFromChildren;
   const derivedRatio = exhaleTotal > 0 ? derivedFromChildren / exhaleTotal : 0;
-  const pendingTotal = pendingFromChildren + pendingFromParent;
+  const showParentPending = pendingFromParent > 0 && inhaleLabel !== "exhale";
+  const pendingPillTotal = pendingFromChildren + (showParentPending ? pendingFromParent : 0);
   const mixExhaleColor =
     pendingFromChildren > 0 && derivedFromChildren > 0
       ? {
@@ -745,7 +746,7 @@ function SigilTreeNode({
         }
       : undefined;
   const pendingTitle = (() => {
-    if (pendingTotal === 0) return undefined;
+    if (pendingPillTotal === 0) return undefined;
     const parts: string[] = [];
     if (pendingFromChildren > 0) {
       parts.push(`Pending exhales: -${formatPhi(pendingFromChildren)} ${PHI_TEXT}`);
@@ -753,7 +754,7 @@ function SigilTreeNode({
         parts.push(`Live ${formatPhi(Math.max(0, displayLivePhi))} ${PHI_TEXT}`);
       }
     }
-    if (pendingFromParent > 0) {
+    if (showParentPending) {
       parts.push(`Pending sends: -${formatPhi(pendingFromParent)} ${PHI_TEXT}`);
     }
     return parts.join(" • ");
@@ -883,9 +884,9 @@ function SigilTreeNode({
               Derived {renderPhiAmount(derivedFromChildren, { sign: "-" })}
             </span>
           )}
-          {pendingTotal > 0 && (
+          {pendingPillTotal > 0 && (
             <span className="phi-pill phi-pill--pending" title={pendingTitle}>
-              Pending {renderPhiAmount(pendingTotal, { sign: "-" })}
+              Pending {renderPhiAmount(pendingPillTotal, { sign: "-" })}
             </span>
           )}
           {transferStatus === "received" && transferMove && inhaleLabel === "exhale" && (
