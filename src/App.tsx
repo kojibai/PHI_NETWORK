@@ -480,9 +480,9 @@ function ExplorerFallback(): React.JSX.Element {
       role="status"
       aria-live="polite"
     >
-      <div style={{ fontWeight: 700, marginBottom: 8 }}>Loading keystream…</div>
+      <div style={{ fontWeight: 700, marginBottom: 8 }}>Aligning keystream…</div>
       <div style={{ opacity: 0.8, fontSize: 12, marginBottom: 12 }}>
-        Warming the ΦStream registry and offline caches.
+        Affirming the ΦStream flow & sovereign memory.
       </div>
       <div style={{ display: "grid", gap: 8 }}>
         <div style={{ height: 12, borderRadius: 8, background: "rgba(255,255,255,.08)" }} />
