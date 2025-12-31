@@ -37,8 +37,8 @@ type SigilSyncBag = {
 };
 
 const hasWindow = typeof window !== "undefined";
-const INHALE_INTERVAL_MS = 5236;
-const EXHALE_INTERVAL_MS = 3236;
+const INHALE_INTERVAL_MS = 3236;
+const EXHALE_INTERVAL_MS = 2000;
 
 function getSigilBag(): SigilSyncBag {
   if (!hasWindow) return {};
