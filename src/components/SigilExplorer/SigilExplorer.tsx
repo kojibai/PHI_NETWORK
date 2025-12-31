@@ -732,6 +732,16 @@ function SigilTreeNode({
       : liveUsd;
   const pendingFromChildren = valueSnapshot?.pendingFromChildren ?? 0;
   const derivedFromChildren = valueSnapshot?.receivedFromChildren ?? 0;
+  const exhaleTotal = pendingFromChildren + derivedFromChildren;
+  const derivedRatio = exhaleTotal > 0 ? derivedFromChildren / exhaleTotal : 0;
+  const mixExhaleColor =
+    pendingFromChildren > 0 && derivedFromChildren > 0
+      ? {
+          "--exhale-rgb": `${Math.round(255 * (0.85 + 0.15 * derivedRatio))},${Math.round(
+            140 * (1 - derivedRatio) + 75 * derivedRatio,
+          )},${Math.round(80 * (1 - derivedRatio) + 110 * derivedRatio)}`,
+        }
+      : undefined;
   const pendingTitle =
     pendingFromChildren > 0 && displayLivePhi !== null
       ? `Pending exhales: -${formatPhi(pendingFromChildren)} ${PHI_TEXT} • Live ${formatPhi(Math.max(0, displayLivePhi))} ${PHI_TEXT}`
@@ -834,7 +844,11 @@ function SigilTreeNode({
             </span>
           )}
           {derivedFromChildren > 0 && (
-            <span className="phi-pill phi-pill--drain" title={derivedTitle}>
+            <span
+              className={`phi-pill phi-pill--drain${pendingFromChildren > 0 ? " phi-pill--exhale-mix" : ""}`}
+              title={derivedTitle}
+              style={mixExhaleColor as React.CSSProperties}
+            >
               Derived {renderPhiAmount(derivedFromChildren, { sign: "-" })}
             </span>
           )}
