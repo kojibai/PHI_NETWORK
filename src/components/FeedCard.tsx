@@ -113,6 +113,37 @@ const hasAuthSignature = (capsule: Capsule): boolean => {
   return false;
 };
 
+const hasAuthSignatureInPayload = (payload: unknown, depth = 0): boolean => {
+  if (depth > 4) return false;
+  if (!payload) return false;
+  if (Array.isArray(payload)) {
+    return payload.some((entry) => hasAuthSignatureInPayload(entry, depth + 1));
+  }
+  if (!isRecord(payload)) return false;
+
+  if (hasAuthSignatureValue(payload["authorSig"]) || hasAuthSignatureValue(payload["authSig"])) return true;
+
+  const nestedKeys = [
+    "proofBundle",
+    "proofBundleRaw",
+    "proof",
+    "meta",
+    "metadata",
+    "bundle",
+    "capsule",
+    "data",
+    "payload",
+    "verifierData",
+    "embedded",
+  ] as const;
+
+  for (const key of nestedKeys) {
+    if (hasAuthSignatureInPayload(payload[key], depth + 1)) return true;
+  }
+
+  return false;
+};
+
 /* ─────────────────────────────────────────────────────────────
    Long-form collapse helpers
    ───────────────────────────────────────────────────────────── */
@@ -2696,7 +2727,8 @@ function beatStepFromPulseKKS(pulse: number): { beatZ: number; stepZ: number } {
   const sigilId = isNonEmpty(capsule.sigilId) ? capsule.sigilId : undefined;
   const phiKey = isNonEmpty(capsule.phiKey) ? capsule.phiKey : undefined;
   const hasKaiSignature = isNonEmpty(capsule.kaiSignature);
-  const hasAuthSig = hasAuthSignature(capsule);
+  const payloadAuthSig = hasAuthSignatureInPayload(nodeResolved!.dataRaw ?? nodeStorePayload);
+  const hasAuthSig = hasAuthSignature(capsule) || payloadAuthSig;
   const signaturePresent = hasKaiSignature || hasAuthSig;
   const verifiedTitle = signaturePresent
     ? hasKaiSignature
