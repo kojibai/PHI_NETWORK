@@ -195,6 +195,7 @@ function readQuality(value: unknown): "low" | "med" | "high" | undefined {
 
 function buildValuationMeta(payload: SigilSharePayloadLoose): SigilMetadataLite {
   const record = payload as Record<string, unknown>;
+  const payloadSteps = readFiniteNumber((payload as { stepsPerBeat?: unknown }).stepsPerBeat);
   const transfers = Array.isArray(record.transfers) ? (record.transfers as SigilMetadataLite["transfers"]) : undefined;
   const segments = Array.isArray(record.segments) ? (record.segments as SigilMetadataLite["segments"]) : undefined;
   const ip = isRecord(record.ip) ? (record.ip as SigilMetadataLite["ip"]) : undefined;
@@ -204,7 +205,7 @@ function buildValuationMeta(payload: SigilSharePayloadLoose): SigilMetadataLite 
     kaiPulse: payload.pulse,
     beat: payload.beat,
     stepIndex: payload.stepIndex,
-    stepsPerBeat: readFiniteNumber(record.stepsPerBeat) ?? payload.stepsPerBeat,
+    stepsPerBeat: readFiniteNumber(record.stepsPerBeat) ?? payloadSteps,
     kaiSignature: payload.kaiSignature,
     userPhiKey: payload.userPhiKey,
     chakraDay: payload.chakraDay,
