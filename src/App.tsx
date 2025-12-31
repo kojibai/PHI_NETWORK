@@ -42,6 +42,7 @@ import { DEFAULT_APP_VERSION, SW_VERSION_EVENT } from "./version";
 import { useBodyScrollLock } from "./hooks/useBodyScrollLock";
 import { useDisableZoom } from "./hooks/useDisableZoom";
 import { useVisualViewportSize } from "./hooks/useVisualViewportSize";
+import HomePriceTickerFallback from "./components/HomePriceTickerFallback";
 
 import "./App.css";
 
@@ -464,6 +465,34 @@ function ExplorerPopover({
   );
 }
 
+function ExplorerFallback(): React.JSX.Element {
+  return (
+    <div
+      style={{
+        margin: "18px",
+        padding: "18px",
+        borderRadius: "14px",
+        border: "1px solid rgba(255,255,255,.12)",
+        background: "linear-gradient(180deg, rgba(8,14,16,.75), rgba(8,14,16,.55))",
+        color: "var(--ink-dim)",
+        boxShadow: "0 18px 44px rgba(0,0,0,.28)",
+      }}
+      role="status"
+      aria-live="polite"
+    >
+      <div style={{ fontWeight: 700, marginBottom: 8 }}>Loading keystream…</div>
+      <div style={{ opacity: 0.8, fontSize: 12, marginBottom: 12 }}>
+        Warming the ΦStream registry and offline caches.
+      </div>
+      <div style={{ display: "grid", gap: 8 }}>
+        <div style={{ height: 12, borderRadius: 8, background: "rgba(255,255,255,.08)" }} />
+        <div style={{ height: 12, borderRadius: 8, background: "rgba(255,255,255,.06)" }} />
+        <div style={{ height: 12, borderRadius: 8, background: "rgba(255,255,255,.05)" }} />
+      </div>
+    </div>
+  );
+}
+
 function KlockPopover({ open, onClose, children }: KlockPopoverProps): React.JSX.Element | null {
   const isClient = typeof document !== "undefined";
   const vvSize = useVisualViewportSize();
@@ -646,7 +675,7 @@ export function ExplorerRoute(): React.JSX.Element {
   return (
     <>
       <ExplorerPopover open={open} onClose={handleClose}>
-        <Suspense fallback={null}>
+        <Suspense fallback={<ExplorerFallback />}>
           <SigilExplorer />
         </Suspense>
       </ExplorerPopover>
@@ -949,6 +978,15 @@ export function AppChrome(): React.JSX.Element {
     void import("./components/EternalKlock");
     void import("./pages/sigilstream/SigilStreamRoot");
   }, [heavyUiReady]);
+
+  const prefetchSigilExplorer = useCallback((): void => {
+    void import("./components/SigilExplorer/SigilExplorer");
+  }, []);
+
+  const warmHomeChart = useCallback((): void => {
+    setHeavyUiReady(true);
+    void import("./components/HomePriceChartCard");
+  }, []);
 
   // SW warm-up (idle-only + focus cadence, abort-safe, respects Save-Data/2G)
   useEffect(() => {
@@ -1306,7 +1344,15 @@ export function AppChrome(): React.JSX.Element {
                     }}
                   >
                     {heavyUiReady ? (
-                      <Suspense fallback={<div style={{ height: chartHeight }} aria-hidden="true" />}>
+                      <Suspense
+                        fallback={
+                          <HomePriceTickerFallback
+                            ctaAmountUsd={144}
+                            title="Value Index"
+                            onActivate={warmHomeChart}
+                          />
+                        }
+                      >
                         <HomePriceChartCard
                           apiBase="https://pay.kaiklok.com"
                           ctaAmountUsd={144}
@@ -1314,7 +1360,11 @@ export function AppChrome(): React.JSX.Element {
                         />
                       </Suspense>
                     ) : (
-                      <div style={{ height: chartHeight }} aria-hidden="true" />
+                      <HomePriceTickerFallback
+                        ctaAmountUsd={144}
+                        title="Value Index"
+                        onActivate={warmHomeChart}
+                      />
                     )}
                   </div>
                 </div>
@@ -1339,6 +1389,10 @@ export function AppChrome(): React.JSX.Element {
                       end={item.end}
                       className={({ isActive }) => `nav-item ${isActive ? "nav-item--active" : ""}`}
                       aria-label={`${item.label}: ${item.desc}`}
+                      onPointerEnter={item.to === "/keystream" ? prefetchSigilExplorer : undefined}
+                      onFocus={item.to === "/keystream" ? prefetchSigilExplorer : undefined}
+                      onTouchStart={item.to === "/keystream" ? prefetchSigilExplorer : undefined}
+                      onPointerDown={item.to === "/keystream" ? prefetchSigilExplorer : undefined}
                     >
                       <div className="nav-item__label">{item.label}</div>
                       <div className="nav-item__desc">{item.desc}</div>
