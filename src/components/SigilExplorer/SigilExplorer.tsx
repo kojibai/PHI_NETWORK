@@ -964,7 +964,7 @@ function OriginPanel({
           )}
           {branchValue.pendingPhi > 0 && (
             <span className="phi-pill phi-pill--pending" title={originPendingTitle}>
-              Pending
+              Pending {renderPhiAmount(branchValue.pendingPhi, { sign: "-" })}
             </span>
           )}
           {branchValue.derivedPhi > 0 && (
