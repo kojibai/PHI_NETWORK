@@ -463,7 +463,6 @@ function buildDetailEntries(
   const record = node.payload as unknown as Record<string, unknown>;
   const entries: DetailEntry[] = [];
   const usedKeys = new Set<string>();
-  const inhaleLabel = resolveInhaleLabel(node);
   const transferMove = resolveTransferMoveForNode(node, transferRegistry);
   const transferStatus = transferMove ? resolveTransferStatusForNode(node, transferRegistry, receiveLocks) : null;
   const displayLivePhi =
