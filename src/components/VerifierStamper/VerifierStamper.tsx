@@ -238,6 +238,23 @@ function readPayloadNonce(payload: SigilSharePayloadLoose): string | null {
   return typeof raw === "string" && raw.trim() ? raw.trim() : null;
 }
 
+function resolveOriginUrlFromRegistry(parentCanonical: string, fallbackUrl: string): string {
+  if (!parentCanonical) return fallbackUrl;
+  for (const payload of memoryRegistry.values()) {
+    const payloadCanonical = readPayloadCanonical(payload);
+    if (!payloadCanonical || payloadCanonical !== parentCanonical) continue;
+    const record = payload as Record<string, unknown>;
+    const originUrl = typeof record.originUrl === "string" ? record.originUrl.trim() : "";
+    if (originUrl) return originUrl;
+    const parentUrl = typeof record.parentUrl === "string" ? record.parentUrl.trim() : "";
+    if (!parentUrl) continue;
+    const parentPayload = extractPayloadFromUrl(parentUrl);
+    const parentOrigin = parentPayload && typeof parentPayload.originUrl === "string" ? parentPayload.originUrl.trim() : "";
+    if (parentOrigin) return parentOrigin;
+  }
+  return fallbackUrl;
+}
+
 function hasReceiveProofFields(payload: SigilSharePayloadLoose): boolean {
   const record = payload as Record<string, unknown>;
   const readFlag = (src: Record<string, unknown> | null) => {
@@ -914,6 +931,10 @@ const VerifierStamperInner: React.FC = () => {
       try {
         const { makeSigilUrl } = await import("../../utils/sigilUrl");
         parentUrl = makeSigilUrl(parentCanonical, sharePayload);
+        const parentToken = (m as SigilMetadataWithOptionals).transferNonce || "";
+        if (parentToken) {
+          parentUrl = rewriteUrlPayload(parentUrl, sharePayload, parentToken);
+        }
       } catch (err) {
         logError("receive.lock.parentUrl", err);
         const u = new URL(typeof window !== "undefined" ? window.location.href : "http://localhost");
@@ -921,10 +942,13 @@ const VerifierStamperInner: React.FC = () => {
         parentUrl = u.toString();
       }
 
+      const originUrl = resolveOriginUrlFromRegistry(parentCanonical, parentUrl);
+
       const lastTransfer = m.transfers?.slice(-1)[0];
       const enriched = {
         ...sharePayload,
         parentUrl,
+        originUrl,
         canonicalHash,
         parentHash: parentCanonical,
         transferNonce: token,
@@ -1330,6 +1354,10 @@ const VerifierStamperInner: React.FC = () => {
     try {
       const { makeSigilUrl } = await import("../../utils/sigilUrl");
       parentUrl = makeSigilUrl(parentCanonical, sharePayload);
+      const parentToken = m.transferNonce || "";
+      if (parentToken) {
+        parentUrl = rewriteUrlPayload(parentUrl, sharePayload, parentToken);
+      }
     } catch (err) {
       logError("shareTransferLink.parentUrl", err);
       const u = new URL(typeof window !== "undefined" ? window.location.href : "http://localhost");
@@ -1337,17 +1365,20 @@ const VerifierStamperInner: React.FC = () => {
       parentUrl = u.toString();
     }
 
+    const originUrl = resolveOriginUrlFromRegistry(parentCanonical, parentUrl);
+
     const enriched = {
       ...sharePayload,
       parentUrl,
+      originUrl,
       canonicalHash: childHash,
       parentHash: parentCanonical,
       transferNonce: token,
       claim,
       preview,
+      transferDirection: "send",
       ...(transferAmountPhi
         ? {
-            transferDirection: "send",
             transferAmountPhi,
             phiDelta: `-${transferAmountPhi}`,
           }

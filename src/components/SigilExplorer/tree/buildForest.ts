@@ -50,10 +50,53 @@ function readStringField(obj: unknown, key: string): string | undefined {
   return typeof v === "string" && v.trim().length > 0 ? v.trim() : undefined;
 }
 
+function readTransferDirection(value: unknown): "send" | "receive" | null {
+  if (typeof value !== "string") return null;
+  const t = value.trim().toLowerCase();
+  if (!t) return null;
+  if (t.includes("receive") || t.includes("received") || t.includes("inhale")) return "receive";
+  if (t.includes("send") || t.includes("sent") || t.includes("exhale")) return "send";
+  return null;
+}
+
+function hasTransferHints(payload: SigilSharePayloadLoose): boolean {
+  const record = payload as Record<string, unknown>;
+  const feed = isRecord(record.feed) ? (record.feed as Record<string, unknown>) : null;
+  const readDir = (src: Record<string, unknown> | null) =>
+    src
+      ? readTransferDirection(src.transferDirection) ||
+        readTransferDirection(src.transferMode) ||
+        readTransferDirection(src.transferKind) ||
+        readTransferDirection(src.phiDirection)
+      : null;
+  const hasDir = !!(readDir(record) ?? readDir(feed));
+  const hasNonce =
+    typeof record.transferNonce === "string" ||
+    typeof record.nonce === "string" ||
+    typeof record.transferToken === "string" ||
+    typeof record.token === "string" ||
+    (feed &&
+      (typeof feed.transferNonce === "string" ||
+        typeof feed.nonce === "string" ||
+        typeof feed.transferToken === "string" ||
+        typeof feed.token === "string"));
+  const hasParent =
+    typeof record.parentUrl === "string" ||
+    typeof record.parentHash === "string" ||
+    typeof record.parentCanonical === "string" ||
+    (feed &&
+      (typeof feed.parentUrl === "string" ||
+        typeof feed.parentHash === "string" ||
+        typeof feed.parentCanonical === "string"));
+
+  return hasDir || hasNonce || hasParent;
+}
+
 function isRootCandidate(entry: { kind: ContentKind; payload: SigilSharePayloadLoose; primaryUrl: string }): boolean {
   if (entry.kind !== "post") return false;
   if (!parseHashFromUrl(entry.primaryUrl)) return false;
-  return !getTransferMoveFromPayload(entry.payload);
+  if (getTransferMoveFromPayload(entry.payload)) return false;
+  return !hasTransferHints(entry.payload);
 }
 
 function buildContentIndex(reg: Registry): Map<string, ContentEntry> {
