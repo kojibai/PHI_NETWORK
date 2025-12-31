@@ -793,7 +793,7 @@ function SigilTreeNode({
               Pending
             </span>
           )}
-          {transferStatus === "received" && transferMove && (
+          {transferStatus === "received" && transferMove?.direction === "receive" && (
             <span
               className="phi-pill phi-pill--drain"
               title={`Derived inhale: ${formatPhi(transferMove.amount)} ${PHI_TEXT}${
