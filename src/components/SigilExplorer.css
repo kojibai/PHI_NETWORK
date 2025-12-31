@@ -876,6 +876,61 @@
   text-shadow: 0 1px 0 rgba(0,0,0,0.25);
 }
 
+.phi-mark{
+  width: 12px;
+  height: 12px;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.phi-pill__label{
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: 6px;
+}
+
+.phi-pill__mark{
+  filter: drop-shadow(0 0 6px rgba(255, 215, 128, 0.35));
+}
+
+.phi-tagline__mark{
+  width: 13px;
+  height: 13px;
+  vertical-align: -2px;
+}
+
+.phi-amount{
+  display: inline-flex;
+  align-items: center;
+}
+
+.phi-amount__sign{
+  font-weight: 700;
+  margin-right: 2px;
+}
+
+.phi-amount__value{
+  font-variant-numeric: tabular-nums;
+  margin-right: 4px;
+}
+
+.phi-amount__mark{
+  filter: drop-shadow(0 0 6px rgba(255, 215, 128, 0.35));
+}
+
+.phi-detail__label{
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.phi-detail__mark{
+  width: 11px;
+  height: 11px;
+  filter: drop-shadow(0 0 5px rgba(255, 215, 128, 0.32));
+}
+
 .phi-pill--live{
   border-color: rgba(120, 255, 200, 0.6);
   background:
@@ -949,6 +1004,14 @@
   color: #ffe9ee;
 }
 
+.phi-move--pending{
+  border-color: rgba(255, 205, 74, 0.75);
+  background:
+    radial-gradient(140% 220% at 0% 0%, rgba(255,205,74,0.22), transparent 62%),
+    linear-gradient(180deg, rgba(255,205,74,0.18), rgba(255,205,74,0.05));
+  color: #fff4d8;
+}
+
 .phi-move__mark{
   width: 12px;
   height: 12px;
@@ -964,11 +1027,17 @@
   filter: drop-shadow(0 0 6px rgba(255, 140, 160, 0.45));
 }
 
+.phi-move--pending .phi-move__mark{
+  filter: drop-shadow(0 0 6px rgba(255, 205, 74, 0.5));
+}
+
 .phi-move__sign{
   font-weight: 700;
 }
 
 .phi-move__amount{
+  display: inline-flex;
+  align-items: center;
   font-variant-numeric: tabular-nums;
 }
 
@@ -999,8 +1068,8 @@
 }
 
 .phi-status--received{
-  color: color-mix(in oklab, var(--sx-ok) 75%, #fff);
-  border-color: color-mix(in oklab, var(--sx-ok) 60%, rgba(255,255,255,0.18));
+  color: color-mix(in oklab, var(--sx-bad) 75%, #fff);
+  border-color: color-mix(in oklab, var(--sx-bad) 60%, rgba(255,255,255,0.18));
 }
 
 /* Copy button */

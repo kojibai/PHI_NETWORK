@@ -355,17 +355,6 @@ function ExplorerPopover({
 
   useEffect(() => {
     if (!open || !isClient) return;
-
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") onClose();
-    };
-
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open, onClose, isClient]);
-
-  useEffect(() => {
-    if (!open || !isClient) return;
     window.dispatchEvent(new CustomEvent(SIGIL_EXPLORER_OPEN_EVENT));
   }, [open, isClient]);
 
@@ -406,16 +395,12 @@ function ExplorerPopover({
     [],
   );
 
-  const onBackdropClick = useCallback(
-    (e: React.MouseEvent<HTMLDivElement>): void => {
-      if (e.target === e.currentTarget) {
-        e.preventDefault();
-        e.stopPropagation();
-        onClose();
-      }
-    },
-    [onClose],
-  );
+  const onBackdropClick = useCallback((e: React.MouseEvent<HTMLDivElement>): void => {
+    if (e.target === e.currentTarget) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  }, []);
 
   const onClosePointerDown = useCallback(
     (e: React.PointerEvent<HTMLButtonElement>): void => {

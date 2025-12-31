@@ -143,6 +143,22 @@ function readRemotePulse(body: ApiSealResponse): number | undefined {
 }
 
 const PHI_MARK_SRC = "/phi.svg";
+const PHI_TEXT = "phi";
+
+function PhiMark({ className }: { className?: string }) {
+  const classes = ["phi-mark", className].filter(Boolean).join(" ");
+  return <img className={classes} src={PHI_MARK_SRC} alt="" aria-hidden="true" decoding="async" loading="lazy" draggable={false} />;
+}
+
+function renderPhiAmount(amount: number, options?: { sign?: string; className?: string; markClassName?: string }) {
+  return (
+    <span className={["phi-amount", options?.className].filter(Boolean).join(" ")}>
+      {options?.sign ? <span className="phi-amount__sign">{options.sign}</span> : null}
+      <span className="phi-amount__value">{formatPhi(amount)}</span>
+      <PhiMark className={["phi-amount__mark", options?.markClassName].filter(Boolean).join(" ")} />
+    </span>
+  );
+}
 
 function nowMs(): number {
   return Date.now();
@@ -307,7 +323,7 @@ function parseJsonAsync(text: string): Promise<unknown> {
 /* ─────────────────────────────────────────────────────────────────────
  *  Detail extraction
  *  ───────────────────────────────────────────────────────────────────── */
-type DetailEntry = { label: string; value: string };
+type DetailEntry = { label: React.ReactNode; value: React.ReactNode; valueText?: string };
 
 type FeedPostPayload = {
   author?: string;
@@ -442,17 +458,40 @@ function buildDetailEntries(
   const usedKeys = new Set<string>();
 
   if (valueSnapshot?.netPhi !== null && valueSnapshot?.netPhi !== undefined) {
-    entries.push({ label: "Live Φ value", value: `${formatPhi(valueSnapshot.netPhi)} Φ` });
+    entries.push({
+      label: (
+        <span className="phi-detail__label">
+          Live <PhiMark className="phi-detail__mark" /> value
+        </span>
+      ),
+      value: renderPhiAmount(valueSnapshot.netPhi),
+      valueText: `${formatPhi(valueSnapshot.netPhi)} ${PHI_TEXT}`,
+    });
   }
   if (valueSnapshot?.usdValue !== null && valueSnapshot?.usdValue !== undefined) {
     entries.push({ label: "Live USD", value: `$${formatUsd(valueSnapshot.usdValue)}` });
   }
-  if (valueSnapshot?.pendingFromChildren) {
-    entries.push({ label: "Pending inhales", value: `-${formatPhi(valueSnapshot.pendingFromChildren)} Φ` });
+  const pendingTotal = (valueSnapshot?.pendingFromChildren ?? 0) + (valueSnapshot?.pendingFromParent ?? 0);
+  if (pendingTotal > 0) {
+    entries.push({
+      label: "Pending exhales",
+      value: renderPhiAmount(pendingTotal, { sign: "-" }),
+      valueText: `-${formatPhi(pendingTotal)} ${PHI_TEXT}`,
+    });
   }
 
   const phiSelf = getPhiFromPayload(node.payload);
-  if (phiSelf !== undefined) entries.push({ label: "This glyph Φ", value: `${formatPhi(phiSelf)} Φ` });
+  if (phiSelf !== undefined) {
+    entries.push({
+      label: (
+        <span className="phi-detail__label">
+          This glyph <PhiMark className="phi-detail__mark" />
+        </span>
+      ),
+      value: renderPhiAmount(phiSelf),
+      valueText: `${formatPhi(phiSelf)} ${PHI_TEXT}`,
+    });
+  }
 
   const transferMove = resolveTransferMoveForNode(node, transferRegistry);
   if (transferMove) {
@@ -464,13 +503,23 @@ function buildDetailEntries(
       });
     }
     entries.push({
-      label: "Φ Exhaled",
-      value: `+${formatPhi(transferMove.amount)} Φ`,
+      label: (
+        <span className="phi-detail__label">
+          <PhiMark className="phi-detail__mark" /> Exhaled
+        </span>
+      ),
+      value: renderPhiAmount(transferMove.amount, { sign: "-" }),
+      valueText: `-${formatPhi(transferMove.amount)} ${PHI_TEXT}`,
     });
     if (transferStatus === "received") {
       entries.push({
-        label: "Φ Inhaled",
-        value: `-${formatPhi(transferMove.amount)} Φ`,
+        label: (
+          <span className="phi-detail__label">
+            <PhiMark className="phi-detail__mark" /> Inhaled
+          </span>
+        ),
+        value: renderPhiAmount(transferMove.amount, { sign: "-" }),
+        valueText: `-${formatPhi(transferMove.amount)} ${PHI_TEXT}`,
       });
     }
     if (transferMove.amountUsd !== undefined) entries.push({ label: "USD value", value: `$${formatUsd(transferMove.amountUsd)}` });
@@ -650,22 +699,22 @@ function SigilTreeNode({
   const transferStatus = resolveTransferStatusForNode(node, transferRegistry, receiveLocks);
   const livePhi = valueSnapshot?.netPhi ?? null;
   const liveUsd = valueSnapshot?.usdValue ?? null;
-  const pendingOut = valueSnapshot?.pendingFromChildren ?? 0;
+  const pendingOut = (valueSnapshot?.pendingFromChildren ?? 0) + (valueSnapshot?.pendingFromParent ?? 0);
   const pendingTitle =
     pendingOut > 0 && livePhi !== null
-      ? `Pending inhales: -${formatPhi(pendingOut)} Φ • Remaining ${formatPhi(Math.max(0, livePhi - pendingOut))} Φ`
+      ? `Pending exhales: -${formatPhi(pendingOut)} ${PHI_TEXT} • Remaining ${formatPhi(Math.max(0, livePhi))} ${PHI_TEXT}`
       : pendingOut > 0
-        ? `Pending inhales: -${formatPhi(pendingOut)} Φ`
+        ? `Pending exhales: -${formatPhi(pendingOut)} ${PHI_TEXT}`
         : undefined;
   const liveTitle =
     livePhi !== null
-      ? `Live value: ${formatPhi(livePhi)} Φ${liveUsd !== null ? ` • $${formatUsd(liveUsd)}` : ""}`
+      ? `Live value: ${formatPhi(livePhi)} ${PHI_TEXT}${liveUsd !== null ? ` • $${formatUsd(liveUsd)}` : ""}`
       : undefined;
   const transferDisplay =
     transferMove && transferStatus === "received"
       ? { direction: "send" as const, sign: "-", titleVerb: "inhaled" }
       : transferMove
-        ? { direction: "receive" as const, sign: "+", titleVerb: "exhaled" }
+        ? { direction: "pending" as const, sign: "-", titleVerb: "exhaled" }
         : null;
 
   return (
@@ -700,16 +749,23 @@ function SigilTreeNode({
           {transferMove && transferDisplay && (
             <span
               className={`phi-move phi-move--${transferDisplay.direction}`}
-              title={`Φ ${transferDisplay.titleVerb}: ${formatPhi(transferMove.amount)} Φ${
+              title={`Phi ${transferDisplay.titleVerb}${transferStatus === "pending" ? " (pending)" : ""}: ${formatPhi(transferMove.amount)} ${PHI_TEXT}${
                 transferMove.amountUsd !== undefined ? ` • $${formatUsd(transferMove.amountUsd)}` : ""
               }${transferMove.sentPulse !== undefined ? ` • sent pulse ${transferMove.sentPulse}` : ""}`}
             >
-              <img className="phi-move__mark" src={PHI_MARK_SRC} alt="" aria-hidden="true" decoding="async" loading="lazy" draggable={false} />
               <span className="phi-move__sign" aria-hidden="true">
                 {transferDisplay.sign}
               </span>
-              <span className="phi-move__amount">{formatPhi(transferMove.amount)} Φ</span>
-              {transferMove.amountUsd !== undefined && <span className="phi-move__usd">${formatUsd(transferMove.amountUsd)}</span>}
+              {renderPhiAmount(transferMove.amount, { className: "phi-move__amount", markClassName: "phi-move__mark" })}
+              {transferStatus === "received" && transferMove.amountUsd !== undefined && (
+                <span className="phi-move__usd">${formatUsd(transferMove.amountUsd)}</span>
+              )}
+              {transferStatus === "received" && transferMove.amountUsd === undefined && valueSnapshot?.usdPerPhi != null && (
+                <span className="phi-move__usd">${formatUsd(transferMove.amount * valueSnapshot.usdPerPhi)}</span>
+              )}
+              {transferStatus === "pending" && valueSnapshot?.usdPerPhi != null && (
+                <span className="phi-move__usd">${formatUsd(transferMove.amount * valueSnapshot.usdPerPhi)}</span>
+              )}
             </span>
           )}
           {transferStatus && (
@@ -720,7 +776,11 @@ function SigilTreeNode({
 
           {livePhi !== null && (
             <span className="phi-pill phi-pill--live" title={liveTitle}>
-              Φ live: {formatPhi(livePhi)}Φ
+              <span className="phi-pill__label">
+                <PhiMark className="phi-pill__mark" />
+                live:
+              </span>
+              {renderPhiAmount(livePhi)}
             </span>
           )}
           {liveUsd !== null && (
@@ -730,13 +790,17 @@ function SigilTreeNode({
           )}
           {pendingOut > 0 && (
             <span className="phi-pill phi-pill--pending" title={pendingTitle}>
-              Pending -{formatPhi(pendingOut)}Φ
+              Pending {renderPhiAmount(pendingOut, { sign: "-" })}
             </span>
           )}
 
           {phiSentFromPulse !== undefined && (
-            <span className="phi-pill" title={`Total Φ on pulse ${(node.payload as { pulse?: number }).pulse ?? ""}`}>
-              Φ pulse: {formatPhi(phiSentFromPulse)}Φ
+            <span className="phi-pill" title={`Total ${PHI_TEXT} on pulse ${(node.payload as { pulse?: number }).pulse ?? ""}`}>
+              <span className="phi-pill__label">
+                <PhiMark className="phi-pill__mark" />
+                pulse:
+              </span>
+              {renderPhiAmount(phiSentFromPulse)}
             </span>
           )}
 
@@ -753,10 +817,13 @@ function SigilTreeNode({
               <div className="node-detail-empty">No additional memory fields recorded on this glyph.</div>
             ) : (
               <div className="node-detail-grid">
-                {detailEntries.map((entry) => (
-                  <React.Fragment key={entry.label}>
+                {detailEntries.map((entry, index) => (
+                  <React.Fragment key={index}>
                     <div className="detail-label">{entry.label}</div>
-                    <div className="detail-value" title={entry.value}>
+                    <div
+                      className="detail-value"
+                      title={entry.valueText ?? (typeof entry.value === "string" ? entry.value : undefined)}
+                    >
                       {entry.value}
                     </div>
                   </React.Fragment>
@@ -826,7 +893,7 @@ function OriginPanel({
 
   const branchValue = useMemo(() => {
     let derivedPhi = 0;
-    let pendingPhi = 0;
+    let pendingPhi = rootSnapshot?.pendingFromParent ?? 0;
     for (const child of root.children) {
       const snap = valueSnapshots.get(child.id);
       if (snap?.receivedAmount) derivedPhi += snap.receivedAmount;
@@ -843,15 +910,15 @@ function OriginPanel({
 
   const originLiveTitle =
     branchValue.netPhi != null
-      ? `Live origin value: ${formatPhi(branchValue.netPhi)} Φ${
+      ? `Live origin value: ${formatPhi(branchValue.netPhi)} ${PHI_TEXT}${
           branchValue.usdValue != null ? ` • $${formatUsd(branchValue.usdValue)}` : ""
         }`
       : undefined;
   const originPendingTitle =
     branchValue.pendingPhi > 0 && branchValue.netPhi != null
-      ? `Pending inhales: -${formatPhi(branchValue.pendingPhi)} Φ • Remaining ${formatPhi(Math.max(0, branchValue.netPhi - branchValue.pendingPhi))} Φ`
+      ? `Pending exhales: -${formatPhi(branchValue.pendingPhi)} ${PHI_TEXT} • Remaining ${formatPhi(Math.max(0, branchValue.netPhi))} ${PHI_TEXT}`
       : branchValue.pendingPhi > 0
-        ? `Pending inhales: -${formatPhi(branchValue.pendingPhi)} Φ`
+        ? `Pending exhales: -${formatPhi(branchValue.pendingPhi)} ${PHI_TEXT}`
         : undefined;
 
   return (
@@ -873,7 +940,11 @@ function OriginPanel({
           <KaiStamp p={root.payload as { pulse?: number; beat?: number; stepIndex?: number }} />
           {branchValue.netPhi != null && (
             <span className="phi-pill phi-pill--live" title={originLiveTitle}>
-              Φ live: {formatPhi(branchValue.netPhi)}Φ
+              <span className="phi-pill__label">
+                <PhiMark className="phi-pill__mark" />
+                live:
+              </span>
+              {renderPhiAmount(branchValue.netPhi)}
             </span>
           )}
           {branchValue.usdValue != null && (
@@ -883,12 +954,12 @@ function OriginPanel({
           )}
           {branchValue.pendingPhi > 0 && (
             <span className="phi-pill phi-pill--pending" title={originPendingTitle}>
-              Pending -{formatPhi(branchValue.pendingPhi)}Φ
+              Pending {renderPhiAmount(branchValue.pendingPhi, { sign: "-" })}
             </span>
           )}
           {branchValue.derivedPhi > 0 && (
-            <span className="phi-pill phi-pill--drain" title="Derivative allocations (sent Φ)">
-              Derived -{formatPhi(branchValue.derivedPhi)}Φ
+            <span className="phi-pill phi-pill--drain" title={`Derivative allocations (sent ${PHI_TEXT})`}>
+              Derived {renderPhiAmount(branchValue.derivedPhi, { sign: "-" })}
             </span>
           )}
           <span className="o-count" title="Total content keys in this lineage">
@@ -952,7 +1023,9 @@ function ExplorerToolbar({
             <h1>
               KAIROS <span>Keystream</span>
             </h1>
-            <div className="kx-tagline">Sovereign Lineage • No DB • Pure Φ</div>
+            <div className="kx-tagline">
+              Sovereign Lineage • No DB • Pure <PhiMark className="phi-tagline__mark" />
+            </div>
           </div>
         </div>
 
@@ -1727,7 +1800,8 @@ const SigilExplorer: React.FC = () => {
         childPendingTotal += childSummary.pendingFromParent;
       }
 
-      const netPhi = Math.max(0, baseValue - childReceivedTotal - childPendingTotal);
+      const pendingOutgoing = transferStatus === "pending" && transferMove?.direction === "send" ? transferMove.amount : 0;
+      const netPhi = Math.max(0, baseValue - childReceivedTotal - childPendingTotal - pendingOutgoing);
       const usdValue =
         transferStatus === "received" && transferMove?.amountUsd
           ? transferMove.amountUsd
@@ -1735,7 +1809,7 @@ const SigilExplorer: React.FC = () => {
             ? netPhi * usdPerPhi
             : null;
 
-      const pendingFromParent = transferStatus === "pending" && transferMove ? transferMove.amount : 0;
+      const pendingFromParent = pendingOutgoing;
       out.set(node.id, {
         basePhi,
         netPhi: Number.isFinite(netPhi) ? netPhi : null,
