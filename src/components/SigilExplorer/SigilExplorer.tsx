@@ -49,6 +49,9 @@ import {
 
 /** Formatting + Kai-time comparisons */
 import { formatPhi, formatUsd, getPhiFromPayload, short } from "./format";
+import { DEFAULT_ISSUANCE_POLICY, quotePhiForUsd } from "../../utils/phi-issuance";
+import { computeIntrinsicUnsigned, type SigilMetadataLite } from "../../utils/valuation";
+import { getKaiPulseEternalInt } from "../../SovereignSolar";
 
 /** URL health probing */
 import { loadUrlHealthFromStorage, probeUrl, setUrlHealth, urlHealth } from "./urlHealth";
@@ -171,6 +174,87 @@ function hasStringProp<T extends string>(obj: unknown, key: T): obj is Record<T,
   return isRecord(obj) && typeof obj[key] === "string";
 }
 
+function readFiniteNumber(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const n = Number(value);
+    if (!Number.isNaN(n) && Number.isFinite(n)) return n;
+  }
+  return undefined;
+}
+
+function readBoolean(value: unknown): boolean | undefined {
+  if (typeof value === "boolean") return value;
+  return undefined;
+}
+
+function readQuality(value: unknown): "low" | "med" | "high" | undefined {
+  if (value === "low" || value === "med" || value === "high") return value;
+  return undefined;
+}
+
+function buildValuationMeta(payload: SigilSharePayloadLoose): SigilMetadataLite {
+  const record = payload as Record<string, unknown>;
+  const payloadSteps = readFiniteNumber((payload as { stepsPerBeat?: unknown }).stepsPerBeat);
+  const transfers = Array.isArray(record.transfers) ? (record.transfers as SigilMetadataLite["transfers"]) : undefined;
+  const segments = Array.isArray(record.segments) ? (record.segments as SigilMetadataLite["segments"]) : undefined;
+  const ip = isRecord(record.ip) ? (record.ip as SigilMetadataLite["ip"]) : undefined;
+
+  return {
+    pulse: payload.pulse,
+    kaiPulse: payload.pulse,
+    beat: payload.beat,
+    stepIndex: payload.stepIndex,
+    stepsPerBeat: readFiniteNumber(record.stepsPerBeat) ?? payloadSteps,
+    kaiSignature: payload.kaiSignature,
+    userPhiKey: payload.userPhiKey,
+    chakraDay: payload.chakraDay,
+    chakraGate: typeof record.chakraGate === "string" ? record.chakraGate : undefined,
+    seriesSize: readFiniteNumber(record.seriesSize),
+    quality: readQuality(record.quality),
+    creatorVerified: readBoolean(record.creatorVerified),
+    creatorRep: readFiniteNumber(record.creatorRep),
+    frequencyHz: readFiniteNumber(record.frequencyHz),
+    transfers,
+    cumulativeTransfers: readFiniteNumber(record.cumulativeTransfers),
+    segments,
+    segmentsMerkleRoot: typeof record.segmentsMerkleRoot === "string" ? record.segmentsMerkleRoot : undefined,
+    transfersWindowRoot: typeof record.transfersWindowRoot === "string" ? record.transfersWindowRoot : undefined,
+    ip,
+  };
+}
+
+function computeLivePhi(payload: SigilSharePayloadLoose, nowPulse: number | null): number | null {
+  if (nowPulse == null || !Number.isFinite(nowPulse)) return null;
+  try {
+    const meta = buildValuationMeta(payload);
+    const { unsigned } = computeIntrinsicUnsigned(meta, nowPulse);
+    return Number.isFinite(unsigned.valuePhi) ? unsigned.valuePhi : null;
+  } catch {
+    return null;
+  }
+}
+
+function computeUsdPerPhi(payload: SigilSharePayloadLoose, nowPulse: number | null): number | null {
+  if (nowPulse == null || !Number.isFinite(nowPulse)) return null;
+  try {
+    const meta = buildValuationMeta(payload);
+    const quote = quotePhiForUsd(
+      {
+        meta,
+        nowPulse,
+        usd: 100,
+        currentStreakDays: 0,
+        lifetimeUsdSoFar: 0,
+      },
+      DEFAULT_ISSUANCE_POLICY,
+    );
+    return Number.isFinite(quote.usdPerPhi) ? quote.usdPerPhi : null;
+  } catch {
+    return null;
+  }
+}
+
 function parseJsonAsync(text: string): Promise<unknown> {
   if (!hasWindow || typeof Worker === "undefined" || text.length < IMPORT_WORKER_THRESHOLD) {
     return Promise.resolve(JSON.parse(text) as unknown);
@@ -228,6 +312,18 @@ type DetailEntry = { label: string; value: string };
 type FeedPostPayload = {
   author?: string;
   usernameClaim?: unknown;
+};
+
+type NodeValueSnapshot = {
+  basePhi: number | null;
+  netPhi: number | null;
+  usdValue: number | null;
+  usdPerPhi: number | null;
+  transferMove: TransferMove | null;
+  receivedAmount: number;
+  receivedFromChildren: number;
+  pendingFromChildren: number;
+  pendingFromParent: number;
 };
 
 function resolveTransferMoveForNode(
@@ -339,10 +435,21 @@ function buildDetailEntries(
   usernameClaims: UsernameClaimRegistry,
   transferRegistry: ReadonlyMap<string, SigilTransferRecord>,
   receiveLocks: ReceiveLockIndex,
+  valueSnapshot?: NodeValueSnapshot | null,
 ): DetailEntry[] {
   const record = node.payload as unknown as Record<string, unknown>;
   const entries: DetailEntry[] = [];
   const usedKeys = new Set<string>();
+
+  if (valueSnapshot?.netPhi !== null && valueSnapshot?.netPhi !== undefined) {
+    entries.push({ label: "Live Φ value", value: `${formatPhi(valueSnapshot.netPhi)} Φ` });
+  }
+  if (valueSnapshot?.usdValue !== null && valueSnapshot?.usdValue !== undefined) {
+    entries.push({ label: "Live USD", value: `$${formatUsd(valueSnapshot.usdValue)}` });
+  }
+  if (valueSnapshot?.pendingFromChildren) {
+    entries.push({ label: "Pending inhales", value: `-${formatPhi(valueSnapshot.pendingFromChildren)} Φ` });
+  }
 
   const phiSelf = getPhiFromPayload(node.payload);
   if (phiSelf !== undefined) entries.push({ label: "This glyph Φ", value: `${formatPhi(phiSelf)} Φ` });
@@ -357,9 +464,15 @@ function buildDetailEntries(
       });
     }
     entries.push({
-      label: `Φ ${transferMove.direction === "receive" ? "Received" : "Sent"}`,
-      value: `${transferMove.direction === "receive" ? "+" : "-"}${formatPhi(transferMove.amount)} Φ`,
+      label: "Φ Exhaled",
+      value: `+${formatPhi(transferMove.amount)} Φ`,
     });
+    if (transferStatus === "received") {
+      entries.push({
+        label: "Φ Inhaled",
+        value: `-${formatPhi(transferMove.amount)} Φ`,
+      });
+    }
     if (transferMove.amountUsd !== undefined) entries.push({ label: "USD value", value: `$${formatUsd(transferMove.amountUsd)}` });
     if (transferMove.sentPulse !== undefined) entries.push({ label: "Sent pulse", value: String(transferMove.sentPulse) });
 
@@ -506,6 +619,7 @@ type SigilTreeNodeProps = {
   usernameClaims: UsernameClaimRegistry;
   transferRegistry: ReadonlyMap<string, SigilTransferRecord>;
   receiveLocks: ReceiveLockIndex;
+  valueSnapshots: ReadonlyMap<string, NodeValueSnapshot>;
 };
 
 function SigilTreeNode({
@@ -516,6 +630,7 @@ function SigilTreeNode({
   usernameClaims,
   transferRegistry,
   receiveLocks,
+  valueSnapshots,
 }: SigilTreeNodeProps) {
   const open = expanded.has(node.id);
 
@@ -529,9 +644,29 @@ function SigilTreeNode({
   const phiSentFromPulse = pulseKey != null ? phiTotalsByPulse.get(pulseKey) : undefined;
 
   const openHref = explorerOpenUrl(node.url);
-  const detailEntries = open ? buildDetailEntries(node, usernameClaims, transferRegistry, receiveLocks) : [];
+  const valueSnapshot = valueSnapshots.get(node.id) ?? null;
+  const detailEntries = open ? buildDetailEntries(node, usernameClaims, transferRegistry, receiveLocks, valueSnapshot) : [];
   const transferMove = resolveTransferMoveForNode(node, transferRegistry);
   const transferStatus = resolveTransferStatusForNode(node, transferRegistry, receiveLocks);
+  const livePhi = valueSnapshot?.netPhi ?? null;
+  const liveUsd = valueSnapshot?.usdValue ?? null;
+  const pendingOut = valueSnapshot?.pendingFromChildren ?? 0;
+  const pendingTitle =
+    pendingOut > 0 && livePhi !== null
+      ? `Pending inhales: -${formatPhi(pendingOut)} Φ • Remaining ${formatPhi(Math.max(0, livePhi - pendingOut))} Φ`
+      : pendingOut > 0
+        ? `Pending inhales: -${formatPhi(pendingOut)} Φ`
+        : undefined;
+  const liveTitle =
+    livePhi !== null
+      ? `Live value: ${formatPhi(livePhi)} Φ${liveUsd !== null ? ` • $${formatUsd(liveUsd)}` : ""}`
+      : undefined;
+  const transferDisplay =
+    transferMove && transferStatus === "received"
+      ? { direction: "send" as const, sign: "-", titleVerb: "inhaled" }
+      : transferMove
+        ? { direction: "receive" as const, sign: "+", titleVerb: "exhaled" }
+        : null;
 
   return (
     <div className="node" style={chakraTintStyle(chakraDay)} data-chakra={String(chakraDay ?? "")} data-node-id={node.id}>
@@ -562,16 +697,16 @@ function SigilTreeNode({
             </span>
           )}
 
-          {transferMove && (
+          {transferMove && transferDisplay && (
             <span
-              className={`phi-move phi-move--${transferMove.direction}`}
-              title={`Φ ${transferMove.direction === "receive" ? "received" : "sent"}: ${formatPhi(transferMove.amount)} Φ${
+              className={`phi-move phi-move--${transferDisplay.direction}`}
+              title={`Φ ${transferDisplay.titleVerb}: ${formatPhi(transferMove.amount)} Φ${
                 transferMove.amountUsd !== undefined ? ` • $${formatUsd(transferMove.amountUsd)}` : ""
               }${transferMove.sentPulse !== undefined ? ` • sent pulse ${transferMove.sentPulse}` : ""}`}
             >
               <img className="phi-move__mark" src={PHI_MARK_SRC} alt="" aria-hidden="true" decoding="async" loading="lazy" draggable={false} />
               <span className="phi-move__sign" aria-hidden="true">
-                {transferMove.direction === "receive" ? "+" : "-"}
+                {transferDisplay.sign}
               </span>
               <span className="phi-move__amount">{formatPhi(transferMove.amount)} Φ</span>
               {transferMove.amountUsd !== undefined && <span className="phi-move__usd">${formatUsd(transferMove.amountUsd)}</span>}
@@ -580,6 +715,22 @@ function SigilTreeNode({
           {transferStatus && (
             <span className={`phi-status phi-status--${transferStatus}`} title={`Transfer ${transferStatus}`}>
               {transferStatus === "received" ? "Inhaled" : "Exhaled"}
+            </span>
+          )}
+
+          {livePhi !== null && (
+            <span className="phi-pill phi-pill--live" title={liveTitle}>
+              Φ live: {formatPhi(livePhi)}Φ
+            </span>
+          )}
+          {liveUsd !== null && (
+            <span className="phi-pill phi-pill--usd" title={liveTitle}>
+              ${formatUsd(liveUsd)}
+            </span>
+          )}
+          {pendingOut > 0 && (
+            <span className="phi-pill phi-pill--pending" title={pendingTitle}>
+              Pending -{formatPhi(pendingOut)}Φ
             </span>
           )}
 
@@ -626,6 +777,7 @@ function SigilTreeNode({
                   usernameClaims={usernameClaims}
                   transferRegistry={transferRegistry}
                   receiveLocks={receiveLocks}
+                  valueSnapshots={valueSnapshots}
                 />
               ))}
             </div>
@@ -644,6 +796,7 @@ function OriginPanel({
   usernameClaims,
   transferRegistry,
   receiveLocks,
+  valueSnapshots,
 }: {
   root: SigilNode;
   expanded: ReadonlySet<string>;
@@ -652,6 +805,7 @@ function OriginPanel({
   usernameClaims: UsernameClaimRegistry;
   transferRegistry: ReadonlyMap<string, SigilTransferRecord>;
   receiveLocks: ReceiveLockIndex;
+  valueSnapshots: ReadonlyMap<string, NodeValueSnapshot>;
 }) {
   const count = useMemo(() => {
     let n = 0;
@@ -668,6 +822,37 @@ function OriginPanel({
 
   const openHref = explorerOpenUrl(root.url);
   const chakraDay = (root.payload as unknown as { chakraDay?: string }).chakraDay;
+  const rootSnapshot = valueSnapshots.get(root.id) ?? null;
+
+  const branchValue = useMemo(() => {
+    let derivedPhi = 0;
+    let pendingPhi = 0;
+    for (const child of root.children) {
+      const snap = valueSnapshots.get(child.id);
+      if (snap?.receivedAmount) derivedPhi += snap.receivedAmount;
+      if (snap?.pendingFromParent) pendingPhi += snap.pendingFromParent;
+    }
+
+    const basePhi = rootSnapshot?.basePhi ?? null;
+    const netPhi = rootSnapshot?.netPhi ?? null;
+    const usdPerPhi = rootSnapshot?.usdPerPhi ?? null;
+    const usdValue = netPhi != null && usdPerPhi != null ? netPhi * usdPerPhi : null;
+
+    return { basePhi, netPhi, usdValue, derivedPhi, pendingPhi };
+  }, [root, rootSnapshot, valueSnapshots]);
+
+  const originLiveTitle =
+    branchValue.netPhi != null
+      ? `Live origin value: ${formatPhi(branchValue.netPhi)} Φ${
+          branchValue.usdValue != null ? ` • $${formatUsd(branchValue.usdValue)}` : ""
+        }`
+      : undefined;
+  const originPendingTitle =
+    branchValue.pendingPhi > 0 && branchValue.netPhi != null
+      ? `Pending inhales: -${formatPhi(branchValue.pendingPhi)} Φ • Remaining ${formatPhi(Math.max(0, branchValue.netPhi - branchValue.pendingPhi))} Φ`
+      : branchValue.pendingPhi > 0
+        ? `Pending inhales: -${formatPhi(branchValue.pendingPhi)} Φ`
+        : undefined;
 
   return (
     <section className="origin" aria-label="Sigil origin stream" style={chakraTintStyle(chakraDay)} data-chakra={String(chakraDay ?? "")} data-node-id={root.id}>
@@ -686,6 +871,26 @@ function OriginPanel({
 
         <div className="o-right">
           <KaiStamp p={root.payload as { pulse?: number; beat?: number; stepIndex?: number }} />
+          {branchValue.netPhi != null && (
+            <span className="phi-pill phi-pill--live" title={originLiveTitle}>
+              Φ live: {formatPhi(branchValue.netPhi)}Φ
+            </span>
+          )}
+          {branchValue.usdValue != null && (
+            <span className="phi-pill phi-pill--usd" title={originLiveTitle}>
+              ${formatUsd(branchValue.usdValue)}
+            </span>
+          )}
+          {branchValue.pendingPhi > 0 && (
+            <span className="phi-pill phi-pill--pending" title={originPendingTitle}>
+              Pending -{formatPhi(branchValue.pendingPhi)}Φ
+            </span>
+          )}
+          {branchValue.derivedPhi > 0 && (
+            <span className="phi-pill phi-pill--drain" title="Derivative allocations (sent Φ)">
+              Derived -{formatPhi(branchValue.derivedPhi)}Φ
+            </span>
+          )}
           <span className="o-count" title="Total content keys in this lineage">
             {count} keys
           </span>
@@ -710,6 +915,7 @@ function OriginPanel({
                 usernameClaims={usernameClaims}
                 transferRegistry={transferRegistry}
                 receiveLocks={receiveLocks}
+                valueSnapshots={valueSnapshots}
               />
             ))}
           </div>
@@ -816,6 +1022,7 @@ const SigilExplorer: React.FC = () => {
   const [transferRev, setTransferRev] = useState(0);
   const [lastAdded, setLastAdded] = useState<string | undefined>(undefined);
   const [usernameClaims, setUsernameClaims] = useState<UsernameClaimRegistry>(() => getUsernameClaimRegistry());
+  const [nowPulse, setNowPulse] = useState(() => getKaiPulseEternalInt(new Date()));
 
   const unmounted = useRef(false);
   const prefetchedRef = useRef<Set<string>>(new Set());
@@ -975,6 +1182,13 @@ const SigilExplorer: React.FC = () => {
     },
     [markInteracting, scheduleUiFlush],
   );
+
+  useEffect(() => {
+    if (!hasWindow) return;
+    const tick = () => setNowPulse(getKaiPulseEternalInt(new Date()));
+    const id = window.setInterval(tick, 6000);
+    return () => window.clearInterval(id);
+  }, []);
 
   // Prevent browser pull-to-refresh overscroll while explorer is open
   useEffect(() => {
@@ -1493,7 +1707,57 @@ const SigilExplorer: React.FC = () => {
     for (const [,] of memoryRegistry) n += 1;
     return n;
   }, [registryRev]);
- 
+
+  const valueSnapshots = useMemo(() => {
+    const out = new Map<string, NodeValueSnapshot>();
+
+    const walk = (node: SigilNode): { receivedFromParent: number; pendingFromParent: number } => {
+      const basePhi = computeLivePhi(node.payload, nowPulse);
+      const usdPerPhi = computeUsdPerPhi(node.payload, nowPulse);
+      const transferMove = resolveTransferMoveForNode(node, transferRegistry) ?? null;
+      const transferStatus = resolveTransferStatusForNode(node, transferRegistry, receiveLocks);
+      const receivedAmount = transferStatus === "received" && transferMove ? transferMove.amount : 0;
+      const baseValue = receivedAmount > 0 ? receivedAmount : basePhi ?? 0;
+
+      let childReceivedTotal = 0;
+      let childPendingTotal = 0;
+      for (const child of node.children) {
+        const childSummary = walk(child);
+        childReceivedTotal += childSummary.receivedFromParent;
+        childPendingTotal += childSummary.pendingFromParent;
+      }
+
+      const netPhi = Math.max(0, baseValue - childReceivedTotal - childPendingTotal);
+      const usdValue =
+        transferStatus === "received" && transferMove?.amountUsd
+          ? transferMove.amountUsd
+          : usdPerPhi != null
+            ? netPhi * usdPerPhi
+            : null;
+
+      const pendingFromParent = transferStatus === "pending" && transferMove ? transferMove.amount : 0;
+      out.set(node.id, {
+        basePhi,
+        netPhi: Number.isFinite(netPhi) ? netPhi : null,
+        usdValue,
+        usdPerPhi,
+        transferMove,
+        receivedAmount,
+        receivedFromChildren: childReceivedTotal,
+        pendingFromChildren: childPendingTotal,
+        pendingFromParent,
+      });
+
+      return {
+        receivedFromParent: receivedAmount,
+        pendingFromParent,
+      };
+    };
+
+    for (const root of forest) walk(root);
+    return out;
+  }, [forest, nowPulse, receiveLocks, transferRegistry]);
+
   const phiTotalsByPulse = useMemo((): ReadonlyMap<number, number> => {
     const totals = new Map<number, number>();
     const seenByPulse = new Map<number, Set<string>>();
@@ -1753,6 +2017,7 @@ const SigilExplorer: React.FC = () => {
                   usernameClaims={usernameClaims}
                   transferRegistry={transferRegistry}
                   receiveLocks={receiveLocks}
+                  valueSnapshots={valueSnapshots}
                 />
               ))}
             </div>

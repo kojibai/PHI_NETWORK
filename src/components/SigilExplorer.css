@@ -876,6 +876,46 @@
   text-shadow: 0 1px 0 rgba(0,0,0,0.25);
 }
 
+.phi-pill--live{
+  border-color: rgba(120, 255, 200, 0.6);
+  background:
+    radial-gradient(140% 220% at 0% 0%, rgba(120,255,200,0.2), transparent 62%),
+    linear-gradient(180deg, rgba(120,255,200,0.18), rgba(120,255,200,0.04));
+  color: #edfff7;
+}
+
+.phi-pill--usd{
+  border-color: rgba(180, 200, 255, 0.6);
+  background:
+    radial-gradient(140% 220% at 0% 0%, rgba(180,200,255,0.2), transparent 62%),
+    linear-gradient(180deg, rgba(180,200,255,0.18), rgba(180,200,255,0.04));
+  color: #f2f6ff;
+}
+
+.phi-pill--lift{
+  border-color: rgba(140, 255, 216, 0.6);
+  background:
+    radial-gradient(140% 220% at 0% 0%, rgba(140,255,216,0.2), transparent 62%),
+    linear-gradient(180deg, rgba(140,255,216,0.18), rgba(140,255,216,0.04));
+  color: #eafff6;
+}
+
+.phi-pill--drain{
+  border-color: rgba(255, 140, 160, 0.6);
+  background:
+    radial-gradient(140% 220% at 0% 0%, rgba(255,140,160,0.2), transparent 62%),
+    linear-gradient(180deg, rgba(255,140,160,0.18), rgba(255,140,160,0.04));
+  color: #ffe9ee;
+}
+
+.phi-pill--pending{
+  border-color: rgba(255, 190, 120, 0.65);
+  background:
+    radial-gradient(140% 220% at 0% 0%, rgba(255,190,120,0.22), transparent 62%),
+    linear-gradient(180deg, rgba(255,190,120,0.18), rgba(255,190,120,0.04));
+  color: #fff3e4;
+}
+
 /* Φ transfer marker (+/-) */
 .phi-move{
   display: inline-flex;
