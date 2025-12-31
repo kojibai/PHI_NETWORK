@@ -19,6 +19,7 @@ import {
 } from "../url";
 
 import { byKaiTime } from "../format";
+import { getTransferMoveFromPayload } from "../transfers";
 
 type ContentEntry = {
   id: string;
@@ -47,6 +48,12 @@ function readStringField(obj: unknown, key: string): string | undefined {
   if (!isRecord(obj)) return undefined;
   const v = obj[key];
   return typeof v === "string" && v.trim().length > 0 ? v.trim() : undefined;
+}
+
+function isRootCandidate(entry: { kind: ContentKind; payload: SigilSharePayloadLoose; primaryUrl: string }): boolean {
+  if (entry.kind !== "post") return false;
+  if (!parseHashFromUrl(entry.primaryUrl)) return false;
+  return !getTransferMoveFromPayload(entry.payload);
 }
 
 function buildContentIndex(reg: Registry): Map<string, ContentEntry> {
@@ -143,6 +150,14 @@ function buildContentIndex(reg: Registry): Map<string, ContentEntry> {
   }
 
   const momentOriginByParent = new Map<string, string>();
+  const rootByHash = new Map<string, string>();
+
+  for (const e of entries.values()) {
+    if (!isRootCandidate(e)) continue;
+    const hash = parseHashFromUrl(e.primaryUrl);
+    if (!hash) continue;
+    if (!rootByHash.has(hash)) rootByHash.set(hash, e.id);
+  }
 
   for (const e of entries.values()) {
     const mp = momentParentById.get(e.id) ?? e.id;
@@ -152,7 +167,9 @@ function buildContentIndex(reg: Registry): Map<string, ContentEntry> {
     const originUrl = originUrlRaw ? canonicalizeUrl(originUrlRaw) : getOriginUrl(e.primaryUrl) ?? e.primaryUrl;
 
     const originAnyId = urlToContentId.get(originUrl);
-    const originMomentParent = originAnyId ?? momentParentByUrl.get(originUrl);
+    const originHash = parseHashFromUrl(originUrl);
+    const rootOverride = originHash ? rootByHash.get(originHash) : undefined;
+    const originMomentParent = rootOverride ?? originAnyId ?? momentParentByUrl.get(originUrl);
 
     momentOriginByParent.set(mp, originMomentParent ?? mp);
   }
