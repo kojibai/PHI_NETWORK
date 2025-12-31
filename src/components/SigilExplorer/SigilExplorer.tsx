@@ -525,8 +525,7 @@ function buildDetailEntries(
   }
 
   if (transferMove) {
-    const transferDirectionLabel =
-      transferMove.direction === "receive" ? "Inhaled" : inhaleLabel === "exhale" ? "Exhaled" : "Inhaled";
+    const transferDirectionLabel = transferMove.direction === "receive" ? "Inhaled" : "Exhaled";
     const transferPendingLabel = transferMove.direction === "receive" ? "Inhale (pending)" : "Exhale (pending)";
     const transferPulseSuffix = transferMove.sentPulse !== undefined ? ` • pulse ${transferMove.sentPulse}` : "";
     const transferPulseLabelSuffix = transferMove.sentPulse !== undefined ? ` (pulse ${transferMove.sentPulse})` : "";
@@ -773,9 +772,9 @@ function SigilTreeNode({
       : undefined;
   const transferDisplay =
     transferMove && transferStatus === "received"
-      ? { direction: "send" as const, sign: "-", titleVerb: inhaleLabel === "inhale" ? "inhaled" : "exhaled" }
+      ? { direction: "send" as const, sign: "-", titleVerb: transferMove.direction === "receive" ? "inhaled" : "exhaled" }
       : transferMove
-        ? { direction: "pending" as const, sign: "-", titleVerb: inhaleLabel === "inhale" ? "inhaled" : "exhaled" }
+        ? { direction: "pending" as const, sign: "-", titleVerb: transferMove.direction === "receive" ? "inhaled" : "exhaled" }
         : null;
 
   return (
