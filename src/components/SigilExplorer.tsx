@@ -1949,6 +1949,10 @@ function buildContentIndex(reg: Registry): Map<string, ContentEntry> {
       }
     }
 
+    if (!parentId && originId !== e.id) {
+      parentId = originId;
+    }
+
     out.set(e.id, {
       id: e.id,
       payload: e.payload,
