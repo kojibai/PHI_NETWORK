@@ -252,6 +252,18 @@ function resolveOriginUrlFromRegistry(parentCanonical: string, fallbackUrl: stri
     const parentOrigin = parentPayload && typeof parentPayload.originUrl === "string" ? parentPayload.originUrl.trim() : "";
     if (parentOrigin) return parentOrigin;
   }
+  const fallbackPayload = extractPayloadFromUrl(fallbackUrl);
+  const fallbackOrigin =
+    fallbackPayload && typeof fallbackPayload.originUrl === "string" ? fallbackPayload.originUrl.trim() : "";
+  if (fallbackOrigin) return fallbackOrigin;
+  const fallbackParent =
+    fallbackPayload && typeof fallbackPayload.parentUrl === "string" ? fallbackPayload.parentUrl.trim() : "";
+  if (fallbackParent) {
+    const parentPayload = extractPayloadFromUrl(fallbackParent);
+    const parentOrigin =
+      parentPayload && typeof parentPayload.originUrl === "string" ? parentPayload.originUrl.trim() : "";
+    if (parentOrigin) return parentOrigin;
+  }
   return fallbackUrl;
 }
 
