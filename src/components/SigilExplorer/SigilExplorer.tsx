@@ -730,13 +730,30 @@ function SigilTreeNode({
     transferStatus === "pending" && transferMove
       ? transferMove.amountUsd ?? (valueSnapshot?.usdPerPhi != null ? transferMove.amount * valueSnapshot.usdPerPhi : null)
       : liveUsd;
-  const pendingOut = (valueSnapshot?.pendingFromChildren ?? 0) + (valueSnapshot?.pendingFromParent ?? 0);
+  const pendingFromChildren = valueSnapshot?.pendingFromChildren ?? 0;
+  const derivedFromChildren = valueSnapshot?.receivedFromChildren ?? 0;
+  const exhaleTotal = pendingFromChildren + derivedFromChildren;
+  const derivedRatio = exhaleTotal > 0 ? derivedFromChildren / exhaleTotal : 0;
+  const mixExhaleColor =
+    pendingFromChildren > 0 && derivedFromChildren > 0
+      ? {
+          "--exhale-rgb": `${Math.round(255 * (0.85 + 0.15 * derivedRatio))},${Math.round(
+            140 * (1 - derivedRatio) + 75 * derivedRatio,
+          )},${Math.round(80 * (1 - derivedRatio) + 110 * derivedRatio)}`,
+        }
+      : undefined;
   const pendingTitle =
-    pendingOut > 0 && displayLivePhi !== null
-      ? `Pending exhales: -${formatPhi(pendingOut)} ${PHI_TEXT} • Live ${formatPhi(Math.max(0, displayLivePhi))} ${PHI_TEXT}`
-      : pendingOut > 0
-        ? `Pending exhales: -${formatPhi(pendingOut)} ${PHI_TEXT}`
+    pendingFromChildren > 0 && displayLivePhi !== null
+      ? `Pending exhales: -${formatPhi(pendingFromChildren)} ${PHI_TEXT} • Live ${formatPhi(Math.max(0, displayLivePhi))} ${PHI_TEXT}`
+      : pendingFromChildren > 0
+        ? `Pending exhales: -${formatPhi(pendingFromChildren)} ${PHI_TEXT}`
         : undefined;
+  const derivedTitle =
+    derivedFromChildren > 0
+      ? `Derived exhales: -${formatPhi(derivedFromChildren)} ${PHI_TEXT}${
+          displayLivePhi !== null ? ` • Live ${formatPhi(Math.max(0, displayLivePhi))} ${PHI_TEXT}` : ""
+        }`
+      : undefined;
   const liveTitle =
     displayLivePhi !== null
       ? `Live value: ${formatPhi(displayLivePhi)} ${PHI_TEXT}${
@@ -806,6 +823,21 @@ function SigilTreeNode({
               Exhale
             </span>
           )}
+          {!transferMove && inhaleLabel !== "inhale" && exhaleTotal > 0 && (
+            <span
+              className={`phi-status phi-status--${pendingFromChildren > 0 && derivedFromChildren > 0 ? "exhale-mix" : "received"}`}
+              title={
+                pendingFromChildren > 0 && derivedFromChildren > 0
+                  ? `Exhale mix: ${formatPhi(derivedFromChildren)} derived • ${formatPhi(pendingFromChildren)} pending`
+                  : pendingFromChildren > 0
+                    ? `Exhale pending: ${formatPhi(pendingFromChildren)} ${PHI_TEXT}`
+                    : `Exhale derived: ${formatPhi(derivedFromChildren)} ${PHI_TEXT}`
+              }
+              style={mixExhaleColor as React.CSSProperties}
+            >
+              Exhale
+            </span>
+          )}
           {inhaleLabel === "inhale" && (
             <span className="phi-status phi-status--inhale" title="Inhale">
               Inhale
@@ -826,14 +858,19 @@ function SigilTreeNode({
               ${formatUsd(displayLiveUsd)}
             </span>
           )}
-          {pendingOut > 0 && !(transferStatus === "pending" && inhaleLabel === "exhale") && (
+          {derivedFromChildren > 0 && (
+            <span className="phi-pill phi-pill--drain" title={derivedTitle}>
+              Derived {renderPhiAmount(derivedFromChildren, { sign: "-" })}
+            </span>
+          )}
+          {pendingFromChildren > 0 && !(transferStatus === "pending" && inhaleLabel === "exhale") && (
             <span className="phi-pill phi-pill--pending" title={pendingTitle}>
-              Pending
+              Pending {renderPhiAmount(pendingFromChildren, { sign: "-" })}
             </span>
           )}
           {transferStatus === "pending" && transferMove && inhaleLabel === "exhale" && (
             <span className="phi-pill phi-pill--pending" title="Pending exhale">
-              Pending
+              Pending {renderPhiAmount(transferMove.amount, { sign: "-" })}
             </span>
           )}
           {transferStatus === "received" && transferMove && inhaleLabel === "exhale" && (
