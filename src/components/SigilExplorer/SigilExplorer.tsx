@@ -757,7 +757,9 @@ function SigilTreeNode({
                 {transferDisplay.sign}
               </span>
               {renderPhiAmount(transferMove.amount, { className: "phi-move__amount", markClassName: "phi-move__mark" })}
-              {transferMove.amountUsd !== undefined && <span className="phi-move__usd">${formatUsd(transferMove.amountUsd)}</span>}
+              {transferStatus === "received" && transferMove.amountUsd !== undefined && (
+                <span className="phi-move__usd">${formatUsd(transferMove.amountUsd)}</span>
+              )}
             </span>
           )}
           {transferStatus && (
