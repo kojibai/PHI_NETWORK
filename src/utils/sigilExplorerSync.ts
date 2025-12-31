@@ -21,6 +21,7 @@ import {
   type ApiSealResponse,
 } from "../components/SigilExplorer/apiClient";
 import { canonicalizeUrl } from "../components/SigilExplorer/url";
+import { SIGIL_EXPLORER_OPEN_EVENT } from "../constants/sigilExplorer";
 import { subscribeSigilRegistry } from "./sigilRegistry";
 
 type SyncReason = "open" | "pulse" | "visible" | "focus" | "online" | "event";
@@ -77,10 +78,22 @@ function getLatestPulseFromRegistry(): number | undefined {
   return latest;
 }
 
+function getRegistryCount(): number {
+  let count = 0;
+  for (const [,] of memoryRegistry) count += 1;
+  return count;
+}
+
 function readRemotePulse(body: ApiSealResponse): number | undefined {
   const pulse = body?.pulse ?? body?.latestPulse ?? body?.latest_pulse;
   if (typeof pulse !== "number" || !Number.isFinite(pulse)) return undefined;
   return pulse;
+}
+
+function readRemoteTotal(body: ApiSealResponse): number | undefined {
+  const total = body?.total;
+  if (typeof total !== "number" || !Number.isFinite(total)) return undefined;
+  return total;
 }
 
 export function startSigilExplorerSync(): () => void {
@@ -144,6 +157,13 @@ export function startSigilExplorerSync(): () => void {
   };
   window.addEventListener("sigil:sent", onSentEvent as EventListener);
 
+  const onExplorerOpen = (): void => {
+    resnapBreath();
+    void inhaleOnce();
+    void exhaleOnce("open");
+  };
+  window.addEventListener(SIGIL_EXPLORER_OPEN_EVENT, onExplorerOpen as EventListener);
+
   const ac = new AbortController();
 
   const inhaleOnce = async (): Promise<void> => {
@@ -168,26 +188,20 @@ export function startSigilExplorerSync(): () => void {
       });
 
       if (!res) return;
-      if (res.status === 304) return;
-      if (!res.ok) return;
+      if (!res.ok && res.status !== 304) return;
 
       let nextSeal = "";
       let remotePulse: number | undefined;
-      try {
-        const body = (await res.json()) as ApiSealResponse;
-        nextSeal = typeof body?.seal === "string" ? body.seal : "";
-        remotePulse = readRemotePulse(body);
-      } catch {
-        return;
-      }
-
-      const localLatestPulse = remotePulse != null ? getLatestPulseFromRegistry() : undefined;
-      const hasNewerPulse =
-        remotePulse != null && (localLatestPulse == null || remotePulse > localLatestPulse);
-
-      if (prevSeal && nextSeal && prevSeal === nextSeal && !hasNewerPulse) {
-        remoteSeal = nextSeal;
-        return;
+      let remoteTotal: number | undefined;
+      if (res.status !== 304) {
+        try {
+          const body = (await res.json()) as ApiSealResponse;
+          nextSeal = typeof body?.seal === "string" ? body.seal : "";
+          remotePulse = readRemotePulse(body);
+          remoteTotal = readRemoteTotal(body);
+        } catch {
+          return;
+        }
       }
 
       const importedRes = await pullAndImportRemoteUrls(ac.signal);
@@ -196,7 +210,17 @@ export function startSigilExplorerSync(): () => void {
       }
 
       const sealNow = remoteSeal;
-      const shouldFullSeed = reason === "open" || (sealNow && sealNow !== lastFullSeedSeal);
+      const localLatestPulse = getLatestPulseFromRegistry();
+      const localCount = getRegistryCount();
+      const hasNewerPulse =
+        remotePulse != null && (localLatestPulse == null || remotePulse > localLatestPulse);
+      const hasMoreRemote =
+        remoteTotal != null && (localCount == null || remoteTotal > localCount);
+      const shouldFullSeed =
+        reason === "open" ||
+        hasNewerPulse ||
+        hasMoreRemote ||
+        (sealNow && sealNow !== lastFullSeedSeal);
       if (shouldFullSeed) {
         seedInhaleFromRegistry();
         lastFullSeedSeal = sealNow;
@@ -265,6 +289,7 @@ export function startSigilExplorerSync(): () => void {
 
     if (bag.registerSend === onSendRecord) bag.registerSend = prevSend;
     window.removeEventListener("sigil:sent", onSentEvent as EventListener);
+    window.removeEventListener(SIGIL_EXPLORER_OPEN_EVENT, onExplorerOpen as EventListener);
     window.removeEventListener("focus", onFocus);
     window.removeEventListener("online", onOnline);
     window.removeEventListener("pagehide", onPageHide);
