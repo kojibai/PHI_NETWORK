@@ -189,6 +189,8 @@ function buildContentIndex(reg: Registry): Map<string, ContentEntry> {
     let parentId: string | undefined;
 
     const parentUrlRaw = readStringField(e.payload as unknown, "parentUrl");
+    const parentHash =
+      readStringField(e.payload as unknown, "parentHash") ?? readStringField(e.payload as unknown, "parentCanonical");
     if (parentUrlRaw) {
       const parentUrl = canonicalizeUrl(parentUrlRaw);
       const parentHash = parseHashFromUrl(parentUrl);
@@ -198,6 +200,11 @@ function buildContentIndex(reg: Registry): Map<string, ContentEntry> {
       if (parentMomentParent && parentMomentParent !== e.id) {
         parentId = parentMomentParent;
       }
+    }
+
+    if (!parentId && parentHash) {
+      const parentAnyId = entryByHash.get(parentHash);
+      if (parentAnyId && parentAnyId !== e.id) parentId = parentAnyId;
     }
 
     if (!parentId && e.id !== momentParentId) {

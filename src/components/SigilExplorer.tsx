@@ -1946,6 +1946,9 @@ function buildContentIndex(reg: Registry): Map<string, ContentEntry> {
       parentId = momentParentId;
     } else {
       const parentUrlRaw = readStringField(e.payload as unknown, "parentUrl");
+      const parentHash =
+        readStringField(e.payload as unknown, "parentHash") ??
+        readStringField(e.payload as unknown, "parentCanonical");
       if (parentUrlRaw) {
         const parentUrl = canonicalizeUrl(parentUrlRaw);
         const parentHash = parseHashFromUrl(parentUrl);
@@ -1954,6 +1957,11 @@ function buildContentIndex(reg: Registry): Map<string, ContentEntry> {
           momentParentByUrl.get(parentUrl) ?? (parentAnyId ? momentParentById.get(parentAnyId) : undefined);
 
         if (parentMomentParent && parentMomentParent !== e.id) parentId = parentMomentParent;
+      }
+
+      if (!parentId && parentHash) {
+        const parentAnyId = entryByHash.get(parentHash);
+        if (parentAnyId && parentAnyId !== e.id) parentId = parentAnyId;
       }
     }
 
