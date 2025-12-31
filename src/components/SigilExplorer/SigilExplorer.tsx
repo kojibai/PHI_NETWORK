@@ -147,7 +147,7 @@ const PHI_TEXT = "phi";
 
 function PhiMark({ className }: { className?: string }) {
   const classes = ["phi-mark", className].filter(Boolean).join(" ");
-  return <img className={classes} src={PHI_MARK_SRC} alt="" aria-hidden="true" decoding="async" loading="lazy" draggable={false} />;
+  return <img className={classes} src={PHI_MARK_SRC} alt={PHI_TEXT} decoding="async" loading="lazy" draggable={false} />;
 }
 
 function renderPhiAmount(amount: number, options?: { sign?: string; className?: string; markClassName?: string }) {
