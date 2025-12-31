@@ -121,6 +121,12 @@ function buildContentIndex(reg: Registry): Map<string, ContentEntry> {
   const momentParentByMoment = new Map<string, string>();
   const momentParentById = new Map<string, string>();
   const momentParentByUrl = new Map<string, string>();
+  const entryByHash = new Map<string, string>();
+
+  for (const e of entries.values()) {
+    const hash = parseHashFromUrl(e.primaryUrl);
+    if (hash && !entryByHash.has(hash)) entryByHash.set(hash, e.id);
+  }
 
   for (const [mk, ids] of momentGroups) {
     const candidates = ids.map((id) => entries.get(id)).filter(Boolean) as EntryPre[];
@@ -166,8 +172,8 @@ function buildContentIndex(reg: Registry): Map<string, ContentEntry> {
     const originUrlRaw = readStringField(e.payload as unknown, "originUrl");
     const originUrl = originUrlRaw ? canonicalizeUrl(originUrlRaw) : getOriginUrl(e.primaryUrl) ?? e.primaryUrl;
 
-    const originAnyId = urlToContentId.get(originUrl);
     const originHash = parseHashFromUrl(originUrl);
+    const originAnyId = urlToContentId.get(originUrl) ?? (originHash ? entryByHash.get(originHash) : undefined);
     const rootOverride = originHash ? rootByHash.get(originHash) : undefined;
     const originMomentParent = rootOverride ?? originAnyId ?? momentParentByUrl.get(originUrl);
 
@@ -185,7 +191,8 @@ function buildContentIndex(reg: Registry): Map<string, ContentEntry> {
     const parentUrlRaw = readStringField(e.payload as unknown, "parentUrl");
     if (parentUrlRaw) {
       const parentUrl = canonicalizeUrl(parentUrlRaw);
-      const parentAnyId = urlToContentId.get(parentUrl);
+      const parentHash = parseHashFromUrl(parentUrl);
+      const parentAnyId = urlToContentId.get(parentUrl) ?? (parentHash ? entryByHash.get(parentHash) : undefined);
       const parentMomentParent = parentAnyId ?? momentParentByUrl.get(parentUrl);
 
       if (parentMomentParent && parentMomentParent !== e.id) {
