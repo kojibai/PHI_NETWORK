@@ -480,6 +480,19 @@ function buildDetailEntries(
     });
   }
 
+  const exhaledToDerivatives = valueSnapshot?.receivedFromChildren ?? 0;
+  if (exhaledToDerivatives > 0) {
+    entries.push({
+      label: (
+        <span className="phi-detail__label">
+          <PhiMark className="phi-detail__mark" /> Exhaled
+        </span>
+      ),
+      value: renderPhiAmount(exhaledToDerivatives, { sign: "-" }),
+      valueText: `-${formatPhi(exhaledToDerivatives)} ${PHI_TEXT}`,
+    });
+  }
+
   const phiSelf = getPhiFromPayload(node.payload);
   if (phiSelf !== undefined) {
     entries.push({
@@ -502,15 +515,6 @@ function buildDetailEntries(
         value: transferStatus === "received" ? "Received" : "Pending receipt",
       });
     }
-    entries.push({
-      label: (
-        <span className="phi-detail__label">
-          <PhiMark className="phi-detail__mark" /> Exhaled
-        </span>
-      ),
-      value: renderPhiAmount(transferMove.amount, { sign: "-" }),
-      valueText: `-${formatPhi(transferMove.amount)} ${PHI_TEXT}`,
-    });
     if (transferStatus === "received") {
       entries.push({
         label: (
@@ -518,8 +522,8 @@ function buildDetailEntries(
             <PhiMark className="phi-detail__mark" /> Inhaled
           </span>
         ),
-        value: renderPhiAmount(transferMove.amount, { sign: "-" }),
-        valueText: `-${formatPhi(transferMove.amount)} ${PHI_TEXT}`,
+        value: renderPhiAmount(transferMove.amount, { sign: "+" }),
+        valueText: `+${formatPhi(transferMove.amount)} ${PHI_TEXT}`,
       });
     }
     if (transferMove.amountUsd !== undefined) entries.push({ label: "USD value", value: `$${formatUsd(transferMove.amountUsd)}` });
