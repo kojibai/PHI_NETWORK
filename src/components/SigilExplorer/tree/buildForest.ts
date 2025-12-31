@@ -174,7 +174,6 @@ function buildContentIndex(reg: Registry): Map<string, ContentEntry> {
 
     const originHash = parseHashFromUrl(originUrl);
     const originAnyId = urlToContentId.get(originUrl) ?? (originHash ? entryByHash.get(originHash) : undefined);
-    const originHash = parseHashFromUrl(originUrl);
     const rootOverride = originHash ? rootByHash.get(originHash) : undefined;
     const originMomentParent = rootOverride ?? originAnyId ?? momentParentByUrl.get(originUrl);
 
