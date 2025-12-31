@@ -260,6 +260,27 @@ export function markConfirmedByLeaf(parentCanonical: string, transferLeafHashSen
   }
 }
 
+/** Mark a SEND as confirmed by matching parent canonical + transfer nonce. */
+export function markConfirmedByNonce(parentCanonical: string, transferNonce: string): void {
+  const pc = lc(parentCanonical);
+  const nonce = String(transferNonce || "");
+  if (!pc || !nonce) return;
+  const list = readAll();
+  let changed = false;
+
+  for (const r of list) {
+    if (r.parentCanonical === pc && r.transferNonce === nonce && !r.confirmed) {
+      r.confirmed = true;
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    writeAll(list);
+    safePost({ type: "send:update", parentCanonical: pc });
+  }
+}
+
 /** Get all sends for a given parent canonical (sorted by createdAt ASC). */
 export function getSendsFor(parentCanonical: string): SendRecord[] {
   const pc = lc(parentCanonical);
@@ -269,7 +290,10 @@ export function getSendsFor(parentCanonical: string): SendRecord[] {
 /** Sum of all Φ (scaled) exhaled from a parent canonical. */
 export function getSpentScaledFor(parentCanonical: string): bigint {
   const rows = getSendsFor(parentCanonical);
-  return rows.reduce<bigint>((acc, r) => acc + BigInt(coerceBigIntString(r.amountPhiScaled)), 0n);
+  return rows.reduce<bigint>(
+    (acc, r) => (r.confirmed ? acc + BigInt(coerceBigIntString(r.amountPhiScaled)) : acc),
+    0n
+  );
 }
 
 /**

@@ -8,6 +8,7 @@ import { ingestUsernameClaimGlyph } from "../../utils/usernameClaimRegistry";
 import { normalizeClaimGlyphRef, normalizeUsername } from "../../utils/usernameClaim";
 import { resolveLineageBackwards } from "../../utils/sigilUrl";
 import { getInMemorySigilUrls } from "../../utils/sigilRegistry";
+import { markConfirmedByNonce } from "../../utils/sendLedger";
 import {
   canonicalizeUrl,
   extractPayloadFromUrl,
@@ -58,6 +59,25 @@ function readStringField(obj: unknown, key: string): string | undefined {
   if (typeof v !== "string") return undefined;
   const t = v.trim();
   return t ? t : undefined;
+}
+
+function readTransferDirectionValue(value: unknown): "send" | "receive" | null {
+  if (typeof value !== "string") return null;
+  const t = value.trim().toLowerCase();
+  if (!t) return null;
+  if (t.includes("receive") || t.includes("received") || t.includes("inhale")) return "receive";
+  if (t.includes("send") || t.includes("sent") || t.includes("exhale")) return "send";
+  return null;
+}
+
+function readTransferDirectionFromPayload(payload: SigilSharePayloadLoose): "send" | "receive" | null {
+  const record = payload as unknown as Record<string, unknown>;
+  return (
+    readTransferDirectionValue(record.transferDirection) ||
+    readTransferDirectionValue(record.transferMode) ||
+    readTransferDirectionValue(record.transferKind) ||
+    readTransferDirectionValue(record.phiDirection)
+  );
 }
 
 function safeDecodeURIComponent(v: string): string {
@@ -366,6 +386,13 @@ export function addUrl(url: string, opts?: AddUrlOptions): boolean {
   const ctx = deriveWitnessContext(abs);
   const mergedLeaf = mergeDerivedContext(mergePayloadLineage(extracted), ctx);
   changed = upsertRegistryPayload(abs, mergedLeaf) || changed;
+
+  if (readTransferDirectionFromPayload(extracted) === "receive") {
+    const record = extracted as unknown as Record<string, unknown>;
+    const parentHash = readStringField(record, "parentHash");
+    const nonce = readStringField(record, "transferNonce") ?? readStringField(record, "nonce");
+    if (parentHash && nonce) markConfirmedByNonce(parentHash, nonce);
+  }
 
   if (includeAncestry && ctx.chain.length > 0) {
     for (const link of ctx.chain) changed = ensureUrlInRegistry(link) || changed;
