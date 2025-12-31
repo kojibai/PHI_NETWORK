@@ -342,6 +342,13 @@ type NodeValueSnapshot = {
   pendingFromParent: number;
 };
 
+function resolveInhaleLabel(node: SigilNode): "inhale" | "exhale" | null {
+  const kind = contentKindForUrl(node.url);
+  if (kind === "stream") return "inhale";
+  if (kind === "post") return "exhale";
+  return null;
+}
+
 function resolveTransferMoveForNode(
   node: SigilNode,
   transferRegistry: ReadonlyMap<string, SigilTransferRecord>,
@@ -456,6 +463,7 @@ function buildDetailEntries(
   const record = node.payload as unknown as Record<string, unknown>;
   const entries: DetailEntry[] = [];
   const usedKeys = new Set<string>();
+  const inhaleLabel = resolveInhaleLabel(node);
 
   if (valueSnapshot?.netPhi !== null && valueSnapshot?.netPhi !== undefined) {
     entries.push({
@@ -474,7 +482,7 @@ function buildDetailEntries(
   const pendingTotal = (valueSnapshot?.pendingFromChildren ?? 0) + (valueSnapshot?.pendingFromParent ?? 0);
   if (pendingTotal > 0) {
     entries.push({
-      label: "Pending exhales",
+      label: "Pending",
       value: renderPhiAmount(pendingTotal, { sign: "-" }),
       valueText: `-${formatPhi(pendingTotal)} ${PHI_TEXT}`,
     });
@@ -485,7 +493,7 @@ function buildDetailEntries(
     entries.push({
       label: (
         <span className="phi-detail__label">
-          <PhiMark className="phi-detail__mark" /> Exhaled
+          <PhiMark className="phi-detail__mark" /> Derived
         </span>
       ),
       value: renderPhiAmount(exhaledToDerivatives, { sign: "-" }),
@@ -512,14 +520,21 @@ function buildDetailEntries(
     if (transferStatus) {
       entries.push({
         label: "Transfer status",
-        value: transferStatus === "received" ? "Received" : "Pending receipt",
+        value:
+          transferStatus === "pending"
+            ? "Pending"
+            : inhaleLabel === "inhale"
+              ? "Inhale"
+              : inhaleLabel === "exhale"
+                ? "Derived"
+                : "Received",
       });
     }
     if (transferStatus === "received") {
       entries.push({
         label: (
           <span className="phi-detail__label">
-            <PhiMark className="phi-detail__mark" /> Inhaled
+            <PhiMark className="phi-detail__mark" /> {inhaleLabel === "exhale" ? "Derived" : "Inhale"}
           </span>
         ),
         value: renderPhiAmount(transferMove.amount, { sign: "+" }),
@@ -701,6 +716,7 @@ function SigilTreeNode({
   const detailEntries = open ? buildDetailEntries(node, usernameClaims, transferRegistry, receiveLocks, valueSnapshot) : [];
   const transferMove = resolveTransferMoveForNode(node, transferRegistry);
   const transferStatus = resolveTransferStatusForNode(node, transferRegistry, receiveLocks);
+  const inhaleLabel = resolveInhaleLabel(node);
   const livePhi = valueSnapshot?.netPhi ?? null;
   const liveUsd = valueSnapshot?.usdValue ?? null;
   const pendingOut = (valueSnapshot?.pendingFromChildren ?? 0) + (valueSnapshot?.pendingFromParent ?? 0);
@@ -716,9 +732,9 @@ function SigilTreeNode({
       : undefined;
   const transferDisplay =
     transferMove && transferStatus === "received"
-      ? { direction: "send" as const, sign: "-", titleVerb: "inhaled" }
+      ? { direction: "send" as const, sign: "-", titleVerb: inhaleLabel === "inhale" ? "inhaled" : "exhaled" }
       : transferMove
-        ? { direction: "pending" as const, sign: "-", titleVerb: "exhaled" }
+        ? { direction: "pending" as const, sign: "-", titleVerb: inhaleLabel === "inhale" ? "inhaled" : "exhaled" }
         : null;
 
   return (
@@ -774,7 +790,13 @@ function SigilTreeNode({
           )}
           {transferStatus && (
             <span className={`phi-status phi-status--${transferStatus}`} title={`Transfer ${transferStatus}`}>
-              {transferStatus === "received" ? "Inhaled" : "Exhaled"}
+              {transferStatus === "pending"
+                ? "Pending"
+                : inhaleLabel === "inhale"
+                  ? "Inhale"
+                  : inhaleLabel === "exhale"
+                    ? "Derived"
+                    : "Received"}
             </span>
           )}
 
@@ -797,10 +819,10 @@ function SigilTreeNode({
               Pending
             </span>
           )}
-          {transferStatus === "received" && transferMove?.direction === "receive" && (
+          {transferStatus === "received" && transferMove && inhaleLabel === "exhale" && (
             <span
               className="phi-pill phi-pill--drain"
-              title={`Derived inhale: ${formatPhi(transferMove.amount)} ${PHI_TEXT}${
+              title={`Derived exhale: ${formatPhi(transferMove.amount)} ${PHI_TEXT}${
                 transferMove.amountUsd !== undefined ? ` • $${formatUsd(transferMove.amountUsd)}` : ""
               }`}
             >
@@ -968,12 +990,12 @@ function OriginPanel({
           )}
           {branchValue.pendingPhi > 0 && (
             <span className="phi-pill phi-pill--pending" title={originPendingTitle}>
-              Exhaled {renderPhiAmount(branchValue.pendingPhi, { sign: "-" })}
+              Pending {renderPhiAmount(branchValue.pendingPhi, { sign: "-" })}
             </span>
           )}
           {branchValue.derivedPhi > 0 && (
             <span className="phi-pill phi-pill--drain" title={`Derivative allocations (sent ${PHI_TEXT})`}>
-              Inhaled {renderPhiAmount(branchValue.derivedPhi, { sign: "-" })}
+              Derived {renderPhiAmount(branchValue.derivedPhi, { sign: "-" })}
             </span>
           )}
           <span className="o-count" title="Total content keys in this lineage">
