@@ -1145,7 +1145,8 @@ function getTransferMoveFromPayload(payload: SigilSharePayloadLoose): TransferMo
       ? readTransferDirection(src.phiDirection) ||
         readTransferDirection(src.transferDirection) ||
         readTransferDirection(src.transferMode) ||
-        readTransferDirection(src.transferKind)
+        readTransferDirection(src.transferKind) ||
+        readTransferDirection(src.direction)
       : null;
 
   const readDelta = (src: Record<string, unknown> | null) => {

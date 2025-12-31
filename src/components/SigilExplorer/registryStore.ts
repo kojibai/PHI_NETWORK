@@ -76,7 +76,8 @@ function readTransferDirectionFromPayload(payload: SigilSharePayloadLoose): "sen
     readTransferDirectionValue(record.transferDirection) ||
     readTransferDirectionValue(record.transferMode) ||
     readTransferDirectionValue(record.transferKind) ||
-    readTransferDirectionValue(record.phiDirection)
+    readTransferDirectionValue(record.phiDirection) ||
+    readTransferDirectionValue(record.direction)
   );
 }
 
