@@ -1080,6 +1080,11 @@
   border-color: color-mix(in oklab, var(--sx-bad) 60%, rgba(255,255,255,0.18));
 }
 
+.phi-status--inhale{
+  color: #00ff9d;
+  border-color: rgba(0, 255, 157, 0.75);
+}
+
 /* Copy button */
 .node-copy{
   width: 30px;
