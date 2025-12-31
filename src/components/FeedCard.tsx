@@ -90,6 +90,29 @@ const upper = (v: unknown): string => String(v ?? "").toUpperCase();
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   Boolean(v) && typeof v === "object" && !Array.isArray(v);
 
+const hasAuthSignatureValue = (val: unknown): boolean => {
+  if (typeof val === "string") return val.trim().length > 0;
+  return Boolean(val) && typeof val === "object";
+};
+
+const hasAuthSignature = (capsule: Capsule): boolean => {
+  const cap = capsule as Record<string, unknown>;
+
+  if (hasAuthSignatureValue(cap["authorSig"]) || hasAuthSignatureValue(cap["authSig"])) return true;
+
+  const proofBundle = cap["proofBundle"];
+  if (isRecord(proofBundle)) {
+    if (hasAuthSignatureValue(proofBundle["authorSig"]) || hasAuthSignatureValue(proofBundle["authSig"])) return true;
+  }
+
+  const proof = cap["proof"];
+  if (isRecord(proof)) {
+    if (hasAuthSignatureValue(proof["authorSig"]) || hasAuthSignatureValue(proof["authSig"])) return true;
+  }
+
+  return false;
+};
+
 /* ─────────────────────────────────────────────────────────────
    Long-form collapse helpers
    ───────────────────────────────────────────────────────────── */
@@ -2672,8 +2695,14 @@ function beatStepFromPulseKKS(pulse: number): { beatZ: number; stepZ: number } {
 
   const sigilId = isNonEmpty(capsule.sigilId) ? capsule.sigilId : undefined;
   const phiKey = isNonEmpty(capsule.phiKey) ? capsule.phiKey : undefined;
-  const signaturePresent = isNonEmpty(capsule.kaiSignature);
-  const verifiedTitle = signaturePresent ? "Signature present (Kai Signature)" : "Unsigned capsule";
+  const hasKaiSignature = isNonEmpty(capsule.kaiSignature);
+  const hasAuthSig = hasAuthSignature(capsule);
+  const signaturePresent = hasKaiSignature || hasAuthSig;
+  const verifiedTitle = signaturePresent
+    ? hasKaiSignature
+      ? "Signature present (Kai Signature)"
+      : "Signature present (Auth Signature)"
+    : "Unsigned capsule";
 
   const authorBadge = isNonEmpty(capsule.author) ? capsule.author : undefined;
 
