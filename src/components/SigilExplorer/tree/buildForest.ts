@@ -152,8 +152,7 @@ function buildContentIndex(reg: Registry): Map<string, ContentEntry> {
     const originUrl = originUrlRaw ? canonicalizeUrl(originUrlRaw) : getOriginUrl(e.primaryUrl) ?? e.primaryUrl;
 
     const originAnyId = urlToContentId.get(originUrl);
-    const originMomentParent =
-      momentParentByUrl.get(originUrl) ?? (originAnyId ? momentParentById.get(originAnyId) : undefined);
+    const originMomentParent = originAnyId ?? momentParentByUrl.get(originUrl);
 
     momentOriginByParent.set(mp, originMomentParent ?? mp);
   }
@@ -170,8 +169,7 @@ function buildContentIndex(reg: Registry): Map<string, ContentEntry> {
     if (parentUrlRaw) {
       const parentUrl = canonicalizeUrl(parentUrlRaw);
       const parentAnyId = urlToContentId.get(parentUrl);
-      const parentMomentParent =
-        momentParentByUrl.get(parentUrl) ?? (parentAnyId ? momentParentById.get(parentAnyId) : undefined);
+      const parentMomentParent = parentAnyId ?? momentParentByUrl.get(parentUrl);
 
       if (parentMomentParent && parentMomentParent !== e.id) {
         parentId = parentMomentParent;
