@@ -456,9 +456,15 @@ function buildDetailEntries(
       });
     }
     entries.push({
-      label: `Φ ${transferMove.direction === "receive" ? "Received" : "Sent"}`,
-      value: `${transferMove.direction === "receive" ? "+" : "-"}${formatPhi(transferMove.amount)} Φ`,
+      label: "Φ Exhaled",
+      value: `+${formatPhi(transferMove.amount)} Φ`,
     });
+    if (transferStatus === "received") {
+      entries.push({
+        label: "Φ Inhaled",
+        value: `-${formatPhi(transferMove.amount)} Φ`,
+      });
+    }
     if (transferMove.amountUsd !== undefined) entries.push({ label: "USD value", value: `$${formatUsd(transferMove.amountUsd)}` });
     if (transferMove.sentPulse !== undefined) entries.push({ label: "Sent pulse", value: String(transferMove.sentPulse) });
 
@@ -640,6 +646,12 @@ function SigilTreeNode({
     livePhi !== null
       ? `Live value: ${formatPhi(livePhi)} Φ${liveUsd !== null ? ` • $${formatUsd(liveUsd)}` : ""}`
       : undefined;
+  const transferDisplay =
+    transferMove && transferStatus === "received"
+      ? { direction: "send" as const, sign: "-", titleVerb: "inhaled" }
+      : transferMove
+        ? { direction: "receive" as const, sign: "+", titleVerb: "exhaled" }
+        : null;
 
   return (
     <div className="node" style={chakraTintStyle(chakraDay)} data-chakra={String(chakraDay ?? "")} data-node-id={node.id}>
@@ -670,16 +682,16 @@ function SigilTreeNode({
             </span>
           )}
 
-          {transferMove && (
+          {transferMove && transferDisplay && (
             <span
-              className={`phi-move phi-move--${transferMove.direction}`}
-              title={`Φ ${transferMove.direction === "receive" ? "received" : "sent"}: ${formatPhi(transferMove.amount)} Φ${
+              className={`phi-move phi-move--${transferDisplay.direction}`}
+              title={`Φ ${transferDisplay.titleVerb}: ${formatPhi(transferMove.amount)} Φ${
                 transferMove.amountUsd !== undefined ? ` • $${formatUsd(transferMove.amountUsd)}` : ""
               }${transferMove.sentPulse !== undefined ? ` • sent pulse ${transferMove.sentPulse}` : ""}`}
             >
               <img className="phi-move__mark" src={PHI_MARK_SRC} alt="" aria-hidden="true" decoding="async" loading="lazy" draggable={false} />
               <span className="phi-move__sign" aria-hidden="true">
-                {transferMove.direction === "receive" ? "+" : "-"}
+                {transferDisplay.sign}
               </span>
               <span className="phi-move__amount">{formatPhi(transferMove.amount)} Φ</span>
               {transferMove.amountUsd !== undefined && <span className="phi-move__usd">${formatUsd(transferMove.amountUsd)}</span>}
@@ -1683,8 +1695,8 @@ const SigilExplorer: React.FC = () => {
       const transferMove = resolveTransferMoveForNode(node, transferRegistry) ?? null;
       const delta = transferMove
         ? transferMove.direction === "receive"
-          ? transferMove.amount
-          : -transferMove.amount
+          ? -transferMove.amount
+          : transferMove.amount
         : 0;
       const netPhi = basePhi != null ? Math.max(0, basePhi + delta) : null;
       const usdValue = netPhi != null && usdPerPhi != null ? netPhi * usdPerPhi : null;
