@@ -70,24 +70,26 @@ function hasTransferHints(payload: SigilSharePayloadLoose): boolean {
         readTransferDirection(src.phiDirection)
       : null;
   const hasDir = !!(readDir(record) ?? readDir(feed));
-  const hasNonce =
+  const hasNonce = Boolean(
     typeof record.transferNonce === "string" ||
-    typeof record.nonce === "string" ||
-    typeof record.transferToken === "string" ||
-    typeof record.token === "string" ||
-    (feed &&
-      (typeof feed.transferNonce === "string" ||
-        typeof feed.nonce === "string" ||
-        typeof feed.transferToken === "string" ||
-        typeof feed.token === "string"));
-  const hasParent =
+      typeof record.nonce === "string" ||
+      typeof record.transferToken === "string" ||
+      typeof record.token === "string" ||
+      (feed &&
+        (typeof feed.transferNonce === "string" ||
+          typeof feed.nonce === "string" ||
+          typeof feed.transferToken === "string" ||
+          typeof feed.token === "string")),
+  );
+  const hasParent = Boolean(
     typeof record.parentUrl === "string" ||
-    typeof record.parentHash === "string" ||
-    typeof record.parentCanonical === "string" ||
-    (feed &&
-      (typeof feed.parentUrl === "string" ||
-        typeof feed.parentHash === "string" ||
-        typeof feed.parentCanonical === "string"));
+      typeof record.parentHash === "string" ||
+      typeof record.parentCanonical === "string" ||
+      (feed &&
+        (typeof feed.parentUrl === "string" ||
+          typeof feed.parentHash === "string" ||
+          typeof feed.parentCanonical === "string")),
+  );
 
   return hasDir || hasNonce || hasParent;
 }
