@@ -738,6 +738,8 @@ const VerifierStamperInner: React.FC = () => {
 
       let found = false;
       let checked = false;
+      let hadSuccess = false;
+      let failed = false;
       for (let page = 0; page < RECEIVE_REMOTE_PAGES; page += 1) {
         const offset = page * RECEIVE_REMOTE_LIMIT;
         const r = await apiFetchJsonWithFailover<ApiUrlsPageResponse>(
@@ -750,8 +752,11 @@ const VerifierStamperInner: React.FC = () => {
           { method: "GET", cache: "no-store" }
         );
 
-        if (!r.ok) break;
-        checked = true;
+        if (!r.ok) {
+          failed = true;
+          break;
+        }
+        hadSuccess = true;
 
         const urls = r.value.urls;
         if (!Array.isArray(urls) || urls.length === 0) break;
@@ -780,6 +785,7 @@ const VerifierStamperInner: React.FC = () => {
         if (urls.length < RECEIVE_REMOTE_LIMIT) break;
       }
 
+      checked = hadSuccess && !failed;
       const result = { found, checked };
       if (checked) {
         receiveRemoteCache.current.set(cacheKey, result);
@@ -858,6 +864,7 @@ const VerifierStamperInner: React.FC = () => {
         parentUrl = u.toString();
       }
 
+      const lastTransfer = m.transfers?.slice(-1)[0];
       const enriched = {
         ...sharePayload,
         parentUrl,
@@ -871,6 +878,13 @@ const VerifierStamperInner: React.FC = () => {
               phiDelta: amountPhi,
             }
           : { transferDirection: "receive" }),
+        ...(lastTransfer?.receiverSignature
+          ? {
+              receiverSignature: lastTransfer.receiverSignature,
+              receiverStamp: lastTransfer.receiverStamp,
+              receiverKaiPulse: lastTransfer.receiverKaiPulse,
+            }
+          : {}),
       };
 
       let base = "";
@@ -1552,22 +1566,11 @@ const VerifierStamperInner: React.FC = () => {
     () => toScaledBig(((meta as SigilMetadataWithOptionals | null)?.branchBasePhi ?? "")),
     [meta]
   );
-  const persistedSpentScaled = useMemo(
-    () => toScaledBig(((meta as SigilMetadataWithOptionals | null)?.branchSpentPhi ?? "0")),
-    [meta]
-  );
 
   const pivotIndex = useMemo(() => {
     const trs = meta?.transfers ?? [];
     for (let i = trs.length - 1; i >= 0; i -= 1) if (trs[i]?.receiverSignature) return i;
     return trs.length > 0 ? trs.length - 1 : -1;
-  }, [meta?.transfers]);
-
-  const prevPivotIndex = useMemo(() => {
-    const trs = meta?.transfers ?? [];
-    let seen = 0;
-    for (let i = trs.length - 1; i >= 0; i -= 1) if (trs[i]?.receiverSignature && ++seen === 2) return i;
-    return -1;
   }, [meta?.transfers]);
 
   const lastTransfer = useMemo(() => (meta?.transfers ?? []).slice(-1)[0], [meta?.transfers]);
@@ -1591,33 +1594,6 @@ const VerifierStamperInner: React.FC = () => {
     return toScaledBig(String(initialGlyph?.value ?? 0) || "0");
   }, [isChildContext, meta, lastTransfer, persistedBaseScaled, pivotIndex, initialGlyph]);
 
-  const currentWindowSpentScaled = useMemo(() => {
-    try {
-      const trs = meta?.transfers ?? [];
-      let sum = 0n;
-      for (let i = Math.max(0, pivotIndex + 1); i < trs.length; i += 1) sum += exhalePhiFromTransferScaled(trs[i]);
-      return sum;
-    } catch (err) {
-      logError("remainingPhiScaled.sumAfterPivot", err);
-      return 0n;
-    }
-  }, [meta?.transfers, pivotIndex]);
-
-  const priorWindowSpentScaled = useMemo(() => {
-    try {
-      const trs = meta?.transfers ?? [];
-      if (pivotIndex <= 0) return 0n;
-      const start = Math.max(0, prevPivotIndex + 1);
-      const end = Math.max(start, pivotIndex);
-      let sum = 0n;
-      for (let i = start; i < end; i += 1) sum += exhalePhiFromTransferScaled(trs[i]);
-      return sum;
-    } catch (err) {
-      logError("priorWindowSpentScaled", err);
-      return 0n;
-    }
-  }, [meta?.transfers, pivotIndex, prevPivotIndex]);
-
   const ledgerSpentScaled = useMemo(() => {
     if (!canonical) return 0n;
     try {
@@ -1628,20 +1604,7 @@ const VerifierStamperInner: React.FC = () => {
     }
   }, [canonical]);
 
-  const effectivePersistedSpentScaled = useMemo(
-    () => (persistedSpentScaled > priorWindowSpentScaled ? persistedSpentScaled : priorWindowSpentScaled),
-    [persistedSpentScaled, priorWindowSpentScaled]
-  );
-
-  const metaSpentScaled = useMemo(
-    () => (isChildContext ? 0n : effectivePersistedSpentScaled + currentWindowSpentScaled),
-    [isChildContext, effectivePersistedSpentScaled, currentWindowSpentScaled]
-  );
-
-  const totalSpentScaled = useMemo(
-    () => (ledgerSpentScaled > metaSpentScaled ? ledgerSpentScaled : metaSpentScaled),
-    [ledgerSpentScaled, metaSpentScaled]
-  );
+  const totalSpentScaled = useMemo(() => (isChildContext ? 0n : ledgerSpentScaled), [isChildContext, ledgerSpentScaled]);
 
   const remainingPhiScaled = useMemo(
     () => (basePhiScaled > totalSpentScaled ? basePhiScaled - totalSpentScaled : 0n),

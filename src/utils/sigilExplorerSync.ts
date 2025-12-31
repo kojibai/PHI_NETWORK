@@ -105,13 +105,14 @@ export function startSigilExplorerSync(): () => void {
   if (hydrated) seedInhaleFromRegistry();
 
   const applyUrl = (url: string): void => {
-    addUrl(url, {
+    const changed = addUrl(url, {
       includeAncestry: true,
       broadcast: false,
       persist: true,
       source: "local",
       enqueueToApi: true,
     });
+    if (changed) void flushInhaleQueue();
   };
 
   const onSendRecord = (rec: unknown): void => {
