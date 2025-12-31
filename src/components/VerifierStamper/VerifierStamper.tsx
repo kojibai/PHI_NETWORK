@@ -2673,8 +2673,8 @@ const VerifierStamperInner: React.FC = () => {
                             ) : receiveStatus === "new" ? (
                               <>
                                 New receive{" "}
-                                <button className="secondary" onClick={() => void claimReceiveSig()} disabled={receiveBusy}>
-                                  {receiveBusy ? "Claiming…" : "Claim & Embed"}
+                                <button className="secondary" onClick={() => void receive()} disabled={receiveBusy}>
+                                  {receiveBusy ? "Claiming…" : "Inhale & Download"}
                                 </button>
                               </>
                             ) : (
