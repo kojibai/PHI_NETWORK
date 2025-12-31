@@ -451,6 +451,7 @@ function buildDetailEntries(
   usernameClaims: UsernameClaimRegistry,
   transferRegistry: ReadonlyMap<string, SigilTransferRecord>,
   receiveLocks: ReceiveLockIndex,
+  allowTransferDetails: boolean,
   valueSnapshot?: NodeValueSnapshot | null,
 ): DetailEntry[] {
   const record = node.payload as unknown as Record<string, unknown>;
@@ -506,31 +507,33 @@ function buildDetailEntries(
     });
   }
 
-  const transferMove = resolveTransferMoveForNode(node, transferRegistry);
-  if (transferMove) {
-    const transferStatus = resolveTransferStatusForNode(node, transferRegistry, receiveLocks);
-    if (transferStatus) {
-      entries.push({
-        label: "Transfer status",
-        value: transferStatus === "received" ? "Received" : "Pending receipt",
-      });
-    }
-    if (transferStatus === "received") {
-      entries.push({
-        label: (
-          <span className="phi-detail__label">
-            <PhiMark className="phi-detail__mark" /> Inhaled
-          </span>
-        ),
-        value: renderPhiAmount(transferMove.amount, { sign: "+" }),
-        valueText: `+${formatPhi(transferMove.amount)} ${PHI_TEXT}`,
-      });
-    }
-    if (transferMove.amountUsd !== undefined) entries.push({ label: "USD value", value: `$${formatUsd(transferMove.amountUsd)}` });
-    if (transferMove.sentPulse !== undefined) entries.push({ label: "Sent pulse", value: String(transferMove.sentPulse) });
+  if (allowTransferDetails) {
+    const transferMove = resolveTransferMoveForNode(node, transferRegistry);
+    if (transferMove) {
+      const transferStatus = resolveTransferStatusForNode(node, transferRegistry, receiveLocks);
+      if (transferStatus) {
+        entries.push({
+          label: "Transfer status",
+          value: transferStatus === "received" ? "Received" : "Pending receipt",
+        });
+      }
+      if (transferStatus === "received") {
+        entries.push({
+          label: (
+            <span className="phi-detail__label">
+              <PhiMark className="phi-detail__mark" /> Inhaled
+            </span>
+          ),
+          value: renderPhiAmount(transferMove.amount, { sign: "+" }),
+          valueText: `+${formatPhi(transferMove.amount)} ${PHI_TEXT}`,
+        });
+      }
+      if (transferMove.amountUsd !== undefined) entries.push({ label: "USD value", value: `$${formatUsd(transferMove.amountUsd)}` });
+      if (transferMove.sentPulse !== undefined) entries.push({ label: "Sent pulse", value: String(transferMove.sentPulse) });
 
-    const maybe = transferMove as unknown;
-    if (hasStringProp(maybe, "txHash")) entries.push({ label: "Tx hash", value: maybe.txHash });
+      const maybe = transferMove as unknown;
+      if (hasStringProp(maybe, "txHash")) entries.push({ label: "Tx hash", value: maybe.txHash });
+    }
   }
 
   const feed = record.feed as FeedPostPayload | undefined;
@@ -673,6 +676,7 @@ type SigilTreeNodeProps = {
   transferRegistry: ReadonlyMap<string, SigilTransferRecord>;
   receiveLocks: ReceiveLockIndex;
   valueSnapshots: ReadonlyMap<string, NodeValueSnapshot>;
+  publicView: boolean;
 };
 
 function SigilTreeNode({
@@ -684,6 +688,7 @@ function SigilTreeNode({
   transferRegistry,
   receiveLocks,
   valueSnapshots,
+  publicView,
 }: SigilTreeNodeProps) {
   const open = expanded.has(node.id);
 
@@ -698,7 +703,9 @@ function SigilTreeNode({
 
   const openHref = explorerOpenUrl(node.url);
   const valueSnapshot = valueSnapshots.get(node.id) ?? null;
-  const detailEntries = open ? buildDetailEntries(node, usernameClaims, transferRegistry, receiveLocks, valueSnapshot) : [];
+  const detailEntries = open
+    ? buildDetailEntries(node, usernameClaims, transferRegistry, receiveLocks, !publicView, valueSnapshot)
+    : [];
   const transferMove = resolveTransferMoveForNode(node, transferRegistry);
   const transferStatus = resolveTransferStatusForNode(node, transferRegistry, receiveLocks);
   const livePhi = valueSnapshot?.netPhi ?? null;
@@ -859,6 +866,7 @@ function SigilTreeNode({
                   transferRegistry={transferRegistry}
                   receiveLocks={receiveLocks}
                   valueSnapshots={valueSnapshots}
+                  publicView={publicView}
                 />
               ))}
             </div>
@@ -878,6 +886,7 @@ function OriginPanel({
   transferRegistry,
   receiveLocks,
   valueSnapshots,
+  publicView,
 }: {
   root: SigilNode;
   expanded: ReadonlySet<string>;
@@ -887,6 +896,7 @@ function OriginPanel({
   transferRegistry: ReadonlyMap<string, SigilTransferRecord>;
   receiveLocks: ReceiveLockIndex;
   valueSnapshots: ReadonlyMap<string, NodeValueSnapshot>;
+  publicView: boolean;
 }) {
   const count = useMemo(() => {
     let n = 0;
@@ -1001,6 +1011,7 @@ function OriginPanel({
                 transferRegistry={transferRegistry}
                 receiveLocks={receiveLocks}
                 valueSnapshots={valueSnapshots}
+                publicView={publicView}
               />
             ))}
           </div>
@@ -1104,7 +1115,11 @@ function ExplorerToolbar({
 /* ─────────────────────────────────────────────────────────────────────
  *  Main Page — Layout matches CSS: .sigil-explorer + ONLY .explorer-scroll scrolls
  *  ───────────────────────────────────────────────────────────────────── */
-const SigilExplorer: React.FC = () => {
+type SigilExplorerProps = {
+  publicView?: boolean;
+};
+
+const SigilExplorer: React.FC<SigilExplorerProps> = ({ publicView = false }) => {
   const [registryRev, setRegistryRev] = useState(() => (ensureRegistryHydrated() ? 1 : 0));
   const [transferRev, setTransferRev] = useState(0);
   const [lastAdded, setLastAdded] = useState<string | undefined>(undefined);
@@ -1786,8 +1801,16 @@ const SigilExplorer: React.FC = () => {
   }, [requestImmediateSync]);
 
   const forest = useMemo(() => buildForest(memoryRegistry), [registryRev]);
-  const transferRegistry = useMemo(() => readSigilTransferRegistry(), [transferRev]);
-  const receiveLocks = useMemo(() => buildReceiveLockIndex(memoryRegistry), [registryRev, transferRev]);
+  const emptyTransferRegistry = useMemo(() => new Map<string, SigilTransferRecord>(), []);
+  const emptyReceiveLocks = useMemo<ReceiveLockIndex>(() => ({ nonces: new Set(), canonicals: new Set() }), []);
+  const transferRegistry = useMemo(
+    () => (publicView ? emptyTransferRegistry : readSigilTransferRegistry()),
+    [publicView, emptyTransferRegistry, transferRev],
+  );
+  const receiveLocks = useMemo(
+    () => (publicView ? emptyReceiveLocks : buildReceiveLockIndex(memoryRegistry)),
+    [publicView, emptyReceiveLocks, registryRev, transferRev],
+  );
 
   const totalKeys = useMemo(() => {
     let n = 0;
@@ -2106,6 +2129,7 @@ const SigilExplorer: React.FC = () => {
                   transferRegistry={transferRegistry}
                   receiveLocks={receiveLocks}
                   valueSnapshots={valueSnapshots}
+                  publicView={publicView}
                 />
               ))}
             </div>

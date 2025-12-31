@@ -75,7 +75,7 @@ const HomePriceChartCard = lazy(
 
 const SigilExplorer = lazy(
   () => import("./components/SigilExplorer/SigilExplorer"),
-) as React.LazyExoticComponent<React.ComponentType<Record<string, never>>>;
+) as React.LazyExoticComponent<React.ComponentType<{ publicView?: boolean }>>;
 
 type EternalKlockProps = { initialDetailsOpen?: boolean };
 
