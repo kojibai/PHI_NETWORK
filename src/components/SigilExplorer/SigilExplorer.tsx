@@ -755,6 +755,7 @@ function SigilTreeNode({
           displayLivePhi !== null ? ` • Live ${formatPhi(Math.max(0, displayLivePhi))} ${PHI_TEXT}` : ""
         }`
       : undefined;
+  const showPendingSend = pendingFromParent > 0 && node.children.length === 0;
   const derivedTitle =
     derivedFromChildren > 0
       ? `Derived exhales: -${formatPhi(derivedFromChildren)} ${PHI_TEXT}${
@@ -875,7 +876,7 @@ function SigilTreeNode({
               Pending {renderPhiAmount(pendingFromChildren, { sign: "-" })}
             </span>
           )}
-          {pendingFromParent > 0 && (
+          {showPendingSend && (
             <span className="phi-pill phi-pill--pending" title={pendingSendTitle}>
               Pending {renderPhiAmount(pendingFromParent, { sign: "-" })}
             </span>
