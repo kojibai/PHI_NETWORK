@@ -51,6 +51,11 @@ function readStringField(obj: unknown, key: string): string | undefined {
   return typeof v === "string" && v.trim().length > 0 ? v.trim() : undefined;
 }
 
+function readLineageUrl(payload: SigilSharePayloadLoose, key: "originUrl" | "parentUrl"): string | undefined {
+  const raw = readStringField(payload as unknown, key);
+  return raw ? canonicalizeUrl(raw) : undefined;
+}
+
 function resolveOriginUrlFromRegistry(
   startUrl: string,
   startPayload: SigilSharePayloadLoose,
@@ -61,13 +66,17 @@ function resolveOriginUrlFromRegistry(
   let curPayload = startPayload;
 
   for (let i = 0; i < MAX_LINEAGE_WALK; i++) {
-    const originUrlRaw = readStringField(curPayload as unknown, "originUrl");
-    if (originUrlRaw) return canonicalizeUrl(originUrlRaw);
+    const originUrl = readLineageUrl(curPayload, "originUrl");
+    const parentUrl = readLineageUrl(curPayload, "parentUrl");
+    const normalizedParent = parentUrl ?? "";
+    const normalizedOrigin = originUrl ?? "";
+    const normalizedCur = canonicalizeUrl(curUrl);
 
-    const parentUrlRaw = readStringField(curPayload as unknown, "parentUrl");
-    if (!parentUrlRaw) break;
+    if (originUrl && originUrl !== normalizedParent && originUrl !== normalizedCur) {
+      return originUrl;
+    }
 
-    const parentUrl = canonicalizeUrl(parentUrlRaw);
+    if (!parentUrl) break;
     if (seen.has(parentUrl)) break;
     seen.add(parentUrl);
 
@@ -141,7 +150,9 @@ function buildContentIndex(reg: Registry): Map<string, ContentEntry> {
 
   const momentGroups = new Map<string, string[]>();
   for (const e of entries.values()) {
-    const k = e.momentKey;
+    const parentUrl = readLineageUrl(e.payload, "parentUrl") ?? "";
+    const originUrl = readLineageUrl(e.payload, "originUrl") ?? "";
+    const k = `${e.momentKey}::${parentUrl}::${originUrl}`;
     if (!momentGroups.has(k)) momentGroups.set(k, []);
     momentGroups.get(k)!.push(e.id);
   }
@@ -150,13 +161,32 @@ function buildContentIndex(reg: Registry): Map<string, ContentEntry> {
   const momentParentById = new Map<string, string>();
   const momentParentByUrl = new Map<string, string>();
 
-  for (const [mk, ids] of momentGroups) {
+  for (const [, ids] of momentGroups) {
     const candidates = ids.map((id) => entries.get(id)).filter(Boolean) as EntryPre[];
+
+    const urlToId = new Map<string, string>();
+    for (const c of candidates) {
+      for (const u of c.urls) {
+        urlToId.set(canonicalizeUrl(u), c.id);
+      }
+    }
+
+    let lineageParent: EntryPre | undefined;
+    for (const c of candidates) {
+      const parentUrl = readLineageUrl(c.payload, "parentUrl");
+      if (!parentUrl) continue;
+      const parentId = urlToId.get(parentUrl);
+      if (!parentId) continue;
+      lineageParent = candidates.find((cand) => cand.id === parentId);
+      if (lineageParent) break;
+    }
 
     const postParents = candidates.filter((c) => c.kind === "post");
     let parent: EntryPre | undefined;
 
-    if (postParents.length > 0) {
+    if (lineageParent) {
+      parent = lineageParent;
+    } else if (postParents.length > 0) {
       parent = postParents
         .slice()
         .sort((a, b) => scoreUrlForView(b.primaryUrl, "post") - scoreUrlForView(a.primaryUrl, "post"))[0];
