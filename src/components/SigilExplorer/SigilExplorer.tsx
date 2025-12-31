@@ -975,13 +975,19 @@ function OriginPanel({
         const move = resolveTransferMoveForNode(node, transferRegistry);
         const status = move ? resolveTransferStatusForNode(node, transferRegistry, receiveLocks) : null;
         if (status === "received" && move) exhaleTotal += move.amount;
-        if (status === "pending" && move) pendingTotal += move.amount;
       }
 
       node.children.forEach(walk);
     };
 
     walk(root);
+    for (const child of root.children) {
+      const kind = contentKindForUrl(child.url);
+      if (kind !== "post") continue;
+      const move = resolveTransferMoveForNode(child, transferRegistry);
+      const status = move ? resolveTransferStatusForNode(child, transferRegistry, receiveLocks) : null;
+      if (status === "pending" && move) pendingTotal += move.amount;
+    }
     return { inhaleTotal, exhaleTotal, pendingTotal };
   }, [receiveLocks, root, transferRegistry, valueSnapshots]);
 
