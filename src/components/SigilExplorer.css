@@ -1081,8 +1081,8 @@
 }
 
 .phi-status--inhale{
-  color: color-mix(in oklab, var(--sx-good) 75%, #fff);
-  border-color: color-mix(in oklab, var(--sx-good) 60%, rgba(255,255,255,0.18));
+  color: #00ff9d;
+  border-color: rgba(0, 255, 157, 0.75);
 }
 
 /* Copy button */

@@ -733,7 +733,7 @@ function SigilTreeNode({
   const pendingOut = (valueSnapshot?.pendingFromChildren ?? 0) + (valueSnapshot?.pendingFromParent ?? 0);
   const pendingTitle =
     pendingOut > 0 && displayLivePhi !== null
-      ? `Pending exhales: -${formatPhi(pendingOut)} ${PHI_TEXT} • Remaining ${formatPhi(Math.max(0, displayLivePhi))} ${PHI_TEXT}`
+      ? `Pending exhales: -${formatPhi(pendingOut)} ${PHI_TEXT} • Live ${formatPhi(Math.max(0, displayLivePhi))} ${PHI_TEXT}`
       : pendingOut > 0
         ? `Pending exhales: -${formatPhi(pendingOut)} ${PHI_TEXT}`
         : undefined;
@@ -816,7 +816,7 @@ function SigilTreeNode({
             <span className="phi-pill phi-pill--live" title={liveTitle}>
               <span className="phi-pill__label">
                 <PhiMark className="phi-pill__mark" />
-                live:
+                {inhaleLabel === "inhale" ? "+" : "live:"}
               </span>
               {renderPhiAmount(displayLivePhi)}
             </span>
@@ -1924,7 +1924,7 @@ const SigilExplorer: React.FC = () => {
       }
 
       const pendingOutgoing = transferStatus === "pending" && transferMove?.direction === "send" ? transferMove.amount : 0;
-      const netPhi = Math.max(0, baseValue + childLiftTotal - childReceivedTotal - childPendingTotal - pendingOutgoing);
+      const netPhi = Math.max(0, baseValue + childLiftTotal - childReceivedTotal);
       const usdValue =
         transferStatus === "received" && transferMove?.amountUsd
           ? transferMove.amountUsd
