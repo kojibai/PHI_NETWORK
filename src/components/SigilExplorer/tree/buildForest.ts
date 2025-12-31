@@ -49,13 +49,31 @@ function readStringField(obj: unknown, key: string): string | undefined {
   return typeof v === "string" && v.trim().length > 0 ? v.trim() : undefined;
 }
 
+function normalizeParentRef(raw: string | undefined): string | undefined {
+  if (!raw) return undefined;
+  const trimmed = raw.trim();
+  if (!trimmed) return undefined;
+  if (/^[0-9a-f]{16,}$/iu.test(trimmed)) return canonicalizeUrl(`/s/${trimmed}`);
+  return canonicalizeUrl(trimmed);
+}
+
 function readParentUrl(payload: SigilSharePayloadLoose): string | undefined {
   const record = payload as unknown as Record<string, unknown>;
-  const direct = readStringField(record, "parentUrl") ?? readStringField(record, "parent");
-  if (direct) return direct;
+  const direct =
+    readStringField(record, "parentUrl") ??
+    readStringField(record, "parent") ??
+    readStringField(record, "parentHash") ??
+    readStringField(record, "parentCanonical");
+  const normalizedDirect = normalizeParentRef(direct);
+  if (normalizedDirect) return normalizedDirect;
   const feed = record.feed;
   if (!isRecord(feed)) return undefined;
-  return readStringField(feed, "parentUrl") ?? readStringField(feed, "parent");
+  const embedded =
+    readStringField(feed, "parentUrl") ??
+    readStringField(feed, "parent") ??
+    readStringField(feed, "parentHash") ??
+    readStringField(feed, "parentCanonical");
+  return normalizeParentRef(embedded);
 }
 
 function buildContentIndex(reg: Registry): Map<string, ContentEntry> {
