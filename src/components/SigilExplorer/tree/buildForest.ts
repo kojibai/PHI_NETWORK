@@ -39,6 +39,8 @@ type ContentAgg = {
   momentKey: string;
 };
 
+const MAX_LINEAGE_WALK = 32;
+
 function isRecord(v: unknown): v is Record<string, unknown> {
   return !!v && typeof v === "object" && !Array.isArray(v);
 }
@@ -49,8 +51,53 @@ function readStringField(obj: unknown, key: string): string | undefined {
   return typeof v === "string" && v.trim().length > 0 ? v.trim() : undefined;
 }
 
+function resolveOriginUrlFromRegistry(
+  url: string,
+  payload: SigilSharePayloadLoose,
+  registryByUrl: Map<string, SigilSharePayloadLoose>
+): string | undefined {
+  const startUrl = canonicalizeUrl(url);
+  const immediateParentRaw = readStringField(payload as unknown, "parentUrl");
+  const immediateParent = immediateParentRaw ? canonicalizeUrl(immediateParentRaw) : undefined;
+
+  let currentUrl = startUrl;
+  let currentPayload: SigilSharePayloadLoose | undefined = payload;
+  const seen = new Set<string>([currentUrl]);
+
+  for (let steps = 0; steps < MAX_LINEAGE_WALK && currentPayload; steps += 1) {
+    const parentUrlRaw = readStringField(currentPayload as unknown, "parentUrl");
+    const parentUrl = parentUrlRaw ? canonicalizeUrl(parentUrlRaw) : undefined;
+    const originUrlRaw = readStringField(currentPayload as unknown, "originUrl");
+
+    if (originUrlRaw) {
+      const originUrl = canonicalizeUrl(originUrlRaw);
+      const isSameAsCurrent = originUrl === currentUrl;
+      const isSameAsParent = parentUrl ? originUrl === parentUrl : false;
+      const isSameAsImmediateParent = immediateParent ? originUrl === immediateParent : false;
+
+      if (!isSameAsCurrent && !isSameAsParent && !isSameAsImmediateParent) {
+        return originUrl;
+      }
+    }
+
+    if (!parentUrl || seen.has(parentUrl)) break;
+    seen.add(parentUrl);
+    currentUrl = parentUrl;
+    currentPayload = registryByUrl.get(parentUrl);
+  }
+
+  const fallback = getOriginUrl(startUrl);
+  if (!fallback) return undefined;
+
+  const canonicalFallback = canonicalizeUrl(fallback);
+  if (immediateParent && canonicalFallback === immediateParent) return undefined;
+
+  return canonicalFallback;
+}
+
 function buildContentIndex(reg: Registry): Map<string, ContentEntry> {
   const urlToContentId = new Map<string, string>();
+  const registryByUrl = new Map<string, SigilSharePayloadLoose>();
   const idToAgg = new Map<string, ContentAgg>();
 
   for (const [rawUrl, payload] of reg) {
@@ -61,6 +108,7 @@ function buildContentIndex(reg: Registry): Map<string, ContentEntry> {
     const mkey = momentKeyFor(url, payload);
 
     urlToContentId.set(url, cid);
+    registryByUrl.set(url, payload);
 
     const prev = idToAgg.get(cid);
     if (!prev) {
@@ -148,8 +196,7 @@ function buildContentIndex(reg: Registry): Map<string, ContentEntry> {
     const mp = momentParentById.get(e.id) ?? e.id;
     if (e.id !== mp) continue;
 
-    const originUrlRaw = readStringField(e.payload as unknown, "originUrl");
-    const originUrl = originUrlRaw ? canonicalizeUrl(originUrlRaw) : getOriginUrl(e.primaryUrl) ?? e.primaryUrl;
+    const originUrl = resolveOriginUrlFromRegistry(e.primaryUrl, e.payload, registryByUrl) ?? e.primaryUrl;
 
     const originAnyId = urlToContentId.get(originUrl);
     const originMomentParent =
