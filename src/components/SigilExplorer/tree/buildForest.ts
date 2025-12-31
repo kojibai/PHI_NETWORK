@@ -39,6 +39,8 @@ type ContentAgg = {
   momentKey: string;
 };
 
+const MAX_LINEAGE_WALK = 32;
+
 function isRecord(v: unknown): v is Record<string, unknown> {
   return !!v && typeof v === "object" && !Array.isArray(v);
 }
@@ -49,9 +51,41 @@ function readStringField(obj: unknown, key: string): string | undefined {
   return typeof v === "string" && v.trim().length > 0 ? v.trim() : undefined;
 }
 
+function resolveOriginUrlFromRegistry(
+  startUrl: string,
+  startPayload: SigilSharePayloadLoose,
+  payloadByUrl: Map<string, SigilSharePayloadLoose>,
+): string | undefined {
+  const seen = new Set<string>();
+  let curUrl = canonicalizeUrl(startUrl);
+  let curPayload = startPayload;
+
+  for (let i = 0; i < MAX_LINEAGE_WALK; i++) {
+    const originUrlRaw = readStringField(curPayload as unknown, "originUrl");
+    if (originUrlRaw) return canonicalizeUrl(originUrlRaw);
+
+    const parentUrlRaw = readStringField(curPayload as unknown, "parentUrl");
+    if (!parentUrlRaw) break;
+
+    const parentUrl = canonicalizeUrl(parentUrlRaw);
+    if (seen.has(parentUrl)) break;
+    seen.add(parentUrl);
+
+    const nextPayload = payloadByUrl.get(parentUrl);
+    if (!nextPayload) return parentUrl;
+
+    curUrl = parentUrl;
+    curPayload = nextPayload;
+  }
+
+  void curUrl;
+  return getOriginUrl(startUrl);
+}
+
 function buildContentIndex(reg: Registry): Map<string, ContentEntry> {
   const urlToContentId = new Map<string, string>();
   const idToAgg = new Map<string, ContentAgg>();
+  const payloadByUrl = new Map<string, SigilSharePayloadLoose>();
 
   for (const [rawUrl, payload] of reg) {
     const url = canonicalizeUrl(rawUrl);
@@ -61,6 +95,7 @@ function buildContentIndex(reg: Registry): Map<string, ContentEntry> {
     const mkey = momentKeyFor(url, payload);
 
     urlToContentId.set(url, cid);
+    payloadByUrl.set(url, payload);
 
     const prev = idToAgg.get(cid);
     if (!prev) {
@@ -149,7 +184,9 @@ function buildContentIndex(reg: Registry): Map<string, ContentEntry> {
     if (e.id !== mp) continue;
 
     const originUrlRaw = readStringField(e.payload as unknown, "originUrl");
-    const originUrl = originUrlRaw ? canonicalizeUrl(originUrlRaw) : getOriginUrl(e.primaryUrl) ?? e.primaryUrl;
+    const originUrl = originUrlRaw
+      ? canonicalizeUrl(originUrlRaw)
+      : resolveOriginUrlFromRegistry(e.primaryUrl, e.payload, payloadByUrl) ?? e.primaryUrl;
 
     const originAnyId = urlToContentId.get(originUrl);
     const originMomentParent =
