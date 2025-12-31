@@ -386,6 +386,16 @@ self.addEventListener("fetch", (event) => {
 
   const url = new URL(req.url);
 
+  if (
+    url.hostname === "align.kaiklok.com" ||
+    url.hostname === "m.phi.network"
+  ) {
+    if (url.pathname.startsWith("/sigils/")) {
+      event.respondWith(fetch(new Request(req, { cache: "no-store" })));
+      return;
+    }
+  }
+
   // Range requests (audio/video scrubbing)
   if (req.headers.has("range")) {
     event.respondWith((async () => {

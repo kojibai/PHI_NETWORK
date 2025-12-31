@@ -139,7 +139,11 @@ export async function apiFetchWithFailover(
   for (const base of bases) {
     const url = makeUrl(base);
     try {
-      const res = await fetch(url, init);
+      const res = await fetch(url, {
+        cache: init?.cache ?? "no-store",
+        ...init,
+        headers: init?.headers,
+      });
       last = res;
 
       // 304 is a valid success for seal checks.
