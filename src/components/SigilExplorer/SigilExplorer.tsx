@@ -790,7 +790,17 @@ function SigilTreeNode({
           )}
           {pendingOut > 0 && (
             <span className="phi-pill phi-pill--pending" title={pendingTitle}>
-              Pending {renderPhiAmount(pendingOut, { sign: "-" })}
+              Pending
+            </span>
+          )}
+          {transferStatus === "received" && transferMove && (
+            <span
+              className="phi-pill phi-pill--drain"
+              title={`Derived inhale: ${formatPhi(transferMove.amount)} ${PHI_TEXT}${
+                transferMove.amountUsd !== undefined ? ` • $${formatUsd(transferMove.amountUsd)}` : ""
+              }`}
+            >
+              Derived
             </span>
           )}
 
@@ -954,12 +964,12 @@ function OriginPanel({
           )}
           {branchValue.pendingPhi > 0 && (
             <span className="phi-pill phi-pill--pending" title={originPendingTitle}>
-              Pending {renderPhiAmount(branchValue.pendingPhi, { sign: "-" })}
+              Exhaled {renderPhiAmount(branchValue.pendingPhi, { sign: "-" })}
             </span>
           )}
           {branchValue.derivedPhi > 0 && (
             <span className="phi-pill phi-pill--drain" title={`Derivative allocations (sent ${PHI_TEXT})`}>
-              Derived {renderPhiAmount(branchValue.derivedPhi, { sign: "-" })}
+              Inhaled {renderPhiAmount(branchValue.derivedPhi, { sign: "-" })}
             </span>
           )}
           <span className="o-count" title="Total content keys in this lineage">
