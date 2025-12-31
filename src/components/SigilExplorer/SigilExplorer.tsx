@@ -525,24 +525,23 @@ function buildDetailEntries(
   }
 
   if (transferMove) {
+    const transferDirectionLabel =
+      transferMove.direction === "receive" ? "Inhaled" : inhaleLabel === "exhale" ? "Exhaled" : "Inhaled";
+    const transferPendingLabel = transferMove.direction === "receive" ? "Inhale (pending)" : "Exhale (pending)";
+    const transferPulseSuffix = transferMove.sentPulse !== undefined ? ` • pulse ${transferMove.sentPulse}` : "";
+    const transferPulseLabelSuffix = transferMove.sentPulse !== undefined ? ` (pulse ${transferMove.sentPulse})` : "";
     if (transferStatus) {
       entries.push({
         label: "Transfer status",
-        value:
-          transferStatus === "pending"
-            ? "Exhale (pending)"
-            : inhaleLabel === "inhale"
-              ? "Inhale"
-              : inhaleLabel === "exhale"
-                ? "Exhaled"
-                : "Received",
+        value: `${transferStatus === "pending" ? transferPendingLabel : transferDirectionLabel}${transferPulseSuffix}`,
       });
     }
     if (transferStatus === "received") {
       entries.push({
         label: (
           <span className="phi-detail__label">
-            <PhiMark className="phi-detail__mark" /> {inhaleLabel === "exhale" ? "Exhaled" : "Inhale"}
+            <PhiMark className="phi-detail__mark" /> {transferDirectionLabel}
+            {transferPulseLabelSuffix}
           </span>
         ),
         value: renderPhiAmount(transferMove.amount, { sign: "+" }),
@@ -852,7 +851,7 @@ function SigilTreeNode({
               }
               style={mixExhaleColor as React.CSSProperties}
             >
-              Exhale
+              Exhaled
             </span>
           )}
           {inhaleLabel === "inhale" && (
