@@ -1124,6 +1124,8 @@ const SigilExplorer: React.FC = () => {
   const flushTimerRef = useRef<number | null>(null);
   const pendingBumpRef = useRef(false);
   const pendingLastAddedRef = useRef<string | undefined>(undefined);
+  const pendingTransferBumpRef = useRef(0);
+  const pendingNowPulseRef = useRef<number | null>(null);
   const pendingClaimEntriesRef = useRef<
     Array<{
       normalized: string;
@@ -1195,6 +1197,18 @@ const SigilExplorer: React.FC = () => {
       startTransition(() => setLastAdded(v));
     }
 
+    if (pendingNowPulseRef.current !== null) {
+      const nextPulse = pendingNowPulseRef.current;
+      pendingNowPulseRef.current = null;
+      startTransition(() => setNowPulse(nextPulse));
+    }
+
+    if (pendingTransferBumpRef.current > 0) {
+      const delta = pendingTransferBumpRef.current;
+      pendingTransferBumpRef.current = 0;
+      startTransition(() => setTransferRev((v) => v + delta));
+    }
+
     if (pendingBumpRef.current) {
       pendingBumpRef.current = false;
       startTransition(() => setRegistryRev((v) => v + 1));
@@ -1242,6 +1256,36 @@ const SigilExplorer: React.FC = () => {
     [scheduleUiFlush],
   );
 
+  const bumpTransferRevSafe = useCallback(
+    (delta = 1) => {
+      if (unmounted.current) return;
+
+      const now = nowMs();
+      if (now < interactUntilRef.current || scrollingRef.current) {
+        pendingTransferBumpRef.current += delta;
+        scheduleUiFlush();
+        return;
+      }
+      startTransition(() => setTransferRev((v) => v + delta));
+    },
+    [scheduleUiFlush],
+  );
+
+  const setNowPulseSafe = useCallback(
+    (next: number) => {
+      if (unmounted.current) return;
+
+      const now = nowMs();
+      if (now < interactUntilRef.current || scrollingRef.current) {
+        pendingNowPulseRef.current = next;
+        scheduleUiFlush();
+        return;
+      }
+      startTransition(() => setNowPulse(next));
+    },
+    [scheduleUiFlush],
+  );
+
   // Toggle anchor preservation
   const lastToggleAnchorRef = useRef<{ id: string; scrollTop: number; rectTop: number } | null>(null);
 
@@ -1272,10 +1316,10 @@ const SigilExplorer: React.FC = () => {
 
   useEffect(() => {
     if (!hasWindow) return;
-    const tick = () => setNowPulse(getKaiPulseEternalInt(new Date()));
+    const tick = () => setNowPulseSafe(getKaiPulseEternalInt(new Date()));
     const id = window.setInterval(tick, 6000);
     return () => window.clearInterval(id);
-  }, []);
+  }, [setNowPulseSafe]);
 
   // Prevent browser pull-to-refresh overscroll while explorer is open
   useEffect(() => {
@@ -1517,7 +1561,7 @@ const SigilExplorer: React.FC = () => {
       const isTransferKey = ev.key === SIGIL_TRANSFER_LS_KEY;
 
       if (isTransferKey) {
-        setTransferRev((v) => v + 1);
+        bumpTransferRevSafe();
         return;
       }
       if (!isRegistryKey && !isModalKey) return;
@@ -1542,13 +1586,13 @@ const SigilExplorer: React.FC = () => {
     };
     window.addEventListener("storage", onStorage);
 
-    const onTransferEvent = () => setTransferRev((v) => v + 1);
+    const onTransferEvent = () => bumpTransferRevSafe();
     window.addEventListener(SIGIL_TRANSFER_EVENT, onTransferEvent as EventListener);
 
     const transferChannel = hasWindow && "BroadcastChannel" in window ? new BroadcastChannel(SIGIL_TRANSFER_CHANNEL_NAME) : null;
     const onTransferMsg = (ev: MessageEvent) => {
       const data = ev.data as unknown as { type?: unknown };
-      if (data?.type === "transfer:update") setTransferRev((v) => v + 1);
+      if (data?.type === "transfer:update") bumpTransferRevSafe();
     };
     transferChannel?.addEventListener("message", onTransferMsg);
 
