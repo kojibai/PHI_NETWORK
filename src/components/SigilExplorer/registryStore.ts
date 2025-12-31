@@ -310,7 +310,13 @@ function synthesizeEdgesFromWitnessChain(chain: readonly string[], leafUrl: stri
 
 export function persistRegistryToStorage(): void {
   if (!canStorage) return;
-  const urls = Array.from(memoryRegistry.keys());
+  const urls = Array.from(memoryRegistry.entries())
+    .sort((a, b) => {
+      const timeCmp = byKaiTime(b[1], a[1]);
+      if (timeCmp !== 0) return timeCmp;
+      return a[0].localeCompare(b[0]);
+    })
+    .map(([url]) => url);
   try {
     localStorage.setItem(REGISTRY_LS_KEY, JSON.stringify(urls));
   } catch {
