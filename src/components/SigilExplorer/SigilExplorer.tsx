@@ -487,7 +487,9 @@ function buildDetailEntries(
   if (displayUsdValue !== null && displayUsdValue !== undefined) {
     entries.push({ label: "Live USD", value: `$${formatUsd(displayUsdValue)}` });
   }
-  const pendingTotal = (valueSnapshot?.pendingFromChildren ?? 0) + (valueSnapshot?.pendingFromParent ?? 0);
+  const pendingFromChildren = valueSnapshot?.pendingFromChildren ?? 0;
+  const pendingFromParent = valueSnapshot?.pendingFromParent ?? 0;
+  const pendingTotal = node.children.length > 0 ? pendingFromChildren : pendingFromChildren + pendingFromParent;
   if (pendingTotal > 0) {
     entries.push({
       label: "Pending",
