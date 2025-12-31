@@ -2699,7 +2699,7 @@ const VerifierStamperInner: React.FC = () => {
                           k="Receive claim:"
                           v={
                             receiveStatus === "already" ? (
-                              "Already received"
+                              "Received"
                             ) : receiveStatus === "new" ? (
                               <>
                                 New receive{" "}

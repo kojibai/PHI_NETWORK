@@ -353,7 +353,7 @@ function buildDetailEntries(
     if (transferStatus) {
       entries.push({
         label: "Transfer status",
-        value: transferStatus === "received" ? "Already received" : "Pending receipt",
+        value: transferStatus === "received" ? "Received" : "Pending receipt",
       });
     }
     entries.push({
@@ -579,7 +579,7 @@ function SigilTreeNode({
           )}
           {transferStatus && (
             <span className={`phi-status phi-status--${transferStatus}`} title={`Transfer ${transferStatus}`}>
-              {transferStatus === "received" ? "Already received" : "Pending"}
+              {transferStatus === "received" ? "Received" : "Pending"}
             </span>
           )}
 
