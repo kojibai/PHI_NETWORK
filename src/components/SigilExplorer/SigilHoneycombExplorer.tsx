@@ -1272,9 +1272,6 @@ export default function SigilHoneycombExplorer({
             ))}
           </div>
 
-          <div className="combHint">
-            Drag to pan • Shift/right-drag to rotate • Alt+drag to roll • Wheel/pinch to zoom • Click a hex to inspect
-          </div>
         </div>
 
         <aside className="combInspector" aria-label="Honeycomb inspector">
