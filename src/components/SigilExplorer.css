@@ -308,7 +308,7 @@
 
 @media (min-width: 680px){
   .kx-controls{
-    grid-template-columns: 1fr auto auto;
+    grid-template-columns: 1fr auto auto auto;
     align-items: center;
   }
 }
@@ -382,6 +382,48 @@
   gap: 8px;
   justify-content: start;
   align-items: center;
+}
+
+.kx-view-toggle{
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.kx-view-btn{
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.14);
+  background:
+    radial-gradient(140% 220% at 0% 0%, rgba(98,218,255,0.12), transparent 58%),
+    linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+  color: var(--sx-text-dim);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform .12s ease, box-shadow .18s ease, color .18s ease, border-color .18s ease;
+  box-shadow:
+    inset 0 0 0 1px rgba(255,255,255,0.04),
+    0 8px 18px rgba(0,0,0,0.24);
+}
+
+.kx-view-btn.is-active{
+  color: var(--sx-text);
+  border-color: rgba(255,255,255,0.28);
+  background:
+    radial-gradient(140% 220% at 0% 0%, rgba(35,255,240,0.20), transparent 60%),
+    linear-gradient(180deg, rgba(255,255,255,0.10), rgba(255,255,255,0.05));
+  box-shadow:
+    inset 0 0 0 1px rgba(255,255,255,0.08),
+    0 12px 28px rgba(35,255,240,0.18);
+}
+
+.kx-view-btn:hover{
+  transform: translateY(-1px);
+  color: var(--sx-text);
+  border-color: rgba(255,255,255,0.22);
 }
 
 .kx-import,
@@ -464,6 +506,11 @@
   scrollbar-gutter: stable both-edges;
 }
 
+.explorer-scroll--lattice{
+  overflow: hidden;
+  touch-action: none;
+}
+
 .explorer-inner{
   max-width: var(--sx-maxw);
   margin: 0 auto;
@@ -471,6 +518,24 @@
   display: grid;
   gap: 14px;
   min-width: 0;
+  min-height: 100%;
+}
+
+.kx-view{
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.kx-view--lattice{
+  min-height: clamp(520px, 70vh, 920px);
+}
+
+.kx-lattice{
+  width: 100%;
+  height: 100%;
+  min-height: clamp(520px, 70vh, 920px);
+  touch-action: none;
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -588,6 +653,14 @@
   overflow: hidden;
   text-overflow: ellipsis;
   font-weight: 700;
+}
+
+button.o-link{
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
 }
 
 .o-link:hover{
