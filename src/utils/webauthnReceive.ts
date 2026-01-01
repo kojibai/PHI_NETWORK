@@ -235,6 +235,11 @@ export function loadStoredReceiverPasskey(): StoredPasskey | null {
   }
 }
 
+export function clearStoredReceiverPasskey(): void {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(RECEIVE_PASSKEY_KEY);
+}
+
 export function findStoredKasPasskeyByCredId(credId: string): StoredPasskey | null {
   if (typeof window === "undefined") return null;
   for (let i = 0; i < window.localStorage.length; i += 1) {
