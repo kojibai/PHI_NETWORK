@@ -112,10 +112,37 @@ function readFiniteNumber(v: unknown): number | undefined {
   return undefined;
 }
 
+function readUsdPerPhi(payload: Record<string, unknown>): number | undefined {
+  const candidates: unknown[] = [
+    payload.usdPerPhi,
+    payload.fxUsdPerPhi,
+    payload.usd_per_phi,
+    isRecord(payload.preview) ? (payload.preview as Record<string, unknown>).usdPerPhi : undefined,
+    isRecord(payload.preview) ? (payload.preview as Record<string, unknown>).usd_per_phi : undefined,
+  ];
+
+  for (const c of candidates) {
+    if (typeof c === "number" && Number.isFinite(c)) return c;
+    if (typeof c === "string") {
+      const n = Number(c);
+      if (Number.isFinite(n)) return n;
+    }
+  }
+  return undefined;
+}
+
 function toTransferDirection(v: unknown): "send" | "receive" | undefined {
   const s = readStr(v);
   if (s === "send" || s === "receive") return s;
   return undefined;
+}
+
+function safeLocalStorageSet(key: string, value: string): void {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    ignore();
+  }
 }
 
 function broadcastSelectedHash(hash: string): void {
@@ -147,6 +174,17 @@ function chakraClass(chakraDay?: string): string {
 function formatPhi(v?: string): string {
   if (!v) return "—";
   return v.startsWith("-") ? v : `+${v}`;
+}
+
+function formatUsd(value?: number): string {
+  if (value == null || !Number.isFinite(value)) return "—";
+  return new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
+}
+
+function formatPhiNumber(value?: number): string {
+  if (value == null || !Number.isFinite(value)) return "—";
+  const fixed = value.toFixed(6);
+  return fixed.replace(/0+$/u, "").replace(/\.$/u, "");
 }
 
 function shortHash(h: string, n = 10): string {
@@ -658,6 +696,31 @@ function PulseHoneycombInner({
   const selected = useMemo(() => (selectedHash ? byHash.get(selectedHash) ?? null : null), [selectedHash, byHash]);
   const activeBeat = selected && typeof selected.beat === "number" ? Math.floor(selected.beat) : null;
 
+  const pulseValue = useMemo(() => {
+    if (activePulse == null) return { phi: null, usd: null, usdPerPhi: null };
+
+    let phiTotal = 0;
+    let usdPerPhi: number | null = null;
+
+    for (const [, payloadLoose] of memoryRegistry) {
+      if (!isRecord(payloadLoose)) continue;
+      const p = readFiniteNumber(payloadLoose.pulse);
+      if (p !== activePulse) continue;
+
+      const delta = readFiniteNumber(payloadLoose.phiDelta) ?? readFiniteNumber(payloadLoose.transferAmountPhi);
+      if (delta != null) phiTotal += delta;
+
+      if (usdPerPhi == null) {
+        const found = readUsdPerPhi(payloadLoose);
+        if (found != null) usdPerPhi = found;
+      }
+    }
+
+    const phi = Number.isFinite(phiTotal) ? phiTotal : null;
+    const usd = phi != null && usdPerPhi != null ? phi * usdPerPhi : null;
+    return { phi, usd, usdPerPhi };
+  }, [activePulse, registryRev]);
+
 
   const layout = useMemo(() => {
     const N = filtered.length;
@@ -851,6 +914,15 @@ function PulseHoneycombInner({
         </div>
 
         <div className="phmHeaderRight">
+          <div className="phmValueCard" aria-live="polite">
+            <div className="phmValueLabel">Pulse Value</div>
+            <div className="phmValuePhi">{pulseValue.phi != null ? `${formatPhiNumber(pulseValue.phi)} Φ` : "—"}</div>
+            <div className="phmValueUsd">{pulseValue.usd != null ? `$${formatUsd(pulseValue.usd)}` : "—"}</div>
+            <div className="phmValueMeta">
+              {pulseValue.usdPerPhi != null ? `$${formatUsd(pulseValue.usdPerPhi)} / Φ` : "Live rate"}
+            </div>
+          </div>
+
           <button type="button" className="phmBtn phmBtnClose" onClick={onClose} aria-label="Close">
             ✕
           </button>

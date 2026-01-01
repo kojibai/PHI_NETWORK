@@ -4,7 +4,7 @@
   z-index: 9999;
   background: transparent;
   display: flex;
-  align-items: stretch;
+  align-items: flex-end;
   justify-content: flex-end;
   padding: 12px;
   pointer-events: none;
@@ -12,7 +12,7 @@
 
 .phmShell{
   width: min(420px, 92vw);
-  height: calc(100% - 24px);
+  height: min(72vh, 620px);
   border-radius: 20px;
   overflow: hidden;
   border: 1px solid rgba(255,255,255,0.12);
@@ -116,9 +116,9 @@
 
 .phmHeaderRight{
   display: flex;
-  flex-direction: column;
-  gap: 6px;
-  align-items: flex-end;
+  flex-direction: row;
+  gap: 8px;
+  align-items: center;
 }
 
 .phmStats{
@@ -164,6 +164,56 @@
   transition: transform .12s ease, border-color .2s ease, background .2s ease;
 }
 
+.phmValueCard{
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background:
+    linear-gradient(135deg, rgba(35,255,240,0.12), rgba(183,163,255,0.08)),
+    rgba(6,10,14,0.55);
+  min-width: 150px;
+  box-shadow: inset 0 0 18px rgba(255,255,255,0.06);
+  position: relative;
+  overflow: hidden;
+}
+
+.phmValueCard::after{
+  content:"";
+  position:absolute;
+  inset: 0;
+  background:
+    linear-gradient(120deg, transparent 20%, rgba(255,255,255,0.2) 40%, transparent 60%);
+  opacity: 0.18;
+  pointer-events: none;
+}
+
+.phmValueLabel{
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.6);
+}
+
+.phmValuePhi{
+  font-size: 14px;
+  font-weight: 800;
+  color: rgba(255,255,255,0.95);
+}
+
+.phmValueUsd{
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(183,163,255,0.9);
+}
+
+.phmValueMeta{
+  font-size: 9px;
+  color: rgba(255,255,255,0.55);
+}
+
 .phmBtn:hover{
   background: rgba(255,255,255,0.1);
   border-color: rgba(255,255,255,0.22);
@@ -178,7 +228,7 @@
 .phmBody{
   display: flex;
   flex-direction: column;
-  height: calc(100% - 48px);
+  height: calc(100% - 46px);
   position: relative;
   z-index: 1;
 }
@@ -280,7 +330,7 @@
     radial-gradient(140% 220% at 0% 0%, rgba(183,163,255,0.12), transparent 60%),
     rgba(0,0,0,0.3);
   overflow: auto;
-  max-height: 42%;
+  max-height: 45%;
 }
 
 .phmInspectorCard{
@@ -387,8 +437,8 @@
 
 @media (max-width: 720px){
   .phmShell{
-    width: 100%;
-    height: calc(100% - 16px);
+    width: min(320px, 92vw);
+    height: min(60svh, 520px);
     border-radius: 16px;
   }
 
@@ -411,6 +461,10 @@
 
   .phmCombToolbar{
     display: none;
+  }
+
+  .phmValueCard{
+    min-width: 120px;
   }
 
   .phmSeg{
