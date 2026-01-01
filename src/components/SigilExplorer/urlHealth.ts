@@ -55,9 +55,10 @@ export function setUrlHealth(u: string, h: UrlHealthScore): boolean {
 }
 
 function isCanonicalHost(host: string): boolean {
-  const liveHost = new URL(LIVE_BASE_URL).host;
-  const backupHost = new URL(LIVE_BACKUP_URL).host;
-  const viewHost = new URL(viewBaseOrigin()).host;
+  const origin = viewBaseOrigin();
+  const liveHost = new URL(LIVE_BASE_URL, origin).host;
+  const backupHost = new URL(LIVE_BACKUP_URL, origin).host;
+  const viewHost = new URL(origin).host;
   const fallbackHost = new URL(VIEW_BASE_FALLBACK).host;
   return host === liveHost || host === backupHost || host === viewHost || host === fallbackHost;
 }

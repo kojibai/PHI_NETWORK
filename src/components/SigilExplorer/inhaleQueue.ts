@@ -1,7 +1,7 @@
 // src/components/SigilExplorer/inhaleQueue.ts
 "use client";
 
-import { apiFetchWithFailover, API_INHALE_PATH } from "./apiClient";
+import { apiFetchWithFailover, API_INHALE_PATH, resolveApiUrl } from "./apiClient";
 import type { SigilSharePayloadLoose } from "./types";
 import { canonicalizeUrl, extractPayloadFromUrl, isPTildeUrl, looksLikeBareToken, parseStreamToken, streamUrlFromToken } from "./url";
 import { memoryRegistry, isOnline } from "./registryStore";
@@ -232,7 +232,8 @@ async function flushInhaleQueue(): Promise<void> {
     fd.append("file", blob, `sigils_${randId()}.json`);
 
     const makeUrl = (base: string) => {
-      const url = new URL(API_INHALE_PATH, base);
+      const resolved = resolveApiUrl(base, API_INHALE_PATH);
+      const url = new URL(resolved, window.location.origin);
       url.searchParams.set("include_state", "false");
       url.searchParams.set("include_urls", "false");
       return url.toString();
