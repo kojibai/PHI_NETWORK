@@ -77,6 +77,7 @@ import {
 
 /** Remote pull (exhale) */
 import { pullAndImportRemoteUrls } from "./remotePull";
+import { msUntilNextKaiBreath } from "./kaiCadence";
 
 /** Username claim witness registry */
 import {
@@ -123,8 +124,6 @@ const IMPORT_BATCH_SIZE = 80;
 const IMPORT_WORKER_THRESHOLD = 250_000;
 
 const URL_PROBE_MAX_PER_REFRESH = 18;
-const INHALE_INTERVAL_MS = 3236;
-const EXHALE_INTERVAL_MS = 2000;
 
 function getLatestPulseFromRegistry(): number | undefined {
   let latest: number | undefined;
@@ -1832,45 +1831,47 @@ const SigilExplorer: React.FC = () => {
       }
     };
 
-    syncNowRef.current = exhaleOnce;
+    syncNowRef.current = async (reason: SyncReason) => {
+      await inhaleOnce(reason);
+      await exhaleOnce(reason);
+    };
 
     seedInhaleFromRegistry();
     void inhaleOnce("open");
     void exhaleOnce("open");
 
-    let inhaleTimer: number | null = null;
-    let exhaleTimer: number | null = null;
+    let breathTimer: number | null = null;
 
-    const scheduleInhale = (): void => {
+    const scheduleNextBreath = (): void => {
       if (!hasWindow) return;
       if (unmounted.current) return;
-      if (inhaleTimer != null) window.clearInterval(inhaleTimer);
 
-      inhaleTimer = window.setInterval(() => {
-        if (document.visibilityState !== "visible") return;
-        if (!isOnline()) return;
+      if (breathTimer != null) window.clearTimeout(breathTimer);
+
+      const delay = msUntilNextKaiBreath();
+      breathTimer = window.setTimeout(() => {
+        breathTimer = null;
+
+        if (document.visibilityState !== "visible") {
+          scheduleNextBreath();
+          return;
+        }
+        if (!isOnline()) {
+          scheduleNextBreath();
+          return;
+        }
+
         void inhaleOnce("pulse");
-      }, INHALE_INTERVAL_MS);
-    };
-
-    const scheduleExhale = (): void => {
-      if (!hasWindow) return;
-      if (unmounted.current) return;
-      if (exhaleTimer != null) window.clearInterval(exhaleTimer);
-
-      exhaleTimer = window.setInterval(() => {
-        if (document.visibilityState !== "visible") return;
-        if (!isOnline()) return;
         void exhaleOnce("pulse");
-      }, EXHALE_INTERVAL_MS);
+        scheduleNextBreath();
+      }, delay);
     };
 
     const resnapBreath = (): void => {
-      scheduleInhale();
-      scheduleExhale();
+      scheduleNextBreath();
     };
 
-    resnapBreath();
+    scheduleNextBreath();
 
     const onVis = () => {
       if (document.visibilityState === "visible") {
@@ -1923,10 +1924,8 @@ const SigilExplorer: React.FC = () => {
       if (flushTimerRef.current != null) window.clearTimeout(flushTimerRef.current);
       flushTimerRef.current = null;
 
-      if (inhaleTimer != null) window.clearInterval(inhaleTimer);
-      inhaleTimer = null;
-      if (exhaleTimer != null) window.clearInterval(exhaleTimer);
-      exhaleTimer = null;
+      if (breathTimer != null) window.clearTimeout(breathTimer);
+      breathTimer = null;
 
       ac.abort();
       syncNowRef.current = null;
