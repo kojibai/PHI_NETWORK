@@ -122,13 +122,11 @@ const deriveKksFromPulse = (pulse: number) => {
 };
 
 function useDeferredSigilRender(key: string): boolean {
-  const [ready, setReady] = useState(() => SIGIL_RENDER_CACHE.has(key));
+  const [, forceRender] = useState(0);
+  const cached = SIGIL_RENDER_CACHE.has(key);
 
   useEffect(() => {
-    if (SIGIL_RENDER_CACHE.has(key)) {
-      setReady(true);
-      return;
-    }
+    if (cached) return;
     let cancelled = false;
     const schedule = typeof window !== "undefined" && "requestIdleCallback" in window
       ? (cb: () => void) => window.requestIdleCallback(cb, { timeout: 200 })
@@ -136,7 +134,7 @@ function useDeferredSigilRender(key: string): boolean {
     const handle = schedule(() => {
       if (cancelled) return;
       SIGIL_RENDER_CACHE.add(key);
-      setReady(true);
+      forceRender((v) => v + 1);
     });
     return () => {
       cancelled = true;
@@ -146,9 +144,9 @@ function useDeferredSigilRender(key: string): boolean {
         clearTimeout(handle as number);
       }
     };
-  }, [key]);
+  }, [cached, key]);
 
-  return ready;
+  return cached;
 }
 
 const HEX_DIRS: Coord[] = [
