@@ -105,6 +105,8 @@ import { stepIndexFromPulseExact } from "../../utils/kai_pulse";
 /** Tree build */
 import { buildForest, resolveCanonicalHashFromNode } from "./tree/buildForest";
 import type { SigilNode } from "./tree/types";
+import PulseHoneycombModal from "./PulseHoneycombModal";
+import SigilHoneycombExplorer from "./SigilHoneycombExplorer";
 
 /* ─────────────────────────────────────────────────────────────────────
  *  Globals / constants
@@ -115,6 +117,7 @@ type SyncReason = "open" | "pulse" | "visible" | "focus" | "online" | "import";
 
 const SIGIL_EXPLORER_OPEN_EVENT = "sigil:explorer:open";
 const SIGIL_EXPLORER_CHANNEL_NAME = "sigil:explorer:bc:v1";
+const SIGIL_HONEYCOMB_OPEN_EVENT = "sigil:honeycomb:open";
 
 const UI_SCROLL_INTERACT_MS = 520;
 const UI_TOGGLE_INTERACT_MS = 900;
@@ -968,6 +971,7 @@ function OriginPanel({
   transferRegistry,
   receiveLocks,
   valueSnapshots,
+  onOpenPulseView,
 }: {
   root: SigilNode;
   expanded: ReadonlySet<string>;
@@ -977,6 +981,7 @@ function OriginPanel({
   transferRegistry: ReadonlyMap<string, SigilTransferRecord>;
   receiveLocks: ReceiveLockIndex;
   valueSnapshots: ReadonlyMap<string, NodeValueSnapshot>;
+  onOpenPulseView: (payload: { pulse: number | null; originUrl?: string; originHash?: string }) => void;
 }) {
   const count = useMemo(() => {
     let n = 0;
@@ -990,6 +995,7 @@ function OriginPanel({
 
   const originHash = parseHashFromUrl(root.url);
   const originSig = (root.payload as unknown as { kaiSignature?: string }).kaiSignature;
+  const originPulse = readFiniteNumber((root.payload as { pulse?: unknown }).pulse) ?? null;
 
   const openHref = explorerOpenUrl(root.url);
   const chakraDay = (root.payload as unknown as { chakraDay?: string }).chakraDay;
@@ -1052,6 +1058,21 @@ function OriginPanel({
     <section className="origin" aria-label="Sigil origin stream" style={chakraTintStyle(chakraDay)} data-chakra={String(chakraDay ?? "")} data-node-id={root.id}>
       <header className="origin-head">
         <div className="o-meta">
+          <button
+            className="o-glyph-btn"
+            type="button"
+            title="Open Pulse Atlas"
+            aria-label="Open Pulse Atlas"
+            onClick={() =>
+              onOpenPulseView({
+                pulse: originPulse,
+                originUrl: root.url,
+                originHash: originHash ?? undefined,
+              })
+            }
+          >
+            <img className="o-glyph-mark" src={PHI_MARK_SRC} alt="" aria-hidden="true" decoding="async" loading="eager" draggable={false} />
+          </button>
           <span className="o-title">Origin</span>
           <a className="o-link" href={openHref} target="_blank" rel="noopener noreferrer" title={openHref}>
             {short(originSig ?? originHash ?? "origin", 14)}
@@ -1132,16 +1153,22 @@ function ExplorerToolbar({
   onAdd,
   onImport,
   onExport,
+  activeView,
+  onToggleView,
   total,
   lastAdded,
 }: {
   onAdd: (u: string) => void;
   onImport: (f: File) => void;
   onExport: () => void;
+  activeView: "explorer" | "honeycomb";
+  onToggleView: () => void;
   total: number;
   lastAdded?: string;
 }) {
   const [input, setInput] = useState("");
+  const viewLabel = activeView === "honeycomb" ? "Keystream" : "Glyph Lattice";
+  const viewTitle = activeView === "honeycomb" ? "Return to Keystream Explorer" : "Open Glyph Lattice view";
 
   return (
     <div className="kx-toolbar" role="region" aria-label="Explorer toolbar">
@@ -1201,6 +1228,16 @@ function ExplorerToolbar({
             <button className="kx-export" onClick={onExport} aria-label="Export registry to JSON" type="button">
               Exhale
             </button>
+
+            <button
+              className={["kx-view-toggle", activeView === "honeycomb" ? "active" : ""].filter(Boolean).join(" ")}
+              onClick={onToggleView}
+              aria-pressed={activeView === "honeycomb"}
+              title={viewTitle}
+              type="button"
+            >
+              {viewLabel}
+            </button>
           </div>
 
           <div className="kx-stats" aria-live="polite">
@@ -1228,12 +1265,24 @@ const SigilExplorer: React.FC = () => {
   const [lastAdded, setLastAdded] = useState<string | undefined>(undefined);
   const [usernameClaims, setUsernameClaims] = useState<UsernameClaimRegistry>(() => getUsernameClaimRegistry());
   const [nowPulse, setNowPulse] = useState(() => getKaiPulseEternalInt(new Date()));
+  const [activeView, setActiveView] = useState<"explorer" | "honeycomb">("explorer");
+  const [pulseViewer, setPulseViewer] = useState<{
+    open: boolean;
+    pulse: number | null;
+    originUrl?: string;
+    originHash?: string;
+  }>({ open: false, pulse: null });
 
   const unmounted = useRef(false);
   const prefetchedRef = useRef<Set<string>>(new Set());
 
   // Scroll safety guards
   const scrollElRef = useRef<HTMLDivElement | null>(null);
+  const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null);
+  const setScrollElRef = useCallback((node: HTMLDivElement | null) => {
+    scrollElRef.current = node;
+    setScrollEl(node);
+  }, []);
   const scrollingRef = useRef(false);
   const scrollIdleTimerRef = useRef<number | null>(null);
 
@@ -1439,6 +1488,15 @@ const SigilExplorer: React.FC = () => {
     return () => window.clearInterval(id);
   }, [setNowPulseSafe]);
 
+  useEffect(() => {
+    if (!hasWindow) return;
+    const onOpen = () => setActiveView("honeycomb");
+    window.addEventListener(SIGIL_HONEYCOMB_OPEN_EVENT, onOpen as EventListener);
+    return () => {
+      window.removeEventListener(SIGIL_HONEYCOMB_OPEN_EVENT, onOpen as EventListener);
+    };
+  }, []);
+
   // Prevent browser pull-to-refresh overscroll while explorer is open
   useEffect(() => {
     if (!hasWindow) return;
@@ -1488,7 +1546,7 @@ const SigilExplorer: React.FC = () => {
   // Touch guard: prevent top/bottom overdrag from triggering pull-to-refresh
   useEffect(() => {
     if (!hasWindow) return;
-    const el = scrollElRef.current;
+    const el = scrollEl;
     if (!el) return;
 
     let lastY = 0;
@@ -1536,12 +1594,12 @@ const SigilExplorer: React.FC = () => {
       el.removeEventListener("touchstart", onTouchStart);
       el.removeEventListener("touchmove", onTouchMove);
     };
-  }, []);
+  }, [scrollEl]);
 
   // Scroll listener (isolated)
   useEffect(() => {
     if (!hasWindow) return;
-    const el = scrollElRef.current;
+    const el = scrollEl;
     if (!el) return;
 
     const onScroll = () => {
@@ -1564,7 +1622,7 @@ const SigilExplorer: React.FC = () => {
       scrollIdleTimerRef.current = null;
       scrollingRef.current = false;
     };
-  }, [markInteracting, scheduleUiFlush]);
+  }, [markInteracting, scheduleUiFlush, scrollEl]);
 
   // Apply toggle anchor preservation after DOM commit
   useLayoutEffect(() => {
@@ -2246,50 +2304,87 @@ const SigilExplorer: React.FC = () => {
     URL.revokeObjectURL(a.href);
   }, [markInteracting]);
 
+  const handleToggleView = useCallback(() => {
+    setActiveView((prev) => (prev === "honeycomb" ? "explorer" : "honeycomb"));
+  }, []);
+
+  const handleOpenPulseView = useCallback(
+    (payload: { pulse: number | null; originUrl?: string; originHash?: string }) => {
+      setPulseViewer({ open: true, ...payload });
+    },
+    [],
+  );
+
   return (
     <div className="sigil-explorer" aria-label="Kairos Keystream Explorer">
-      <ExplorerToolbar onAdd={handleAdd} onImport={handleImport} onExport={handleExport} total={totalKeys} lastAdded={lastAdded} />
+      <ExplorerToolbar
+        onAdd={handleAdd}
+        onImport={handleImport}
+        onExport={handleExport}
+        activeView={activeView}
+        onToggleView={handleToggleView}
+        total={totalKeys}
+        lastAdded={lastAdded}
+      />
 
-      <div className="explorer-scroll" ref={scrollElRef} role="region" aria-label="Explorer scroll viewport">
-        <div className="explorer-inner">
-          {forest.length === 0 ? (
-            <div className="kx-empty">
-              <p>No sigil-glyphs in your keystream yet.</p>
-              <ol>
-                <li>Import your keystream memories.</li>
-                <li>Seal a moment — auto-registered here.</li>
-                <li>Inhale any sigil-glyph or memory key above — lineage aligns instantly.</li>
-              </ol>
-            </div>
-          ) : (
-            <div className="forest" aria-label="Sigil forest">
-              {forest.map((root) => (
-                <OriginPanel
-                  key={root.id}
-                  root={root}
-                  expanded={expanded}
-                  toggle={toggle}
-                  phiTotalsByPulse={phiTotalsByPulse}
-                  usernameClaims={usernameClaims}
-                  transferRegistry={transferRegistry}
-                  receiveLocks={receiveLocks}
-                  valueSnapshots={valueSnapshots}
-                />
-              ))}
-            </div>
-          )}
-
-          <footer className="kx-footer" aria-label="Explorer footer">
-            <span className="row">
-               <span>Determinate • Stateless • Kairos-Memory</span>
-              <span className="dot">•</span>
-              <span>{isOnline() ? "online" : "offline"}</span>
-              <span className="dot">•</span>
-              <span>{totalKeys} keys</span>
-            </span>
-          </footer>
+      {activeView === "honeycomb" ? (
+        <div className="explorer-scroll explorer-scroll--honeycomb" role="region" aria-label="Glyph Lattice viewport">
+          <div className="explorer-inner">
+            <SigilHoneycombExplorer syncMode="embedded" onOpenPulseView={handleOpenPulseView} />
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="explorer-scroll" ref={setScrollElRef} role="region" aria-label="Explorer scroll viewport">
+          <div className="explorer-inner">
+            {forest.length === 0 ? (
+              <div className="kx-empty">
+                <p>No sigil-glyphs in your keystream yet.</p>
+                <ol>
+                  <li>Import your keystream memories.</li>
+                  <li>Seal a moment — auto-registered here.</li>
+                  <li>Inhale any sigil-glyph or memory key above — lineage aligns instantly.</li>
+                </ol>
+              </div>
+            ) : (
+              <div className="forest" aria-label="Sigil forest">
+                {forest.map((root) => (
+                  <OriginPanel
+                    key={root.id}
+                    root={root}
+                    expanded={expanded}
+                    toggle={toggle}
+                    phiTotalsByPulse={phiTotalsByPulse}
+                    usernameClaims={usernameClaims}
+                    transferRegistry={transferRegistry}
+                    receiveLocks={receiveLocks}
+                    valueSnapshots={valueSnapshots}
+                    onOpenPulseView={handleOpenPulseView}
+                  />
+                ))}
+              </div>
+            )}
+
+            <footer className="kx-footer" aria-label="Explorer footer">
+              <span className="row">
+                 <span>Determinate • Stateless • Kairos-Memory</span>
+                <span className="dot">•</span>
+                <span>{isOnline() ? "online" : "offline"}</span>
+                <span className="dot">•</span>
+                <span>{totalKeys} keys</span>
+              </span>
+            </footer>
+          </div>
+        </div>
+      )}
+
+      <PulseHoneycombModal
+        open={pulseViewer.open}
+        pulse={pulseViewer.pulse}
+        originUrl={pulseViewer.originUrl}
+        originHash={pulseViewer.originHash}
+        registryRev={registryRev}
+        onClose={() => setPulseViewer((prev) => ({ ...prev, open: false }))}
+      />
     </div>
   );
 };

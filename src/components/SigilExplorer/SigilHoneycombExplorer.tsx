@@ -11,7 +11,6 @@ import {
   addUrl,
   ensureRegistryHydrated,
   persistRegistryToStorage,
-  parseImportedJson,
   REGISTRY_LS_KEY,
   MODAL_FALLBACK_LS_KEY,
   isOnline,
@@ -26,14 +25,7 @@ import {
   parseHashFromUrl,
 } from "./url";
 
-import {
-  enqueueInhaleRawKrystal,
-  flushInhaleQueue,
-  forceInhaleUrls,
-  loadInhaleQueueFromStorage,
-  saveInhaleQueueToStorage,
-  seedInhaleFromRegistry,
-} from "./inhaleQueue";
+import { flushInhaleQueue, loadInhaleQueueFromStorage, saveInhaleQueueToStorage, seedInhaleFromRegistry } from "./inhaleQueue";
 
 import { pullAndImportRemoteUrls } from "./remotePull";
 
@@ -46,6 +38,9 @@ import {
 } from "./apiClient";
 
 import { loadUrlHealthFromStorage } from "./urlHealth";
+import KaiSigil from "../KaiSigil";
+import type { ChakraDay } from "../KaiSigil/types";
+import { N_DAY_MICRO, latticeFromMicroPulses, normalizePercentIntoStep } from "../../utils/kai_pulse";
 
 /* ─────────────────────────────────────────────────────────────
    Types (strict)
@@ -105,6 +100,7 @@ export type SigilHoneycombExplorerProps = {
   maxNodes?: number;
   edgeMode?: EdgeMode;
   syncMode?: "standalone" | "embedded";
+  onOpenPulseView?: (payload: { pulse: number; originHash?: string }) => void;
 };
 
 /* ─────────────────────────────────────────────────────────────
@@ -118,6 +114,83 @@ const SIGIL_EXPLORER_CHANNEL_NAME = "sigil:explorer:bc:v1";
 
 const SIGIL_SELECT_CHANNEL_NAME = "sigil:explorer:select:bc:v1";
 const SIGIL_SELECT_LS_KEY = "sigil:explorer:selectedHash:v1";
+const ONE_PULSE_MICRO = 1_000_000n;
+
+const modE = (a: bigint, m: bigint) => {
+  if (m === 0n) return 0n;
+  const r = a % m;
+  return r >= 0n ? r : r + m;
+};
+
+const gcdBI = (a: bigint, b: bigint): bigint => {
+  let x = a < 0n ? -a : a;
+  let y = b < 0n ? -b : b;
+  while (y !== 0n) {
+    const t = x % y;
+    x = y;
+    y = t;
+  }
+  return x;
+};
+
+const SIGIL_WRAP_PULSE: bigint = (() => {
+  const g = gcdBI(N_DAY_MICRO, ONE_PULSE_MICRO);
+  return g === 0n ? 0n : N_DAY_MICRO / g;
+})();
+const SIGIL_RENDER_CACHE = new Set<string>();
+const PHI = (1 + Math.sqrt(5)) / 2;
+
+const wrapPulseForSigil = (pulse: number): number => {
+  if (!Number.isFinite(pulse)) return 0;
+  const pulseBI = BigInt(Math.trunc(pulse));
+  if (SIGIL_WRAP_PULSE <= 0n) return 0;
+  const wrapped = modE(pulseBI, SIGIL_WRAP_PULSE);
+  return Number(wrapped);
+};
+
+const deriveKksFromPulse = (pulse: number) => {
+  const p = Number.isFinite(pulse) ? Math.trunc(pulse) : 0;
+  const pμ = BigInt(p) * ONE_PULSE_MICRO;
+  const { beat, stepIndex, percentIntoStep } = latticeFromMicroPulses(pμ);
+  const stepPct = normalizePercentIntoStep(percentIntoStep);
+  return { beat, stepIndex, stepPct };
+};
+
+const hashToUnit = (hash: string): number => {
+  let acc = 0;
+  for (let i = 0; i < hash.length; i += 1) {
+    acc = (acc * 31 + hash.charCodeAt(i)) % 1000000;
+  }
+  return acc / 1000000;
+};
+
+function useDeferredSigilRender(key: string): boolean {
+  const [, forceRender] = useState(0);
+  const cached = SIGIL_RENDER_CACHE.has(key);
+
+  useEffect(() => {
+    if (cached) return;
+    let cancelled = false;
+    const schedule = typeof window !== "undefined" && "requestIdleCallback" in window
+      ? (cb: () => void) => window.requestIdleCallback(cb, { timeout: 200 })
+      : (cb: () => void) => window.setTimeout(cb, 32);
+    const handle = schedule(() => {
+      if (cancelled) return;
+      SIGIL_RENDER_CACHE.add(key);
+      forceRender((v) => v + 1);
+    });
+    return () => {
+      cancelled = true;
+      if (typeof window !== "undefined" && "cancelIdleCallback" in window) {
+        window.cancelIdleCallback(handle as number);
+      } else {
+        clearTimeout(handle as number);
+      }
+    };
+  }, [cached, key]);
+
+  return cached;
+}
 
 const INHALE_INTERVAL_MS = 3236;
 const EXHALE_INTERVAL_MS = 2000;
@@ -154,6 +227,18 @@ function readLowerStr(v: unknown): string | undefined {
 
 function readNum(v: unknown): number | undefined {
   return typeof v === "number" && Number.isFinite(v) ? v : undefined;
+}
+
+function normalizeChakraDay(value?: string): ChakraDay {
+  const v = (value ?? "").toLowerCase();
+  if (v.includes("root")) return "Root";
+  if (v.includes("sacral")) return "Sacral";
+  if (v.includes("solar")) return "Solar Plexus";
+  if (v.includes("heart")) return "Heart";
+  if (v.includes("throat")) return "Throat";
+  if (v.includes("third") || v.includes("brow")) return "Third Eye";
+  if (v.includes("crown")) return "Crown";
+  return "Root";
 }
 
 function safeJsonParse(text: string): unknown {
@@ -468,9 +553,20 @@ const SigilHex = React.memo(function SigilHex(props: {
 }) {
   const { node, x, y, selected, onClick } = props;
 
+  const pulseValue =
+    typeof node.pulse === "number" && Number.isFinite(node.pulse) ? node.pulse : 0;
+  const sigilPulse = wrapPulseForSigil(pulseValue);
+  const kks = deriveKksFromPulse(sigilPulse);
+  const chakraDay = normalizeChakraDay(node.chakraDay);
+  const sigilKey = `${sigilPulse}:${chakraDay}`;
+  const renderSigil = useDeferredSigilRender(sigilKey);
+  const depth = (hashToUnit(node.hash) - 0.5) * 220 * PHI;
+
   const ariaParts: string[] = [];
   if (typeof node.pulse === "number") ariaParts.push(`pulse ${node.pulse}`);
-  if (typeof node.beat === "number" && typeof node.stepIndex === "number") ariaParts.push(`beat ${node.beat} step ${node.stepIndex}`);
+  if (Number.isFinite(kks.beat) && Number.isFinite(kks.stepIndex)) {
+    ariaParts.push(`beat ${kks.beat} step ${kks.stepIndex}`);
+  }
   if (node.chakraDay) ariaParts.push(node.chakraDay);
   ariaParts.push(shortHash(node.hash, 12));
   const aria = ariaParts.join(" — ");
@@ -484,19 +580,36 @@ const SigilHex = React.memo(function SigilHex(props: {
         node.transferDirection ? `xfer-${node.transferDirection}` : "",
         selected ? "isSelected" : "",
       ].join(" ")}
-      style={{ transform: `translate(${x}px, ${y}px)` }}
+      style={{ transform: `translate3d(${x}px, ${y}px, ${depth.toFixed(2)}px)` }}
       onClick={onClick}
       aria-label={aria}
       title={aria}
     >
       <div className="sigilHexInner">
+        <div className="sigilHexGlyphFrame" aria-hidden="true">
+          {renderSigil ? (
+            <KaiSigil
+              pulse={sigilPulse}
+              beat={kks.beat}
+              stepIndex={kks.stepIndex}
+              stepPct={kks.stepPct}
+              chakraDay={chakraDay}
+              size={48}
+              hashMode="deterministic"
+              animate={false}
+              enableZkProof={false}
+            />
+          ) : (
+            <div className="sigilHexGlyphPlaceholder" />
+          )}
+        </div>
         <div className="sigilHexTop">
           <span className="sigilHexPulse">{typeof node.pulse === "number" ? node.pulse : "—"}</span>
           <span className="sigilHexHash">{shortHash(node.hash)}</span>
         </div>
         <div className="sigilHexMid">
           <span className="sigilHexBeat">
-            {typeof node.beat === "number" ? node.beat : "—"}:{typeof node.stepIndex === "number" ? node.stepIndex : "—"}
+            {kks.beat}:{kks.stepIndex}
           </span>
           <span className="sigilHexDelta">{formatPhi(node.phiDelta)}</span>
         </div>
@@ -518,17 +631,17 @@ export default function SigilHoneycombExplorer({
   maxNodes = 1400,
   edgeMode: edgeModeProp = "all",
   syncMode = "standalone",
+  onOpenPulseView,
 }: SigilHoneycombExplorerProps) {
   const [edgeMode, setEdgeMode] = useState<EdgeMode>(edgeModeProp);
   const [query, setQuery] = useState<string>("");
 
   const [registryRev, setRegistryRev] = useState<number>(() => (ensureRegistryHydrated() ? 1 : 0));
   const [selectedOverride, setSelectedOverride] = useState<string | null>(null);
-  const [inhaleInput, setInhaleInput] = useState<string>("");
 
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const [vpSize, setVpSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
-  const [zoom, setZoom] = useState<number>(1);
+  const [zoom, setZoom] = useState<number>(0.6);
 
   const [userInteracted, setUserInteracted] = useState<boolean>(false);
   const [userPan, setUserPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -856,6 +969,11 @@ export default function SigilHoneycombExplorer({
   }, [selectedOverride, byHash, computedInitialHash]);
 
   const selected = useMemo(() => (selectedHash ? byHash.get(selectedHash) ?? null : null), [selectedHash, byHash]);
+  const selectedPulse =
+    selected && typeof selected.pulse === "number" && Number.isFinite(selected.pulse)
+      ? wrapPulseForSigil(selected.pulse)
+      : null;
+  const selectedKks = selectedPulse != null ? deriveKksFromPulse(selectedPulse) : null;
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -875,7 +993,8 @@ export default function SigilHoneycombExplorer({
     const N = filtered.length;
     const coords = hexSpiralCoords(N);
 
-    const radiusPx = 28;
+    const PHI = 1.61803398875;
+    const radiusPx = Math.round(28 * PHI);
     const pts: Pt[] = coords.map((c) => axialToPixelPointy(c, radiusPx));
 
     let minX = Infinity;
@@ -983,6 +1102,13 @@ export default function SigilHoneycombExplorer({
     setSelectedOverride(h);
     broadcastSelection(h);
     resetToAutoCenter();
+    if (onOpenPulseView) {
+      const node = byHash.get(h);
+      const pulse = node?.pulse;
+      if (typeof pulse === "number" && Number.isFinite(pulse)) {
+        onOpenPulseView({ pulse, originHash: node?.originHash });
+      }
+    }
   };
 
   const onWheel = (e: React.WheelEvent<HTMLDivElement>) => {
@@ -990,7 +1116,7 @@ export default function SigilHoneycombExplorer({
     if (!el) return;
 
     const delta = e.deltaY;
-    const nextZoom = clamp(zoom * (delta > 0 ? 0.92 : 1.08), 0.35, 2.75);
+    const nextZoom = clamp(zoom * (delta > 0 ? 0.9 : 1.12), 0.12, 4.25);
 
     const rect = el.getBoundingClientRect();
     const mx = e.clientX - rect.left;
@@ -1048,80 +1174,12 @@ export default function SigilHoneycombExplorer({
     }
   };
 
-  const onInhaleSubmit = () => {
-    const input = inhaleInput.trim();
-    if (!input) return;
-
-    const changed = addUrl(input, { includeAncestry: true, broadcast: true, persist: true, source: "local", enqueueToApi: true });
-    setInhaleInput("");
-
-    if (changed) bumpRegistry();
-
-    seedInhaleFromRegistry();
-    void flushInhaleQueue();
-  };
-
-  const onImportFile = async (file: File) => {
-    const text = await file.text();
-    let parsed: unknown;
-    try {
-      parsed = safeJsonParse(text);
-    } catch {
-      ignore();
-      return;
-    }
-
-    const { urls, rawKrystals } = parseImportedJson(parsed);
-    if (urls.length === 0 && rawKrystals.length === 0) return;
-
-    for (const k of rawKrystals) enqueueInhaleRawKrystal(k);
-
-    let changed = false;
-    for (const u of urls) {
-      if (typeof u !== "string") continue;
-      if (addUrl(u, { includeAncestry: true, broadcast: true, persist: true, source: "import", enqueueToApi: true })) changed = true;
-    }
-
-    if (urls.length > 0) forceInhaleUrls(urls);
-    if (changed) bumpRegistry();
-
-    const ac = new AbortController();
-    await inhaleOnce("import");
-    await exhaleOnce("import", ac.signal);
-  };
-
-  const onExport = () => {
-    if (!HAS_WINDOW) return;
-
-    const urls: string[] = [];
-    for (const [u] of memoryRegistry) urls.push(u);
-
-    const blob = new Blob([JSON.stringify({ urls }, null, 2)], { type: "application/json" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `sigil-registry-${Date.now()}.json`;
-    a.click();
-    URL.revokeObjectURL(a.href);
-  };
-
-  const onSyncNow = () => {
-    const ac = new AbortController();
-    void inhaleOnce("visible");
-    void exhaleOnce("visible", ac.signal);
-  };
-
   const childCount = selected ? (childrenByParent.get(selected.hash)?.length ?? 0) : 0;
 
   return (
     <div className={["sigilHoneycomb", className ?? ""].join(" ")}>
       <div className="sigilHoneycombHeader">
-        <div className="sigilHoneycombTitle">
-          <div className="h1">Honeycomb</div>
-          <div className="h2">
-            {nodesSorted.length} nodes • showing {filtered.length} • {isOnline() ? "online" : "offline"}
-            {syncMode === "embedded" ? " • embedded" : ""}
-          </div>
-        </div>
+        <div className="sigilHoneycombTitle" aria-hidden="true" />
 
         <div className="sigilHoneycombControls">
           <div className="searchBox">
@@ -1140,65 +1198,30 @@ export default function SigilHoneycombExplorer({
 
           <div className="toggleRow">
             <div className="seg">
-              <button type="button" className={edgeMode === "none" ? "on" : ""} onClick={() => setEdgeMode("none")}>
-                Edges: Off
+              <button type="button" className={edgeMode === "none" ? "on" : ""} onClick={() => setEdgeMode("none")} aria-label="Edges off">
+                <span className="btn-icon">◌</span>
+                <span className="btn-text">Edges: Off</span>
               </button>
-              <button type="button" className={edgeMode === "parent" ? "on" : ""} onClick={() => setEdgeMode("parent")}>
-                Parent
+              <button type="button" className={edgeMode === "parent" ? "on" : ""} onClick={() => setEdgeMode("parent")} aria-label="Parent edges">
+                <span className="btn-icon">↑</span>
+                <span className="btn-text">Parent</span>
               </button>
-              <button type="button" className={edgeMode === "parent+children" ? "on" : ""} onClick={() => setEdgeMode("parent+children")}>
-                Parent+Kids
+              <button
+                type="button"
+                className={edgeMode === "parent+children" ? "on" : ""}
+                onClick={() => setEdgeMode("parent+children")}
+                aria-label="Parent and children edges"
+              >
+                <span className="btn-icon">⇄</span>
+                <span className="btn-text">Parent+Kids</span>
               </button>
-              <button type="button" className={edgeMode === "all" ? "on" : ""} onClick={() => setEdgeMode("all")}>
-                All
-              </button>
-            </div>
-
-            <div className="seg">
-              <button type="button" className="miniBtn" onClick={() => { setZoom(1); resetToAutoCenter(); }}>
-                1×
-              </button>
-              <button type="button" className="miniBtn" onClick={() => { setUserInteracted(true); setZoom((z) => clamp(z * 0.9, 0.35, 2.75)); }}>
-                −
-              </button>
-              <button type="button" className="miniBtn" onClick={() => { setUserInteracted(true); setZoom((z) => clamp(z * 1.1, 0.35, 2.75)); }}>
-                +
+              <button type="button" className={edgeMode === "all" ? "on" : ""} onClick={() => setEdgeMode("all")} aria-label="All edges">
+                <span className="btn-icon">◎</span>
+                <span className="btn-text">All</span>
               </button>
             </div>
 
-            <div className="seg">
-              <button type="button" className="miniBtn" onClick={onSyncNow} disabled={!isOnline() || syncMode !== "standalone"}>
-                Sync
-              </button>
-              <button type="button" className="miniBtn" onClick={onExport}>
-                Exhale
-              </button>
-              <label className="miniBtn hcImportBtn" title="Import JSON">
-                Inhale
-                <input
-                  type="file"
-                  accept="application/json"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) void onImportFile(f);
-                    e.currentTarget.value = "";
-                  }}
-                />
-              </label>
-            </div>
-          </div>
-
-          <div className="hcInhaleRow">
-            <input
-              className="hcInhaleInput"
-              value={inhaleInput}
-              onChange={(e) => setInhaleInput(e.target.value)}
-              placeholder="Inhale a sigil URL…"
-              spellCheck={false}
-            />
-            <button className="miniBtn" type="button" onClick={onInhaleSubmit} disabled={!inhaleInput.trim()}>
-              Inhale
-            </button>
+            <div className="seg" />
           </div>
         </div>
       </div>
@@ -1263,7 +1286,7 @@ export default function SigilHoneycombExplorer({
 
               <div className="k">Beat:Step</div>
               <div className="v mono">
-                {selected?.beat ?? "—"}:{selected?.stepIndex ?? "—"}
+                {selectedKks ? `${selectedKks.beat}:${selectedKks.stepIndex}` : "—"}
               </div>
 
               <div className="k">Chakra</div>
