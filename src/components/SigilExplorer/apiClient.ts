@@ -54,17 +54,26 @@ function parseBooleanParam(value: string | null, defaultValue: boolean): boolean
   return defaultValue;
 }
 
+type FormDataEntry = [string, FormDataEntryValue];
+
+function isFileLike(value: FormDataEntryValue): value is File {
+  if (typeof value === "string") return false;
+  return "name" in value;
+}
+
 async function formDataToFiles(body: FormData): Promise<File[]> {
   const files: File[] = [];
-  for (const [, value] of body.entries()) {
-    if (value instanceof File) {
+  for (const [, value] of body.entries() as Iterable<FormDataEntry>) {
+    if (typeof value === "string") continue;
+
+    if (isFileLike(value)) {
       files.push(value);
       continue;
     }
-    if (value instanceof Blob) {
-      const name = "sigils.json";
-      files.push(new File([value], name, { type: value.type || "application/json" }));
-    }
+
+    const blob = value as Blob;
+    const name = "sigils.json";
+    files.push(new File([blob], name, { type: blob.type || "application/json" }));
   }
   return files;
 }
