@@ -1524,6 +1524,15 @@ a:hover {
   color: rgba(245, 247, 255, 0.68);
 }
 
+.nav-item--button {
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: var(--accent-cyan);
+  appearance: none;
+}
+
 .nav-item:hover {
   text-decoration: none;
   transform: translateY(-1px) translateZ(0);
