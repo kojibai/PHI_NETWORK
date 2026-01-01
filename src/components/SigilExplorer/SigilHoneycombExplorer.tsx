@@ -550,6 +550,7 @@ const SigilHex = React.memo(function SigilHex(props: {
     typeof node.pulse === "number" && Number.isFinite(node.pulse) ? node.pulse : 0;
   const sigilPulse = wrapPulseForSigil(pulseValue);
   const kks = deriveKksFromPulse(sigilPulse);
+  const chakraDay = normalizeChakraDay(node.chakraDay);
   const sigilKey = `${sigilPulse}:${chakraDay}`;
   const renderSigil = useDeferredSigilRender(sigilKey);
 
@@ -561,8 +562,6 @@ const SigilHex = React.memo(function SigilHex(props: {
   if (node.chakraDay) ariaParts.push(node.chakraDay);
   ariaParts.push(shortHash(node.hash, 12));
   const aria = ariaParts.join(" — ");
-
-  const chakraDay = normalizeChakraDay(node.chakraDay);
 
   return (
     <button
@@ -590,6 +589,7 @@ const SigilHex = React.memo(function SigilHex(props: {
               size={48}
               hashMode="deterministic"
               animate={false}
+              enableZkProof={false}
             />
           ) : (
             <div className="sigilHexGlyphPlaceholder" />
