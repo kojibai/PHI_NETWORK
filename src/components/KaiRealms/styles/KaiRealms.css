@@ -3,7 +3,7 @@
    Everything breathes on --kai-breath; geometry honors --kai-phi.
    TSX sets these on <html>, but we provide sane fallbacks here.
    ────────────────────────────────────────────────────────────── */
-:root{
+:where(.realms-backdrop){
   --kai-breath: 5.236s;
   --kai-phi: 1.61803398875;
 

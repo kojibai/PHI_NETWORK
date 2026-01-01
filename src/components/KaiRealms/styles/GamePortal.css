@@ -3,7 +3,7 @@
    Uses the same CSS vars as KaiRealms.css; provides component-scoped polish.
    ────────────────────────────────────────────────────────────── */
 
-:root{
+:where(.realms-backdrop){
   /* fallbacks in case KaiRealms.css hasn’t loaded yet */
   --kai-breath: 5.236s;
   --kai-phi: 1.61803398875;
