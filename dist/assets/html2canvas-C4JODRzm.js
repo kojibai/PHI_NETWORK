@@ -1,0 +1,1 @@
+import{t as e}from"./html2canvas-BPGJlcAS.js";export default e();

@@ -1167,8 +1167,8 @@ function ExplorerToolbar({
   lastAdded?: string;
 }) {
   const [input, setInput] = useState("");
-  const viewLabel = activeView === "honeycomb" ? "Keystream" : "Glyph Lattice";
-  const viewTitle = activeView === "honeycomb" ? "Return to Keystream Explorer" : "Open Glyph Lattice view";
+  const viewLabel = activeView === "honeycomb" ? "Keystream" : "Memory Lattice";
+  const viewTitle = activeView === "honeycomb" ? "Return to Keystream Explorer" : "Open Memory Lattice view";
 
   return (
     <div className="kx-toolbar" role="region" aria-label="Explorer toolbar">
