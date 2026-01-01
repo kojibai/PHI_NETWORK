@@ -421,13 +421,13 @@
   clip-path: polygon(30% 4%, 70% 4%, 96% 30%, 96% 70%, 70% 96%, 30% 96%, 4% 70%, 4% 30%);
 }
 
-.chakra-root { --hex-tint: 255 92 92; }
-.chakra-sacral { --hex-tint: 255 154 92; }
-.chakra-solar { --hex-tint: 255 230 92; }
-.chakra-heart { --hex-tint: 92 255 170; }
-.chakra-throat { --hex-tint: 92 200 255; }
-.chakra-third { --hex-tint: 148 120 255; }
-.chakra-crown { --hex-tint: 210 200 255; }
+.chakra-root { --hex-tint: 255 59 59; }
+.chakra-sacral { --hex-tint: 255 138 61; }
+.chakra-solar { --hex-tint: 255 213 74; }
+.chakra-heart { --hex-tint: 61 255 154; }
+.chakra-throat { --hex-tint: 70 211 255; }
+.chakra-third { --hex-tint: 107 108 255; }
+.chakra-crown { --hex-tint: 193 139 255; }
 .chakra-unknown { --hex-tint: 120 190 255; }
 
 .sigilHex:hover {
