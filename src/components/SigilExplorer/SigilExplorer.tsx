@@ -34,6 +34,7 @@ import {
 /** Breath cadence + chakra tinting */
 import { chakraTintStyle } from "./chakra";
 import PulseHoneycombModal from "./PulseHoneycombModal";
+import SigilHoneycombExplorer from "./SigilHoneycombExplorer";
 
 /** URL surface */
 import {
@@ -1057,9 +1058,8 @@ function OriginPanel({
     <section className="origin" aria-label="Sigil origin stream" style={chakraTintStyle(chakraDay)} data-chakra={String(chakraDay ?? "")} data-node-id={root.id}>
       <header className="origin-head">
         <div className="o-meta">
-          <span className="o-title">Origin</span>
           <button
-            className="o-link"
+            className="o-title o-title-btn"
             type="button"
             onClick={() =>
               onOpenPulseView({
@@ -1073,8 +1073,11 @@ function OriginPanel({
             aria-label="Open sigil pulse view"
             title="Open sigil pulse view"
           >
-            {short(originSig ?? originHash ?? "origin", 14)}
+            Origin
           </button>
+          <a className="o-link" href={openHref} target="_blank" rel="noopener noreferrer" title={openHref}>
+            {short(originSig ?? originHash ?? "origin", 14)}
+          </a>
           {chakraDay && (
             <span className="o-chakra" title={String(chakraDay)}>
               {String(chakraDay)}
@@ -1261,6 +1264,7 @@ const SigilExplorer: React.FC = () => {
     title?: string;
     subtitle?: string;
   }>({ open: false, pulse: null });
+  const [latticeOpen, setLatticeOpen] = useState(false);
 
   const unmounted = useRef(false);
   const prefetchedRef = useRef<Set<string>>(new Set());
@@ -2296,13 +2300,12 @@ const SigilExplorer: React.FC = () => {
   }, []);
 
   const handleOpenLattice = useCallback(() => {
-    const fallbackPulse = getLatestPulseFromRegistry() ?? nowPulse ?? 0;
-    openPulseView({
-      pulse: fallbackPulse,
-      title: "Memory Lattice",
-      subtitle: `Pulse ${fallbackPulse}`,
-    });
-  }, [nowPulse, openPulseView]);
+    setLatticeOpen(true);
+  }, []);
+
+  const closeLattice = useCallback(() => {
+    setLatticeOpen(false);
+  }, []);
 
   return (
     <div className="sigil-explorer" aria-label="Kairos Keystream Explorer">
@@ -2357,6 +2360,31 @@ const SigilExplorer: React.FC = () => {
           </footer>
         </div>
       </div>
+
+      {latticeOpen && (
+        <div className="kx-lattice-modal" role="dialog" aria-modal="true" aria-label="Memory Lattice">
+          <div className="kx-lattice-surface">
+            <div className="kx-lattice-bar">
+              <div className="kx-lattice-title">Memory Lattice</div>
+              <button className="kx-lattice-close" type="button" onClick={closeLattice}>
+                Back to Keystream
+              </button>
+            </div>
+            <SigilHoneycombExplorer
+              className="kx-lattice-body"
+              syncMode="embedded"
+              onOpenPulseView={(payload) => {
+                openPulseView({
+                  pulse: payload.pulse,
+                  originHash: payload.originHash,
+                  title: "Sigil Pulse",
+                  subtitle: `Pulse ${payload.pulse}`,
+                });
+              }}
+            />
+          </div>
+        </div>
+      )}
 
       <PulseHoneycombModal
         open={pulseView.open}
