@@ -40,6 +40,7 @@ import {
 import { loadUrlHealthFromStorage } from "./urlHealth";
 import KaiSigil from "../KaiSigil";
 import type { ChakraDay } from "../KaiSigil/types";
+import { N_DAY_MICRO, latticeFromMicroPulses, normalizePercentIntoStep } from "../../utils/kai_pulse";
 
 /* ─────────────────────────────────────────────────────────────
    Types (strict)
@@ -113,6 +114,45 @@ const SIGIL_EXPLORER_CHANNEL_NAME = "sigil:explorer:bc:v1";
 
 const SIGIL_SELECT_CHANNEL_NAME = "sigil:explorer:select:bc:v1";
 const SIGIL_SELECT_LS_KEY = "sigil:explorer:selectedHash:v1";
+const ONE_PULSE_MICRO = 1_000_000n;
+
+const modE = (a: bigint, m: bigint) => {
+  if (m === 0n) return 0n;
+  const r = a % m;
+  return r >= 0n ? r : r + m;
+};
+
+const gcdBI = (a: bigint, b: bigint): bigint => {
+  let x = a < 0n ? -a : a;
+  let y = b < 0n ? -b : b;
+  while (y !== 0n) {
+    const t = x % y;
+    x = y;
+    y = t;
+  }
+  return x;
+};
+
+const SIGIL_WRAP_PULSE: bigint = (() => {
+  const g = gcdBI(N_DAY_MICRO, ONE_PULSE_MICRO);
+  return g === 0n ? 0n : N_DAY_MICRO / g;
+})();
+
+const wrapPulseForSigil = (pulse: number): number => {
+  if (!Number.isFinite(pulse)) return 0;
+  const pulseBI = BigInt(Math.trunc(pulse));
+  if (SIGIL_WRAP_PULSE <= 0n) return 0;
+  const wrapped = modE(pulseBI, SIGIL_WRAP_PULSE);
+  return Number(wrapped);
+};
+
+const deriveKksFromPulse = (pulse: number) => {
+  const p = Number.isFinite(pulse) ? Math.trunc(pulse) : 0;
+  const pμ = BigInt(p) * ONE_PULSE_MICRO;
+  const { beat, stepIndex, percentIntoStep } = latticeFromMicroPulses(pμ);
+  const stepPct = normalizePercentIntoStep(percentIntoStep);
+  return { beat, stepIndex, stepPct };
+};
 
 const INHALE_INTERVAL_MS = 3236;
 const EXHALE_INTERVAL_MS = 2000;
@@ -475,17 +515,21 @@ const SigilHex = React.memo(function SigilHex(props: {
 }) {
   const { node, x, y, selected, onClick } = props;
 
+  const pulseValue =
+    typeof node.pulse === "number" && Number.isFinite(node.pulse) ? node.pulse : 0;
+  const sigilPulse = wrapPulseForSigil(pulseValue);
+  const kks = deriveKksFromPulse(sigilPulse);
+
   const ariaParts: string[] = [];
   if (typeof node.pulse === "number") ariaParts.push(`pulse ${node.pulse}`);
-  if (typeof node.beat === "number" && typeof node.stepIndex === "number") ariaParts.push(`beat ${node.beat} step ${node.stepIndex}`);
+  if (Number.isFinite(kks.beat) && Number.isFinite(kks.stepIndex)) {
+    ariaParts.push(`beat ${kks.beat} step ${kks.stepIndex}`);
+  }
   if (node.chakraDay) ariaParts.push(node.chakraDay);
   ariaParts.push(shortHash(node.hash, 12));
   const aria = ariaParts.join(" — ");
 
   const chakraDay = normalizeChakraDay(node.chakraDay);
-  const pulseValue = typeof node.pulse === "number" && Number.isFinite(node.pulse) ? node.pulse : 0;
-  const beatValue = typeof node.beat === "number" && Number.isFinite(node.beat) ? node.beat : undefined;
-  const stepValue = typeof node.stepIndex === "number" && Number.isFinite(node.stepIndex) ? node.stepIndex : undefined;
 
   return (
     <button
@@ -504,9 +548,10 @@ const SigilHex = React.memo(function SigilHex(props: {
       <div className="sigilHexInner">
         <div className="sigilHexGlyphFrame" aria-hidden="true">
           <KaiSigil
-            pulse={pulseValue}
-            beat={beatValue}
-            stepIndex={stepValue}
+            pulse={sigilPulse}
+            beat={kks.beat}
+            stepIndex={kks.stepIndex}
+            stepPct={kks.stepPct}
             chakraDay={chakraDay}
             size={48}
             hashMode="deterministic"
@@ -519,7 +564,7 @@ const SigilHex = React.memo(function SigilHex(props: {
         </div>
         <div className="sigilHexMid">
           <span className="sigilHexBeat">
-            {typeof node.beat === "number" ? node.beat : "—"}:{typeof node.stepIndex === "number" ? node.stepIndex : "—"}
+            {kks.beat}:{kks.stepIndex}
           </span>
           <span className="sigilHexDelta">{formatPhi(node.phiDelta)}</span>
         </div>
@@ -879,6 +924,11 @@ export default function SigilHoneycombExplorer({
   }, [selectedOverride, byHash, computedInitialHash]);
 
   const selected = useMemo(() => (selectedHash ? byHash.get(selectedHash) ?? null : null), [selectedHash, byHash]);
+  const selectedPulse =
+    selected && typeof selected.pulse === "number" && Number.isFinite(selected.pulse)
+      ? wrapPulseForSigil(selected.pulse)
+      : null;
+  const selectedKks = selectedPulse != null ? deriveKksFromPulse(selectedPulse) : null;
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -1204,7 +1254,7 @@ export default function SigilHoneycombExplorer({
 
               <div className="k">Beat:Step</div>
               <div className="v mono">
-                {selected?.beat ?? "—"}:{selected?.stepIndex ?? "—"}
+                {selectedKks ? `${selectedKks.beat}:${selectedKks.stepIndex}` : "—"}
               </div>
 
               <div className="k">Chakra</div>

@@ -13,6 +13,7 @@ import { COLORS } from "../valuation/constants";
 import { bootstrapSeries } from "../valuation/series";
 import KaiSigil from "../KaiSigil";
 import type { ChakraDay } from "../KaiSigil/types";
+import { N_DAY_MICRO, latticeFromMicroPulses, normalizePercentIntoStep } from "../../utils/kai_pulse";
 import {
   canonicalizeUrl,
   browserViewUrl,
@@ -79,6 +80,45 @@ const HAS_WINDOW = typeof window !== "undefined";
 
 const SIGIL_SELECT_CHANNEL_NAME = "sigil:explorer:select:bc:v1";
 const SIGIL_SELECT_LS_KEY = "sigil:explorer:selectedHash:v1";
+const ONE_PULSE_MICRO = 1_000_000n;
+
+const modE = (a: bigint, m: bigint) => {
+  if (m === 0n) return 0n;
+  const r = a % m;
+  return r >= 0n ? r : r + m;
+};
+
+const gcdBI = (a: bigint, b: bigint): bigint => {
+  let x = a < 0n ? -a : a;
+  let y = b < 0n ? -b : b;
+  while (y !== 0n) {
+    const t = x % y;
+    x = y;
+    y = t;
+  }
+  return x;
+};
+
+const SIGIL_WRAP_PULSE: bigint = (() => {
+  const g = gcdBI(N_DAY_MICRO, ONE_PULSE_MICRO);
+  return g === 0n ? 0n : N_DAY_MICRO / g;
+})();
+
+const wrapPulseForSigil = (pulse: number): number => {
+  if (!Number.isFinite(pulse)) return 0;
+  const pulseBI = BigInt(Math.trunc(pulse));
+  if (SIGIL_WRAP_PULSE <= 0n) return 0;
+  const wrapped = modE(pulseBI, SIGIL_WRAP_PULSE);
+  return Number(wrapped);
+};
+
+const deriveKksFromPulse = (pulse: number) => {
+  const p = Number.isFinite(pulse) ? Math.trunc(pulse) : 0;
+  const pμ = BigInt(p) * ONE_PULSE_MICRO;
+  const { beat, stepIndex, percentIntoStep } = latticeFromMicroPulses(pμ);
+  const stepPct = normalizePercentIntoStep(percentIntoStep);
+  return { beat, stepIndex, stepPct };
+};
 
 const HEX_DIRS: Coord[] = [
   { q: 1, r: 0 },
@@ -457,16 +497,20 @@ const SigilHex = React.memo(function SigilHex(props: {
 }) {
   const { node, x, y, selected, isOrigin, onClick } = props;
 
+  const pulseValue =
+    typeof node.pulse === "number" && Number.isFinite(node.pulse) ? node.pulse : 0;
+  const sigilPulse = wrapPulseForSigil(pulseValue);
+  const kks = deriveKksFromPulse(sigilPulse);
+
   const ariaParts: string[] = [];
   if (typeof node.pulse === "number") ariaParts.push(`pulse ${node.pulse}`);
-  if (typeof node.beat === "number" && typeof node.stepIndex === "number") ariaParts.push(`beat ${node.beat} step ${node.stepIndex}`);
+  if (Number.isFinite(kks.beat) && Number.isFinite(kks.stepIndex)) {
+    ariaParts.push(`beat ${kks.beat} step ${kks.stepIndex}`);
+  }
   if (node.chakraDay) ariaParts.push(node.chakraDay);
   ariaParts.push(shortHash(node.hash, 12));
   const aria = ariaParts.join(" — ");
   const chakraDay = normalizeChakraDay(node.chakraDay);
-  const pulseValue = typeof node.pulse === "number" && Number.isFinite(node.pulse) ? node.pulse : 0;
-  const beatValue = typeof node.beat === "number" && Number.isFinite(node.beat) ? node.beat : undefined;
-  const stepValue = typeof node.stepIndex === "number" && Number.isFinite(node.stepIndex) ? node.stepIndex : undefined;
 
   return (
     <button
@@ -486,9 +530,10 @@ const SigilHex = React.memo(function SigilHex(props: {
       <div className="sigilHexInner">
         <div className="sigilHexGlyphFrame" aria-hidden="true">
           <KaiSigil
-            pulse={pulseValue}
-            beat={beatValue}
-            stepIndex={stepValue}
+            pulse={sigilPulse}
+            beat={kks.beat}
+            stepIndex={kks.stepIndex}
+            stepPct={kks.stepPct}
             chakraDay={chakraDay}
             size={48}
             hashMode="deterministic"
@@ -501,7 +546,7 @@ const SigilHex = React.memo(function SigilHex(props: {
         </div>
         <div className="sigilHexMid">
           <span className="sigilHexBeat">
-            {typeof node.beat === "number" ? node.beat : "—"}:{typeof node.stepIndex === "number" ? node.stepIndex : "—"}
+            {kks.beat}:{kks.stepIndex}
           </span>
           <span className="sigilHexDelta">{formatPhi(node.phiDelta)}</span>
         </div>
@@ -679,7 +724,12 @@ function PulseHoneycombInner({
   }, [selectedOverride, byHash, computedInitialHash]);
 
   const selected = useMemo(() => (selectedHash ? byHash.get(selectedHash) ?? null : null), [selectedHash, byHash]);
-  const activeBeat = selected && typeof selected.beat === "number" ? Math.floor(selected.beat) : null;
+  const selectedPulse =
+    selected && typeof selected.pulse === "number" && Number.isFinite(selected.pulse)
+      ? wrapPulseForSigil(selected.pulse)
+      : null;
+  const selectedKks = selectedPulse != null ? deriveKksFromPulse(selectedPulse) : null;
+  const activeBeat = selectedKks ? Math.floor(selectedKks.beat) : null;
 
   const pulseValue = useMemo(() => {
     if (activePulse == null) return { phi: null, usd: null, usdPerPhi: null };
@@ -1022,11 +1072,11 @@ function PulseHoneycombInner({
                 </>
               )}
 
-              {selected?.beat != null && selected?.stepIndex != null && (
+              {selectedPulse != null && selectedKks && (
                 <>
                   <div className="k">Beat:Step</div>
                   <div className="v mono">
-                    {selected.beat}:{selected.stepIndex}
+                    {selectedKks.beat}:{selectedKks.stepIndex}
                   </div>
                 </>
               )}
