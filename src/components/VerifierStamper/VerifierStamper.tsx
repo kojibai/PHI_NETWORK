@@ -112,6 +112,7 @@ import { enqueueInhaleKrystal, flushInhaleQueue } from "../SigilExplorer/inhaleQ
 import { memoryRegistry, isOnline } from "../SigilExplorer/registryStore";
 import {
   buildKasChallenge,
+  clearStoredReceiverPasskey,
   ensureReceiverPasskey,
   findStoredKasPasskeyByCredId,
   getWebAuthnAssertionJson,
@@ -396,12 +397,6 @@ const VerifierStamperInner: React.FC = () => {
     else d.removeAttribute("data-rotate");
   }, [rotateOut]);
 
-  const resolveReceiverPasskey = useCallback(async () => {
-    const receiver = loadStoredReceiverPasskey();
-    if (receiver) return receiver;
-    return ensureReceiverPasskey();
-  }, []);
-
   const computeBundleHashFromSvg = useCallback(
     async (svgText: string, metaValue: SigilMetadata, proofMetaValue: ProofBundleMeta | null): Promise<string | null> => {
       if (!svgText.trim()) return null;
@@ -486,13 +481,32 @@ const VerifierStamperInner: React.FC = () => {
     if (!bundleHash) return null;
     setReceiveBusy(true);
     try {
-      const passkey = await resolveReceiverPasskey();
-      const { nonce, challengeBytes } = await buildKasChallenge("receive", bundleHash);
-      const assertion = await getWebAuthnAssertionJson({
-        challenge: challengeBytes,
-        allowCredIds: [passkey.credId],
-        preferInternal: true,
-      });
+      const storedReceiver = loadStoredReceiverPasskey();
+      const fromStorage = !!storedReceiver;
+      let passkey = storedReceiver ?? (await ensureReceiverPasskey());
+      let { nonce, challengeBytes } = await buildKasChallenge("receive", bundleHash);
+      let assertion: Awaited<ReturnType<typeof getWebAuthnAssertionJson>>;
+
+      try {
+        assertion = await getWebAuthnAssertionJson({
+          challenge: challengeBytes,
+          allowCredIds: [passkey.credId],
+          preferInternal: true,
+        });
+      } catch (err) {
+        if (!fromStorage) throw err;
+        clearStoredReceiverPasskey();
+        passkey = await ensureReceiverPasskey();
+        const refreshed = await buildKasChallenge("receive", bundleHash);
+        nonce = refreshed.nonce;
+        challengeBytes = refreshed.challengeBytes;
+        assertion = await getWebAuthnAssertionJson({
+          challenge: challengeBytes,
+          allowCredIds: [passkey.credId],
+          preferInternal: true,
+        });
+      }
+
       const ok = await verifyWebAuthnAssertion({
         assertion,
         expectedChallenge: challengeBytes,
@@ -524,7 +538,7 @@ const VerifierStamperInner: React.FC = () => {
     } finally {
       setReceiveBusy(false);
     }
-  }, [receiveBusy, receiveStatus, bundleHash, resolveReceiverPasskey]);
+  }, [receiveBusy, receiveStatus, bundleHash]);
 
   const [me, setMe] = useState<Keypair | null>(null);
   useEffect(() => {
@@ -2189,16 +2203,9 @@ const VerifierStamperInner: React.FC = () => {
   const receive = async () => {
     if (!meta || !svgURL || !liveSig) return;
 
-    if (!isOnline()) {
-      setError("Online connection required to verify global receive lock.");
-      return;
-    }
-
-    const remoteCheck = await checkRemoteReceiveLock(meta);
-    if (!remoteCheck.checked) {
-      setError("Unable to verify the global receive lock. Please try again.");
-      return;
-    }
+    const remoteCheck = isOnline()
+      ? await checkRemoteReceiveLock(meta)
+      : { found: false, checked: false };
 
     if (remoteCheck.found) {
       setError("This transfer has already been received.");
