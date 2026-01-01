@@ -77,6 +77,7 @@ import {
 
 /** Remote pull (exhale) */
 import { pullAndImportRemoteUrls } from "./remotePull";
+import { msUntilNextKaiBreath } from "./kaiCadence";
 
 /** Username claim witness registry */
 import {
@@ -1839,8 +1840,42 @@ const SigilExplorer: React.FC = () => {
     void inhaleOnce("open");
     void exhaleOnce("open");
 
+    let breathTimer: number | null = null;
+
+    const scheduleNextBreath = (): void => {
+      if (!hasWindow) return;
+      if (unmounted.current) return;
+
+      if (breathTimer != null) window.clearTimeout(breathTimer);
+
+      const delay = msUntilNextKaiBreath();
+      breathTimer = window.setTimeout(() => {
+        breathTimer = null;
+
+        if (document.visibilityState !== "visible") {
+          scheduleNextBreath();
+          return;
+        }
+        if (!isOnline()) {
+          scheduleNextBreath();
+          return;
+        }
+
+        void inhaleOnce("pulse");
+        void exhaleOnce("pulse");
+        scheduleNextBreath();
+      }, delay);
+    };
+
+    const resnapBreath = (): void => {
+      scheduleNextBreath();
+    };
+
+    scheduleNextBreath();
+
     const onVis = () => {
       if (document.visibilityState === "visible") {
+        resnapBreath();
         void inhaleOnce("visible");
         void exhaleOnce("visible");
       }
@@ -1848,11 +1883,13 @@ const SigilExplorer: React.FC = () => {
     document.addEventListener("visibilitychange", onVis);
 
     const onFocus = () => {
+      resnapBreath();
       void inhaleOnce("focus");
       void exhaleOnce("focus");
     };
 
     const onOnline = () => {
+      resnapBreath();
       void inhaleOnce("online");
       void exhaleOnce("online");
     };
@@ -1886,6 +1923,9 @@ const SigilExplorer: React.FC = () => {
 
       if (flushTimerRef.current != null) window.clearTimeout(flushTimerRef.current);
       flushTimerRef.current = null;
+
+      if (breathTimer != null) window.clearTimeout(breathTimer);
+      breathTimer = null;
 
       ac.abort();
       syncNowRef.current = null;
