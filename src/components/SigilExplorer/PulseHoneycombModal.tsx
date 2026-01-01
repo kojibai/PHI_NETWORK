@@ -777,6 +777,7 @@ function PulseHoneycombInner({
   const activeBeat = selectedKks ? Math.floor(selectedKks.beat) : null;
   const activeMoment = useMemo(() => (activePulse != null ? momentFromPulse(activePulse) : null), [activePulse]);
   const activePulseLabel = activePulse != null ? activePulse.toLocaleString() : "—";
+  const activeChakraDay = activeMoment?.chakraDay ?? "Root";
 
   const pulseValue = useMemo(() => {
     if (activePulse == null) return { phi: null, usd: null, usdPerPhi: null };
@@ -1009,7 +1010,7 @@ function PulseHoneycombInner({
           <div className="phmSigilCard" aria-label="Pulse sigil glyph">
             <div className="phmSigilFrame">
               {activePulse != null ? (
-                <KaiSigil pulse={activePulse} size={60} animate />
+                <KaiSigil pulse={activePulse} chakraDay={activeChakraDay} size={60} animate />
               ) : (
                 <div className="phmSigilPlaceholder" />
               )}
@@ -1021,7 +1022,7 @@ function PulseHoneycombInner({
                 <span className="phmDot">•</span>
                 <span>Step {activeMoment?.stepIndex ?? "—"}</span>
                 <span className="phmDot">•</span>
-                <span>{activeMoment?.chakraDay ?? "—"}</span>
+                <span>{activeChakraDay}</span>
               </div>
             </div>
           </div>
