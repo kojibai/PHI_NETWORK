@@ -1,0 +1,521 @@
+.phmBackdrop{
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: transparent;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  padding: 12px;
+  pointer-events: none;
+}
+
+.phmShell{
+  width: min(420px, calc(100dvw - 24px));
+  height: min(72dvh, 620px);
+  max-width: calc(100dvw - 24px);
+  max-height: calc(100dvh - 24px);
+  border-radius: 20px;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,0.12);
+  background:
+    radial-gradient(1200px 800px at 50% -10%, rgba(0, 0, 0, 0.36), rgba(0,0,0,0.5) 60%),
+    radial-gradient(900px 650px at 50% 20%, rgba(35,255,240,0.1), transparent 60%),
+    radial-gradient(760px 520px at 70% 80%, rgba(183,163,255,0.12), transparent 62%),
+    linear-gradient(180deg, rgba(6,10,14,0.72), rgba(6,10,14,0.58));
+  box-shadow: 0 20px 60px rgba(0,0,0,0.55);
+  position: relative;
+  isolation: isolate;
+  pointer-events: auto;
+}
+
+.phmShell::before,
+.phmShell::after{
+  content:"";
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+  z-index:0;
+}
+
+.phmShell::before{
+  background:
+    repeating-linear-gradient(
+      180deg,
+      rgba(255,255,255,0.02) 0px,
+      rgba(255,255,255,0.02) 1px,
+      rgba(0,0,0,0.0) 4px,
+      rgba(0,0,0,0.0) 8px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      rgba(255,255,255,0.012) 0px,
+      rgba(255,255,255,0.012) 1px,
+      rgba(0,0,0,0.0) 6px,
+      rgba(0,0,0,0.0) 12px
+    );
+  mix-blend-mode: overlay;
+  opacity: 0.4;
+}
+
+.phmShell::after{
+  background:
+    radial-gradient(900px 600px at 30% 20%, rgba(35,255,240,0.1), transparent 60%),
+    radial-gradient(800px 620px at 80% 70%, rgba(183,163,255,0.12), transparent 60%),
+    radial-gradient(760px 560px at 15% 85%, rgba(98,218,255,0.1), transparent 62%);
+  filter: blur(12px);
+  opacity: .5;
+}
+
+.phmHeader{
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  background: linear-gradient(to bottom, rgba(6,10,14,0.6), rgba(6,10,14,0));
+  position: relative;
+  z-index: 1;
+}
+
+.phmHeaderLeft{
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+  flex: 1;
+}
+
+.phmChart{
+  width: 180px;
+  height: 96px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(0,0,0,0.25);
+  overflow: hidden;
+  box-shadow: inset 0 0 18px rgba(255,255,255,0.05);
+}
+
+.phmChartEmpty{
+  height: 100%;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  color: rgba(255,255,255,0.6);
+}
+
+.phmTitle{
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 0.3px;
+  color: rgba(255,255,255,0.92);
+}
+
+.phmSub{
+  margin-top: 2px;
+  font-size: 10px;
+  color: rgba(255,255,255,0.62);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.phmDot{ opacity: 0.55; }
+
+.phmPulse{
+  font-weight: 800;
+  color: rgba(255,255,255,0.8);
+}
+
+.phmOrigin{
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  color: rgba(191,252,255,0.78);
+}
+
+.phmHeaderRight{
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+  align-items: center;
+}
+
+.phmStats{
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.phmPill{
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.8);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.phmPillChakra{
+  border-color: rgba(191,252,255,0.22);
+  background: rgba(191,252,255,0.06);
+}
+
+.phmActions{
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.phmBtn{
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.9);
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 11px;
+  transition: transform .12s ease, border-color .2s ease, background .2s ease;
+}
+
+.phmValueCard{
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background:
+    linear-gradient(135deg, rgba(35,255,240,0.12), rgba(183,163,255,0.08)),
+    rgba(6,10,14,0.55);
+  min-width: 150px;
+  box-shadow: inset 0 0 18px rgba(255,255,255,0.06);
+  position: relative;
+  overflow: hidden;
+}
+
+.phmValueCard::after{
+  content:"";
+  position:absolute;
+  inset: 0;
+  background:
+    linear-gradient(120deg, transparent 20%, rgba(255,255,255,0.2) 40%, transparent 60%);
+  opacity: 0.18;
+  pointer-events: none;
+}
+
+.phmValueLabel{
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.6);
+}
+
+.phmValuePhi{
+  font-size: 14px;
+  font-weight: 800;
+  color: rgba(255,255,255,0.95);
+}
+
+.phmValueUsd{
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(183,163,255,0.9);
+}
+
+.phmValueMeta{
+  font-size: 9px;
+  color: rgba(255,255,255,0.55);
+}
+
+.phmBtn:hover{
+  background: rgba(255,255,255,0.1);
+  border-color: rgba(255,255,255,0.22);
+  transform: translateY(-1px);
+}
+
+.phmBtnClose{
+  border-color: rgba(191,252,255,0.28);
+  background: rgba(191,252,255,0.12);
+}
+
+.phmBody{
+  display: flex;
+  flex-direction: column;
+  height: calc(100% - 46px);
+  position: relative;
+  z-index: 1;
+}
+
+@media (max-width: 980px){
+  .phmBody{
+    grid-template-columns: 1fr;
+  }
+  .phmInspector{
+    border-left: 0 !important;
+    border-top: 1px solid rgba(255,255,255,0.08);
+    max-height: 320px;
+  }
+}
+
+.phmCombPanel{
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+
+.phmCombToolbar{
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  background: rgba(0,0,0,0.18);
+}
+
+.phmSearch{
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  min-width: 260px;
+  flex: 1;
+}
+
+.phmSearch input{
+  width: min(520px, 100%);
+  height: 36px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(0,0,0,0.32);
+  color: rgba(255,255,255,0.92);
+  padding: 0 12px;
+  outline: none;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04);
+}
+
+.phmSearch input::placeholder{ color: rgba(255,255,255,0.42); }
+
+.phmMini{
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.9);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.phmSeg{
+  display: inline-flex;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.05);
+}
+
+.phmSeg button{
+  height: 32px;
+  padding: 0 10px;
+  border: 0;
+  background: transparent;
+  color: rgba(255,255,255,0.72);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.phmSeg button.on{
+  background: rgba(35,255,240,0.16);
+  color: rgba(255,255,255,0.95);
+}
+
+.phmViewport{
+  flex: 1;
+  min-height: 0;
+}
+
+.phmInspector{
+  border-top: 1px solid rgba(255,255,255,0.08);
+  background:
+    radial-gradient(140% 220% at 0% 0%, rgba(183,163,255,0.12), transparent 60%),
+    rgba(0,0,0,0.3);
+  overflow: auto;
+  max-height: 45%;
+}
+
+.phmInspectorCard{
+  margin: 12px;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(0,0,0,0.28);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.06);
+  max-height: calc(100% - 24px);
+  overflow: auto;
+}
+
+/* Beat ring */
+.phmBeatRing{
+  opacity: 0.92;
+  transform: scale(0.78);
+  transform-origin: left center;
+}
+
+.phmBeatRingOuter{
+  fill: rgba(255,255,255,0.02);
+  stroke: rgba(255,255,255,0.12);
+  stroke-width: 1.2;
+}
+
+.phmBeatRingInner{
+  fill: rgba(0,0,0,0.3);
+  stroke: rgba(255,255,255,0.1);
+  stroke-width: 1.2;
+}
+
+.phmBeatTick{
+  stroke: rgba(255,255,255,0.2);
+  stroke-width: 2.2;
+  stroke-linecap: round;
+}
+
+.phmBeatTick.isOn{
+  stroke: rgba(191,252,255,0.6);
+}
+
+.phmBeatTick.isActive{
+  stroke: rgba(182,155,255,0.8);
+  stroke-width: 3.2;
+}
+
+.phmHint{
+  left: 10px;
+  bottom: 10px;
+}
+/* BeatRing interactivity */
+.phmBeatTick{
+  pointer-events: stroke;
+  cursor: pointer;
+}
+
+.phmBeatTick:hover{
+  stroke: rgba(255,255,255,0.55);
+}
+
+.phmBeatTick.isFiltered{
+  stroke: rgba(191,252,255,0.90);
+  stroke-width: 3.2;
+}
+
+/* Origin glow inside pulse */
+.sigilHex.isOrigin{
+  border-color: rgba(191,252,255,0.7);
+  box-shadow: 0 18px 50px rgba(0,0,0,0.7), inset 0 0 0 1px rgba(191,252,255,0.2);
+}
+
+/* Beat filter label */
+.phmBeatFilter{
+  color: rgba(182,155,255,0.82);
+  font-weight: 800;
+}
+
+@media (max-width: 1100px){
+  .phmHeader{
+    padding: 6px 8px;
+  }
+
+  .phmHeaderLeft{
+    min-width: 0;
+  }
+
+  .phmHeaderRight{
+    align-items: flex-end;
+  }
+
+  .phmActions{
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 980px){
+  .phmBody{
+    height: calc(100% - 44px);
+  }
+
+  .phmInspector{
+    max-height: 40%;
+  }
+}
+
+@media (max-width: 720px){
+  .phmBackdrop{
+    align-items: center;
+    justify-content: center;
+    padding:
+      max(16px, env(safe-area-inset-top))
+      max(16px, env(safe-area-inset-right))
+      max(16px, env(safe-area-inset-bottom))
+      max(16px, env(safe-area-inset-left));
+  }
+
+  .phmShell{
+    width: min(380px, calc(100dvw - 32px));
+    height: min(78dvh, calc(100dvh - 32px));
+    border-radius: 16px;
+    box-shadow: 0 28px 80px rgba(0,0,0,0.65);
+  }
+
+  .phmHeader{
+    padding: 12px;
+  }
+
+  .phmTitle{
+    font-size: 12px;
+  }
+
+  .phmSearch{
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .phmSearch input{
+    width: 100%;
+  }
+
+  .phmCombToolbar{
+    display: none;
+  }
+
+  .phmValueCard{
+    min-width: 120px;
+  }
+
+  .phmChart{
+    display: none;
+  }
+
+  .phmSeg{
+    width: 100%;
+  }
+
+  .phmSeg button{
+    flex: 1;
+  }
+}
+
+@media (max-width: 900px), (max-height: 720px){
+  .phmBackdrop{
+    align-items: center;
+    justify-content: center;
+  }
+}

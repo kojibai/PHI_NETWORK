@@ -11,6 +11,11 @@ export default defineConfig({
   server: {
     proxy: {
       "/api": "http://localhost:8787",
+      "/sigils": {
+        target: "https://m.phi.network",
+        changeOrigin: true,
+        secure: true,
+      },
     },
   },
   define: {

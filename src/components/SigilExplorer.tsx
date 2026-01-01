@@ -64,13 +64,13 @@ import "./SigilExplorer.css";
 /* ─────────────────────────────────────────────────────────────────────
    Live base (API + canonical sync target)
 ────────────────────────────────────────────────────────────────────── */
-const LIVE_BASE_URL = "https://align.kaiklok.com";
+const LIVE_BASE_URL = "https://m.phi.network";
 
 /* ─────────────────────────────────────────────────────────────────────
    PHI.Network backup base (same LAH-MAH-TOR API surface)
 ────────────────────────────────────────────────────────────────────── */
 
-const LIVE_BACKUP_URL = "https://m.phi.network";
+const LIVE_BACKUP_URL = "https://memory.kaiklok.com";
 
 /* ─────────────────────────────────────────────────────────────────────
  *  Types
@@ -285,8 +285,20 @@ function cssEscape(v: string): string {
 /* ─────────────────────────────────────────────────────────────────────
  *  LAH-MAH-TOR API (Primary + IKANN Failover, soft-fail backup)
  *  ───────────────────────────────────────────────────────────────────── */
-const API_BASE_PRIMARY = LIVE_BASE_URL;
-const API_BASE_FALLBACK = LIVE_BACKUP_URL;
+function isLocalDevOrigin(origin: string): boolean {
+  return origin.startsWith("http://localhost:") || origin.startsWith("http://127.0.0.1:");
+}
+
+function selectPrimaryBase(primary: string, backup: string): string {
+  if (!hasWindow) return primary;
+  const origin = window.location.origin;
+  if (origin === primary || origin === backup) return origin;
+  if (isLocalDevOrigin(origin)) return origin;
+  return primary;
+}
+
+const API_BASE_PRIMARY = selectPrimaryBase(LIVE_BASE_URL, LIVE_BACKUP_URL);
+const API_BASE_FALLBACK = API_BASE_PRIMARY === LIVE_BASE_URL ? LIVE_BACKUP_URL : LIVE_BASE_URL;
 
 const API_SEAL_PATH = "/sigils/seal";
 const API_URLS_PATH = "/sigils/urls";
@@ -377,6 +389,15 @@ function apiBases(): string[] {
   const isHttpsPage = window.location.protocol === "https:";
   // Never try http fallback from an https page (browser will block + log loudly)
   const protocolFiltered = isHttpsPage ? list.filter((b) => b.startsWith("https://")) : list;
+
+  const pageOrigin = window.location.origin;
+  if (
+    pageOrigin === LIVE_BASE_URL ||
+    pageOrigin === LIVE_BACKUP_URL ||
+    isLocalDevOrigin(pageOrigin)
+  ) {
+    return protocolFiltered.filter((b) => b === pageOrigin);
+  }
 
   // Soft-fail: suppress backup if marked dead
   return isBackupSuppressed() ? protocolFiltered.filter((b) => b !== API_BASE_FALLBACK) : protocolFiltered;
