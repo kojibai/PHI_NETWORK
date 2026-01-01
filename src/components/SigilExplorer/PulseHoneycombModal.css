@@ -70,7 +70,7 @@
 .phmHeader{
   display: flex;
   gap: 10px;
-  align-items: center;
+  align-items: stretch;
   justify-content: space-between;
   padding: 8px 10px;
   border-bottom: 1px solid rgba(255,255,255,0.08);
@@ -88,11 +88,11 @@
 }
 
 .phmChart{
-  width: 180px;
-  height: 96px;
-  border-radius: 14px;
+  width: 240px;
+  height: 110px;
+  border-radius: 16px;
   border: 1px solid rgba(255,255,255,0.12);
-  background: rgba(0,0,0,0.25);
+  background: rgba(6,10,14,0.6);
   overflow: hidden;
   box-shadow: inset 0 0 18px rgba(255,255,255,0.05);
 }
@@ -129,45 +129,11 @@
   color: rgba(255,255,255,0.8);
 }
 
-.phmOrigin{
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  color: rgba(191,252,255,0.78);
-}
-
-.phmSubtitle{
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: rgba(201,242,255,0.88);
-}
-
 .phmHeaderRight{
   display: flex;
   flex-direction: row;
   gap: 8px;
   align-items: center;
-}
-
-.phmStats{
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-
-.phmPill{
-  padding: 6px 12px;
-  border-radius: 999px;
-  border: 1px solid rgba(255,255,255,0.14);
-  background: rgba(255,255,255,0.06);
-  color: rgba(255,255,255,0.8);
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.phmPillChakra{
-  border-color: rgba(191,252,255,0.22);
-  background: rgba(191,252,255,0.06);
 }
 
 .phmActions{
@@ -189,6 +155,12 @@
   font-weight: 700;
   font-size: 11px;
   transition: transform .12s ease, border-color .2s ease, background .2s ease;
+}
+
+.phmPriceCluster{
+  display: flex;
+  gap: 12px;
+  align-items: center;
 }
 
 .phmValueCard{
@@ -225,9 +197,33 @@
 }
 
 .phmValuePhi{
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 800;
   color: rgba(255,255,255,0.95);
+}
+
+.phmSigilCard{
+  width: 120px;
+  height: 120px;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background:
+    radial-gradient(120% 160% at 30% 20%, rgba(101,255,237,0.16), transparent 55%),
+    rgba(4,8,12,0.6);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  box-shadow: inset 0 0 20px rgba(255,255,255,0.06);
+}
+
+.phmSigilCard svg{
+  width: 108px;
+  height: 108px;
+}
+
+.phmSigilEmpty{
+  font-size: 11px;
+  color: rgba(255,255,255,0.6);
 }
 
 .phmValueUsd{

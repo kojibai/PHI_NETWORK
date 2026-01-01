@@ -778,7 +778,6 @@ function PulseHoneycombInner({
       ? wrapPulseForSigil(selected.pulse)
       : null;
   const selectedKks = selectedPulse != null ? deriveKksFromPulse(selectedPulse) : null;
-  const activeBeat = selectedKks ? Math.floor(selectedKks.beat) : null;
 
   const pulseValue = useMemo(() => {
     if (activePulse == null) return { phi: null, usd: null, usdPerPhi: null };
@@ -1001,27 +1000,10 @@ function PulseHoneycombInner({
   };
 
 
-  const titlePulse = activePulse != null ? `Pulse ${activePulse}` : "Pulse";
-  const headerTitle = title ?? titlePulse;
-  const originLabel = originCandidate ?? "";
-
   return (
     <div className="phmRoot" aria-label="Pulse Atlas">
       <header className="phmHeader">
         <div className="phmHeaderLeft">
-          <div className="phmTitleBlock">
-            <div id="phmTitle" className="phmTitle">
-              {headerTitle}
-            </div>
-            <div className="phmSub">
-              {subtitle ? <span className="phmSubtitle">{subtitle}</span> : null}
-              {subtitle ? <span className="phmDot">•</span> : null}
-              {originLabel ? <span className="phmOrigin">origin {shortHash(originLabel, 14)}</span> : null}
-              {activeBeat != null ? <span className="phmDot">•</span> : null}
-              {activeBeat != null ? <span className="phmBeatFilter">beat {activeBeat}</span> : null}
-            </div>
-          </div>
-
           <div className="phmChart">
             {chartBundle ? (
               <LiveChart
@@ -1042,22 +1024,29 @@ function PulseHoneycombInner({
         </div>
 
         <div className="phmHeaderRight">
-          <div className="phmStats" aria-label="Pulse context">
-            {selectedKks ? (
-              <span className="phmPill">
-                Beat {Math.floor(selectedKks.beat)}:{selectedKks.stepIndex}
-              </span>
-            ) : null}
-            {selected?.chakraDay ? <span className="phmPill phmPillChakra">{selected.chakraDay}</span> : null}
-            {selected?.kaiSignature ? <span className="phmPill">KaiSig {shortHash(selected.kaiSignature, 8)}</span> : null}
-          </div>
+          <div className="phmPriceCluster" aria-live="polite">
+            <div className="phmValueCard">
+              <div className="phmValueLabel">Live Price</div>
+              <div className="phmValuePhi">{pulseValue.phi != null ? `${formatPhiNumber(pulseValue.phi)} Φ` : "—"}</div>
+              <div className="phmValueUsd">{pulseValue.usd != null ? `$${formatUsd(pulseValue.usd)}` : "—"}</div>
+              <div className="phmValueMeta">
+                {pulseValue.usdPerPhi != null ? `$${formatUsd(pulseValue.usdPerPhi)} / Φ` : "Live rate"}
+              </div>
+            </div>
 
-          <div className="phmValueCard" aria-live="polite">
-            <div className="phmValueLabel">Pulse Value</div>
-            <div className="phmValuePhi">{pulseValue.phi != null ? `${formatPhiNumber(pulseValue.phi)} Φ` : "—"}</div>
-            <div className="phmValueUsd">{pulseValue.usd != null ? `$${formatUsd(pulseValue.usd)}` : "—"}</div>
-            <div className="phmValueMeta">
-              {pulseValue.usdPerPhi != null ? `$${formatUsd(pulseValue.usdPerPhi)} / Φ` : "Live rate"}
+            <div className="phmSigilCard" aria-label="Sigil glyph">
+              {activePulse != null ? (
+                <KaiSigil
+                  pulse={activePulse}
+                  chakraDay={selected?.chakraDay}
+                  size={120}
+                  quality="high"
+                  animate
+                  showZKBadge={false}
+                />
+              ) : (
+                <div className="phmSigilEmpty">No glyph</div>
+              )}
             </div>
           </div>
 
