@@ -98,7 +98,7 @@ export type SigilHoneycombExplorerProps = {
   maxNodes?: number;
   edgeMode?: EdgeMode;
   syncMode?: "standalone" | "embedded";
-  onOpenPulseView?: (payload: { pulse: number; originHash?: string }) => void;
+  onOpenPulseView?: (payload: { pulse: number; originHash?: string; anchor?: { x: number; y: number } }) => void;
 };
 
 /* ─────────────────────────────────────────────────────────────
@@ -526,7 +526,7 @@ const SigilHex = React.memo(function SigilHex(props: {
   x: number;
   y: number;
   selected: boolean;
-  onClick: () => void;
+  onClick: (event: React.MouseEvent<HTMLButtonElement>) => void;
 }) {
   const { node, x, y, selected, onClick } = props;
 
@@ -1098,7 +1098,7 @@ export default function SigilHoneycombExplorer({
     }
   };
 
-  const selectHash = (hash: string) => {
+  const selectHash = (hash: string, event?: React.MouseEvent<HTMLButtonElement>) => {
     const h = hash.toLowerCase();
     setSelectedOverride(h);
     broadcastSelection(h);
@@ -1107,7 +1107,12 @@ export default function SigilHoneycombExplorer({
       const node = byHash.get(h);
       const pulse = node?.pulse;
       if (typeof pulse === "number" && Number.isFinite(pulse)) {
-        onOpenPulseView({ pulse, originHash: node?.originHash });
+        const rect = event?.currentTarget.getBoundingClientRect();
+        onOpenPulseView({
+          pulse,
+          originHash: node?.originHash,
+          anchor: rect ? { x: rect.left + rect.width / 2, y: rect.bottom } : undefined,
+        });
       }
     }
   };
@@ -1278,16 +1283,16 @@ export default function SigilHoneycombExplorer({
               ))}
             </svg>
 
-            {layout.items.map((it) => (
-              <SigilHex
-                key={it.node.hash}
-                node={it.node}
-                x={it.x}
-                y={it.y}
-                selected={it.node.hash === selectedHash}
-                onClick={() => selectHash(it.node.hash)}
-              />
-            ))}
+              {layout.items.map((it) => (
+                <SigilHex
+                  key={it.node.hash}
+                  node={it.node}
+                  x={it.x}
+                  y={it.y}
+                  selected={it.node.hash === selectedHash}
+                  onClick={(event) => selectHash(it.node.hash, event)}
+                />
+              ))}
           </div>
 
         </div>
