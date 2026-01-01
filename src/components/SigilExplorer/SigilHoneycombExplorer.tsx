@@ -601,6 +601,7 @@ export default function SigilHoneycombExplorer({
   syncMode = "standalone",
   onOpenPulseView,
 }: SigilHoneycombExplorerProps) {
+  const allowNetworkSync = syncMode === "standalone";
   const [edgeMode, setEdgeMode] = useState<EdgeMode>(edgeModeProp);
   const [query, setQuery] = useState<string>("");
 
@@ -652,10 +653,12 @@ export default function SigilHoneycombExplorer({
   useEffect(() => {
     if (!HAS_WINDOW) return;
 
-    loadApiBackupDeadUntil();
-    loadApiBaseHint();
+    if (allowNetworkSync) {
+      loadApiBackupDeadUntil();
+      loadApiBaseHint();
+      loadInhaleQueueFromStorage();
+    }
     loadUrlHealthFromStorage();
-    loadInhaleQueueFromStorage();
 
     const hydrated = ensureRegistryHydrated();
     if (hydrated) bumpRegistry();
@@ -695,7 +698,17 @@ export default function SigilHoneycombExplorer({
         let changed = false;
         for (const u of parsed) {
           if (typeof u !== "string") continue;
-          if (addUrl(u, { includeAncestry: true, broadcast: false, persist: false, source: "local", enqueueToApi: true })) changed = true;
+          if (
+            addUrl(u, {
+              includeAncestry: true,
+              broadcast: false,
+              persist: false,
+              source: "local",
+              enqueueToApi: allowNetworkSync,
+            })
+          ) {
+            changed = true;
+          }
         }
 
         if (changed) {
@@ -718,7 +731,13 @@ export default function SigilHoneycombExplorer({
       const u = readStr(data.url);
       if (!u) return;
 
-      const changed = addUrl(u, { includeAncestry: true, broadcast: false, persist: true, source: "local", enqueueToApi: true });
+      const changed = addUrl(u, {
+        includeAncestry: true,
+        broadcast: false,
+        persist: true,
+        source: "local",
+        enqueueToApi: allowNetworkSync,
+      });
       if (changed) bumpRegistry();
     };
     explorerChannel?.addEventListener("message", onExplorerMsg);
@@ -727,7 +746,13 @@ export default function SigilHoneycombExplorer({
       const ce = e as CustomEvent<{ url?: unknown }>;
       const u = typeof ce.detail?.url === "string" ? ce.detail.url : "";
       if (!u) return;
-      const changed = addUrl(u, { includeAncestry: true, broadcast: true, persist: true, source: "local", enqueueToApi: true });
+      const changed = addUrl(u, {
+        includeAncestry: true,
+        broadcast: true,
+        persist: true,
+        source: "local",
+        enqueueToApi: allowNetworkSync,
+      });
       if (changed) bumpRegistry();
     };
 
@@ -735,7 +760,13 @@ export default function SigilHoneycombExplorer({
       const ce = e as CustomEvent<{ url?: unknown }>;
       const u = typeof ce.detail?.url === "string" ? ce.detail.url : "";
       if (!u) return;
-      const changed = addUrl(u, { includeAncestry: true, broadcast: true, persist: true, source: "local", enqueueToApi: true });
+      const changed = addUrl(u, {
+        includeAncestry: true,
+        broadcast: true,
+        persist: true,
+        source: "local",
+        enqueueToApi: allowNetworkSync,
+      });
       if (changed) bumpRegistry();
     };
 
@@ -743,6 +774,7 @@ export default function SigilHoneycombExplorer({
     window.addEventListener("sigil:minted", onMinted as EventListener);
 
     const onPageHide = () => {
+      if (!allowNetworkSync) return;
       saveInhaleQueueToStorage();
       void flushInhaleQueue();
     };
@@ -761,7 +793,7 @@ export default function SigilHoneycombExplorer({
       selectChannelRef.current?.close();
       selectChannelRef.current = null;
     };
-  }, [bumpRegistry]);
+  }, [allowNetworkSync, bumpRegistry]);
 
   /* ResizeObserver */
   useEffect(() => {
