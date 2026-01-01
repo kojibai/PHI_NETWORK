@@ -73,10 +73,6 @@ const HAS_WINDOW = typeof window !== "undefined";
 const SIGIL_SELECT_CHANNEL_NAME = "sigil:explorer:select:bc:v1";
 const SIGIL_SELECT_LS_KEY = "sigil:explorer:selectedHash:v1";
 
-// Full honeycomb open (zoom-out)
-const SIGIL_HONEYCOMB_OPEN_EVENT = "sigil:honeycomb:open";
-const SIGIL_HONEYCOMB_QUERY_LS_KEY = "sigil:honeycomb:query:v1";
-
 const HEX_DIRS: Coord[] = [
   { q: 1, r: 0 },
   { q: 1, r: -1 },
@@ -121,16 +117,6 @@ function toTransferDirection(v: unknown): "send" | "receive" | undefined {
   if (s === "send" || s === "receive") return s;
   return undefined;
 }
-
-function safeLocalStorageSet(key: string, value: string): void {
-  try {
-    window.localStorage.setItem(key, value);
-  } catch {
-    ignore();
-  }
-}
-
-
 
 function broadcastSelectedHash(hash: string): void {
   if (!HAS_WINDOW) return;
@@ -571,8 +557,7 @@ function PulseHoneycombInner({
   onClose,
 }: PulseHoneycombModalProps) {
   // Defaults (no reset effects). Remount via key handles reset.
-  const [edgeMode, setEdgeMode] = useState<EdgeMode>("parent+children");
-  const [query, setQuery] = useState<string>("");
+  const [edgeMode] = useState<EdgeMode>("parent+children");
   const [selectedOverride, setSelectedOverride] = useState<string | null>(null);
   const [beatFilter, setBeatFilter] = useState<number | null>(null);
 
@@ -644,17 +629,7 @@ function PulseHoneycombInner({
     return nodesRaw.filter((n) => typeof n.beat === "number" && Math.floor(n.beat) === beatFilter);
   }, [nodesRaw, beatFilter]);
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return beatFiltered;
-    return beatFiltered.filter((n) => {
-      if (n.hash.includes(q)) return true;
-      if (n.userPhiKey && n.userPhiKey.toLowerCase().includes(q)) return true;
-      if (n.kaiSignature && n.kaiSignature.toLowerCase().includes(q)) return true;
-      if (n.chakraDay && n.chakraDay.toLowerCase().includes(q)) return true;
-      return false;
-    });
-  }, [beatFiltered, query]);
+  const filtered = beatFiltered;
 
   const selectionPool = filtered.length > 0 ? filtered : beatFiltered.length > 0 ? beatFiltered : nodesRaw;
 
@@ -679,32 +654,6 @@ function PulseHoneycombInner({
   const selected = useMemo(() => (selectedHash ? byHash.get(selectedHash) ?? null : null), [selectedHash, byHash]);
   const activeBeat = selected && typeof selected.beat === "number" ? Math.floor(selected.beat) : null;
 
-  const pulseStats = useMemo(() => {
-    const total = nodesRaw.length;
-    const uniquePhiKeys = new Set<string>();
-    let sends = 0;
-    let receives = 0;
-
-    const chakraCounts = new Map<string, number>();
-    for (const n of nodesRaw) {
-      if (n.userPhiKey) uniquePhiKeys.add(n.userPhiKey);
-      if (n.transferDirection === "send") sends += 1;
-      if (n.transferDirection === "receive") receives += 1;
-      const c = n.chakraDay ?? "—";
-      chakraCounts.set(c, (chakraCounts.get(c) ?? 0) + 1);
-    }
-
-    let topChakra = "—";
-    let topChakraCount = 0;
-    for (const [k, v] of chakraCounts.entries()) {
-      if (v > topChakraCount) {
-        topChakraCount = v;
-        topChakra = k;
-      }
-    }
-
-    return { total, uniquePhiKeys: uniquePhiKeys.size, sends, receives, topChakra, topChakraCount };
-  }, [nodesRaw]);
 
   const layout = useMemo(() => {
     const N = filtered.length;
@@ -872,55 +821,6 @@ function PulseHoneycombInner({
     }
   };
 
-  const copyPulseCapsule = async () => {
-    if (!navigator.clipboard) return;
-    if (activePulse == null) return;
-
-    const capsule = {
-      v: "KAI-PULSE-MAP-1",
-      pulse: activePulse,
-      beatFilter,
-      originHash: originCandidate,
-      total: pulseStats.total,
-      uniquePhiKeys: pulseStats.uniquePhiKeys,
-      sends: pulseStats.sends,
-      receives: pulseStats.receives,
-      hashes: nodesRaw.map((n) => n.hash),
-    };
-
-    try {
-      await navigator.clipboard.writeText(JSON.stringify(capsule));
-    } catch {
-      ignore();
-    }
-  };
-
-  const expandToFullHoneycomb = () => {
-    if (!HAS_WINDOW) return;
-    if (activePulse == null) return;
-
-    // pulse → query injection for full honeycomb (string match on pulse)
-    safeLocalStorageSet(SIGIL_HONEYCOMB_QUERY_LS_KEY, String(activePulse));
-
-    // keep selection parity
-    if (selectedHash) broadcastSelectedHash(selectedHash);
-
-    try {
-      window.dispatchEvent(
-        new CustomEvent(SIGIL_HONEYCOMB_OPEN_EVENT, {
-          detail: {
-            pulse: activePulse,
-            originHash: originCandidate,
-            focusHash: selectedHash,
-          },
-        }),
-      );
-    } catch {
-      ignore();
-    }
-
-    onClose();
-  };
 
   const titlePulse = activePulse != null ? `Pulse ${activePulse}` : "Pulse";
   const originLabel = originCandidate ?? "";
@@ -946,83 +846,14 @@ function PulseHoneycombInner({
         </div>
 
         <div className="phmHeaderRight">
-          <div className="phmStats">
-            <span className="phmPill">{pulseStats.total} keys</span>
-            <span className="phmPill">{pulseStats.uniquePhiKeys} phikeys</span>
-            <span className="phmPill">{pulseStats.sends} sends</span>
-            <span className="phmPill">{pulseStats.receives} receives</span>
-            <span className="phmPill phmPillChakra">
-              {pulseStats.topChakra} ×{pulseStats.topChakraCount}
-            </span>
-          </div>
-
-          <div className="phmActions">
-            <button type="button" className="phmBtn" onClick={copyPulseCapsule}>
-              Copy Pulse Capsule
-            </button>
-            <button type="button" className="phmBtn" onClick={expandToFullHoneycomb}>
-              Expand → Full Honeycomb
-            </button>
-            <button type="button" className="phmBtn" onClick={() => { setZoom(1); resetToAutoCenter(); }}>
-              Recenter
-            </button>
-            <button type="button" className="phmBtn phmBtnClose" onClick={onClose} aria-label="Close">
-              ✕
-            </button>
-          </div>
+          <button type="button" className="phmBtn phmBtnClose" onClick={onClose} aria-label="Close">
+            ✕
+          </button>
         </div>
       </header>
 
       <div className="phmBody">
         <div className="phmCombPanel">
-          <div className="phmCombToolbar">
-            <div className="phmSearch">
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search hash / phikey / chakra…"
-                spellCheck={false}
-              />
-              {query ? (
-                <button type="button" className="phmMini" onClick={() => setQuery("")}>
-                  Clear
-                </button>
-              ) : null}
-              {beatFilter != null ? (
-                <button type="button" className="phmMini" onClick={() => setBeatFilter(null)}>
-                  Clear Beat
-                </button>
-              ) : null}
-            </div>
-
-            <div className="phmSeg">
-              <button type="button" className={edgeMode === "none" ? "on" : ""} onClick={() => setEdgeMode("none")}>
-                Edges Off
-              </button>
-              <button type="button" className={edgeMode === "parent" ? "on" : ""} onClick={() => setEdgeMode("parent")}>
-                Parent
-              </button>
-              <button type="button" className={edgeMode === "parent+children" ? "on" : ""} onClick={() => setEdgeMode("parent+children")}>
-                Parent+Kids
-              </button>
-              <button type="button" className={edgeMode === "all" ? "on" : ""} onClick={() => setEdgeMode("all")}>
-                All
-              </button>
-            </div>
-
-            <div className="phmSeg">
-              <button type="button" className="phmMini" onClick={() => setZoom(1)}>
-                1×
-              </button>
-              <button type="button" className="phmMini" onClick={() => setZoom((z) => clamp(z * 0.9, 0.35, 3.0))}>
-                −
-              </button>
-              <button type="button" className="phmMini" onClick={() => setZoom((z) => clamp(z * 1.1, 0.35, 3.0))}>
-                +
-              </button>
-            </div>
-          </div>
-
           <div
             className="phmViewport combViewport"
             ref={viewportRef}
@@ -1068,7 +899,7 @@ function PulseHoneycombInner({
             </div>
 
             <div className="combHint phmHint">
-              Pulse-only lattice • click BeatRing to filter • drag to pan • wheel to zoom
+              Pulse lattice • click BeatRing to filter • drag to pan
             </div>
           </div>
         </div>

@@ -2,28 +2,29 @@
   position: fixed;
   inset: 0;
   z-index: 9999;
-  background: rgba(3, 6, 10, 0.74);
-  backdrop-filter: blur(14px) saturate(130%);
-  display: grid;
-  place-items: center;
-  padding: clamp(10px, 2vw, 20px);
+  background: transparent;
+  display: flex;
+  align-items: stretch;
+  justify-content: flex-end;
+  padding: 12px;
+  pointer-events: none;
 }
 
 .phmShell{
-  width: min(1400px, 96vw);
-  height: min(920px, 94svh);
-  border-radius: 24px;
+  width: min(420px, 92vw);
+  height: calc(100% - 24px);
+  border-radius: 20px;
   overflow: hidden;
   border: 1px solid rgba(255,255,255,0.12);
   background:
-    radial-gradient(1200px 800px at 50% -10%, rgba(0, 0, 0, 0.64), #000000a6 60%),
-    radial-gradient(1100px 820px at 50% 20%, rgba(35,255,240,0.16), transparent 60%),
-    radial-gradient(900px 650px at 10% 90%, rgba(98,218,255,0.12), transparent 60%),
-    radial-gradient(900px 700px at 90% 80%, rgba(183,163,255,0.12), transparent 60%),
-    linear-gradient(180deg, rgba(6,10,14,0.96), rgba(6,10,14,0.86));
-  box-shadow: 0 30px 80px rgba(0,0,0,0.65);
+    radial-gradient(1200px 800px at 50% -10%, rgba(0, 0, 0, 0.36), rgba(0,0,0,0.5) 60%),
+    radial-gradient(900px 650px at 50% 20%, rgba(35,255,240,0.1), transparent 60%),
+    radial-gradient(760px 520px at 70% 80%, rgba(183,163,255,0.12), transparent 62%),
+    linear-gradient(180deg, rgba(6,10,14,0.72), rgba(6,10,14,0.58));
+  box-shadow: 0 20px 60px rgba(0,0,0,0.55);
   position: relative;
   isolation: isolate;
+  pointer-events: auto;
 }
 
 .phmShell::before,
@@ -66,34 +67,34 @@
 
 .phmHeader{
   display: flex;
-  gap: 16px;
-  align-items: flex-start;
+  gap: 10px;
+  align-items: center;
   justify-content: space-between;
-  padding: 16px;
-  border-bottom: 1px solid rgba(255,255,255,0.1);
-  background: linear-gradient(to bottom, rgba(255,255,255,0.08), rgba(255,255,255,0.03));
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  background: linear-gradient(to bottom, rgba(6,10,14,0.6), rgba(6,10,14,0));
   position: relative;
   z-index: 1;
 }
 
 .phmHeaderLeft{
   display: flex;
-  gap: 16px;
+  gap: 10px;
   align-items: center;
-  min-width: min(420px, 100%);
+  min-width: 0;
   flex: 1;
 }
 
 .phmTitle{
-  font-size: 18px;
+  font-size: 13px;
   font-weight: 900;
   letter-spacing: 0.3px;
   color: rgba(255,255,255,0.92);
 }
 
 .phmSub{
-  margin-top: 4px;
-  font-size: 12px;
+  margin-top: 2px;
+  font-size: 10px;
   color: rgba(255,255,255,0.62);
   display: inline-flex;
   align-items: center;
@@ -116,7 +117,7 @@
 .phmHeaderRight{
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 6px;
   align-items: flex-end;
 }
 
@@ -151,15 +152,15 @@
 }
 
 .phmBtn{
-  height: 36px;
-  padding: 0 12px;
+  height: 26px;
+  padding: 0 8px;
   border-radius: 12px;
   border: 1px solid rgba(255,255,255,0.12);
   background: rgba(255,255,255,0.06);
   color: rgba(255,255,255,0.9);
   cursor: pointer;
   font-weight: 700;
-  font-size: 12px;
+  font-size: 11px;
   transition: transform .12s ease, border-color .2s ease, background .2s ease;
 }
 
@@ -175,9 +176,9 @@
 }
 
 .phmBody{
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 360px;
-  height: calc(100% - 78px);
+  display: flex;
+  flex-direction: column;
+  height: calc(100% - 48px);
   position: relative;
   z-index: 1;
 }
@@ -197,6 +198,7 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
+  flex: 1;
 }
 
 .phmCombToolbar{
@@ -273,11 +275,12 @@
 }
 
 .phmInspector{
-  border-left: 1px solid rgba(255,255,255,0.08);
+  border-top: 1px solid rgba(255,255,255,0.08);
   background:
     radial-gradient(140% 220% at 0% 0%, rgba(183,163,255,0.12), transparent 60%),
     rgba(0,0,0,0.3);
   overflow: auto;
+  max-height: 42%;
 }
 
 .phmInspectorCard{
@@ -292,6 +295,8 @@
 /* Beat ring */
 .phmBeatRing{
   opacity: 0.92;
+  transform: scale(0.78);
+  transform-origin: left center;
 }
 
 .phmBeatRingOuter{
@@ -322,8 +327,8 @@
 }
 
 .phmHint{
-  left: 12px;
-  bottom: 12px;
+  left: 10px;
+  bottom: 10px;
 }
 /* BeatRing interactivity */
 .phmBeatTick{
@@ -354,8 +359,7 @@
 
 @media (max-width: 1100px){
   .phmHeader{
-    flex-direction: column;
-    align-items: stretch;
+    padding: 6px 8px;
   }
 
   .phmHeaderLeft{
@@ -363,7 +367,7 @@
   }
 
   .phmHeaderRight{
-    align-items: flex-start;
+    align-items: flex-end;
   }
 
   .phmActions{
@@ -373,22 +377,19 @@
 
 @media (max-width: 980px){
   .phmBody{
-    grid-template-columns: minmax(0, 1fr);
-    height: auto;
+    height: calc(100% - 44px);
   }
 
   .phmInspector{
-    border-left: 0 !important;
-    border-top: 1px solid rgba(255,255,255,0.08);
-    max-height: 360px;
+    max-height: 40%;
   }
 }
 
 @media (max-width: 720px){
   .phmShell{
     width: 100%;
-    height: 100svh;
-    border-radius: 18px;
+    height: calc(100% - 16px);
+    border-radius: 16px;
   }
 
   .phmHeader{
@@ -396,7 +397,7 @@
   }
 
   .phmTitle{
-    font-size: 16px;
+    font-size: 12px;
   }
 
   .phmSearch{
@@ -409,8 +410,7 @@
   }
 
   .phmCombToolbar{
-    flex-direction: column;
-    align-items: stretch;
+    display: none;
   }
 
   .phmSeg{
