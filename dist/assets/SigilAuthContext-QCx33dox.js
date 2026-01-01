@@ -1,1 +1,0 @@
-import{ci as e,mi as t}from"./index-DmA5irH8.js";var n=t(e(),1);const r=(0,n.createContext)(null);function i(){let e=(0,n.useContext)(r);if(!e)throw Error(`useSigilAuth must be used within <SigilAuthProvider>.`);return e}export{i as n,r as t};
