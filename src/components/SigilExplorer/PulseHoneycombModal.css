@@ -10,6 +10,18 @@
   pointer-events: none;
 }
 
+.phmBackdrop--anchored{
+  align-items: flex-start;
+  justify-content: flex-start;
+  padding: 0;
+}
+
+.phmBackdrop--sheet{
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0;
+}
+
 .phmShell{
   width: min(420px, calc(100dvw - 24px));
   height: min(72dvh, 620px);
@@ -28,6 +40,19 @@
   isolation: isolate;
   pointer-events: auto;
   --phm-breath: 5.236s;
+}
+
+.phmShell--anchored{
+  position: fixed;
+  margin: 0;
+}
+
+.phmShell--sheet{
+  width: min(100dvw, 560px);
+  height: min(55dvh, 440px);
+  max-width: 100dvw;
+  max-height: 60dvh;
+  border-radius: 18px 18px 0 0;
 }
 
 .phmShell::before,
@@ -615,7 +640,7 @@
 
 @media (max-width: 720px){
   .phmBackdrop{
-    align-items: center;
+    align-items: flex-end;
     justify-content: center;
     padding:
       max(16px, env(safe-area-inset-top))
@@ -625,9 +650,9 @@
   }
 
   .phmShell{
-    width: min(380px, calc(100dvw - 32px));
-    height: min(78dvh, calc(100dvh - 32px));
-    border-radius: 16px;
+    width: min(100dvw, 560px);
+    height: min(55dvh, calc(100dvh - 32px));
+    border-radius: 18px 18px 0 0;
     box-shadow: 0 28px 80px rgba(0,0,0,0.65);
   }
 

@@ -120,6 +120,7 @@ type PulseViewTarget = {
   pulse: number;
   originUrl?: string;
   originHash?: string;
+  anchor?: { x: number; y: number };
 };
 
 const SIGIL_EXPLORER_OPEN_EVENT = "sigil:explorer:open";
@@ -999,7 +1000,9 @@ function OriginPanel({
 
   const originHash = parseHashFromUrl(root.url);
   const originSig = (root.payload as unknown as { kaiSignature?: string }).kaiSignature;
-  const originPulse = readFiniteNumber((root.payload as { pulse?: unknown }).pulse);
+  const originPulse =
+    readFiniteNumber((root.payload as { pulse?: unknown }).pulse) ??
+    readFiniteNumber((memoryRegistry.get(root.url) as { pulse?: unknown } | undefined)?.pulse);
 
   const openHref = explorerOpenUrl(root.url);
   const chakraDay = (root.payload as unknown as { chakraDay?: string }).chakraDay;
@@ -1065,7 +1068,13 @@ function OriginPanel({
       return;
     }
     if (originPulse == null) return;
-    onOpenPulseView?.({ pulse: originPulse, originUrl: root.url, originHash: originHash ?? undefined });
+    const rect = event.currentTarget.getBoundingClientRect();
+    onOpenPulseView?.({
+      pulse: originPulse,
+      originUrl: root.url,
+      originHash: originHash ?? undefined,
+      anchor: { x: rect.left + rect.width / 2, y: rect.bottom },
+    });
   };
 
   return (
@@ -1275,6 +1284,7 @@ const SigilExplorer: React.FC = () => {
     pulse: number | null;
     originUrl?: string;
     originHash?: string;
+    anchor?: { x: number; y: number };
   }>({ open: false, pulse: null });
 
   const unmounted = useRef(false);
@@ -1621,6 +1631,7 @@ const SigilExplorer: React.FC = () => {
       pulse: target.pulse,
       originUrl: target.originUrl,
       originHash: target.originHash,
+      anchor: target.anchor,
     });
   }, []);
 
@@ -2379,8 +2390,9 @@ const SigilExplorer: React.FC = () => {
         pulse={pulseView.pulse}
         originUrl={pulseView.originUrl}
         originHash={pulseView.originHash}
+        anchor={pulseView.anchor}
         registryRev={registryRev}
-        onClose={() => setPulseView({ open: false, pulse: null })}
+        onClose={() => setPulseView({ open: false, pulse: null, anchor: undefined })}
       />
     </div>
   );

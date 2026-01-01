@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import "./SigilHoneycomb.css";
 import "./PulseHoneycombModal.css";
@@ -72,6 +72,7 @@ export type PulseHoneycombModalProps = {
   pulse: number | null;
   originUrl?: string;
   originHash?: string;
+  anchor?: { x: number; y: number };
   registryRev?: number; // used only as a refresh signal (no state derived from it)
   onClose: () => void;
 };
@@ -609,9 +610,10 @@ const SigilHex = React.memo(function SigilHex(props: {
 ───────────────────────────────────────────────────────────── */
 
 export default function PulseHoneycombModal(props: PulseHoneycombModalProps) {
-  const { open, pulse, originUrl, originHash, onClose } = props;
+  const { open, pulse, originUrl, originHash, anchor, onClose } = props;
 
   const shellRef = useRef<HTMLDivElement | null>(null);
+  const [anchorPos, setAnchorPos] = useState<{ x: number; y: number } | null>(null);
 
   // ESC close + focus close button (no setState)
   useEffect(() => {
@@ -632,6 +634,31 @@ export default function PulseHoneycombModal(props: PulseHoneycombModalProps) {
       window.removeEventListener("keydown", onKey);
     };
   }, [open, onClose]);
+
+  const isCompactSheet = HAS_WINDOW
+    ? window.matchMedia("(max-width: 720px), (max-height: 720px)").matches
+    : false;
+
+  useLayoutEffect(() => {
+    if (!HAS_WINDOW) return;
+    if (!open) return;
+    if (!anchor || isCompactSheet) {
+      setAnchorPos(null);
+      return;
+    }
+    const el = shellRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const margin = 12;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const desiredX = anchor.x - rect.width * 0.5;
+    const desiredY = anchor.y + 12;
+    setAnchorPos({
+      x: clamp(desiredX, margin, Math.max(margin, vw - rect.width - margin)),
+      y: clamp(desiredY, margin, Math.max(margin, vh - rect.height - margin)),
+    });
+  }, [anchor, isCompactSheet, open]);
 
   // body scroll lock (external system)
   useEffect(() => {
@@ -656,16 +683,31 @@ export default function PulseHoneycombModal(props: PulseHoneycombModalProps) {
   if (!open || portalEl == null) return null;
 
   const key = `${pulse ?? "none"}:${originHash ?? ""}:${originUrl ?? ""}`;
+  const backdropClass = [
+    "phmBackdrop",
+    anchorPos ? "phmBackdrop--anchored" : "",
+    isCompactSheet ? "phmBackdrop--sheet" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const shellClass = [
+    "phmShell",
+    anchorPos ? "phmShell--anchored" : "",
+    isCompactSheet ? "phmShell--sheet" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const shellStyle = anchorPos ? { left: `${anchorPos.x}px`, top: `${anchorPos.y}px` } : undefined;
 
   return createPortal(
     <div
-      className="phmBackdrop"
+      className={backdropClass}
       role="presentation"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div ref={shellRef} className="phmShell" role="dialog" aria-modal="true">
+      <div ref={shellRef} className={shellClass} style={shellStyle} role="dialog" aria-modal="true">
         <PulseHoneycombInner key={key} {...props} />
       </div>
     </div>,
