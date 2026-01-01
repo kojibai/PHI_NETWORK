@@ -16,4 +16,13 @@ export default defineConfig({
   define: {
     "import.meta.env.VITE_APP_VERSION": JSON.stringify(BASE_APP_VERSION),
   },
+  build: {
+    assetsInlineLimit: 16384,
+    cssCodeSplit: false,
+    rollupOptions: {
+      output: {
+        inlineDynamicImports: true,
+      },
+    },
+  },
 });
