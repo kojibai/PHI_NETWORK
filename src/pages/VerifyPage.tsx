@@ -53,6 +53,8 @@ type DebitLoose = {
   amount?: number;
 };
 
+type EmbeddedPhiSource = "balance" | "embedded" | "live";
+
 function readLedgerBalance(raw: unknown): { originalAmount: number; remaining: number } | null {
   if (!isRecord(raw)) return null;
   const originalAmount = typeof raw.originalAmount === "number" && Number.isFinite(raw.originalAmount) ? raw.originalAmount : null;
@@ -65,6 +67,46 @@ function readLedgerBalance(raw: unknown): { originalAmount: number; remaining: n
     return sum + amount;
   }, 0);
   return { originalAmount, remaining: Math.max(0, originalAmount - totalDebited) };
+}
+
+function readPhiAmount(raw: unknown): number | null {
+  if (typeof raw === "number") {
+    if (!Number.isFinite(raw)) return null;
+    if (Math.abs(raw) < 1e-12) return null;
+    return Math.abs(raw);
+  }
+  if (typeof raw === "string") {
+    const n = Number(raw);
+    if (!Number.isNaN(n) && Math.abs(n) >= 1e-12) return Math.abs(n);
+  }
+  return null;
+}
+
+function readEmbeddedPhiAmount(raw: unknown): number | null {
+  if (!isRecord(raw)) return null;
+  const candidates: Array<Record<string, unknown>> = [raw];
+  const maybeFeed = raw.feed;
+  const maybePreview = raw.preview;
+  const maybeMeta = raw.meta;
+
+  if (isRecord(maybeFeed)) candidates.push(maybeFeed);
+  if (isRecord(maybePreview)) candidates.push(maybePreview);
+  if (isRecord(maybeMeta)) candidates.push(maybeMeta);
+
+  for (const source of candidates) {
+    const amount =
+      readPhiAmount(source.transferAmountPhi) ??
+      readPhiAmount(source.transferPhi) ??
+      readPhiAmount(source.amountPhi) ??
+      readPhiAmount(source.phiAmount) ??
+      readPhiAmount(source.childAllocationPhi) ??
+      readPhiAmount(source.branchBasePhi) ??
+      readPhiAmount(source.valuePhi) ??
+      readPhiAmount(source.value);
+    if (amount != null) return amount;
+  }
+
+  return null;
 }
 
 function readReceiveSigFromBundle(raw: unknown): ReceiveSig | null {
@@ -359,12 +401,27 @@ export default function VerifyPage(): ReactElement {
     return readLedgerBalance(result.embedded.raw) ?? readLedgerBalance(embeddedProof?.raw);
   }, [embeddedProof?.raw, result]);
 
-  const displayPhi = ledgerBalance?.remaining ?? liveValuePhi;
+  const embeddedPhi = useMemo(() => {
+    if (result.status !== "ok") return null;
+    return readEmbeddedPhiAmount(result.embedded.raw) ?? readEmbeddedPhiAmount(embeddedProof?.raw);
+  }, [embeddedProof?.raw, result]);
+
+  const displayPhi = ledgerBalance?.remaining ?? embeddedPhi ?? liveValuePhi;
+
+  const displaySource: EmbeddedPhiSource = ledgerBalance ? "balance" : embeddedPhi != null ? "embedded" : "live";
 
   const displayUsd = useMemo(() => {
     if (displayPhi == null || !Number.isFinite(usdPerPhi) || usdPerPhi <= 0) return null;
     return displayPhi * usdPerPhi;
   }, [displayPhi, usdPerPhi]);
+
+  const displayLabel = displaySource === "balance" ? "BALANCE" : displaySource === "embedded" ? "GLYPH" : "LIVE";
+  const displayAriaLabel =
+    displaySource === "balance"
+      ? "Glyph balance"
+      : displaySource === "embedded"
+        ? "Glyph embedded value"
+        : "Live glyph valuation";
 
   // Focus Views
   const [openSvgEditor, setOpenSvgEditor] = useState<boolean>(false);
@@ -795,8 +852,8 @@ export default function VerifyPage(): ReactElement {
               <LiveValuePill
                 phiValue={displayPhi}
                 usdValue={displayUsd}
-                label={ledgerBalance ? "BALANCE" : "LIVE"}
-                ariaLabel={ledgerBalance ? "Glyph balance" : "Live glyph valuation"}
+                label={displayLabel}
+                ariaLabel={displayAriaLabel}
               />
             ) : null}
           </div>
@@ -1015,8 +1072,14 @@ export default function VerifyPage(): ReactElement {
 
               {result.status === "ok" && displayPhi != null ? (
                 <div className="vmini-grid vmini-grid--2 vvaluation-dashboard" aria-label="Live valuation">
-                  <MiniField label={ledgerBalance ? "Glyph Φ balance" : "Live Φ value"} value={fmtPhi(displayPhi)} />
-                  <MiniField label={ledgerBalance ? "Glyph USD balance" : "Live USD value"} value={displayUsd == null ? "—" : fmtUsd(displayUsd)} />
+                  <MiniField
+                    label={displaySource === "balance" ? "Glyph Φ balance" : displaySource === "embedded" ? "Glyph Φ value" : "Live Φ value"}
+                    value={fmtPhi(displayPhi)}
+                  />
+                  <MiniField
+                    label={displaySource === "balance" ? "Glyph USD balance" : displaySource === "embedded" ? "Glyph USD value" : "Live USD value"}
+                    value={displayUsd == null ? "—" : fmtUsd(displayUsd)}
+                  />
                 </div>
               ) : null}
 
