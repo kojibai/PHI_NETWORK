@@ -161,6 +161,16 @@ const hashToUnit = (hash: string): number => {
   return acc / 1000000;
 };
 
+const hashToRgb = (hash: string): string => {
+  const unit = hashToUnit(hash);
+  const unit2 = hashToUnit(hash.split("").reverse().join(""));
+  const unit3 = hashToUnit(`${hash}phi`);
+  const r = Math.floor(80 + unit * 175);
+  const g = Math.floor(80 + unit2 * 175);
+  const b = Math.floor(80 + unit3 * 175);
+  return `${r} ${g} ${b}`;
+};
+
 const INHALE_INTERVAL_MS = 3236;
 const EXHALE_INTERVAL_MS = 2000;
 
@@ -515,6 +525,8 @@ const SigilHex = React.memo(function SigilHex(props: {
   const sigilPulse = wrapPulseForSigil(pulseValue);
   const kks = deriveKksFromPulse(sigilPulse);
   const depth = (hashToUnit(node.hash) - 0.5) * 220 * PHI;
+  const shapeIndex = Math.floor(hashToUnit(node.hash) * 6);
+  const fallbackTint = node.chakraDay ? undefined : hashToRgb(node.hash);
 
   const ariaParts: string[] = [];
   if (typeof node.pulse === "number") ariaParts.push(`pulse ${node.pulse}`);
@@ -541,7 +553,10 @@ const SigilHex = React.memo(function SigilHex(props: {
     >
       <div className="sigilHexInner">
         <div className="sigilHexGlyphFrame" aria-hidden="true">
-          <div className="sigilHexGlyphSimple" />
+          <div
+            className={`sigilHexGlyphSimple shape-${shapeIndex}`}
+            style={fallbackTint ? ({ ["--hex-tint" as string]: fallbackTint } as React.CSSProperties) : undefined}
+          />
         </div>
         <div className="sigilHexTop">
           <span className="sigilHexPulse">{typeof node.pulse === "number" ? node.pulse : "—"}</span>
