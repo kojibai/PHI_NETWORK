@@ -171,8 +171,6 @@ const hashToRgb = (hash: string): string => {
   return `${r} ${g} ${b}`;
 };
 
-const INHALE_INTERVAL_MS = 3236;
-const EXHALE_INTERVAL_MS = 2000;
 
 const HEX_DIRS: Coord[] = [
   { q: 1, r: 0 },
@@ -893,16 +891,6 @@ export default function SigilHoneycombExplorer({
     void inhaleOnce("open");
     void exhaleOnce("open", ac.signal);
 
-    const inhaleTimer = window.setInterval(() => {
-      if (document.visibilityState !== "visible") return;
-      void inhaleOnce("pulse");
-    }, INHALE_INTERVAL_MS);
-
-    const exhaleTimer = window.setInterval(() => {
-      if (document.visibilityState !== "visible") return;
-      void exhaleOnce("pulse", ac.signal);
-    }, EXHALE_INTERVAL_MS);
-
     const onVis = () => {
       if (document.visibilityState === "visible") {
         void inhaleOnce("visible");
@@ -925,8 +913,6 @@ export default function SigilHoneycombExplorer({
     window.addEventListener("online", onOnline);
 
     return () => {
-      window.clearInterval(inhaleTimer);
-      window.clearInterval(exhaleTimer);
       document.removeEventListener("visibilitychange", onVis);
       window.removeEventListener("focus", onFocus);
       window.removeEventListener("online", onOnline);
