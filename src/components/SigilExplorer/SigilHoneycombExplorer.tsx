@@ -137,6 +137,7 @@ const SIGIL_WRAP_PULSE: bigint = (() => {
   const g = gcdBI(N_DAY_MICRO, ONE_PULSE_MICRO);
   return g === 0n ? 0n : N_DAY_MICRO / g;
 })();
+const SIGIL_RENDER_CACHE = new Set<string>();
 
 const wrapPulseForSigil = (pulse: number): number => {
   if (!Number.isFinite(pulse)) return 0;
@@ -153,6 +154,36 @@ const deriveKksFromPulse = (pulse: number) => {
   const stepPct = normalizePercentIntoStep(percentIntoStep);
   return { beat, stepIndex, stepPct };
 };
+
+function useDeferredSigilRender(key: string): boolean {
+  const [ready, setReady] = useState(() => SIGIL_RENDER_CACHE.has(key));
+
+  useEffect(() => {
+    if (SIGIL_RENDER_CACHE.has(key)) {
+      setReady(true);
+      return;
+    }
+    let cancelled = false;
+    const schedule = typeof window !== "undefined" && "requestIdleCallback" in window
+      ? (cb: () => void) => window.requestIdleCallback(cb, { timeout: 200 })
+      : (cb: () => void) => window.setTimeout(cb, 32);
+    const handle = schedule(() => {
+      if (cancelled) return;
+      SIGIL_RENDER_CACHE.add(key);
+      setReady(true);
+    });
+    return () => {
+      cancelled = true;
+      if (typeof window !== "undefined" && "cancelIdleCallback" in window) {
+        window.cancelIdleCallback(handle as number);
+      } else {
+        clearTimeout(handle as number);
+      }
+    };
+  }, [key]);
+
+  return ready;
+}
 
 const INHALE_INTERVAL_MS = 3236;
 const EXHALE_INTERVAL_MS = 2000;
@@ -519,6 +550,8 @@ const SigilHex = React.memo(function SigilHex(props: {
     typeof node.pulse === "number" && Number.isFinite(node.pulse) ? node.pulse : 0;
   const sigilPulse = wrapPulseForSigil(pulseValue);
   const kks = deriveKksFromPulse(sigilPulse);
+  const sigilKey = `${sigilPulse}:${chakraDay}`;
+  const renderSigil = useDeferredSigilRender(sigilKey);
 
   const ariaParts: string[] = [];
   if (typeof node.pulse === "number") ariaParts.push(`pulse ${node.pulse}`);
@@ -547,16 +580,20 @@ const SigilHex = React.memo(function SigilHex(props: {
     >
       <div className="sigilHexInner">
         <div className="sigilHexGlyphFrame" aria-hidden="true">
-          <KaiSigil
-            pulse={sigilPulse}
-            beat={kks.beat}
-            stepIndex={kks.stepIndex}
-            stepPct={kks.stepPct}
-            chakraDay={chakraDay}
-            size={48}
-            hashMode="deterministic"
-            animate={false}
-          />
+          {renderSigil ? (
+            <KaiSigil
+              pulse={sigilPulse}
+              beat={kks.beat}
+              stepIndex={kks.stepIndex}
+              stepPct={kks.stepPct}
+              chakraDay={chakraDay}
+              size={48}
+              hashMode="deterministic"
+              animate={false}
+            />
+          ) : (
+            <div className="sigilHexGlyphPlaceholder" />
+          )}
         </div>
         <div className="sigilHexTop">
           <span className="sigilHexPulse">{typeof node.pulse === "number" ? node.pulse : "—"}</span>
@@ -1176,20 +1213,7 @@ export default function SigilHoneycombExplorer({
               </button>
             </div>
 
-            <div className="seg">
-              <button type="button" className="miniBtn" onClick={() => { setZoom(1); resetToAutoCenter(); }} aria-label="Reset zoom">
-                <span className="btn-icon">1×</span>
-                <span className="btn-text">1×</span>
-              </button>
-              <button type="button" className="miniBtn" onClick={() => { setUserInteracted(true); setZoom((z) => clamp(z * 0.9, 0.35, 2.75)); }} aria-label="Zoom out">
-                <span className="btn-icon">−</span>
-                <span className="btn-text">−</span>
-              </button>
-              <button type="button" className="miniBtn" onClick={() => { setUserInteracted(true); setZoom((z) => clamp(z * 1.1, 0.35, 2.75)); }} aria-label="Zoom in">
-                <span className="btn-icon">+</span>
-                <span className="btn-text">+</span>
-              </button>
-            </div>
+            <div className="seg" />
           </div>
         </div>
       </div>
