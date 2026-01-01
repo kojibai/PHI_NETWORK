@@ -82,6 +82,30 @@ const HAS_WINDOW = typeof window !== "undefined";
 const SIGIL_SELECT_CHANNEL_NAME = "sigil:explorer:select:bc:v1";
 const SIGIL_SELECT_LS_KEY = "sigil:explorer:selectedHash:v1";
 const ONE_PULSE_MICRO = 1_000_000n;
+type IdleCompat = {
+  requestIdleCallback?: (callback: IdleRequestCallback, options?: IdleRequestOptions) => number;
+  cancelIdleCallback?: (handle: number) => void;
+};
+
+function getIdleCompat(): IdleCompat {
+  return globalThis as unknown as IdleCompat;
+}
+
+function scheduleIdle(cb: () => void): { cancel: () => void } {
+  const g = getIdleCompat();
+
+  if (typeof g.requestIdleCallback === "function") {
+    const id = g.requestIdleCallback(() => cb(), { timeout: 200 });
+    return {
+      cancel: () => {
+        if (typeof g.cancelIdleCallback === "function") g.cancelIdleCallback(id);
+      },
+    };
+  }
+
+  const id = window.setTimeout(cb, 32);
+  return { cancel: () => clearTimeout(id) };
+}
 
 const modE = (a: bigint, m: bigint) => {
   if (m === 0n) return 0n;
@@ -104,6 +128,7 @@ const SIGIL_WRAP_PULSE: bigint = (() => {
   const g = gcdBI(N_DAY_MICRO, ONE_PULSE_MICRO);
   return g === 0n ? 0n : N_DAY_MICRO / g;
 })();
+
 const SIGIL_RENDER_CACHE = new Set<string>();
 const PHI = (1 + Math.sqrt(5)) / 2;
 
@@ -137,27 +162,23 @@ function useDeferredSigilRender(key: string): boolean {
 
   useEffect(() => {
     if (cached) return;
+
     let cancelled = false;
-    const schedule = typeof window !== "undefined" && "requestIdleCallback" in window
-      ? (cb: () => void) => window.requestIdleCallback(cb, { timeout: 200 })
-      : (cb: () => void) => window.setTimeout(cb, 32);
-    const handle = schedule(() => {
+    const task = scheduleIdle(() => {
       if (cancelled) return;
       SIGIL_RENDER_CACHE.add(key);
       forceRender((v) => v + 1);
     });
+
     return () => {
       cancelled = true;
-      if (typeof window !== "undefined" && "cancelIdleCallback" in window) {
-        window.cancelIdleCallback(handle as number);
-      } else {
-        clearTimeout(handle as number);
-      }
+      task.cancel();
     };
   }, [cached, key]);
 
   return cached;
 }
+
 
 const HEX_DIRS: Coord[] = [
   { q: 1, r: 0 },
@@ -526,6 +547,133 @@ function buildNodesForPulse(pulse: number): HoneyNode[] {
 
 type ChartBundle = ReturnType<typeof bootstrapSeries>;
 
+/**
+ * Media query hook:
+ * - initializes from matchMedia
+ * - updates only from the "change" callback (no setState in effect body)
+ */
+function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = useState<boolean>(() => {
+    if (!HAS_WINDOW) return false;
+    try {
+      return window.matchMedia(query).matches;
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    if (!HAS_WINDOW) return;
+
+    let mql: MediaQueryList;
+    try {
+      mql = window.matchMedia(query);
+    } catch {
+      return;
+    }
+
+    const onChange = (e: MediaQueryListEvent) => setMatches(e.matches);
+
+    if ("addEventListener" in mql) {
+      mql.addEventListener("change", onChange);
+      return () => mql.removeEventListener("change", onChange);
+    }
+
+    const legacy = mql as unknown as {
+      addListener?: (cb: (e: MediaQueryListEvent) => void) => void;
+      removeListener?: (cb: (e: MediaQueryListEvent) => void) => void;
+    };
+
+    legacy.addListener?.(onChange);
+    return () => legacy.removeListener?.(onChange);
+  }, [query]);
+
+  return matches;
+}
+
+/**
+ * Anchored popover positioning:
+ * - NO React state
+ * - writes left/top directly to the fixed shell (external system sync)
+ * - clamps to viewport
+ * - flips above anchor if needed
+ * - recomputes on resize/scroll + shell ResizeObserver
+ */
+function useAnchoredPopoverPosition(args: {
+  enabled: boolean;
+  shellRef: React.RefObject<HTMLDivElement | null>;
+  anchor?: { x: number; y: number };
+}) {
+  const { enabled, shellRef, anchor } = args;
+
+  useLayoutEffect(() => {
+    if (!HAS_WINDOW) return;
+    if (!enabled) return;
+
+    const shell = shellRef.current;
+    if (!shell) return;
+    if (!anchor) return;
+
+    const margin = 12;
+    const gap = 10;
+
+    const place = () => {
+      const el = shellRef.current;
+      if (!el) return;
+
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+
+      // Measure current size
+      const rect = el.getBoundingClientRect();
+
+      const belowY = anchor.y + gap;
+      const aboveY = anchor.y - rect.height - gap;
+
+      const spaceBelow = vh - (belowY + rect.height) - margin;
+      const spaceAbove = aboveY - margin;
+
+      const useAbove = spaceBelow < 0 && spaceAbove > spaceBelow;
+
+      const desiredX = anchor.x - rect.width * 0.5;
+      const desiredY = useAbove ? aboveY : belowY;
+
+      const x = clamp(desiredX, margin, Math.max(margin, vw - rect.width - margin));
+      const y = clamp(desiredY, margin, Math.max(margin, vh - rect.height - margin));
+
+      el.style.left = `${x}px`;
+      el.style.top = `${y}px`;
+
+      // Optional: origin for any future transform effects
+      el.style.transformOrigin = `${Math.max(0, anchor.x - x)}px ${Math.max(0, anchor.y - y)}px`;
+      el.setAttribute("data-popover-flip", useAbove ? "above" : "below");
+    };
+
+    let raf = window.requestAnimationFrame(place);
+
+    const onRecalc = () => {
+      window.cancelAnimationFrame(raf);
+      raf = window.requestAnimationFrame(place);
+    };
+
+    window.addEventListener("resize", onRecalc, { passive: true });
+    window.addEventListener("scroll", onRecalc, { passive: true, capture: true });
+
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== "undefined") {
+      ro = new ResizeObserver(() => onRecalc());
+      ro.observe(shell);
+    }
+
+    return () => {
+      window.cancelAnimationFrame(raf);
+      window.removeEventListener("resize", onRecalc as EventListener);
+      window.removeEventListener("scroll", onRecalc as EventListener, true);
+      ro?.disconnect();
+    };
+  }, [enabled, shellRef, anchor?.x, anchor?.y]);
+}
+
 const SigilHex = React.memo(function SigilHex(props: {
   node: HoneyNode;
   x: number;
@@ -536,8 +684,7 @@ const SigilHex = React.memo(function SigilHex(props: {
 }) {
   const { node, x, y, selected, isOrigin, onClick } = props;
 
-  const pulseValue =
-    typeof node.pulse === "number" && Number.isFinite(node.pulse) ? node.pulse : 0;
+  const pulseValue = typeof node.pulse === "number" && Number.isFinite(node.pulse) ? node.pulse : 0;
   const sigilPulse = wrapPulseForSigil(pulseValue);
   const kks = deriveKksFromPulse(sigilPulse);
   const chakraDay = normalizeChakraDay(node.chakraDay);
@@ -547,9 +694,7 @@ const SigilHex = React.memo(function SigilHex(props: {
 
   const ariaParts: string[] = [];
   if (typeof node.pulse === "number") ariaParts.push(`pulse ${node.pulse}`);
-  if (Number.isFinite(kks.beat) && Number.isFinite(kks.stepIndex)) {
-    ariaParts.push(`beat ${kks.beat} step ${kks.stepIndex}`);
-  }
+  if (Number.isFinite(kks.beat) && Number.isFinite(kks.stepIndex)) ariaParts.push(`beat ${kks.beat} step ${kks.stepIndex}`);
   if (node.chakraDay) ariaParts.push(node.chakraDay);
   ariaParts.push(shortHash(node.hash, 12));
   const aria = ariaParts.join(" — ");
@@ -586,16 +731,19 @@ const SigilHex = React.memo(function SigilHex(props: {
             <div className="sigilHexGlyphPlaceholder" />
           )}
         </div>
+
         <div className="sigilHexTop">
           <span className="sigilHexPulse">{typeof node.pulse === "number" ? node.pulse : "—"}</span>
           <span className="sigilHexHash">{shortHash(node.hash)}</span>
         </div>
+
         <div className="sigilHexMid">
           <span className="sigilHexBeat">
             {kks.beat}:{kks.stepIndex}
           </span>
           <span className="sigilHexDelta">{formatPhi(node.phiDelta)}</span>
         </div>
+
         <div className="sigilHexBot">
           <span className="sigilHexChakra">{node.chakraDay || "—"}</span>
         </div>
@@ -605,17 +753,28 @@ const SigilHex = React.memo(function SigilHex(props: {
 });
 
 /* ─────────────────────────────────────────────────────────────
-   Wrapper Modal (no setState-in-effect resets)
-   Inner view remounts on pulse/origin change via key.
+   Wrapper Modal
+   - matches YOUR CSS exactly (sizes, backdrop alignment, z-index)
+   - anchored popover positions via left/top on fixed shell (NO setState)
+   - sheet mode uses a click-catcher (so it can't get "stuck")
+   - body uses flex so header wrapping never cuts content
 ───────────────────────────────────────────────────────────── */
 
 export default function PulseHoneycombModal(props: PulseHoneycombModalProps) {
   const { open, pulse, originUrl, originHash, anchor, onClose } = props;
 
   const shellRef = useRef<HTMLDivElement | null>(null);
-  const [anchorPos, setAnchorPos] = useState<{ x: number; y: number } | null>(null);
 
-  // ESC close + focus close button (no setState)
+  const isCompactSheet = useMediaQuery("(max-width: 720px), (max-height: 720px)");
+  const anchored = !!anchor && !isCompactSheet;
+
+  useAnchoredPopoverPosition({
+    enabled: open && anchored,
+    shellRef,
+    anchor,
+  });
+
+  // ESC close + focus close button + focus trap (advanced, no state)
   useEffect(() => {
     if (!HAS_WINDOW) return;
     if (!open) return;
@@ -623,42 +782,53 @@ export default function PulseHoneycombModal(props: PulseHoneycombModalProps) {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
+
     window.addEventListener("keydown", onKey);
 
-    window.setTimeout(() => {
+    const focusClose = () => {
       const btn = shellRef.current?.querySelector<HTMLButtonElement>(".phmBtnClose");
       btn?.focus();
-    }, 0);
+    };
+
+    const trap = (e: KeyboardEvent) => {
+      if (e.key !== "Tab") return;
+      const root = shellRef.current;
+      if (!root) return;
+
+      const focusables = Array.from(
+        root.querySelectorAll<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((el) => !el.hasAttribute("disabled") && !el.getAttribute("aria-hidden"));
+
+      if (focusables.length === 0) return;
+
+      const first = focusables[0]!;
+      const last = focusables[focusables.length - 1]!;
+      const active = document.activeElement as HTMLElement | null;
+
+      if (e.shiftKey) {
+        if (!active || active === first) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else {
+        if (active === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    };
+
+    window.setTimeout(focusClose, 0);
+    const root = shellRef.current;
+    root?.addEventListener("keydown", trap);
 
     return () => {
       window.removeEventListener("keydown", onKey);
+      root?.removeEventListener("keydown", trap);
     };
   }, [open, onClose]);
-
-  const isCompactSheet = HAS_WINDOW
-    ? window.matchMedia("(max-width: 720px), (max-height: 720px)").matches
-    : false;
-
-  useLayoutEffect(() => {
-    if (!HAS_WINDOW) return;
-    if (!open) return;
-    if (!anchor || isCompactSheet) {
-      setAnchorPos(null);
-      return;
-    }
-    const el = shellRef.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    const margin = 12;
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    const desiredX = anchor.x - rect.width * 0.5;
-    const desiredY = anchor.y + 12;
-    setAnchorPos({
-      x: clamp(desiredX, margin, Math.max(margin, vw - rect.width - margin)),
-      y: clamp(desiredY, margin, Math.max(margin, vh - rect.height - margin)),
-    });
-  }, [anchor, isCompactSheet, open]);
 
   // body scroll lock (external system)
   useEffect(() => {
@@ -683,31 +853,42 @@ export default function PulseHoneycombModal(props: PulseHoneycombModalProps) {
   if (!open || portalEl == null) return null;
 
   const key = `${pulse ?? "none"}:${originHash ?? ""}:${originUrl ?? ""}`;
+
   const backdropClass = [
     "phmBackdrop",
-    anchorPos ? "phmBackdrop--anchored" : "",
+    anchored ? "phmBackdrop--anchored" : "",
     isCompactSheet ? "phmBackdrop--sheet" : "",
   ]
     .filter(Boolean)
     .join(" ");
+
   const shellClass = [
     "phmShell",
-    anchorPos ? "phmShell--anchored" : "",
+    anchored ? "phmShell--anchored" : "",
     isCompactSheet ? "phmShell--sheet" : "",
   ]
     .filter(Boolean)
     .join(" ");
-  const shellStyle = anchorPos ? { left: `${anchorPos.x}px`, top: `${anchorPos.y}px` } : undefined;
 
   return createPortal(
-    <div
-      className={backdropClass}
-      role="presentation"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div ref={shellRef} className={shellClass} style={shellStyle} role="dialog" aria-modal="true">
+    <div className={backdropClass} role="presentation">
+      {/* Sheet click-catcher: keeps sheet dismissible without breaking anchored click-through behavior */}
+      {!anchored ? (
+        <div
+          style={{ position: "fixed", inset: 0, pointerEvents: "auto" }}
+          onMouseDown={() => onClose()}
+          aria-hidden="true"
+        />
+      ) : null}
+
+      <div
+        ref={shellRef}
+        className={shellClass}
+        role="dialog"
+        aria-modal={!anchored}
+        aria-label="Pulse Atlas"
+        data-anchored={anchored ? "1" : "0"}
+      >
         <PulseHoneycombInner key={key} {...props} />
       </div>
     </div>,
@@ -715,15 +896,7 @@ export default function PulseHoneycombModal(props: PulseHoneycombModalProps) {
   );
 }
 
-function PulseHoneycombInner({
-  open,
-  pulse,
-  originUrl,
-  originHash,
-  registryRev,
-  onClose,
-}: PulseHoneycombModalProps) {
-  // Defaults (no reset effects). Remount via key handles reset.
+function PulseHoneycombInner({ pulse, originUrl, originHash, registryRev, onClose }: PulseHoneycombModalProps) {
   const [edgeMode] = useState<EdgeMode>("parent+children");
   const [selectedOverride, setSelectedOverride] = useState<string | null>(null);
 
@@ -760,7 +933,6 @@ function PulseHoneycombInner({
 
   const activePulse = typeof pulse === "number" ? pulse : null;
   void registryRev;
-  void open;
 
   const nodesRaw = useMemo(() => {
     if (activePulse == null) return [];
@@ -789,7 +961,6 @@ function PulseHoneycombInner({
   }, [nodesRaw]);
 
   const filtered = nodesRaw;
-
   const selectionPool = filtered.length > 0 ? filtered : nodesRaw;
 
   const computedInitialHash = useMemo(() => {
@@ -811,12 +982,12 @@ function PulseHoneycombInner({
   }, [selectedOverride, byHash, computedInitialHash]);
 
   const selected = useMemo(() => (selectedHash ? byHash.get(selectedHash) ?? null : null), [selectedHash, byHash]);
+
   const selectedPulse =
-    selected && typeof selected.pulse === "number" && Number.isFinite(selected.pulse)
-      ? wrapPulseForSigil(selected.pulse)
-      : null;
+    selected && typeof selected.pulse === "number" && Number.isFinite(selected.pulse) ? wrapPulseForSigil(selected.pulse) : null;
+
   const selectedKks = selectedPulse != null ? deriveKksFromPulse(selectedPulse) : null;
-  const activeBeat = selectedKks ? Math.floor(selectedKks.beat) : null;
+
   const activeMoment = useMemo(() => (activePulse != null ? momentFromPulse(activePulse) : null), [activePulse]);
   const activePulseLabel = activePulse != null ? activePulse.toLocaleString() : "—";
   const activeChakraDay = activeMoment?.chakraDay ?? "Root";
@@ -845,7 +1016,6 @@ function PulseHoneycombInner({
     const usd = phi != null && usdPerPhi != null ? phi * usdPerPhi : null;
     return { phi, usd, usdPerPhi };
   }, [activePulse, registryRev]);
-
 
   const chartBundle = useMemo<ChartBundle | null>(() => {
     if (activePulse == null) return null;
@@ -883,7 +1053,6 @@ function PulseHoneycombInner({
     const N = filtered.length;
     const coords = hexSpiralCoords(N);
 
-    const PHI = 1.61803398875;
     const radiusPx = Math.round(30 * PHI);
     const pts: Pt[] = coords.map((c) => axialToPixelPointy(c, radiusPx));
 
@@ -1041,12 +1210,8 @@ function PulseHoneycombInner({
     }
   };
 
-
-  const titlePulse = activePulse != null ? `Pulse ${activePulse.toLocaleString()}` : "Pulse";
-  const originLabel = originCandidate ?? "";
-
   return (
-    <div className="phmRoot" aria-label="Pulse Atlas">
+    <div className="phmRoot" aria-label="Pulse Atlas" style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
       <header className="phmHeader">
         <div className="phmHeaderLeft">
           <div className="phmSigilCard" aria-label="Pulse sigil glyph">
@@ -1072,35 +1237,12 @@ function PulseHoneycombInner({
           <div className="phmHeaderStack">
             <div className="phmTitleBlock">
               <div id="phmTitle" className="phmTitle">
-                {titlePulse}
-              </div>
-              <div className="phmSub">
-                {originLabel ? <span className="phmOrigin">origin {shortHash(originLabel, 14)}</span> : null}
-                {activeBeat != null ? <span className="phmDot">•</span> : null}
-                {activeBeat != null ? <span className="phmBeatFilter">beat {activeBeat}</span> : null}
-                <span className="phmDot">•</span>
-                <span className="phmCadence">breath 5.236s</span>
+        
+
               </div>
             </div>
 
-            <div className="phmLiveRow" aria-live="polite">
-              <div className="phmLiveStat">
-                <span className="phmLiveLabel">Live Φ</span>
-                <span className="phmLiveValue">
-                  {pulseValue.phi != null ? `${formatPhiNumber(pulseValue.phi)} Φ` : "—"}
-                </span>
-              </div>
-              <div className="phmLiveStat">
-                <span className="phmLiveLabel">Live USD</span>
-                <span className="phmLiveValue">{pulseValue.usd != null ? `$${formatUsd(pulseValue.usd)}` : "—"}</span>
-              </div>
-              <div className="phmLiveStat">
-                <span className="phmLiveLabel">USD / Φ</span>
-                <span className="phmLiveValue">
-                  {pulseValue.usdPerPhi != null ? `$${formatUsd(pulseValue.usdPerPhi)}` : "—"}
-                </span>
-              </div>
-            </div>
+
           </div>
 
           <div className="phmChart" aria-label="Live pulse chart">
@@ -1131,9 +1273,7 @@ function PulseHoneycombInner({
             <div className="phmValueLabel">Pulse Value</div>
             <div className="phmValuePhi">{pulseValue.phi != null ? `${formatPhiNumber(pulseValue.phi)} Φ` : "—"}</div>
             <div className="phmValueUsd">{pulseValue.usd != null ? `$${formatUsd(pulseValue.usd)}` : "—"}</div>
-            <div className="phmValueMeta">
-              {pulseValue.usdPerPhi != null ? `$${formatUsd(pulseValue.usdPerPhi)} / Φ` : "Live rate"}
-            </div>
+            <div className="phmValueMeta">{pulseValue.usdPerPhi != null ? `$${formatUsd(pulseValue.usdPerPhi)} / Φ` : "Live rate"}</div>
           </div>
 
           <button type="button" className="phmBtn phmBtnClose" onClick={onClose} aria-label="Close">
@@ -1142,7 +1282,8 @@ function PulseHoneycombInner({
         </div>
       </header>
 
-      <div className="phmBody">
+      {/* IMPORTANT: override the CSS height calc so header wrapping never cuts content */}
+      <div className="phmBody" style={{ flex: "1 1 auto", minHeight: 0, height: "auto" }}>
         <div className="phmCombPanel">
           <div
             className="phmViewport combViewport"
@@ -1188,133 +1329,155 @@ function PulseHoneycombInner({
               ))}
             </div>
 
-            <div className="combHint phmHint">
-              Pulse lattice • drag to pan • scroll to zoom
-            </div>
+            <div className="combHint phmHint">Pulse lattice • drag to pan • scroll to zoom</div>
           </div>
         </div>
 
         <aside className="phmInspector">
-          <div className="inspectorCard phmInspectorCard">
-            <div className="inspectorHead">
+          {/* SUPER IMPORTANT: make selection never cut off (scroll region inside card) */}
+          <div
+            className="inspectorCard phmInspectorCard"
+            style={{ display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden" }}
+          >
+            <div className="inspectorHead" style={{ flex: "0 0 auto" }}>
               <div className="inspectorTitle">Selection</div>
               <div className="inspectorSub">{selected ? shortHash(selected.hash, 16) : "—"}</div>
             </div>
 
-            <div className="inspectorGrid">
-              {selected?.pulse != null && (
-                <>
-                  <div className="k">Pulse</div>
-                  <div className="v mono">{selected.pulse}</div>
-                </>
-              )}
+            <div
+              style={{
+                flex: "1 1 auto",
+                minHeight: 0,
+                overflow: "auto",
+                paddingTop: 10,
+              }}
+            >
+              <div className="inspectorGrid">
+                {selected?.pulse != null && (
+                  <>
+                    <div className="k">Pulse</div>
+                    <div className="v mono">{selected.pulse}</div>
+                  </>
+                )}
 
-              {selectedPulse != null && selectedKks && (
-                <>
-                  <div className="k">Beat:Step</div>
-                  <div className="v mono">
-                    {selectedKks.beat}:{selectedKks.stepIndex}
+                {selectedPulse != null && selectedKks && (
+                  <>
+                    <div className="k">Beat:Step</div>
+                    <div className="v mono">
+                      {selectedKks.beat}:{selectedKks.stepIndex}
+                    </div>
+                  </>
+                )}
+
+                {selected?.chakraDay && (
+                  <>
+                    <div className="k">Chakra</div>
+                    <div className="v">{selected.chakraDay}</div>
+                  </>
+                )}
+
+                {selected?.phiDelta && (
+                  <>
+                    <div className="k">ΔΦ</div>
+                    <div className="v mono">{formatPhi(selected.phiDelta)}</div>
+                  </>
+                )}
+
+                {selected?.transferDirection && (
+                  <>
+                    <div className="k">Transfer</div>
+                    <div className="v">{selected.transferDirection}</div>
+                  </>
+                )}
+
+                {selected?.parentHash && (
+                  <>
+                    <div className="k">Parent</div>
+                    <div className="v mono">
+                      {byHash.has(selected.parentHash) ? (
+                        <button className="linkBtn" type="button" onClick={() => selectHash(selected.parentHash!)}>
+                          {shortHash(selected.parentHash, 14)}
+                        </button>
+                      ) : (
+                        shortHash(selected.parentHash, 14)
+                      )}
+                    </div>
+                  </>
+                )}
+
+                {selected?.originHash && (
+                  <>
+                    <div className="k">Origin</div>
+                    <div className="v mono">
+                      {byHash.has(selected.originHash) ? (
+                        <button className="linkBtn" type="button" onClick={() => selectHash(selected.originHash!)}>
+                          {shortHash(selected.originHash, 14)}
+                        </button>
+                      ) : (
+                        shortHash(selected.originHash, 14)
+                      )}
+                    </div>
+                  </>
+                )}
+
+                {selected?.userPhiKey && (
+                  <>
+                    <div className="k">PhiKey</div>
+                    <div className="v mono">{shortHash(selected.userPhiKey, 20)}</div>
+                  </>
+                )}
+
+                {selected?.kaiSignature && (
+                  <>
+                    <div className="k">KaiSig</div>
+                    <div className="v mono">{shortHash(selected.kaiSignature, 20)}</div>
+                  </>
+                )}
+
+                {selected?.degree != null && (
+                  <>
+                    <div className="k">Degree</div>
+                    <div className="v mono">{selected.degree}</div>
+                  </>
+                )}
+              </div>
+
+              {selected?.sources?.length ? (
+                <details className="sources" style={{ marginTop: 12 }}>
+                  <summary>Sources ({selected.sources.length})</summary>
+                  <div className="sourcesList">
+                    {selected.sources.slice(0, 40).map((s, i) => (
+                      <div key={`${i}-${s}`} className="sourceItem mono">
+                        {browserViewUrl(s)}
+                      </div>
+                    ))}
+                    {selected.sources.length > 40 ? <div className="sourceMore">… {selected.sources.length - 40} more</div> : null}
                   </div>
-                </>
-              )}
-
-              {selected?.chakraDay && (
-                <>
-                  <div className="k">Chakra</div>
-                  <div className="v">{selected.chakraDay}</div>
-                </>
-              )}
-
-              {selected?.phiDelta && (
-                <>
-                  <div className="k">ΔΦ</div>
-                  <div className="v mono">{formatPhi(selected.phiDelta)}</div>
-                </>
-              )}
-
-              {selected?.transferDirection && (
-                <>
-                  <div className="k">Transfer</div>
-                  <div className="v">{selected.transferDirection}</div>
-                </>
-              )}
-
-              {selected?.parentHash && (
-                <>
-                  <div className="k">Parent</div>
-                  <div className="v mono">
-                    {byHash.has(selected.parentHash) ? (
-                      <button className="linkBtn" type="button" onClick={() => selectHash(selected.parentHash!)}>
-                        {shortHash(selected.parentHash, 14)}
-                      </button>
-                    ) : (
-                      shortHash(selected.parentHash, 14)
-                    )}
-                  </div>
-                </>
-              )}
-
-              {selected?.originHash && (
-                <>
-                  <div className="k">Origin</div>
-                  <div className="v mono">
-                    {byHash.has(selected.originHash) ? (
-                      <button className="linkBtn" type="button" onClick={() => selectHash(selected.originHash!)}>
-                        {shortHash(selected.originHash, 14)}
-                      </button>
-                    ) : (
-                      shortHash(selected.originHash, 14)
-                    )}
-                  </div>
-                </>
-              )}
-
-              {selected?.userPhiKey && (
-                <>
-                  <div className="k">PhiKey</div>
-                  <div className="v mono">{shortHash(selected.userPhiKey, 20)}</div>
-                </>
-              )}
-
-              {selected?.kaiSignature && (
-                <>
-                  <div className="k">KaiSig</div>
-                  <div className="v mono">{shortHash(selected.kaiSignature, 20)}</div>
-                </>
-              )}
-
-              {selected?.degree != null && (
-                <>
-                  <div className="k">Degree</div>
-                  <div className="v mono">{selected.degree}</div>
-                </>
-              )}
+                </details>
+              ) : null}
             </div>
 
-            <div className="inspectorActions">
+            {/* Actions: sticky inside the card so they never disappear */}
+            <div
+              className="inspectorActions"
+              style={{
+                flex: "0 0 auto",
+                position: "sticky",
+                bottom: 0,
+                paddingTop: 10,
+                marginTop: 10,
+                background: "linear-gradient(to top, rgba(0,0,0,0.45), rgba(0,0,0,0))",
+                backdropFilter: "blur(6px)",
+                WebkitBackdropFilter: "blur(6px)",
+              }}
+            >
               <button type="button" className="primaryBtn" onClick={openSelected} disabled={!selected}>
                 Open
               </button>
               <button type="button" className="miniBtn" onClick={copySelectedUrl} disabled={!selected}>
-                Copy URL
+                Remember
               </button>
             </div>
-
-            {selected?.sources?.length ? (
-              <details className="sources">
-                <summary>Sources ({selected.sources.length})</summary>
-                <div className="sourcesList">
-                  {selected.sources.slice(0, 40).map((s, i) => (
-                    <div key={`${i}-${s}`} className="sourceItem mono">
-                      {browserViewUrl(s)}
-                    </div>
-                  ))}
-                  {selected.sources.length > 40 ? (
-                    <div className="sourceMore">… {selected.sources.length - 40} more</div>
-                  ) : null}
-                </div>
-              </details>
-            ) : null}
           </div>
         </aside>
       </div>
