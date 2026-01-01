@@ -61,18 +61,20 @@
   z-index: 2147483646;
 
   display: flex;
-  align-items: center;
-  justify-content: center;
+  align-items: stretch;
+  justify-content: stretch;
 
-  padding: clamp(16px, 4vw, 28px);
+  padding: 0;
 
   /* Stable viewport while keyboard opens/closes (TSX updates --kai-vh on resize) */
   min-height: var(--kai-vh, 100vh);
   height: var(--kai-vh, 100vh);
 
   background:
-    radial-gradient(1200px 800px at 50% 0%, rgba(0,180,255,0.08), transparent 70%),
-    radial-gradient(900px 700px at 50% 100%, rgba(0,255,208,0.06), transparent 70%),
+    radial-gradient(1200px 800px at 50% 0%, rgba(0,180,255,0.10), transparent 70%),
+    radial-gradient(900px 700px at 50% 100%, rgba(0,255,208,0.08), transparent 70%),
+    radial-gradient(120% 90% at 50% 50%, rgba(138,43,226,0.05), transparent 68%),
+    linear-gradient(180deg, rgba(6,10,26,0.82), rgba(3,6,23,0.68)),
     rgba(3,6,23,0.66);
 
   backdrop-filter: blur(6px) saturate(1.08);
@@ -86,6 +88,20 @@
 
   /* Prevent highlight/selection weirdness on iOS */
   -webkit-tap-highlight-color: transparent;
+}
+
+.kai-voh-modal-backdrop::after{
+  content:"";
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+  background:
+    radial-gradient(120% 120% at 50% -10%, rgba(255,255,255,0.08), transparent 55%),
+    radial-gradient(140% 120% at 50% 110%, rgba(0,255,208,0.12), transparent 60%),
+    radial-gradient(120% 100% at 50% 50%, rgba(138,43,226,0.08), transparent 65%);
+  mix-blend-mode: screen;
+  opacity: .55;
+  animation: veil-drift calc(var(--kai-breath) * 2.4) ease-in-out infinite alternate;
 }
 
 @supports (height: 100dvh){
@@ -145,10 +161,11 @@
 .kai-voh-container{
   position: relative;
 
-  width: min(1000px, 96vw);
+  width: 100%;
+  height: 100%;
 
   /* Stable iOS keyboard behavior */
-  max-height: min(92vh, calc(var(--kai-vh, 100vh) - 32px));
+  max-height: var(--kai-vh, 100vh);
 
   color: var(--kai-fg);
 
@@ -157,12 +174,15 @@
     linear-gradient(180deg, rgba(255,255,255,0.15), rgba(255,255,255,0.06)) border-box,
     var(--kai-glass);
 
-  border-radius: clamp(16px, 2.1vw, 22px);
+  border-radius: 0;
   border: 1px solid var(--glass-border);
 
   box-shadow:
     0 12px 50px rgba(0,0,0,.48),
-    inset 0 0 0 1px var(--glass-inset);
+    0 0 120px rgba(0,180,255,0.12),
+    0 0 220px rgba(0,255,208,0.08),
+    inset 0 0 0 1px var(--glass-inset),
+    inset 0 0 40px rgba(0,180,255,0.08);
 
   overflow: hidden;
 
@@ -185,8 +205,10 @@
 .glass-omni::before{
   content:"";
   position:absolute; inset:0; pointer-events:none;
-  background: radial-gradient(120% 80% at 50% -10%, rgba(255,255,255,0.12), transparent 60%);
-  mix-blend-mode: overlay; opacity:.55;
+  background:
+    radial-gradient(120% 80% at 50% -10%, rgba(255,255,255,0.14), transparent 60%),
+    radial-gradient(90% 60% at 50% 100%, rgba(0,255,208,0.08), transparent 60%);
+  mix-blend-mode: overlay; opacity:.62;
 }
 .glass-omni::after{
   content:"";
@@ -194,8 +216,8 @@
   border-radius: inherit;
   background:
     conic-gradient(from 180deg, rgba(0,255,208,.09), rgba(0,180,255,.05), rgba(138,43,226,.08), rgba(0,255,208,.09));
-  filter: blur(14px);
-  opacity:.35;
+  filter: blur(16px);
+  opacity:.4;
   mask: linear-gradient(#000 0 0) exclude, radial-gradient(160% 160% at 50% 50%, #0000 49%, #000 50%);
 }
 
@@ -251,14 +273,18 @@
    ────────────────────────────────────────────────────────────── */
 .kai-voh-body{
   flex: 1;
-  min-height: 440px;
+  min-height: 0;
 
   overflow: auto;
   padding: clamp(14px, 2.2vw, 18px);
 
   background:
-    radial-gradient(80% 60% at 50% 0%, rgba(0,255,208,.05), transparent 65%),
-    radial-gradient(70% 50% at 50% 100%, rgba(138,43,226,.05), transparent 65%);
+    radial-gradient(80% 60% at 50% 0%, rgba(0,255,208,.06), transparent 65%),
+    radial-gradient(70% 50% at 50% 100%, rgba(138,43,226,.06), transparent 65%),
+    radial-gradient(2px 2px at 20% 30%, rgba(255,255,255,0.22), transparent 55%),
+    radial-gradient(2px 2px at 70% 18%, rgba(255,255,255,0.18), transparent 55%),
+    radial-gradient(1.5px 1.5px at 82% 62%, rgba(255,255,255,0.16), transparent 55%),
+    radial-gradient(1.5px 1.5px at 35% 72%, rgba(255,255,255,0.14), transparent 55%);
 
   /* No scroll chaining to the page */
   overscroll-behavior: contain;
