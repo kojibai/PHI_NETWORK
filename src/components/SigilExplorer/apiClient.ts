@@ -18,10 +18,15 @@ const canStorage = hasWindow && typeof window.localStorage !== "undefined";
 export const LIVE_BASE_URL = "https://m.phi.network";
 export const LIVE_BACKUP_URL = "https://memory.kaiklok.com";
 
+function isLocalDevOrigin(origin: string): boolean {
+  return origin.startsWith("http://localhost:") || origin.startsWith("http://127.0.0.1:");
+}
+
 function selectPrimaryBase(primary: string, backup: string): string {
   if (!hasWindow) return primary;
   const origin = window.location.origin;
   if (origin === primary || origin === backup) return origin;
+  if (isLocalDevOrigin(origin)) return origin;
   return primary;
 }
 
@@ -122,7 +127,11 @@ function apiBases(): string[] {
   const protocolFiltered = isHttpsPage ? list.filter((b) => b.startsWith("https://")) : list;
 
   const pageOrigin = window.location.origin;
-  if (pageOrigin === LIVE_BASE_URL || pageOrigin === LIVE_BACKUP_URL) {
+  if (
+    pageOrigin === LIVE_BASE_URL ||
+    pageOrigin === LIVE_BACKUP_URL ||
+    isLocalDevOrigin(pageOrigin)
+  ) {
     return protocolFiltered.filter((b) => b === pageOrigin);
   }
 
