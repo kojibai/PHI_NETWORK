@@ -2323,7 +2323,7 @@ const SigilExplorer: React.FC = () => {
       />
 
       {activeView === "honeycomb" ? (
-        <div className="explorer-scroll" role="region" aria-label="Glyph Lattice viewport">
+        <div className="explorer-scroll explorer-scroll--honeycomb" role="region" aria-label="Glyph Lattice viewport">
           <div className="explorer-inner">
             <SigilHoneycombExplorer />
           </div>

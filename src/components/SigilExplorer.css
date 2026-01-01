@@ -544,6 +544,19 @@
   min-width: 0;
 }
 
+.explorer-scroll--honeycomb{
+  padding: clamp(8px, 2vw, 16px);
+  overflow: hidden;
+  touch-action: none;
+}
+
+.explorer-scroll--honeycomb .explorer-inner{
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  max-width: 100%;
+}
+
 /* ─────────────────────────────────────────────────────────────
    EMPTY STATE
    ───────────────────────────────────────────────────────────── */
