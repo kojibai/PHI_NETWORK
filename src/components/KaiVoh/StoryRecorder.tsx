@@ -451,7 +451,7 @@ export default function StoryRecorder(props: StoryRecorderProps) {
               className="progress-ring"
               style={{ background: `conic-gradient(currentColor ${progress * 360}deg, transparent 0)` }}
             />
-            <span className="dot" />
+            <span className="story-rec-dot" />
           </button>
         </div>
         {err && <div className="story-rec-error">{err}</div>}

@@ -18,6 +18,7 @@ import {
   API_SEAL_PATH,
   loadApiBackupDeadUntil,
   loadApiBaseHint,
+  resolveApiUrl,
   type ApiSealResponse,
 } from "../components/SigilExplorer/apiClient";
 import { canonicalizeUrl } from "../components/SigilExplorer/url";
@@ -181,7 +182,7 @@ export function startSigilExplorerSync(): () => void {
     try {
       const prevSeal = remoteSeal;
 
-      const res = await apiFetchWithFailover((base) => new URL(API_SEAL_PATH, base).toString(), {
+      const res = await apiFetchWithFailover((base) => resolveApiUrl(base, API_SEAL_PATH), {
         method: "GET",
         cache: "no-store",
         signal: ac.signal,

@@ -15,8 +15,8 @@ const canStorage = hasWindow && typeof window.localStorage !== "undefined";
 /* ─────────────────────────────────────────────────────────────────────
  *  LAH-MAH-TOR API (Primary + IKANN Failover, soft-fail backup)
  *  ─────────────────────────────────────────────────────────────────── */
-export const LIVE_BASE_URL = "https://align.kaiklok.com";
-export const LIVE_BACKUP_URL = "https://m.phi.network";
+export const LIVE_BASE_URL = "/api/lahmahtor";
+export const LIVE_BACKUP_URL = "/api/lahmahtor"; // backup is handled by the proxy now
 
 const API_BASE_PRIMARY = LIVE_BASE_URL;
 const API_BASE_FALLBACK = LIVE_BACKUP_URL;
@@ -165,6 +165,18 @@ export async function apiFetchWithFailover(
   }
 
   return last;
+}
+export function resolveApiUrl(base: string, path: string): string {
+  const b = (base ?? "").trim();
+  const p = path.startsWith("/") ? path : `/${path}`;
+
+  // If base is a same-origin path (e.g. "/api/lahmahtor"), just join.
+  if (b.startsWith("/")) {
+    return `${b.replace(/\/+$/, "")}${p}`;
+  }
+
+  // Absolute base (e.g. "https://m.kai.ac")
+  return new URL(p, b).toString();
 }
 
 export async function apiFetchJsonWithFailover<T>(

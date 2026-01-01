@@ -123,7 +123,7 @@
   background: conic-gradient(currentColor 0deg, transparent 0);
 }
 
-.record-btn .dot {
+.record-btn .story-rec-dot {
   position: absolute;
   inset: 10px;
   border-radius: 20px;
@@ -132,7 +132,7 @@
   transition: all 140ms ease;
 }
 
-.record-btn.recording .dot {
+.record-btn.recording .story-rec-dot {
   border-radius: 12px;
   transform: scale(0.92);
   background: #ff2d55;
@@ -293,7 +293,7 @@
   -webkit-mask: radial-gradient(circle at 50% 50%, transparent 62%, black 63%);
           mask: radial-gradient(circle at 50% 50%, transparent 62%, black 63%);
 }
-.dot {
+.story-rec-dot {
   width: 64px;
   height: 64px;
   border-radius: 16px;
