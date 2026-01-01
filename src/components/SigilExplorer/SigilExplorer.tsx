@@ -106,6 +106,8 @@ import { stepIndexFromPulseExact } from "../../utils/kai_pulse";
 /** Tree build */
 import { buildForest, resolveCanonicalHashFromNode } from "./tree/buildForest";
 import type { SigilNode } from "./tree/types";
+import SigilHoneycombExplorer from "./SigilHoneycombExplorer";
+import PulseHoneycombModal from "./PulseHoneycombModal";
 
 /* ─────────────────────────────────────────────────────────────────────
  *  Globals / constants
@@ -113,6 +115,12 @@ import type { SigilNode } from "./tree/types";
 const hasWindow = typeof window !== "undefined";
 
 type SyncReason = "open" | "pulse" | "visible" | "focus" | "online" | "import";
+
+type PulseViewTarget = {
+  pulse: number;
+  originUrl?: string;
+  originHash?: string;
+};
 
 const SIGIL_EXPLORER_OPEN_EVENT = "sigil:explorer:open";
 const SIGIL_EXPLORER_CHANNEL_NAME = "sigil:explorer:bc:v1";
@@ -967,6 +975,7 @@ function OriginPanel({
   transferRegistry,
   receiveLocks,
   valueSnapshots,
+  onOpenPulseView,
 }: {
   root: SigilNode;
   expanded: ReadonlySet<string>;
@@ -976,6 +985,7 @@ function OriginPanel({
   transferRegistry: ReadonlyMap<string, SigilTransferRecord>;
   receiveLocks: ReceiveLockIndex;
   valueSnapshots: ReadonlyMap<string, NodeValueSnapshot>;
+  onOpenPulseView?: (target: PulseViewTarget) => void;
 }) {
   const count = useMemo(() => {
     let n = 0;
@@ -989,6 +999,7 @@ function OriginPanel({
 
   const originHash = parseHashFromUrl(root.url);
   const originSig = (root.payload as unknown as { kaiSignature?: string }).kaiSignature;
+  const originPulse = readFiniteNumber((root.payload as { pulse?: unknown }).pulse);
 
   const openHref = explorerOpenUrl(root.url);
   const chakraDay = (root.payload as unknown as { chakraDay?: string }).chakraDay;
@@ -1047,14 +1058,30 @@ function OriginPanel({
           branchValue.usdValue != null ? ` • $${formatUsd(branchValue.usdValue)}` : ""
         }`
       : undefined;
+
+  const handleOriginPulseView = (event: React.MouseEvent<HTMLButtonElement>) => {
+    if (event.metaKey || event.ctrlKey || event.shiftKey) {
+      if (typeof window !== "undefined") window.open(openHref, "_blank", "noopener,noreferrer");
+      return;
+    }
+    if (originPulse == null) return;
+    onOpenPulseView?.({ pulse: originPulse, originUrl: root.url, originHash: originHash ?? undefined });
+  };
+
   return (
     <section className="origin" aria-label="Sigil origin stream" style={chakraTintStyle(chakraDay)} data-chakra={String(chakraDay ?? "")} data-node-id={root.id}>
       <header className="origin-head">
         <div className="o-meta">
           <span className="o-title">Origin</span>
-          <a className="o-link" href={openHref} target="_blank" rel="noopener noreferrer" title={openHref}>
+          <button
+            className="o-link"
+            onClick={handleOriginPulseView}
+            type="button"
+            title={originPulse != null ? `Open pulse view for ${openHref}` : openHref}
+            aria-label="Open origin pulse view"
+          >
             {short(originSig ?? originHash ?? "origin", 14)}
-          </a>
+          </button>
           {chakraDay && (
             <span className="o-chakra" title={String(chakraDay)}>
               {String(chakraDay)}
@@ -1133,12 +1160,16 @@ function ExplorerToolbar({
   onExport,
   total,
   lastAdded,
+  viewMode,
+  onViewModeChange,
 }: {
   onAdd: (u: string) => void;
   onImport: (f: File) => void;
   onExport: () => void;
   total: number;
   lastAdded?: string;
+  viewMode: "keystream" | "lattice";
+  onViewModeChange: (next: "keystream" | "lattice") => void;
 }) {
   const [input, setInput] = useState("");
 
@@ -1202,6 +1233,17 @@ function ExplorerToolbar({
             </button>
           </div>
 
+          <div className="kx-view-toggle" role="group" aria-label="Explorer view mode">
+            <button
+              className="kx-view-btn"
+              type="button"
+              onClick={() => onViewModeChange(viewMode === "keystream" ? "lattice" : "keystream")}
+              aria-pressed={viewMode === "lattice"}
+            >
+              {viewMode === "keystream" ? "Memory Lattice" : "Keystream"}
+            </button>
+          </div>
+
           <div className="kx-stats" aria-live="polite">
             <span className="kx-pill" title="Total KEYS in registry (includes variants)">
               {total} KEYS
@@ -1227,6 +1269,13 @@ const SigilExplorer: React.FC = () => {
   const [lastAdded, setLastAdded] = useState<string | undefined>(undefined);
   const [usernameClaims, setUsernameClaims] = useState<UsernameClaimRegistry>(() => getUsernameClaimRegistry());
   const [nowPulse, setNowPulse] = useState(() => getKaiPulseEternalInt(new Date()));
+  const [viewMode, setViewMode] = useState<"keystream" | "lattice">("keystream");
+  const [pulseView, setPulseView] = useState<{
+    open: boolean;
+    pulse: number | null;
+    originUrl?: string;
+    originHash?: string;
+  }>({ open: false, pulse: null });
 
   const unmounted = useRef(false);
   const prefetchedRef = useRef<Set<string>>(new Set());
@@ -1564,6 +1613,16 @@ const SigilExplorer: React.FC = () => {
       scrollingRef.current = false;
     };
   }, [markInteracting, scheduleUiFlush]);
+
+  const handleOpenPulseView = useCallback((target: PulseViewTarget) => {
+    if (!Number.isFinite(target.pulse)) return;
+    setPulseView({
+      open: true,
+      pulse: target.pulse,
+      originUrl: target.originUrl,
+      originHash: target.originHash,
+    });
+  }, []);
 
   // Apply toggle anchor preservation after DOM commit
   useLayoutEffect(() => {
@@ -2247,34 +2306,59 @@ const SigilExplorer: React.FC = () => {
 
   return (
     <div className="sigil-explorer" aria-label="Kairos Keystream Explorer">
-      <ExplorerToolbar onAdd={handleAdd} onImport={handleImport} onExport={handleExport} total={totalKeys} lastAdded={lastAdded} />
+      <ExplorerToolbar
+        onAdd={handleAdd}
+        onImport={handleImport}
+        onExport={handleExport}
+        total={totalKeys}
+        lastAdded={lastAdded}
+        viewMode={viewMode}
+        onViewModeChange={(next) => {
+          markInteracting(UI_TOGGLE_INTERACT_MS);
+          setViewMode(next);
+        }}
+      />
 
-      <div className="explorer-scroll" ref={scrollElRef} role="region" aria-label="Explorer scroll viewport">
+      <div
+        className={["explorer-scroll", viewMode === "lattice" ? "explorer-scroll--lattice" : ""].filter(Boolean).join(" ")}
+        ref={scrollElRef}
+        role="region"
+        aria-label="Explorer scroll viewport"
+      >
         <div className="explorer-inner">
-          {forest.length === 0 ? (
-            <div className="kx-empty">
-              <p>No sigil-glyphs in your keystream yet.</p>
-              <ol>
-                <li>Import your keystream memories.</li>
-                <li>Seal a moment — auto-registered here.</li>
-                <li>Inhale any sigil-glyph or memory key above — lineage aligns instantly.</li>
-              </ol>
-            </div>
+          {viewMode === "keystream" ? (
+            <>
+              {forest.length === 0 ? (
+                <div className="kx-empty">
+                  <p>No sigil-glyphs in your keystream yet.</p>
+                  <ol>
+                    <li>Import your keystream memories.</li>
+                    <li>Seal a moment — auto-registered here.</li>
+                    <li>Inhale any sigil-glyph or memory key above — lineage aligns instantly.</li>
+                  </ol>
+                </div>
+              ) : (
+                <div className="forest" aria-label="Sigil forest">
+                  {forest.map((root) => (
+                    <OriginPanel
+                      key={root.id}
+                      root={root}
+                      expanded={expanded}
+                      toggle={toggle}
+                      phiTotalsByPulse={phiTotalsByPulse}
+                      usernameClaims={usernameClaims}
+                      transferRegistry={transferRegistry}
+                      receiveLocks={receiveLocks}
+                      valueSnapshots={valueSnapshots}
+                      onOpenPulseView={handleOpenPulseView}
+                    />
+                  ))}
+                </div>
+              )}
+            </>
           ) : (
-            <div className="forest" aria-label="Sigil forest">
-              {forest.map((root) => (
-                <OriginPanel
-                  key={root.id}
-                  root={root}
-                  expanded={expanded}
-                  toggle={toggle}
-                  phiTotalsByPulse={phiTotalsByPulse}
-                  usernameClaims={usernameClaims}
-                  transferRegistry={transferRegistry}
-                  receiveLocks={receiveLocks}
-                  valueSnapshots={valueSnapshots}
-                />
-              ))}
+            <div className="kx-view kx-view--lattice" aria-label="Memory lattice">
+              <SigilHoneycombExplorer className="kx-lattice" syncMode="embedded" onOpenPulseView={handleOpenPulseView} />
             </div>
           )}
 
@@ -2289,6 +2373,15 @@ const SigilExplorer: React.FC = () => {
           </footer>
         </div>
       </div>
+
+      <PulseHoneycombModal
+        open={pulseView.open}
+        pulse={pulseView.pulse}
+        originUrl={pulseView.originUrl}
+        originHash={pulseView.originHash}
+        registryRev={registryRev}
+        onClose={() => setPulseView({ open: false, pulse: null })}
+      />
     </div>
   );
 };
