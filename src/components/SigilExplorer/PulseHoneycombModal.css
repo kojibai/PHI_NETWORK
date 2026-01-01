@@ -1,7 +1,7 @@
 .phmBackdrop{
   position: fixed;
   inset: 0;
-  z-index: 9999;
+  z-index: 2147483000;
   background: transparent;
   display: flex;
   align-items: flex-end;
@@ -19,7 +19,7 @@
 .phmBackdrop--sheet{
   align-items: flex-end;
   justify-content: center;
-  padding: 0;
+  padding: 0 12px env(safe-area-inset-bottom) 12px;
 }
 
 .phmShell{
@@ -49,9 +49,9 @@
 
 .phmShell--sheet{
   width: min(100dvw, 560px);
-  height: min(55dvh, 440px);
+  height: min(72dvh, 560px);
   max-width: 100dvw;
-  max-height: 60dvh;
+  max-height: calc(100dvh - env(safe-area-inset-bottom) - 16px);
   border-radius: 18px 18px 0 0;
 }
 
