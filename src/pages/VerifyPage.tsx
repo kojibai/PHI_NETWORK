@@ -49,6 +49,24 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+type DebitLoose = {
+  amount?: number;
+};
+
+function readLedgerBalance(raw: unknown): { originalAmount: number; remaining: number } | null {
+  if (!isRecord(raw)) return null;
+  const originalAmount = typeof raw.originalAmount === "number" && Number.isFinite(raw.originalAmount) ? raw.originalAmount : null;
+  if (originalAmount == null) return null;
+  const debits = Array.isArray(raw.debits) ? raw.debits : [];
+  const totalDebited = debits.reduce((sum, entry) => {
+    if (!isRecord(entry)) return sum;
+    const amount = (entry as DebitLoose).amount;
+    if (typeof amount !== "number" || !Number.isFinite(amount) || amount <= 0) return sum;
+    return sum + amount;
+  }, 0);
+  return { originalAmount, remaining: Math.max(0, originalAmount - totalDebited) };
+}
+
 function readReceiveSigFromBundle(raw: unknown): ReceiveSig | null {
   if (!isRecord(raw)) return null;
   const candidate = raw.receiveSig;
@@ -220,10 +238,10 @@ function MiniField(props: { label: string; value: string; title?: string }): Rea
   );
 }
 
-function LiveValuePill(props: { phiValue: number; usdValue: number | null }): ReactElement {
+function LiveValuePill(props: { phiValue: number; usdValue: number | null; label: string; ariaLabel: string }): ReactElement {
   return (
-    <div className="vseal-value" aria-label="Live glyph valuation">
-      <div className="vseal-value-label">LIVE</div>
+    <div className="vseal-value" aria-label={props.ariaLabel}>
+      <div className="vseal-value-label">{props.label}</div>
       <div className="vseal-value-phi">{fmtPhi(props.phiValue)}</div>
       <div className="vseal-value-usd">{props.usdValue == null ? "—" : fmtUsd(props.usdValue)}</div>
     </div>
@@ -336,10 +354,17 @@ export default function VerifyPage(): ReactElement {
     return typeof candidate === "number" && Number.isFinite(candidate) ? candidate : null;
   }, [valuationPayload, livePrice, valSeal]);
 
-  const liveValueUsd = useMemo(() => {
-    if (liveValuePhi == null || !Number.isFinite(usdPerPhi) || usdPerPhi <= 0) return null;
-    return liveValuePhi * usdPerPhi;
-  }, [liveValuePhi, usdPerPhi]);
+  const ledgerBalance = useMemo(() => {
+    if (result.status !== "ok") return null;
+    return readLedgerBalance(result.embedded.raw) ?? readLedgerBalance(embeddedProof?.raw);
+  }, [embeddedProof?.raw, result]);
+
+  const displayPhi = ledgerBalance?.remaining ?? liveValuePhi;
+
+  const displayUsd = useMemo(() => {
+    if (displayPhi == null || !Number.isFinite(usdPerPhi) || usdPerPhi <= 0) return null;
+    return displayPhi * usdPerPhi;
+  }, [displayPhi, usdPerPhi]);
 
   // Focus Views
   const [openSvgEditor, setOpenSvgEditor] = useState<boolean>(false);
@@ -766,7 +791,14 @@ export default function VerifyPage(): ReactElement {
           <div className="vseals" aria-label="Official seals">
             <SealPill label="KAS" state={sealKAS} detail={embeddedProof?.authorSig ? "Author seal (WebAuthn KAS)" : "No author seal present"} />
             <SealPill label="G16" state={sealZK} detail={zkMeta?.zkPoseidonHash ? "Groth16 + Poseidon rail" : "No ZK rail present"} />
-            {result.status === "ok" && liveValuePhi != null ? <LiveValuePill phiValue={liveValuePhi} usdValue={liveValueUsd} /> : null}
+            {result.status === "ok" && displayPhi != null ? (
+              <LiveValuePill
+                phiValue={displayPhi}
+                usdValue={displayUsd}
+                label={ledgerBalance ? "BALANCE" : "LIVE"}
+                ariaLabel={ledgerBalance ? "Glyph balance" : "Live glyph valuation"}
+              />
+            ) : null}
           </div>
 
           <div className="vkpis" aria-label="Primary identifiers">
@@ -981,10 +1013,10 @@ export default function VerifyPage(): ReactElement {
                 </div>
               </div>
 
-              {result.status === "ok" && liveValuePhi != null ? (
+              {result.status === "ok" && displayPhi != null ? (
                 <div className="vmini-grid vmini-grid--2 vvaluation-dashboard" aria-label="Live valuation">
-                  <MiniField label="Live Φ value" value={fmtPhi(liveValuePhi)} />
-                  <MiniField label="Live USD value" value={liveValueUsd == null ? "—" : fmtUsd(liveValueUsd)} />
+                  <MiniField label={ledgerBalance ? "Glyph Φ balance" : "Live Φ value"} value={fmtPhi(displayPhi)} />
+                  <MiniField label={ledgerBalance ? "Glyph USD balance" : "Live USD value"} value={displayUsd == null ? "—" : fmtUsd(displayUsd)} />
                 </div>
               ) : null}
 
