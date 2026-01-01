@@ -2,65 +2,110 @@
   position: fixed;
   inset: 0;
   z-index: 9999;
-  background: rgba(0,0,0,0.62);
-  backdrop-filter: blur(10px);
+  background: rgba(3, 6, 10, 0.74);
+  backdrop-filter: blur(14px) saturate(130%);
   display: grid;
   place-items: center;
-  padding: 12px;
+  padding: clamp(10px, 2vw, 20px);
 }
 
 .phmShell{
-  width: min(1400px, 98vw);
-  height: min(860px, 92vh);
-  border-radius: 22px;
+  width: min(1400px, 96vw);
+  height: min(920px, 94svh);
+  border-radius: 24px;
   overflow: hidden;
-  border: 1px solid rgba(255,255,255,0.10);
+  border: 1px solid rgba(255,255,255,0.12);
   background:
-    radial-gradient(900px 650px at 20% 12%, rgba(191,252,255,0.10), transparent 60%),
-    radial-gradient(900px 650px at 80% 18%, rgba(182,155,255,0.10), transparent 62%),
-    radial-gradient(1200px 900px at 50% 90%, rgba(255,255,255,0.06), transparent 70%),
-    rgba(7,9,15,0.98);
-  box-shadow: 0 24px 70px rgba(0,0,0,0.65);
+    radial-gradient(1200px 800px at 50% -10%, rgba(0, 0, 0, 0.64), #000000a6 60%),
+    radial-gradient(1100px 820px at 50% 20%, rgba(35,255,240,0.16), transparent 60%),
+    radial-gradient(900px 650px at 10% 90%, rgba(98,218,255,0.12), transparent 60%),
+    radial-gradient(900px 700px at 90% 80%, rgba(183,163,255,0.12), transparent 60%),
+    linear-gradient(180deg, rgba(6,10,14,0.96), rgba(6,10,14,0.86));
+  box-shadow: 0 30px 80px rgba(0,0,0,0.65);
+  position: relative;
+  isolation: isolate;
+}
+
+.phmShell::before,
+.phmShell::after{
+  content:"";
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+  z-index:0;
+}
+
+.phmShell::before{
+  background:
+    repeating-linear-gradient(
+      180deg,
+      rgba(255,255,255,0.02) 0px,
+      rgba(255,255,255,0.02) 1px,
+      rgba(0,0,0,0.0) 4px,
+      rgba(0,0,0,0.0) 8px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      rgba(255,255,255,0.012) 0px,
+      rgba(255,255,255,0.012) 1px,
+      rgba(0,0,0,0.0) 6px,
+      rgba(0,0,0,0.0) 12px
+    );
+  mix-blend-mode: overlay;
+  opacity: 0.4;
+}
+
+.phmShell::after{
+  background:
+    radial-gradient(900px 600px at 30% 20%, rgba(35,255,240,0.1), transparent 60%),
+    radial-gradient(800px 620px at 80% 70%, rgba(183,163,255,0.12), transparent 60%),
+    radial-gradient(760px 560px at 15% 85%, rgba(98,218,255,0.1), transparent 62%);
+  filter: blur(12px);
+  opacity: .5;
 }
 
 .phmHeader{
   display: flex;
-  gap: 12px;
-  align-items: center;
+  gap: 16px;
+  align-items: flex-start;
   justify-content: space-between;
-  padding: 14px 14px 12px 14px;
-  border-bottom: 1px solid rgba(255,255,255,0.08);
-  background: linear-gradient(to bottom, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+  padding: 16px;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+  background: linear-gradient(to bottom, rgba(255,255,255,0.08), rgba(255,255,255,0.03));
+  position: relative;
+  z-index: 1;
 }
 
 .phmHeaderLeft{
   display: flex;
-  gap: 14px;
+  gap: 16px;
   align-items: center;
-  min-width: 320px;
+  min-width: min(420px, 100%);
+  flex: 1;
 }
 
 .phmTitle{
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 900;
   letter-spacing: 0.3px;
   color: rgba(255,255,255,0.92);
 }
 
 .phmSub{
-  margin-top: 2px;
+  margin-top: 4px;
   font-size: 12px;
   color: rgba(255,255,255,0.62);
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 .phmDot{ opacity: 0.55; }
 
 .phmPulse{
   font-weight: 800;
-  color: rgba(255,255,255,0.78);
+  color: rgba(255,255,255,0.8);
 }
 
 .phmOrigin{
@@ -71,7 +116,7 @@
 .phmHeaderRight{
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   align-items: flex-end;
 }
 
@@ -83,11 +128,11 @@
 }
 
 .phmPill{
-  padding: 6px 10px;
+  padding: 6px 12px;
   border-radius: 999px;
-  border: 1px solid rgba(255,255,255,0.12);
-  background: rgba(255,255,255,0.04);
-  color: rgba(255,255,255,0.78);
+  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.8);
   font-size: 12px;
   font-weight: 700;
 }
@@ -101,34 +146,40 @@
   display: flex;
   gap: 10px;
   align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .phmBtn{
-  height: 34px;
+  height: 36px;
   padding: 0 12px;
   border-radius: 12px;
   border: 1px solid rgba(255,255,255,0.12);
-  background: rgba(255,255,255,0.04);
-  color: rgba(255,255,255,0.86);
+  background: rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.9);
   cursor: pointer;
   font-weight: 700;
   font-size: 12px;
+  transition: transform .12s ease, border-color .2s ease, background .2s ease;
 }
 
 .phmBtn:hover{
-  background: rgba(255,255,255,0.06);
-  border-color: rgba(255,255,255,0.18);
+  background: rgba(255,255,255,0.1);
+  border-color: rgba(255,255,255,0.22);
+  transform: translateY(-1px);
 }
 
 .phmBtnClose{
-  border-color: rgba(191,252,255,0.18);
-  background: rgba(191,252,255,0.06);
+  border-color: rgba(191,252,255,0.28);
+  background: rgba(191,252,255,0.12);
 }
 
 .phmBody{
   display: grid;
-  grid-template-columns: 1fr 360px;
-  height: calc(100% - 64px);
+  grid-template-columns: minmax(0, 1fr) 360px;
+  height: calc(100% - 78px);
+  position: relative;
+  z-index: 1;
 }
 
 @media (max-width: 980px){
@@ -153,8 +204,9 @@
   gap: 10px;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 12px;
-  border-bottom: 1px solid rgba(255,255,255,0.06);
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  background: rgba(0,0,0,0.18);
 }
 
 .phmSearch{
@@ -167,13 +219,14 @@
 
 .phmSearch input{
   width: min(520px, 100%);
-  height: 34px;
+  height: 36px;
   border-radius: 12px;
-  border: 1px solid rgba(255,255,255,0.10);
-  background: rgba(0,0,0,0.26);
-  color: rgba(255,255,255,0.90);
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(0,0,0,0.32);
+  color: rgba(255,255,255,0.92);
   padding: 0 12px;
   outline: none;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04);
 }
 
 .phmSearch input::placeholder{ color: rgba(255,255,255,0.42); }
@@ -182,9 +235,9 @@
   height: 34px;
   padding: 0 10px;
   border-radius: 12px;
-  border: 1px solid rgba(255,255,255,0.10);
-  background: rgba(255,255,255,0.04);
-  color: rgba(255,255,255,0.86);
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.9);
   cursor: pointer;
   font-size: 12px;
   font-weight: 700;
@@ -194,8 +247,8 @@
   display: inline-flex;
   border-radius: 14px;
   overflow: hidden;
-  border: 1px solid rgba(255,255,255,0.10);
-  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.05);
 }
 
 .phmSeg button{
@@ -203,15 +256,15 @@
   padding: 0 10px;
   border: 0;
   background: transparent;
-  color: rgba(255,255,255,0.68);
+  color: rgba(255,255,255,0.72);
   cursor: pointer;
   font-size: 12px;
   font-weight: 700;
 }
 
 .phmSeg button.on{
-  background: rgba(255,255,255,0.07);
-  color: rgba(255,255,255,0.92);
+  background: rgba(35,255,240,0.16);
+  color: rgba(255,255,255,0.95);
 }
 
 .phmViewport{
@@ -220,13 +273,20 @@
 }
 
 .phmInspector{
-  border-left: 1px solid rgba(255,255,255,0.06);
-  background: rgba(0,0,0,0.18);
+  border-left: 1px solid rgba(255,255,255,0.08);
+  background:
+    radial-gradient(140% 220% at 0% 0%, rgba(183,163,255,0.12), transparent 60%),
+    rgba(0,0,0,0.3);
   overflow: auto;
 }
 
 .phmInspectorCard{
   margin: 12px;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(0,0,0,0.28);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.06);
 }
 
 /* Beat ring */
@@ -236,34 +296,34 @@
 
 .phmBeatRingOuter{
   fill: rgba(255,255,255,0.02);
-  stroke: rgba(255,255,255,0.10);
+  stroke: rgba(255,255,255,0.12);
   stroke-width: 1.2;
 }
 
 .phmBeatRingInner{
-  fill: rgba(0,0,0,0.22);
-  stroke: rgba(255,255,255,0.08);
+  fill: rgba(0,0,0,0.3);
+  stroke: rgba(255,255,255,0.1);
   stroke-width: 1.2;
 }
 
 .phmBeatTick{
-  stroke: rgba(255,255,255,0.18);
+  stroke: rgba(255,255,255,0.2);
   stroke-width: 2.2;
   stroke-linecap: round;
 }
 
 .phmBeatTick.isOn{
-  stroke: rgba(191,252,255,0.55);
+  stroke: rgba(191,252,255,0.6);
 }
 
 .phmBeatTick.isActive{
-  stroke: rgba(182,155,255,0.70);
-  stroke-width: 3.0;
+  stroke: rgba(182,155,255,0.8);
+  stroke-width: 3.2;
 }
 
 .phmHint{
-  left: 10px;
-  bottom: 10px;
+  left: 12px;
+  bottom: 12px;
 }
 /* BeatRing interactivity */
 .phmBeatTick{
@@ -282,12 +342,82 @@
 
 /* Origin glow inside pulse */
 .sigilHex.isOrigin{
-  border-color: rgba(191,252,255,0.55);
-  box-shadow: 0 16px 44px rgba(0,0,0,0.65), inset 0 0 0 1px rgba(191,252,255,0.14);
+  border-color: rgba(191,252,255,0.7);
+  box-shadow: 0 18px 50px rgba(0,0,0,0.7), inset 0 0 0 1px rgba(191,252,255,0.2);
 }
 
 /* Beat filter label */
 .phmBeatFilter{
-  color: rgba(182,155,255,0.78);
+  color: rgba(182,155,255,0.82);
   font-weight: 800;
+}
+
+@media (max-width: 1100px){
+  .phmHeader{
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .phmHeaderLeft{
+    min-width: 0;
+  }
+
+  .phmHeaderRight{
+    align-items: flex-start;
+  }
+
+  .phmActions{
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 980px){
+  .phmBody{
+    grid-template-columns: minmax(0, 1fr);
+    height: auto;
+  }
+
+  .phmInspector{
+    border-left: 0 !important;
+    border-top: 1px solid rgba(255,255,255,0.08);
+    max-height: 360px;
+  }
+}
+
+@media (max-width: 720px){
+  .phmShell{
+    width: 100%;
+    height: 100svh;
+    border-radius: 18px;
+  }
+
+  .phmHeader{
+    padding: 12px;
+  }
+
+  .phmTitle{
+    font-size: 16px;
+  }
+
+  .phmSearch{
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .phmSearch input{
+    width: 100%;
+  }
+
+  .phmCombToolbar{
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .phmSeg{
+    width: 100%;
+  }
+
+  .phmSeg button{
+    flex: 1;
+  }
 }
