@@ -1235,20 +1235,12 @@ function ExplorerToolbar({
 
           <div className="kx-view-toggle" role="group" aria-label="Explorer view mode">
             <button
-              className={["kx-view-btn", viewMode === "keystream" ? "is-active" : ""].filter(Boolean).join(" ")}
+              className="kx-view-btn"
               type="button"
-              onClick={() => onViewModeChange("keystream")}
-              aria-pressed={viewMode === "keystream"}
-            >
-              Keystream
-            </button>
-            <button
-              className={["kx-view-btn", viewMode === "lattice" ? "is-active" : ""].filter(Boolean).join(" ")}
-              type="button"
-              onClick={() => onViewModeChange("lattice")}
+              onClick={() => onViewModeChange(viewMode === "keystream" ? "lattice" : "keystream")}
               aria-pressed={viewMode === "lattice"}
             >
-              Memory Lattice
+              {viewMode === "keystream" ? "Memory Lattice" : "Keystream"}
             </button>
           </div>
 
