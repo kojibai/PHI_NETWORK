@@ -468,6 +468,8 @@ const SigilHex = React.memo(function SigilHex(props: {
   ariaParts.push(shortHash(node.hash, 12));
   const aria = ariaParts.join(" — ");
 
+  const glyphSrc = browserViewUrl(node.bestUrl);
+
   return (
     <button
       type="button"
@@ -483,6 +485,9 @@ const SigilHex = React.memo(function SigilHex(props: {
       title={aria}
     >
       <div className="sigilHexInner">
+        <div className="sigilHexGlyphFrame" aria-hidden="true">
+          <img className="sigilHexGlyph" src={glyphSrc} alt="" loading="lazy" decoding="async" draggable={false} />
+        </div>
         <div className="sigilHexTop">
           <span className="sigilHexPulse">{typeof node.pulse === "number" ? node.pulse : "—"}</span>
           <span className="sigilHexHash">{shortHash(node.hash)}</span>
@@ -868,7 +873,8 @@ export default function SigilHoneycombExplorer({
     const N = filtered.length;
     const coords = hexSpiralCoords(N);
 
-    const radiusPx = 28;
+    const PHI = 1.61803398875;
+    const radiusPx = Math.round(28 * PHI);
     const pts: Pt[] = coords.map((c) => axialToPixelPointy(c, radiusPx));
 
     let minX = Infinity;
