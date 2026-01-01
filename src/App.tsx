@@ -77,6 +77,10 @@ const SigilExplorer = lazy(
   () => import("./components/SigilExplorer/SigilExplorer"),
 ) as React.LazyExoticComponent<React.ComponentType<Record<string, never>>>;
 
+const VerifyPageLazy = lazy(
+  () => import("./pages/VerifyPage"),
+) as React.LazyExoticComponent<React.ComponentType<Record<string, never>>>;
+
 type EternalKlockProps = { initialDetailsOpen?: boolean };
 
 const EternalKlockLazy = lazy(
@@ -184,6 +188,12 @@ type KlockPopoverStyle = CSSProperties & {
 };
 
 type ExplorerPopoverProps = {
+  open: boolean;
+  onClose: () => void;
+  children: React.ReactNode;
+};
+
+type VerifyPopoverProps = {
   open: boolean;
   onClose: () => void;
   children: React.ReactNode;
@@ -443,6 +453,124 @@ function ExplorerPopover({
 
         <div className="sr-only" aria-live="polite">
           PhiStream explorer portal open
+        </div>
+      </div>
+    </div>,
+    portalHost,
+  );
+}
+
+function VerifyPopover({ open, onClose, children }: VerifyPopoverProps): React.JSX.Element | null {
+  const isClient = typeof document !== "undefined";
+  const vvSize = useVisualViewportSize();
+
+  const portalHost = useMemo<HTMLElement | null>(() => {
+    if (!isClient) return null;
+    return getPortalHost();
+  }, [isClient]);
+
+  useBodyScrollLock(open && isClient);
+
+  useEffect(() => {
+    if (!open || !isClient) return;
+
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === "Escape") onClose();
+    };
+
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open, onClose, isClient]);
+
+  const closeBtnRef = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    window.requestAnimationFrame(() => closeBtnRef.current?.focus());
+  }, [open]);
+
+  const overlayStyle = useMemo<ExplorerPopoverStyle | undefined>(() => {
+    if (!open || !isClient) return undefined;
+
+    const h = vvSize.height;
+    const w = vvSize.width;
+
+    return {
+      position: "fixed",
+      inset: 0,
+      pointerEvents: "auto",
+      height: h > 0 ? `${h}px` : undefined,
+      width: w > 0 ? `${w}px` : undefined,
+
+      ["--sx-breath"]: "5.236s",
+      ["--sx-border"]: "rgba(60, 220, 205, 0.35)",
+      ["--sx-border-strong"]: "rgba(55, 255, 228, 0.55)",
+      ["--sx-ring"]:
+        "0 0 0 2px rgba(55, 255, 228, 0.25), 0 0 0 6px rgba(55, 255, 228, 0.12)",
+    };
+  }, [open, isClient, vvSize]);
+
+  const onBackdropPointerDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>): void => {
+      if (e.target === e.currentTarget) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    },
+    [],
+  );
+
+  const onBackdropClick = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>): void => {
+      if (e.target === e.currentTarget) {
+        e.preventDefault();
+        e.stopPropagation();
+        onClose();
+      }
+    },
+    [onClose],
+  );
+
+  const onClosePointerDown = useCallback(
+    (e: React.PointerEvent<HTMLButtonElement>): void => {
+      e.preventDefault();
+      e.stopPropagation();
+    },
+    [],
+  );
+
+  if (!open || !isClient || !portalHost) return null;
+
+  return createPortal(
+    <div
+      className="explorer-pop verify-pop"
+      style={overlayStyle}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Attestation verifier"
+      onPointerDown={onBackdropPointerDown}
+      onClick={onBackdropClick}
+    >
+      <div className="explorer-pop__panel verify-pop__panel" role="document">
+        <button
+          ref={closeBtnRef}
+          type="button"
+          className="explorer-pop__close verify-pop__close kx-x"
+          onPointerDown={onClosePointerDown}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onClose();
+          }}
+          aria-label="Close attestation verifier"
+          title="Close (Esc)"
+        >
+          ×
+        </button>
+
+        <div className="explorer-pop__body verify-pop__body">{children}</div>
+
+        <div className="sr-only" aria-live="polite">
+          Attestation portal open
         </div>
       </div>
     </div>,
@@ -922,6 +1050,7 @@ export function AppChrome(): React.JSX.Element {
 
   // Heavy UI gating for instant first paint (chart + chunk prefetch)
   const [heavyUiReady, setHeavyUiReady] = useState(false);
+  const [verifyOpen, setVerifyOpen] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -971,6 +1100,14 @@ export function AppChrome(): React.JSX.Element {
   const warmHomeChart = useCallback((): void => {
     setHeavyUiReady(true);
     void import("./components/HomePriceChartCard");
+  }, []);
+
+  const openVerify = useCallback((): void => {
+    setVerifyOpen(true);
+  }, []);
+
+  const closeVerify = useCallback((): void => {
+    setVerifyOpen(false);
   }, []);
 
   // SW warm-up (idle-only + focus cadence, abort-safe, respects Save-Data/2G)
@@ -1307,6 +1444,12 @@ export function AppChrome(): React.JSX.Element {
         </div>
       </header>
 
+      <VerifyPopover open={verifyOpen} onClose={closeVerify}>
+        <Suspense fallback={null}>
+          <VerifyPageLazy />
+        </Suspense>
+      </VerifyPopover>
+
       <main className="app-stage" id="app-content" role="main" aria-label="Sovereign Value Workspace">
         <div className="app-frame" role="region" aria-label="Secure frame">
           <div className="app-frame-inner">
@@ -1383,6 +1526,17 @@ export function AppChrome(): React.JSX.Element {
                       <div className="nav-item__desc">{item.desc}</div>
                     </NavLink>
                   ))}
+
+                  <button
+                    type="button"
+                    className="nav-item nav-item--button"
+                    aria-label="Attestation: Verify ΦKey"
+                    aria-haspopup="dialog"
+                    onClick={openVerify}
+                  >
+                    <div className="nav-item__label">Attestation</div>
+                    <div className="nav-item__desc">Verify ΦKey</div>
+                  </button>
                 </div>
 
                 {/* Structural fix: prevent SovereignDeclarations from eating extra height */}
