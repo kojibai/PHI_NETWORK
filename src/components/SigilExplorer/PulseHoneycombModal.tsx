@@ -8,6 +8,11 @@ import "./PulseHoneycombModal.css";
 import { memoryRegistry } from "./registryStore";
 import { computeIntrinsicUnsigned, type SigilMetadataLite } from "../../utils/valuation";
 import { DEFAULT_ISSUANCE_POLICY, quotePhiForUsd } from "../../utils/phi-issuance";
+import LiveChart from "../valuation/chart/LiveChart";
+import { COLORS } from "../valuation/constants";
+import { bootstrapSeries } from "../valuation/series";
+import KaiSigil from "../KaiSigil";
+import type { ChakraDay } from "../KaiSigil/types";
 import {
   canonicalizeUrl,
   browserViewUrl,
@@ -118,6 +123,18 @@ function toTransferDirection(v: unknown): "send" | "receive" | undefined {
   const s = readStr(v);
   if (s === "send" || s === "receive") return s;
   return undefined;
+}
+
+function normalizeChakraDay(value?: string): ChakraDay {
+  const v = (value ?? "").toLowerCase();
+  if (v.includes("root")) return "Root";
+  if (v.includes("sacral")) return "Sacral";
+  if (v.includes("solar")) return "Solar Plexus";
+  if (v.includes("heart")) return "Heart";
+  if (v.includes("throat")) return "Throat";
+  if (v.includes("third") || v.includes("brow")) return "Third Eye";
+  if (v.includes("crown")) return "Crown";
+  return "Root";
 }
 
 function safeLocalStorageSet(key: string, value: string): void {
@@ -428,70 +445,7 @@ function buildNodesForPulse(pulse: number): HoneyNode[] {
   });
 }
 
-function computeBeatPresence(nodes: HoneyNode[]): boolean[] {
-  const beats = new Array<boolean>(36).fill(false);
-  for (const n of nodes) {
-    if (typeof n.beat !== "number") continue;
-    const b = Math.floor(n.beat);
-    if (b >= 0 && b < 36) beats[b] = true;
-  }
-  return beats;
-}
-
-function BeatRing(props: {
-  beats: boolean[];
-  activeBeat: number | null;
-  filterBeat: number | null;
-  onToggleBeat: (beat: number) => void;
-}) {
-  const { beats, activeBeat, filterBeat, onToggleBeat } = props;
-
-  const size = 88;
-  const cx = size / 2;
-  const cy = size / 2;
-  const r0 = 28;
-  const r1 = 38;
-  const seg = 360 / 36;
-
-  const lines: React.ReactNode[] = [];
-  for (let i = 0; i < 36; i++) {
-    const a0 = (i * seg - 90) * (Math.PI / 180);
-    const x0 = cx + Math.cos(a0) * r0;
-    const y0 = cy + Math.sin(a0) * r0;
-    const x1 = cx + Math.cos(a0) * r1;
-    const y1 = cy + Math.sin(a0) * r1;
-
-    const isOn = beats[i] === true;
-    const isActive = activeBeat != null && i === activeBeat;
-    const isFiltered = filterBeat != null && i === filterBeat;
-
-    lines.push(
-      <line
-        key={i}
-        x1={x0}
-        y1={y0}
-        x2={x1}
-        y2={y1}
-        className={[
-          "phmBeatTick",
-          isOn ? "isOn" : "",
-          isActive ? "isActive" : "",
-          isFiltered ? "isFiltered" : "",
-        ].join(" ")}
-        vectorEffect="non-scaling-stroke"
-        onClick={() => onToggleBeat(i)}
-      />,
-    );
-  }
-
-  return (
-    <svg className="phmBeatRing" width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden="true">
-      <circle cx={cx} cy={cy} r={42} className="phmBeatRingOuter" />
-      {lines}
-      <circle cx={cx} cy={cy} r={22} className="phmBeatRingInner" />
-    </svg>
-  );
-}
+type ChartBundle = ReturnType<typeof bootstrapSeries>;
 
 const SigilHex = React.memo(function SigilHex(props: {
   node: HoneyNode;
@@ -509,7 +463,10 @@ const SigilHex = React.memo(function SigilHex(props: {
   if (node.chakraDay) ariaParts.push(node.chakraDay);
   ariaParts.push(shortHash(node.hash, 12));
   const aria = ariaParts.join(" — ");
-  const glyphSrc = browserViewUrl(node.bestUrl);
+  const chakraDay = normalizeChakraDay(node.chakraDay);
+  const pulseValue = typeof node.pulse === "number" && Number.isFinite(node.pulse) ? node.pulse : 0;
+  const beatValue = typeof node.beat === "number" && Number.isFinite(node.beat) ? node.beat : undefined;
+  const stepValue = typeof node.stepIndex === "number" && Number.isFinite(node.stepIndex) ? node.stepIndex : undefined;
 
   return (
     <button
@@ -528,7 +485,15 @@ const SigilHex = React.memo(function SigilHex(props: {
     >
       <div className="sigilHexInner">
         <div className="sigilHexGlyphFrame" aria-hidden="true">
-          <img className="sigilHexGlyph" src={glyphSrc} alt="" loading="lazy" decoding="async" draggable={false} />
+          <KaiSigil
+            pulse={pulseValue}
+            beat={beatValue}
+            stepIndex={stepValue}
+            chakraDay={chakraDay}
+            size={48}
+            hashMode="deterministic"
+            animate={false}
+          />
         </div>
         <div className="sigilHexTop">
           <span className="sigilHexPulse">{typeof node.pulse === "number" ? node.pulse : "—"}</span>
@@ -629,7 +594,6 @@ function PulseHoneycombInner({
   // Defaults (no reset effects). Remount via key handles reset.
   const [edgeMode] = useState<EdgeMode>("parent+children");
   const [selectedOverride, setSelectedOverride] = useState<string | null>(null);
-  const [beatFilter, setBeatFilter] = useState<number | null>(null);
 
   const viewportRef = useRef<HTMLDivElement | null>(null);
 
@@ -692,16 +656,9 @@ function PulseHoneycombInner({
     return m;
   }, [nodesRaw]);
 
-  const beats = useMemo(() => computeBeatPresence(nodesRaw), [nodesRaw]);
+  const filtered = nodesRaw;
 
-  const beatFiltered = useMemo(() => {
-    if (beatFilter == null) return nodesRaw;
-    return nodesRaw.filter((n) => typeof n.beat === "number" && Math.floor(n.beat) === beatFilter);
-  }, [nodesRaw, beatFilter]);
-
-  const filtered = beatFiltered;
-
-  const selectionPool = filtered.length > 0 ? filtered : beatFiltered.length > 0 ? beatFiltered : nodesRaw;
+  const selectionPool = filtered.length > 0 ? filtered : nodesRaw;
 
   const computedInitialHash = useMemo(() => {
     if (selectionPool.length === 0) return null;
@@ -749,6 +706,38 @@ function PulseHoneycombInner({
     return { phi, usd, usdPerPhi };
   }, [activePulse, registryRev]);
 
+
+  const chartBundle = useMemo<ChartBundle | null>(() => {
+    if (activePulse == null) return null;
+    let payload: Record<string, unknown> | null = null;
+
+    for (const [, payloadLoose] of memoryRegistry) {
+      if (!isRecord(payloadLoose)) continue;
+      const p = readFiniteNumber(payloadLoose.pulse);
+      if (p !== activePulse) continue;
+      payload = payloadLoose;
+      break;
+    }
+
+    if (!payload) return null;
+
+    const meta = buildValuationMeta(payload);
+    const { unsigned } = computeIntrinsicUnsigned(meta, activePulse);
+    const seal = {
+      version: 1,
+      unit: "Φ",
+      algorithm: "phi/kosmos-vφ-5",
+      policyChecksum: unsigned.policyChecksum,
+      valuePhi: unsigned.valuePhi,
+      premium: unsigned.premium,
+      inputs: unsigned.inputs,
+      computedAtPulse: unsigned.computedAtPulse,
+      headRef: unsigned.headRef,
+      stamp: "0",
+    } as const;
+
+    return bootstrapSeries(seal, meta, activePulse, 64);
+  }, [activePulse, registryRev]);
 
   const layout = useMemo(() => {
     const N = filtered.length;
@@ -927,18 +916,32 @@ function PulseHoneycombInner({
         <div className="phmHeaderLeft">
           <div className="phmTitleBlock">
             <div id="phmTitle" className="phmTitle">
-              Pulse Atlas
+              {titlePulse}
             </div>
             <div className="phmSub">
-              <span className="phmPulse">{titlePulse}</span>
-              {originLabel ? <span className="phmDot">•</span> : null}
               {originLabel ? <span className="phmOrigin">origin {shortHash(originLabel, 14)}</span> : null}
-              {beatFilter != null ? <span className="phmDot">•</span> : null}
-              {beatFilter != null ? <span className="phmBeatFilter">beat {beatFilter}</span> : null}
+              {activeBeat != null ? <span className="phmDot">•</span> : null}
+              {activeBeat != null ? <span className="phmBeatFilter">beat {activeBeat}</span> : null}
             </div>
           </div>
 
-          <BeatRing beats={beats} activeBeat={activeBeat} filterBeat={beatFilter} onToggleBeat={toggleBeat} />
+          <div className="phmChart">
+            {chartBundle ? (
+              <LiveChart
+                data={chartBundle.lineData}
+                live={pulseValue.phi ?? chartBundle.lineData[chartBundle.lineData.length - 1]?.value ?? 0}
+                pv={chartBundle.lineData[chartBundle.lineData.length - 1]?.value ?? 0}
+                premiumX={1}
+                momentX={1}
+                colors={Array.from(COLORS)}
+                height={96}
+                usdPerPhi={pulseValue.usdPerPhi ?? 0}
+                mode="usd"
+              />
+            ) : (
+              <div className="phmChartEmpty">No pulse data</div>
+            )}
+          </div>
         </div>
 
         <div className="phmHeaderRight">
@@ -1004,7 +1007,7 @@ function PulseHoneycombInner({
             </div>
 
             <div className="combHint phmHint">
-              Pulse lattice • click BeatRing to filter • drag to pan
+              Pulse lattice • drag to pan • scroll to zoom
             </div>
           </div>
         </div>
@@ -1017,53 +1020,93 @@ function PulseHoneycombInner({
             </div>
 
             <div className="inspectorGrid">
-              <div className="k">Pulse</div>
-              <div className="v mono">{selected?.pulse ?? "—"}</div>
+              {selected?.pulse != null && (
+                <>
+                  <div className="k">Pulse</div>
+                  <div className="v mono">{selected.pulse}</div>
+                </>
+              )}
 
-              <div className="k">Beat:Step</div>
-              <div className="v mono">
-                {selected?.beat ?? "—"}:{selected?.stepIndex ?? "—"}
-              </div>
+              {selected?.beat != null && selected?.stepIndex != null && (
+                <>
+                  <div className="k">Beat:Step</div>
+                  <div className="v mono">
+                    {selected.beat}:{selected.stepIndex}
+                  </div>
+                </>
+              )}
 
-              <div className="k">Chakra</div>
-              <div className="v">{selected?.chakraDay ?? "—"}</div>
+              {selected?.chakraDay && (
+                <>
+                  <div className="k">Chakra</div>
+                  <div className="v">{selected.chakraDay}</div>
+                </>
+              )}
 
-              <div className="k">ΔΦ</div>
-              <div className="v mono">{formatPhi(selected?.phiDelta)}</div>
+              {selected?.phiDelta && (
+                <>
+                  <div className="k">ΔΦ</div>
+                  <div className="v mono">{formatPhi(selected.phiDelta)}</div>
+                </>
+              )}
 
-              <div className="k">Transfer</div>
-              <div className="v">{selected?.transferDirection ?? "—"}</div>
+              {selected?.transferDirection && (
+                <>
+                  <div className="k">Transfer</div>
+                  <div className="v">{selected.transferDirection}</div>
+                </>
+              )}
 
-              <div className="k">Parent</div>
-              <div className="v mono">
-                {selected?.parentHash && byHash.has(selected.parentHash) ? (
-                  <button className="linkBtn" type="button" onClick={() => selectHash(selected.parentHash!)}>
-                    {shortHash(selected.parentHash, 14)}
-                  </button>
-                ) : (
-                  selected?.parentHash ? shortHash(selected.parentHash, 14) : "—"
-                )}
-              </div>
+              {selected?.parentHash && (
+                <>
+                  <div className="k">Parent</div>
+                  <div className="v mono">
+                    {byHash.has(selected.parentHash) ? (
+                      <button className="linkBtn" type="button" onClick={() => selectHash(selected.parentHash!)}>
+                        {shortHash(selected.parentHash, 14)}
+                      </button>
+                    ) : (
+                      shortHash(selected.parentHash, 14)
+                    )}
+                  </div>
+                </>
+              )}
 
-              <div className="k">Origin</div>
-              <div className="v mono">
-                {selected?.originHash && byHash.has(selected.originHash) ? (
-                  <button className="linkBtn" type="button" onClick={() => selectHash(selected.originHash!)}>
-                    {shortHash(selected.originHash, 14)}
-                  </button>
-                ) : (
-                  selected?.originHash ? shortHash(selected.originHash, 14) : "—"
-                )}
-              </div>
+              {selected?.originHash && (
+                <>
+                  <div className="k">Origin</div>
+                  <div className="v mono">
+                    {byHash.has(selected.originHash) ? (
+                      <button className="linkBtn" type="button" onClick={() => selectHash(selected.originHash!)}>
+                        {shortHash(selected.originHash, 14)}
+                      </button>
+                    ) : (
+                      shortHash(selected.originHash, 14)
+                    )}
+                  </div>
+                </>
+              )}
 
-              <div className="k">PhiKey</div>
-              <div className="v mono">{selected?.userPhiKey ? shortHash(selected.userPhiKey, 20) : "—"}</div>
+              {selected?.userPhiKey && (
+                <>
+                  <div className="k">PhiKey</div>
+                  <div className="v mono">{shortHash(selected.userPhiKey, 20)}</div>
+                </>
+              )}
 
-              <div className="k">KaiSig</div>
-              <div className="v mono">{selected?.kaiSignature ? shortHash(selected.kaiSignature, 20) : "—"}</div>
+              {selected?.kaiSignature && (
+                <>
+                  <div className="k">KaiSig</div>
+                  <div className="v mono">{shortHash(selected.kaiSignature, 20)}</div>
+                </>
+              )}
 
-              <div className="k">Degree</div>
-              <div className="v mono">{selected?.degree ?? "—"}</div>
+              {selected?.degree != null && (
+                <>
+                  <div className="k">Degree</div>
+                  <div className="v mono">{selected.degree}</div>
+                </>
+              )}
             </div>
 
             <div className="inspectorActions">

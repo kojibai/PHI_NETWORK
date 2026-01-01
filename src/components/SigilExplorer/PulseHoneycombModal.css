@@ -85,6 +85,24 @@
   flex: 1;
 }
 
+.phmChart{
+  width: 180px;
+  height: 96px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(0,0,0,0.25);
+  overflow: hidden;
+  box-shadow: inset 0 0 18px rgba(255,255,255,0.05);
+}
+
+.phmChartEmpty{
+  height: 100%;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  color: rgba(255,255,255,0.6);
+}
+
 .phmTitle{
   font-size: 13px;
   font-weight: 900;
@@ -340,6 +358,8 @@
   border: 1px solid rgba(255,255,255,0.12);
   background: rgba(0,0,0,0.28);
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.06);
+  max-height: calc(100% - 24px);
+  overflow: auto;
 }
 
 /* Beat ring */
@@ -465,6 +485,10 @@
 
   .phmValueCard{
     min-width: 120px;
+  }
+
+  .phmChart{
+    display: none;
   }
 
   .phmSeg{

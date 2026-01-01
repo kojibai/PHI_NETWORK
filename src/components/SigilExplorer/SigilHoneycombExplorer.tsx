@@ -38,6 +38,8 @@ import {
 } from "./apiClient";
 
 import { loadUrlHealthFromStorage } from "./urlHealth";
+import KaiSigil from "../KaiSigil";
+import type { ChakraDay } from "../KaiSigil/types";
 
 /* ─────────────────────────────────────────────────────────────
    Types (strict)
@@ -147,6 +149,18 @@ function readLowerStr(v: unknown): string | undefined {
 
 function readNum(v: unknown): number | undefined {
   return typeof v === "number" && Number.isFinite(v) ? v : undefined;
+}
+
+function normalizeChakraDay(value?: string): ChakraDay {
+  const v = (value ?? "").toLowerCase();
+  if (v.includes("root")) return "Root";
+  if (v.includes("sacral")) return "Sacral";
+  if (v.includes("solar")) return "Solar Plexus";
+  if (v.includes("heart")) return "Heart";
+  if (v.includes("throat")) return "Throat";
+  if (v.includes("third") || v.includes("brow")) return "Third Eye";
+  if (v.includes("crown")) return "Crown";
+  return "Root";
 }
 
 function safeJsonParse(text: string): unknown {
@@ -468,7 +482,10 @@ const SigilHex = React.memo(function SigilHex(props: {
   ariaParts.push(shortHash(node.hash, 12));
   const aria = ariaParts.join(" — ");
 
-  const glyphSrc = browserViewUrl(node.bestUrl);
+  const chakraDay = normalizeChakraDay(node.chakraDay);
+  const pulseValue = typeof node.pulse === "number" && Number.isFinite(node.pulse) ? node.pulse : 0;
+  const beatValue = typeof node.beat === "number" && Number.isFinite(node.beat) ? node.beat : undefined;
+  const stepValue = typeof node.stepIndex === "number" && Number.isFinite(node.stepIndex) ? node.stepIndex : undefined;
 
   return (
     <button
@@ -486,7 +503,15 @@ const SigilHex = React.memo(function SigilHex(props: {
     >
       <div className="sigilHexInner">
         <div className="sigilHexGlyphFrame" aria-hidden="true">
-          <img className="sigilHexGlyph" src={glyphSrc} alt="" loading="lazy" decoding="async" draggable={false} />
+          <KaiSigil
+            pulse={pulseValue}
+            beat={beatValue}
+            stepIndex={stepValue}
+            chakraDay={chakraDay}
+            size={48}
+            hashMode="deterministic"
+            animate={false}
+          />
         </div>
         <div className="sigilHexTop">
           <span className="sigilHexPulse">{typeof node.pulse === "number" ? node.pulse : "—"}</span>
