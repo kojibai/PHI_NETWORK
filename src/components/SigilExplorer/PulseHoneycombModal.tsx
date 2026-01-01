@@ -13,7 +13,7 @@ import { COLORS } from "../valuation/constants";
 import { bootstrapSeries } from "../valuation/series";
 import KaiSigil from "../KaiSigil";
 import type { ChakraDay } from "../KaiSigil/types";
-import { N_DAY_MICRO, latticeFromMicroPulses, normalizePercentIntoStep } from "../../utils/kai_pulse";
+import { N_DAY_MICRO, latticeFromMicroPulses, momentFromPulse, normalizePercentIntoStep } from "../../utils/kai_pulse";
 import {
   canonicalizeUrl,
   browserViewUrl,
@@ -775,6 +775,8 @@ function PulseHoneycombInner({
       : null;
   const selectedKks = selectedPulse != null ? deriveKksFromPulse(selectedPulse) : null;
   const activeBeat = selectedKks ? Math.floor(selectedKks.beat) : null;
+  const activeMoment = useMemo(() => (activePulse != null ? momentFromPulse(activePulse) : null), [activePulse]);
+  const activePulseLabel = activePulse != null ? activePulse.toLocaleString() : "—";
 
   const pulseValue = useMemo(() => {
     if (activePulse == null) return { phi: null, usd: null, usdPerPhi: null };
@@ -997,25 +999,72 @@ function PulseHoneycombInner({
   };
 
 
-  const titlePulse = activePulse != null ? `Pulse ${activePulse}` : "Pulse";
+  const titlePulse = activePulse != null ? `Pulse ${activePulse.toLocaleString()}` : "Pulse";
   const originLabel = originCandidate ?? "";
 
   return (
     <div className="phmRoot" aria-label="Pulse Atlas">
       <header className="phmHeader">
         <div className="phmHeaderLeft">
-          <div className="phmTitleBlock">
-            <div id="phmTitle" className="phmTitle">
-              {titlePulse}
+          <div className="phmSigilCard" aria-label="Pulse sigil glyph">
+            <div className="phmSigilFrame">
+              {activePulse != null ? (
+                <KaiSigil pulse={activePulse} size={60} animate />
+              ) : (
+                <div className="phmSigilPlaceholder" />
+              )}
             </div>
-            <div className="phmSub">
-              {originLabel ? <span className="phmOrigin">origin {shortHash(originLabel, 14)}</span> : null}
-              {activeBeat != null ? <span className="phmDot">•</span> : null}
-              {activeBeat != null ? <span className="phmBeatFilter">beat {activeBeat}</span> : null}
+            <div className="phmSigilMeta">
+              <div className="phmSigilPulse">☤KAI {activePulseLabel}</div>
+              <div className="phmSigilSub">
+                <span>Beat {activeMoment?.beat ?? "—"}</span>
+                <span className="phmDot">•</span>
+                <span>Step {activeMoment?.stepIndex ?? "—"}</span>
+                <span className="phmDot">•</span>
+                <span>{activeMoment?.chakraDay ?? "—"}</span>
+              </div>
             </div>
           </div>
 
-          <div className="phmChart">
+          <div className="phmHeaderStack">
+            <div className="phmTitleBlock">
+              <div id="phmTitle" className="phmTitle">
+                {titlePulse}
+              </div>
+              <div className="phmSub">
+                {originLabel ? <span className="phmOrigin">origin {shortHash(originLabel, 14)}</span> : null}
+                {activeBeat != null ? <span className="phmDot">•</span> : null}
+                {activeBeat != null ? <span className="phmBeatFilter">beat {activeBeat}</span> : null}
+                <span className="phmDot">•</span>
+                <span className="phmCadence">breath 5.236s</span>
+              </div>
+            </div>
+
+            <div className="phmLiveRow" aria-live="polite">
+              <div className="phmLiveStat">
+                <span className="phmLiveLabel">Live Φ</span>
+                <span className="phmLiveValue">
+                  {pulseValue.phi != null ? `${formatPhiNumber(pulseValue.phi)} Φ` : "—"}
+                </span>
+              </div>
+              <div className="phmLiveStat">
+                <span className="phmLiveLabel">Live USD</span>
+                <span className="phmLiveValue">{pulseValue.usd != null ? `$${formatUsd(pulseValue.usd)}` : "—"}</span>
+              </div>
+              <div className="phmLiveStat">
+                <span className="phmLiveLabel">USD / Φ</span>
+                <span className="phmLiveValue">
+                  {pulseValue.usdPerPhi != null ? `$${formatUsd(pulseValue.usdPerPhi)}` : "—"}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="phmChart" aria-label="Live pulse chart">
+            <span className="phmChartBadge">
+              <span className="phmLiveDot" aria-hidden="true" />
+              LIVE
+            </span>
             {chartBundle ? (
               <LiveChart
                 data={chartBundle.lineData}
@@ -1024,7 +1073,7 @@ function PulseHoneycombInner({
                 premiumX={1}
                 momentX={1}
                 colors={Array.from(COLORS)}
-                height={96}
+                height={86}
                 usdPerPhi={pulseValue.usdPerPhi ?? 0}
                 mode="usd"
               />
