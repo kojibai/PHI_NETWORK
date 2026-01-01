@@ -2367,7 +2367,7 @@ const SigilExplorer: React.FC = () => {
             <div className="kx-lattice-bar">
               <div className="kx-lattice-title">Memory Lattice</div>
               <button className="kx-lattice-close" type="button" onClick={closeLattice}>
-                Back to Keystream
+                Keystream
               </button>
             </div>
             <SigilHoneycombExplorer

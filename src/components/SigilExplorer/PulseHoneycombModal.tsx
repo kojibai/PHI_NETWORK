@@ -1042,6 +1042,16 @@ function PulseHoneycombInner({
         </div>
 
         <div className="phmHeaderRight">
+          <div className="phmStats" aria-label="Pulse context">
+            {selectedKks ? (
+              <span className="phmPill">
+                Beat {Math.floor(selectedKks.beat)}:{selectedKks.stepIndex}
+              </span>
+            ) : null}
+            {selected?.chakraDay ? <span className="phmPill phmPillChakra">{selected.chakraDay}</span> : null}
+            {selected?.kaiSignature ? <span className="phmPill">KaiSig {shortHash(selected.kaiSignature, 8)}</span> : null}
+          </div>
+
           <div className="phmValueCard" aria-live="polite">
             <div className="phmValueLabel">Pulse Value</div>
             <div className="phmValuePhi">{pulseValue.phi != null ? `${formatPhiNumber(pulseValue.phi)} Φ` : "—"}</div>
@@ -1051,9 +1061,6 @@ function PulseHoneycombInner({
             </div>
           </div>
 
-          <button type="button" className="phmBtn phmBtnBack" onClick={onClose}>
-            Back to Keystream
-          </button>
           <button type="button" className="phmBtn phmBtnClose" onClick={onClose} aria-label="Close">
             ✕
           </button>
