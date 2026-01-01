@@ -11,7 +11,6 @@ import {
   addUrl,
   ensureRegistryHydrated,
   persistRegistryToStorage,
-  parseImportedJson,
   REGISTRY_LS_KEY,
   MODAL_FALLBACK_LS_KEY,
   isOnline,
@@ -26,14 +25,7 @@ import {
   parseHashFromUrl,
 } from "./url";
 
-import {
-  enqueueInhaleRawKrystal,
-  flushInhaleQueue,
-  forceInhaleUrls,
-  loadInhaleQueueFromStorage,
-  saveInhaleQueueToStorage,
-  seedInhaleFromRegistry,
-} from "./inhaleQueue";
+import { flushInhaleQueue, loadInhaleQueueFromStorage, saveInhaleQueueToStorage, seedInhaleFromRegistry } from "./inhaleQueue";
 
 import { pullAndImportRemoteUrls } from "./remotePull";
 
@@ -526,7 +518,6 @@ export default function SigilHoneycombExplorer({
 
   const [registryRev, setRegistryRev] = useState<number>(() => (ensureRegistryHydrated() ? 1 : 0));
   const [selectedOverride, setSelectedOverride] = useState<string | null>(null);
-  const [inhaleInput, setInhaleInput] = useState<string>("");
 
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const [vpSize, setVpSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
@@ -1057,80 +1048,12 @@ export default function SigilHoneycombExplorer({
     }
   };
 
-  const onInhaleSubmit = () => {
-    const input = inhaleInput.trim();
-    if (!input) return;
-
-    const changed = addUrl(input, { includeAncestry: true, broadcast: true, persist: true, source: "local", enqueueToApi: true });
-    setInhaleInput("");
-
-    if (changed) bumpRegistry();
-
-    seedInhaleFromRegistry();
-    void flushInhaleQueue();
-  };
-
-  const onImportFile = async (file: File) => {
-    const text = await file.text();
-    let parsed: unknown;
-    try {
-      parsed = safeJsonParse(text);
-    } catch {
-      ignore();
-      return;
-    }
-
-    const { urls, rawKrystals } = parseImportedJson(parsed);
-    if (urls.length === 0 && rawKrystals.length === 0) return;
-
-    for (const k of rawKrystals) enqueueInhaleRawKrystal(k);
-
-    let changed = false;
-    for (const u of urls) {
-      if (typeof u !== "string") continue;
-      if (addUrl(u, { includeAncestry: true, broadcast: true, persist: true, source: "import", enqueueToApi: true })) changed = true;
-    }
-
-    if (urls.length > 0) forceInhaleUrls(urls);
-    if (changed) bumpRegistry();
-
-    const ac = new AbortController();
-    await inhaleOnce("import");
-    await exhaleOnce("import", ac.signal);
-  };
-
-  const onExport = () => {
-    if (!HAS_WINDOW) return;
-
-    const urls: string[] = [];
-    for (const [u] of memoryRegistry) urls.push(u);
-
-    const blob = new Blob([JSON.stringify({ urls }, null, 2)], { type: "application/json" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `sigil-registry-${Date.now()}.json`;
-    a.click();
-    URL.revokeObjectURL(a.href);
-  };
-
-  const onSyncNow = () => {
-    const ac = new AbortController();
-    void inhaleOnce("visible");
-    void exhaleOnce("visible", ac.signal);
-  };
-
   const childCount = selected ? (childrenByParent.get(selected.hash)?.length ?? 0) : 0;
 
   return (
     <div className={["sigilHoneycomb", className ?? ""].join(" ")}>
       <div className="sigilHoneycombHeader">
-        <div className="sigilHoneycombTitle">
-          <div className="h1">Honeycomb</div>
-          <div className="h2">
-            {nodesSorted.length} nodes • showing {filtered.length} • {isOnline() ? "online" : "offline"}
-            {syncMode === "embedded" ? " • embedded" : ""}
-          </div>
-        </div>
+        <div className="sigilHoneycombTitle" aria-hidden="true" />
 
         <div className="sigilHoneycombControls">
           <div className="searchBox">
@@ -1186,43 +1109,6 @@ export default function SigilHoneycombExplorer({
                 <span className="btn-text">+</span>
               </button>
             </div>
-
-            <div className="seg">
-              <button type="button" className="miniBtn" onClick={onSyncNow} disabled={!isOnline() || syncMode !== "standalone"} aria-label="Sync">
-                <span className="btn-icon">⟲</span>
-                <span className="btn-text">Sync</span>
-              </button>
-              <button type="button" className="miniBtn" onClick={onExport} aria-label="Exhale">
-                <span className="btn-icon">⇪</span>
-                <span className="btn-text">Exhale</span>
-              </button>
-              <label className="miniBtn hcImportBtn" title="Import JSON" aria-label="Inhale">
-                <span className="btn-icon">⇩</span>
-                <span className="btn-text">Inhale</span>
-                <input
-                  type="file"
-                  accept="application/json"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) void onImportFile(f);
-                    e.currentTarget.value = "";
-                  }}
-                />
-              </label>
-            </div>
-          </div>
-
-          <div className="hcInhaleRow">
-            <input
-              className="hcInhaleInput"
-              value={inhaleInput}
-              onChange={(e) => setInhaleInput(e.target.value)}
-              placeholder="Inhale a sigil URL…"
-              spellCheck={false}
-            />
-            <button className="miniBtn" type="button" onClick={onInhaleSubmit} disabled={!inhaleInput.trim()}>
-              Inhale
-            </button>
           </div>
         </div>
       </div>
