@@ -73,6 +73,8 @@ export type PulseHoneycombModalProps = {
   originUrl?: string;
   originHash?: string;
   registryRev?: number; // used only as a refresh signal (no state derived from it)
+  title?: string;
+  subtitle?: string;
   onClose: () => void;
 };
 
@@ -679,6 +681,8 @@ function PulseHoneycombInner({
   originUrl,
   originHash,
   registryRev,
+  title,
+  subtitle,
   onClose,
 }: PulseHoneycombModalProps) {
   // Defaults (no reset effects). Remount via key handles reset.
@@ -998,6 +1002,7 @@ function PulseHoneycombInner({
 
 
   const titlePulse = activePulse != null ? `Pulse ${activePulse}` : "Pulse";
+  const headerTitle = title ?? titlePulse;
   const originLabel = originCandidate ?? "";
 
   return (
@@ -1006,9 +1011,11 @@ function PulseHoneycombInner({
         <div className="phmHeaderLeft">
           <div className="phmTitleBlock">
             <div id="phmTitle" className="phmTitle">
-              {titlePulse}
+              {headerTitle}
             </div>
             <div className="phmSub">
+              {subtitle ? <span className="phmSubtitle">{subtitle}</span> : null}
+              {subtitle ? <span className="phmDot">•</span> : null}
               {originLabel ? <span className="phmOrigin">origin {shortHash(originLabel, 14)}</span> : null}
               {activeBeat != null ? <span className="phmDot">•</span> : null}
               {activeBeat != null ? <span className="phmBeatFilter">beat {activeBeat}</span> : null}
@@ -1044,6 +1051,9 @@ function PulseHoneycombInner({
             </div>
           </div>
 
+          <button type="button" className="phmBtn phmBtnBack" onClick={onClose}>
+            Back to Keystream
+          </button>
           <button type="button" className="phmBtn phmBtnClose" onClick={onClose} aria-label="Close">
             ✕
           </button>

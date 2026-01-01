@@ -33,6 +33,7 @@ import {
 
 /** Breath cadence + chakra tinting */
 import { chakraTintStyle } from "./chakra";
+import PulseHoneycombModal from "./PulseHoneycombModal";
 
 /** URL surface */
 import {
@@ -967,6 +968,8 @@ function OriginPanel({
   transferRegistry,
   receiveLocks,
   valueSnapshots,
+  onOpenPulseView,
+  nowPulse,
 }: {
   root: SigilNode;
   expanded: ReadonlySet<string>;
@@ -976,6 +979,8 @@ function OriginPanel({
   transferRegistry: ReadonlyMap<string, SigilTransferRecord>;
   receiveLocks: ReceiveLockIndex;
   valueSnapshots: ReadonlyMap<string, NodeValueSnapshot>;
+  onOpenPulseView: (payload: { pulse: number | null; originHash?: string; originUrl?: string; title?: string; subtitle?: string }) => void;
+  nowPulse: number | null;
 }) {
   const count = useMemo(() => {
     let n = 0;
@@ -993,6 +998,7 @@ function OriginPanel({
   const openHref = explorerOpenUrl(root.url);
   const chakraDay = (root.payload as unknown as { chakraDay?: string }).chakraDay;
   const rootSnapshot = valueSnapshots.get(root.id) ?? null;
+  const originPulse = readFiniteNumber((root.payload as { pulse?: unknown }).pulse) ?? nowPulse;
 
   const branchValue = useMemo(() => {
     let derivedPhi = 0;
@@ -1052,9 +1058,23 @@ function OriginPanel({
       <header className="origin-head">
         <div className="o-meta">
           <span className="o-title">Origin</span>
-          <a className="o-link" href={openHref} target="_blank" rel="noopener noreferrer" title={openHref}>
+          <button
+            className="o-link"
+            type="button"
+            onClick={() =>
+              onOpenPulseView({
+                pulse: originPulse ?? null,
+                originHash: originHash ?? undefined,
+                originUrl: root.url,
+                title: "Sigil Pulse",
+                subtitle: originPulse != null ? `Pulse ${originPulse}` : "Pulse",
+              })
+            }
+            aria-label="Open sigil pulse view"
+            title="Open sigil pulse view"
+          >
             {short(originSig ?? originHash ?? "origin", 14)}
-          </a>
+          </button>
           {chakraDay && (
             <span className="o-chakra" title={String(chakraDay)}>
               {String(chakraDay)}
@@ -1131,12 +1151,14 @@ function ExplorerToolbar({
   onAdd,
   onImport,
   onExport,
+  onOpenLattice,
   total,
   lastAdded,
 }: {
   onAdd: (u: string) => void;
   onImport: (f: File) => void;
   onExport: () => void;
+  onOpenLattice: () => void;
   total: number;
   lastAdded?: string;
 }) {
@@ -1202,6 +1224,10 @@ function ExplorerToolbar({
             </button>
           </div>
 
+          <button className="kx-lattice" type="button" onClick={onOpenLattice}>
+            Memory Lattice
+          </button>
+
           <div className="kx-stats" aria-live="polite">
             <span className="kx-pill" title="Total KEYS in registry (includes variants)">
               {total} KEYS
@@ -1227,6 +1253,14 @@ const SigilExplorer: React.FC = () => {
   const [lastAdded, setLastAdded] = useState<string | undefined>(undefined);
   const [usernameClaims, setUsernameClaims] = useState<UsernameClaimRegistry>(() => getUsernameClaimRegistry());
   const [nowPulse, setNowPulse] = useState(() => getKaiPulseEternalInt(new Date()));
+  const [pulseView, setPulseView] = useState<{
+    open: boolean;
+    pulse: number | null;
+    originHash?: string;
+    originUrl?: string;
+    title?: string;
+    subtitle?: string;
+  }>({ open: false, pulse: null });
 
   const unmounted = useRef(false);
   const prefetchedRef = useRef<Set<string>>(new Set());
@@ -2245,9 +2279,41 @@ const SigilExplorer: React.FC = () => {
     URL.revokeObjectURL(a.href);
   }, [markInteracting]);
 
+  const openPulseView = useCallback((payload: { pulse: number | null; originHash?: string; originUrl?: string; title?: string; subtitle?: string }) => {
+    const fallbackPulse = getLatestPulseFromRegistry() ?? nowPulse ?? 0;
+    setPulseView({
+      open: true,
+      pulse: payload.pulse ?? fallbackPulse,
+      originHash: payload.originHash,
+      originUrl: payload.originUrl,
+      title: payload.title,
+      subtitle: payload.subtitle,
+    });
+  }, [nowPulse]);
+
+  const closePulseView = useCallback(() => {
+    setPulseView((prev) => ({ ...prev, open: false }));
+  }, []);
+
+  const handleOpenLattice = useCallback(() => {
+    const fallbackPulse = getLatestPulseFromRegistry() ?? nowPulse ?? 0;
+    openPulseView({
+      pulse: fallbackPulse,
+      title: "Memory Lattice",
+      subtitle: `Pulse ${fallbackPulse}`,
+    });
+  }, [nowPulse, openPulseView]);
+
   return (
     <div className="sigil-explorer" aria-label="Kairos Keystream Explorer">
-      <ExplorerToolbar onAdd={handleAdd} onImport={handleImport} onExport={handleExport} total={totalKeys} lastAdded={lastAdded} />
+      <ExplorerToolbar
+        onAdd={handleAdd}
+        onImport={handleImport}
+        onExport={handleExport}
+        onOpenLattice={handleOpenLattice}
+        total={totalKeys}
+        lastAdded={lastAdded}
+      />
 
       <div className="explorer-scroll" ref={scrollElRef} role="region" aria-label="Explorer scroll viewport">
         <div className="explorer-inner">
@@ -2273,6 +2339,8 @@ const SigilExplorer: React.FC = () => {
                   transferRegistry={transferRegistry}
                   receiveLocks={receiveLocks}
                   valueSnapshots={valueSnapshots}
+                  onOpenPulseView={openPulseView}
+                  nowPulse={nowPulse}
                 />
               ))}
             </div>
@@ -2289,6 +2357,17 @@ const SigilExplorer: React.FC = () => {
           </footer>
         </div>
       </div>
+
+      <PulseHoneycombModal
+        open={pulseView.open}
+        pulse={pulseView.pulse}
+        originHash={pulseView.originHash}
+        originUrl={pulseView.originUrl}
+        registryRev={registryRev}
+        title={pulseView.title}
+        subtitle={pulseView.subtitle}
+        onClose={closePulseView}
+      />
     </div>
   );
 };
