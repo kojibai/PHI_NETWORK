@@ -25,6 +25,8 @@ function copyUpstreamHeaders(upHeaders, res) {
     if (key === "set-cookie") continue;
     if (key === "connection") continue;
     if (key === "transfer-encoding") continue;
+    if (key === "content-encoding") continue;
+    if (key === "content-length") continue;
     res.setHeader(k, v);
   }
 }
@@ -51,8 +53,10 @@ async function proxyOnce(base, req, upstreamPath, rawBody) {
     if (key === "host") continue;
     if (key === "connection") continue;
     if (key === "content-length") continue;
+    if (key === "accept-encoding") continue;
     headers.set(k, Array.isArray(v) ? v.join(",") : v);
   }
+  headers.set("accept-encoding", "identity");
 
   const method = (req.method || "GET").toUpperCase();
   const body = method === "GET" || method === "HEAD" ? undefined : rawBody;
