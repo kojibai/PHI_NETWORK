@@ -45,6 +45,8 @@ export type AddUrlOptions = {
 
 export function isOnline(): boolean {
   if (!hasWindow) return false;
+  const w = window as Window & { __LAHMAHTOR_INTERNAL__?: boolean };
+  if (w.__LAHMAHTOR_INTERNAL__) return true;
   if (typeof navigator === "undefined") return true;
   return navigator.onLine;
 }

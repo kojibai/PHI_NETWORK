@@ -1,6 +1,8 @@
 // src/components/SigilExplorer/apiClient.ts
 "use client";
 
+import { getInternalSigilApi, markInternalSigilApiEnabled } from "../../utils/lahmahtorClient";
+
 export type ApiSealResponse = {
   seal: string;
   pulse?: number;
@@ -10,182 +12,116 @@ export type ApiSealResponse = {
 };
 
 const hasWindow = typeof window !== "undefined";
-const canStorage = hasWindow && typeof window.localStorage !== "undefined";
 
 /* ─────────────────────────────────────────────────────────────────────
- *  LAH-MAH-TOR API (Primary + IKANN Failover, soft-fail backup)
+ *  LAH-MAH-TOR API (Internal, offline)
  *  ─────────────────────────────────────────────────────────────────── */
 export const LIVE_BASE_URL = "https://m.phi.network";
 export const LIVE_BACKUP_URL = "https://memory.kaiklok.com";
-
-function isLocalDevOrigin(origin: string): boolean {
-  return origin.startsWith("http://localhost:") || origin.startsWith("http://127.0.0.1:");
-}
-
-function selectPrimaryBase(primary: string, backup: string): string {
-  if (!hasWindow) return primary;
-  const origin = window.location.origin;
-  if (origin === primary || origin === backup) return origin;
-  if (isLocalDevOrigin(origin)) return origin;
-  return primary;
-}
-
-const API_BASE_PRIMARY = selectPrimaryBase(LIVE_BASE_URL, LIVE_BACKUP_URL);
-const API_BASE_FALLBACK = API_BASE_PRIMARY === LIVE_BASE_URL ? LIVE_BACKUP_URL : LIVE_BASE_URL;
 
 export const API_SEAL_PATH = "/sigils/seal";
 export const API_URLS_PATH = "/sigils/urls";
 export const API_INHALE_PATH = "/sigils/inhale";
 
-const API_BASE_HINT_LS_KEY = "kai:lahmahtorBase:v1";
-
-/** Backup suppression: if m.kai fails, suppress it for a cooldown window (no issues, no spam). */
-const API_BACKUP_DEAD_UNTIL_LS_KEY = "kai:lahmahtorBackupDeadUntil:v1";
-const API_BACKUP_COOLDOWN_MS = 2 * 60 * 1000; // 2 minutes (tight, safe)
-
-let apiBackupDeadUntil = 0;
-
-function nowMs(): number {
-  return Date.now();
-}
-
 export function loadApiBackupDeadUntil(): void {
-  if (!canStorage) return;
-  const raw = localStorage.getItem(API_BACKUP_DEAD_UNTIL_LS_KEY);
-  if (!raw) return;
-  const n = Number(raw);
-  if (Number.isFinite(n) && n > 0) apiBackupDeadUntil = n;
+  // no-op: offline internal API
+  markInternalSigilApiEnabled();
 }
-
-function saveApiBackupDeadUntil(): void {
-  if (!canStorage) return;
-  try {
-    localStorage.setItem(API_BACKUP_DEAD_UNTIL_LS_KEY, String(apiBackupDeadUntil));
-  } catch {
-    // ignore
-  }
-}
-
-function isBackupSuppressed(): boolean {
-  return nowMs() < apiBackupDeadUntil;
-}
-
-function clearBackupSuppression(): void {
-  if (apiBackupDeadUntil === 0) return;
-  apiBackupDeadUntil = 0;
-  saveApiBackupDeadUntil();
-}
-
-function markBackupDead(): void {
-  apiBackupDeadUntil = nowMs() + API_BACKUP_COOLDOWN_MS;
-  saveApiBackupDeadUntil();
-  // never “stick” to fallback if it’s failing
-  if (apiBaseHint === API_BASE_FALLBACK) {
-    apiBaseHint = API_BASE_PRIMARY;
-    saveApiBaseHint();
-  }
-}
-
-/** Sticky base: whichever succeeded last is attempted first. */
-let apiBaseHint: string = API_BASE_PRIMARY;
 
 export function loadApiBaseHint(): void {
-  if (!canStorage) return;
-  const raw = localStorage.getItem(API_BASE_HINT_LS_KEY);
-  if (raw === API_BASE_PRIMARY) {
-    apiBaseHint = raw;
-    return;
-  }
-  if (raw === API_BASE_FALLBACK) {
-    // if backup is currently suppressed, never load it as the preferred base
-    apiBaseHint = isBackupSuppressed() ? API_BASE_PRIMARY : raw;
-  }
+  // no-op: offline internal API
+  markInternalSigilApiEnabled();
 }
 
-function saveApiBaseHint(): void {
-  if (!canStorage) return;
-  try {
-    localStorage.setItem(API_BASE_HINT_LS_KEY, apiBaseHint);
-  } catch {
-    // ignore
-  }
+function apiBaseOrigin(): string {
+  if (!hasWindow) return "https://example.invalid";
+  return window.location.origin;
 }
 
-function apiBases(): string[] {
-  const wantFallbackFirst = apiBaseHint === API_BASE_FALLBACK && !isBackupSuppressed();
-  const list = wantFallbackFirst
-    ? [API_BASE_FALLBACK, API_BASE_PRIMARY]
-    : [API_BASE_PRIMARY, API_BASE_FALLBACK];
-
-  if (!hasWindow) {
-    // SSR: keep both, but still respect suppression in case it was set via storage read before render.
-    return isBackupSuppressed() ? list.filter((b) => b !== API_BASE_FALLBACK) : list;
-  }
-
-  const isHttpsPage = window.location.protocol === "https:";
-  // Never try http fallback from an https page (browser will block + log loudly)
-  const protocolFiltered = isHttpsPage ? list.filter((b) => b.startsWith("https://")) : list;
-
-  const pageOrigin = window.location.origin;
-  if (
-    pageOrigin === LIVE_BASE_URL ||
-    pageOrigin === LIVE_BACKUP_URL ||
-    isLocalDevOrigin(pageOrigin)
-  ) {
-    return protocolFiltered.filter((b) => b === pageOrigin);
-  }
-
-  // Soft-fail: suppress backup if marked dead
-  return isBackupSuppressed() ? protocolFiltered.filter((b) => b !== API_BASE_FALLBACK) : protocolFiltered;
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
 }
 
-function shouldFailoverStatus(status: number): boolean {
-  // 0 = network/CORS/unknown from wrapper
-  if (status === 0) return true;
-  // common “route didn’t exist here but exists on the other base”
-  if (status === 404) return true;
-  // transient / throttling / upstream
-  if (status === 408 || status === 429) return true;
-  if (status >= 500) return true;
-  return false;
+function parseBooleanParam(value: string | null, defaultValue: boolean): boolean {
+  if (value == null) return defaultValue;
+  const t = value.trim().toLowerCase();
+  if (!t) return defaultValue;
+  if (["0", "false", "no", "off"].includes(t)) return false;
+  if (["1", "true", "yes", "on"].includes(t)) return true;
+  return defaultValue;
+}
+
+async function formDataToFiles(body: FormData): Promise<File[]> {
+  const files: File[] = [];
+  for (const [, value] of body.entries()) {
+    if (value instanceof File) {
+      files.push(value);
+      continue;
+    }
+    if (value instanceof Blob) {
+      const name = "sigils.json";
+      files.push(new File([value], name, { type: value.type || "application/json" }));
+    }
+  }
+  return files;
+}
+
+async function handleInternalRequest(urlString: string, init?: RequestInit): Promise<Response> {
+  const api = getInternalSigilApi();
+  const method = (init?.method || "GET").toUpperCase();
+  const url = new URL(urlString, apiBaseOrigin());
+
+  if (url.pathname === API_SEAL_PATH && method === "GET") {
+    const state = api.state();
+    const body: ApiSealResponse = {
+      seal: state.state_seal,
+      latest_pulse: state.latest.pulse,
+      latestPulse: state.latest.pulse,
+      pulse: state.latest.pulse,
+      total: state.total_urls,
+    };
+    return jsonResponse(body);
+  }
+
+  if (url.pathname === API_URLS_PATH && method === "GET") {
+    const offset = Number(url.searchParams.get("offset") ?? "0");
+    const limit = Number(url.searchParams.get("limit") ?? "10000");
+    const page = api.urls(offset, limit);
+    return jsonResponse(page);
+  }
+
+  if (url.pathname === API_INHALE_PATH && method === "POST") {
+    if (!init?.body || !(init.body instanceof FormData)) {
+      return jsonResponse({ status: "error", errors: ["Missing FormData body"] }, 400);
+    }
+    const files = await formDataToFiles(init.body);
+    const includeState = parseBooleanParam(url.searchParams.get("include_state"), true);
+    const includeUrls = parseBooleanParam(url.searchParams.get("include_urls"), true);
+    const maxBytesRaw = url.searchParams.get("max_bytes_per_file");
+    const maxBytesPerFile = maxBytesRaw ? Number(maxBytesRaw) : undefined;
+
+    const inhaleRes = await api.inhale({
+      files,
+      includeState,
+      includeUrls,
+      maxBytesPerFile,
+    });
+    return jsonResponse(inhaleRes);
+  }
+
+  return jsonResponse({ status: "error", error: "Not found" }, 404);
 }
 
 export async function apiFetchWithFailover(
   makeUrl: (base: string) => string,
   init?: RequestInit,
 ): Promise<Response | null> {
-  const bases = apiBases();
-  let last: Response | null = null;
-
-  for (const base of bases) {
-    const url = makeUrl(base);
-    try {
-      const res = await fetch(url, init);
-      last = res;
-
-      // 304 is a valid success for seal checks.
-      if (res.ok || res.status === 304) {
-        // if backup works again, clear suppression
-        if (base === API_BASE_FALLBACK) clearBackupSuppression();
-
-        apiBaseHint = base;
-        saveApiBaseHint();
-        return res;
-      }
-
-      // If backup is failing (404/5xx/etc), suppress it so it never “causes issues”.
-      if (base === API_BASE_FALLBACK && shouldFailoverStatus(res.status)) markBackupDead();
-
-      // If this status is “final”, stop here; otherwise try the other base.
-      if (!shouldFailoverStatus(res.status)) return res;
-    } catch {
-      // network failure → try next base
-      if (base === API_BASE_FALLBACK) markBackupDead();
-      continue;
-    }
-  }
-
-  return last;
+  markInternalSigilApiEnabled();
+  const url = makeUrl(apiBaseOrigin());
+  return handleInternalRequest(url, init);
 }
 
 export async function apiFetchJsonWithFailover<T>(
