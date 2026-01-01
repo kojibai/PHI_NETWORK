@@ -15,7 +15,7 @@ const canStorage = hasWindow && typeof window.localStorage !== "undefined";
 /* ─────────────────────────────────────────────────────────────────────
  *  LAH-MAH-TOR API (Primary + IKANN Failover, soft-fail backup)
  *  ─────────────────────────────────────────────────────────────────── */
-export const LIVE_BASE_URL = "https://memory.kaiklok.com";
+export const LIVE_BASE_URL = "https://align.kaiklok.com";
 export const LIVE_BACKUP_URL = "https://m.phi.network";
 
 const API_BASE_PRIMARY = LIVE_BASE_URL;
