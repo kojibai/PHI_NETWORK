@@ -233,11 +233,22 @@ function shortKey(k: string | undefined): string {
 }
 
 function chakraClass(chakraDay?: string): string {
-  const base = (chakraDay || "Crown")
-    .toLowerCase()
-    .replace(/\s+/g, "-")
-    .replace(/[^a-z0-9-]/g, "");
-  return `kv-chakra-${base}`;
+  const normalized = chakraDay || "Crown";
+  const chakraKey =
+    {
+      Root: "root",
+      Sacral: "sacral",
+      "Solar Plexus": "solar",
+      Heart: "heart",
+      Throat: "throat",
+      "Third Eye": "brow",
+      Crown: "crown",
+    }[normalized] ??
+    normalized
+      .toLowerCase()
+      .replace(/\s+/g, "-")
+      .replace(/[^a-z0-9-]/g, "");
+  return `kv-chakra-${chakraKey}`;
 }
 
 function formatCountdown(ms?: number | null): string {
