@@ -105,6 +105,7 @@ export type SigilHoneycombExplorerProps = {
   maxNodes?: number;
   edgeMode?: EdgeMode;
   syncMode?: "standalone" | "embedded";
+  onOpenPulseView?: (payload: { pulse: number; originHash?: string }) => void;
 };
 
 /* ─────────────────────────────────────────────────────────────
@@ -518,6 +519,7 @@ export default function SigilHoneycombExplorer({
   maxNodes = 1400,
   edgeMode: edgeModeProp = "all",
   syncMode = "standalone",
+  onOpenPulseView,
 }: SigilHoneycombExplorerProps) {
   const [edgeMode, setEdgeMode] = useState<EdgeMode>(edgeModeProp);
   const [query, setQuery] = useState<string>("");
@@ -983,6 +985,13 @@ export default function SigilHoneycombExplorer({
     setSelectedOverride(h);
     broadcastSelection(h);
     resetToAutoCenter();
+    if (onOpenPulseView) {
+      const node = byHash.get(h);
+      const pulse = node?.pulse;
+      if (typeof pulse === "number" && Number.isFinite(pulse)) {
+        onOpenPulseView({ pulse, originHash: node?.originHash });
+      }
+    }
   };
 
   const onWheel = (e: React.WheelEvent<HTMLDivElement>) => {
@@ -1140,41 +1149,56 @@ export default function SigilHoneycombExplorer({
 
           <div className="toggleRow">
             <div className="seg">
-              <button type="button" className={edgeMode === "none" ? "on" : ""} onClick={() => setEdgeMode("none")}>
-                Edges: Off
+              <button type="button" className={edgeMode === "none" ? "on" : ""} onClick={() => setEdgeMode("none")} aria-label="Edges off">
+                <span className="btn-icon">◌</span>
+                <span className="btn-text">Edges: Off</span>
               </button>
-              <button type="button" className={edgeMode === "parent" ? "on" : ""} onClick={() => setEdgeMode("parent")}>
-                Parent
+              <button type="button" className={edgeMode === "parent" ? "on" : ""} onClick={() => setEdgeMode("parent")} aria-label="Parent edges">
+                <span className="btn-icon">↑</span>
+                <span className="btn-text">Parent</span>
               </button>
-              <button type="button" className={edgeMode === "parent+children" ? "on" : ""} onClick={() => setEdgeMode("parent+children")}>
-                Parent+Kids
+              <button
+                type="button"
+                className={edgeMode === "parent+children" ? "on" : ""}
+                onClick={() => setEdgeMode("parent+children")}
+                aria-label="Parent and children edges"
+              >
+                <span className="btn-icon">⇄</span>
+                <span className="btn-text">Parent+Kids</span>
               </button>
-              <button type="button" className={edgeMode === "all" ? "on" : ""} onClick={() => setEdgeMode("all")}>
-                All
-              </button>
-            </div>
-
-            <div className="seg">
-              <button type="button" className="miniBtn" onClick={() => { setZoom(1); resetToAutoCenter(); }}>
-                1×
-              </button>
-              <button type="button" className="miniBtn" onClick={() => { setUserInteracted(true); setZoom((z) => clamp(z * 0.9, 0.35, 2.75)); }}>
-                −
-              </button>
-              <button type="button" className="miniBtn" onClick={() => { setUserInteracted(true); setZoom((z) => clamp(z * 1.1, 0.35, 2.75)); }}>
-                +
+              <button type="button" className={edgeMode === "all" ? "on" : ""} onClick={() => setEdgeMode("all")} aria-label="All edges">
+                <span className="btn-icon">◎</span>
+                <span className="btn-text">All</span>
               </button>
             </div>
 
             <div className="seg">
-              <button type="button" className="miniBtn" onClick={onSyncNow} disabled={!isOnline() || syncMode !== "standalone"}>
-                Sync
+              <button type="button" className="miniBtn" onClick={() => { setZoom(1); resetToAutoCenter(); }} aria-label="Reset zoom">
+                <span className="btn-icon">1×</span>
+                <span className="btn-text">1×</span>
               </button>
-              <button type="button" className="miniBtn" onClick={onExport}>
-                Exhale
+              <button type="button" className="miniBtn" onClick={() => { setUserInteracted(true); setZoom((z) => clamp(z * 0.9, 0.35, 2.75)); }} aria-label="Zoom out">
+                <span className="btn-icon">−</span>
+                <span className="btn-text">−</span>
               </button>
-              <label className="miniBtn hcImportBtn" title="Import JSON">
-                Inhale
+              <button type="button" className="miniBtn" onClick={() => { setUserInteracted(true); setZoom((z) => clamp(z * 1.1, 0.35, 2.75)); }} aria-label="Zoom in">
+                <span className="btn-icon">+</span>
+                <span className="btn-text">+</span>
+              </button>
+            </div>
+
+            <div className="seg">
+              <button type="button" className="miniBtn" onClick={onSyncNow} disabled={!isOnline() || syncMode !== "standalone"} aria-label="Sync">
+                <span className="btn-icon">⟲</span>
+                <span className="btn-text">Sync</span>
+              </button>
+              <button type="button" className="miniBtn" onClick={onExport} aria-label="Exhale">
+                <span className="btn-icon">⇪</span>
+                <span className="btn-text">Exhale</span>
+              </button>
+              <label className="miniBtn hcImportBtn" title="Import JSON" aria-label="Inhale">
+                <span className="btn-icon">⇩</span>
+                <span className="btn-text">Inhale</span>
                 <input
                   type="file"
                   accept="application/json"
