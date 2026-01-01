@@ -838,11 +838,6 @@ function PulseHoneycombInner({
     resetToAutoCenter();
   };
 
-  const toggleBeat = (beat: number) => {
-    setBeatFilter((prev) => (prev === beat ? null : beat));
-    resetToAutoCenter();
-  };
-
   const onWheel = (e: React.WheelEvent<HTMLDivElement>) => {
     const el = viewportRef.current;
     if (!el) return;
