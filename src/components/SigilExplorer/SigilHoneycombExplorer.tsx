@@ -38,8 +38,6 @@ import {
 } from "./apiClient";
 
 import { loadUrlHealthFromStorage } from "./urlHealth";
-import KaiSigil from "../KaiSigil";
-import type { ChakraDay } from "../KaiSigil/types";
 import { N_DAY_MICRO, latticeFromMicroPulses, normalizePercentIntoStep } from "../../utils/kai_pulse";
 
 /* ─────────────────────────────────────────────────────────────
@@ -137,7 +135,6 @@ const SIGIL_WRAP_PULSE: bigint = (() => {
   const g = gcdBI(N_DAY_MICRO, ONE_PULSE_MICRO);
   return g === 0n ? 0n : N_DAY_MICRO / g;
 })();
-const SIGIL_RENDER_CACHE = new Set<string>();
 const PHI = (1 + Math.sqrt(5)) / 2;
 
 const wrapPulseForSigil = (pulse: number): number => {
@@ -163,34 +160,6 @@ const hashToUnit = (hash: string): number => {
   }
   return acc / 1000000;
 };
-
-function useDeferredSigilRender(key: string): boolean {
-  const [, forceRender] = useState(0);
-  const cached = SIGIL_RENDER_CACHE.has(key);
-
-  useEffect(() => {
-    if (cached) return;
-    let cancelled = false;
-    const schedule = typeof window !== "undefined" && "requestIdleCallback" in window
-      ? (cb: () => void) => window.requestIdleCallback(cb, { timeout: 200 })
-      : (cb: () => void) => window.setTimeout(cb, 32);
-    const handle = schedule(() => {
-      if (cancelled) return;
-      SIGIL_RENDER_CACHE.add(key);
-      forceRender((v) => v + 1);
-    });
-    return () => {
-      cancelled = true;
-      if (typeof window !== "undefined" && "cancelIdleCallback" in window) {
-        window.cancelIdleCallback(handle as number);
-      } else {
-        clearTimeout(handle as number);
-      }
-    };
-  }, [cached, key]);
-
-  return cached;
-}
 
 const INHALE_INTERVAL_MS = 3236;
 const EXHALE_INTERVAL_MS = 2000;
@@ -227,18 +196,6 @@ function readLowerStr(v: unknown): string | undefined {
 
 function readNum(v: unknown): number | undefined {
   return typeof v === "number" && Number.isFinite(v) ? v : undefined;
-}
-
-function normalizeChakraDay(value?: string): ChakraDay {
-  const v = (value ?? "").toLowerCase();
-  if (v.includes("root")) return "Root";
-  if (v.includes("sacral")) return "Sacral";
-  if (v.includes("solar")) return "Solar Plexus";
-  if (v.includes("heart")) return "Heart";
-  if (v.includes("throat")) return "Throat";
-  if (v.includes("third") || v.includes("brow")) return "Third Eye";
-  if (v.includes("crown")) return "Crown";
-  return "Root";
 }
 
 function safeJsonParse(text: string): unknown {
@@ -557,9 +514,6 @@ const SigilHex = React.memo(function SigilHex(props: {
     typeof node.pulse === "number" && Number.isFinite(node.pulse) ? node.pulse : 0;
   const sigilPulse = wrapPulseForSigil(pulseValue);
   const kks = deriveKksFromPulse(sigilPulse);
-  const chakraDay = normalizeChakraDay(node.chakraDay);
-  const sigilKey = `${sigilPulse}:${chakraDay}`;
-  const renderSigil = useDeferredSigilRender(sigilKey);
   const depth = (hashToUnit(node.hash) - 0.5) * 220 * PHI;
 
   const ariaParts: string[] = [];
@@ -587,21 +541,7 @@ const SigilHex = React.memo(function SigilHex(props: {
     >
       <div className="sigilHexInner">
         <div className="sigilHexGlyphFrame" aria-hidden="true">
-          {renderSigil ? (
-            <KaiSigil
-              pulse={sigilPulse}
-              beat={kks.beat}
-              stepIndex={kks.stepIndex}
-              stepPct={kks.stepPct}
-              chakraDay={chakraDay}
-              size={48}
-              hashMode="deterministic"
-              animate={false}
-              enableZkProof={false}
-            />
-          ) : (
-            <div className="sigilHexGlyphPlaceholder" />
-          )}
+          <div className="sigilHexGlyphSimple" />
         </div>
         <div className="sigilHexTop">
           <span className="sigilHexPulse">{typeof node.pulse === "number" ? node.pulse : "—"}</span>
