@@ -6,6 +6,8 @@ import "./SigilHoneycomb.css";
 import "./PulseHoneycombModal.css";
 
 import { memoryRegistry } from "./registryStore";
+import { computeIntrinsicUnsigned, type SigilMetadataLite } from "../../utils/valuation";
+import { DEFAULT_ISSUANCE_POLICY, quotePhiForUsd } from "../../utils/phi-issuance";
 import {
   canonicalizeUrl,
   browserViewUrl,
@@ -112,25 +114,6 @@ function readFiniteNumber(v: unknown): number | undefined {
   return undefined;
 }
 
-function readUsdPerPhi(payload: Record<string, unknown>): number | undefined {
-  const candidates: unknown[] = [
-    payload.usdPerPhi,
-    payload.fxUsdPerPhi,
-    payload.usd_per_phi,
-    isRecord(payload.preview) ? (payload.preview as Record<string, unknown>).usdPerPhi : undefined,
-    isRecord(payload.preview) ? (payload.preview as Record<string, unknown>).usd_per_phi : undefined,
-  ];
-
-  for (const c of candidates) {
-    if (typeof c === "number" && Number.isFinite(c)) return c;
-    if (typeof c === "string") {
-      const n = Number(c);
-      if (Number.isFinite(n)) return n;
-    }
-  }
-  return undefined;
-}
-
 function toTransferDirection(v: unknown): "send" | "receive" | undefined {
   const s = readStr(v);
   if (s === "send" || s === "receive") return s;
@@ -185,6 +168,51 @@ function formatPhiNumber(value?: number): string {
   if (value == null || !Number.isFinite(value)) return "—";
   const fixed = value.toFixed(6);
   return fixed.replace(/0+$/u, "").replace(/\.$/u, "");
+}
+
+function buildValuationMeta(payload: Record<string, unknown>): SigilMetadataLite {
+  return {
+    pulse: readFiniteNumber(payload.pulse),
+    beat: readFiniteNumber(payload.beat),
+    stepIndex: readFiniteNumber(payload.stepIndex),
+    chakraDay: readStr(payload.chakraDay),
+    userPhiKey: readStr(payload.userPhiKey),
+    kaiSignature: readLowerStr(payload.kaiSignature),
+    transfers: Array.isArray(payload.transfers) ? (payload.transfers as SigilMetadataLite["transfers"]) : undefined,
+    segments: Array.isArray(payload.segments) ? (payload.segments as SigilMetadataLite["segments"]) : undefined,
+    ip: isRecord(payload.ip) ? (payload.ip as SigilMetadataLite["ip"]) : undefined,
+  };
+}
+
+function computeLivePhi(payload: Record<string, unknown>, nowPulse: number | null): number | null {
+  if (nowPulse == null || !Number.isFinite(nowPulse)) return null;
+  try {
+    const meta = buildValuationMeta(payload);
+    const { unsigned } = computeIntrinsicUnsigned(meta, nowPulse);
+    return Number.isFinite(unsigned.valuePhi) ? unsigned.valuePhi : null;
+  } catch {
+    return null;
+  }
+}
+
+function computeUsdPerPhi(payload: Record<string, unknown>, nowPulse: number | null): number | null {
+  if (nowPulse == null || !Number.isFinite(nowPulse)) return null;
+  try {
+    const meta = buildValuationMeta(payload);
+    const quote = quotePhiForUsd(
+      {
+        meta,
+        nowPulse,
+        usd: 100,
+        currentStreakDays: 0,
+        lifetimeUsdSoFar: 0,
+      },
+      DEFAULT_ISSUANCE_POLICY,
+    );
+    return Number.isFinite(quote.usdPerPhi) ? quote.usdPerPhi : null;
+  } catch {
+    return null;
+  }
 }
 
 function shortHash(h: string, n = 10): string {
@@ -707,11 +735,11 @@ function PulseHoneycombInner({
       const p = readFiniteNumber(payloadLoose.pulse);
       if (p !== activePulse) continue;
 
-      const delta = readFiniteNumber(payloadLoose.phiDelta) ?? readFiniteNumber(payloadLoose.transferAmountPhi);
-      if (delta != null) phiTotal += delta;
+      const phiValue = computeLivePhi(payloadLoose, activePulse);
+      if (phiValue != null) phiTotal += phiValue;
 
       if (usdPerPhi == null) {
-        const found = readUsdPerPhi(payloadLoose);
+        const found = computeUsdPerPhi(payloadLoose, activePulse);
         if (found != null) usdPerPhi = found;
       }
     }
