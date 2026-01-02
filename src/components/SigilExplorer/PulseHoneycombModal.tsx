@@ -21,6 +21,7 @@ import { bootstrapSeries } from "../valuation/series";
 import KaiSigil from "../KaiSigil";
 import type { ChakraDay } from "../KaiSigil/types";
 import { N_DAY_MICRO, latticeFromMicroPulses, momentFromPulse, normalizePercentIntoStep } from "../../utils/kai_pulse";
+import { getKaiPulseEternalInt } from "../../SovereignSolar";
 import {
   canonicalizeUrl,
   explorerOpenUrl,
@@ -1337,6 +1338,7 @@ function PulseHoneycombInner({ pulse, originUrl, originHash, registryRev, onClos
   const [edgeMode] = useState<EdgeMode>("parent+children");
   const [selectedOverride, setSelectedOverride] = useState<string | null>(null);
   const [unitMode, setUnitMode] = useState<UnitMode>("phi");
+  const [nowPulse, setNowPulse] = useState(() => getKaiPulseEternalInt(new Date()));
 
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const [vpSize, setVpSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
@@ -1351,6 +1353,13 @@ function PulseHoneycombInner({ pulse, originUrl, originHash, registryRev, onClos
     panX0: 0,
     panY0: 0,
   });
+
+  useEffect(() => {
+    if (!HAS_WINDOW) return;
+    const tick = () => setNowPulse(getKaiPulseEternalInt(new Date()));
+    const id = window.setInterval(tick, 6000);
+    return () => window.clearInterval(id);
+  }, []);
 
   // ResizeObserver
   useEffect(() => {
@@ -1416,6 +1425,11 @@ function PulseHoneycombInner({ pulse, originUrl, originHash, registryRev, onClos
   }, [selectedOverride, byHash, computedInitialHash]);
 
   const selected = useMemo(() => (selectedHash ? byHash.get(selectedHash) ?? null : null), [selectedHash, byHash]);
+  const selectedIsDerived = !!selected?.originHash;
+
+  useEffect(() => {
+    setUnitMode(selectedIsDerived ? "usd" : "phi");
+  }, [selectedIsDerived]);
 
   const activeMoment = useMemo(() => (activePulse != null ? momentFromPulse(activePulse) : null), [activePulse]);
   const activePulseLabel = activePulse != null ? activePulse.toLocaleString() : "—";
@@ -1465,11 +1479,13 @@ function PulseHoneycombInner({ pulse, originUrl, originHash, registryRev, onClos
       const p = readFiniteNumber(payloadLoose.pulse);
       if (p !== activePulse) continue;
 
-      const phiValue = computeLivePhi(payloadLoose, activePulse);
+      const payloadPulse = readFiniteNumber(payloadLoose.pulse) ?? activePulse;
+      const isDerived = extractOriginHash(payloadLoose) != null;
+      const phiValue = computeLivePhi(payloadLoose, isDerived ? payloadPulse : nowPulse);
       if (phiValue != null) phiTotal += phiValue;
 
       if (usdPerPhi == null) {
-        const found = computeUsdPerPhi(payloadLoose, activePulse);
+        const found = computeUsdPerPhi(payloadLoose, nowPulse);
         if (found != null) usdPerPhi = found;
       }
     }
@@ -1477,12 +1493,12 @@ function PulseHoneycombInner({ pulse, originUrl, originHash, registryRev, onClos
     const phi = Number.isFinite(phiTotal) ? phiTotal : null;
     const usd = phi != null && usdPerPhi != null ? phi * usdPerPhi : null;
     return { phi, usd, usdPerPhi };
-  }, [activePulse, registryRev]);
+  }, [activePulse, nowPulse, registryRev]);
 
   type ChartBundle = ReturnType<typeof bootstrapSeries>;
 
   const chartBundle = useMemo<ChartBundle | null>(() => {
-    if (activePulse == null) return null;
+    if (activePulse == null || nowPulse == null) return null;
     let payload: Record<string, unknown> | null = null;
 
     for (const [, payloadLoose] of memoryRegistry) {
@@ -1495,7 +1511,7 @@ function PulseHoneycombInner({ pulse, originUrl, originHash, registryRev, onClos
     if (!payload) return null;
 
     const meta = buildValuationMeta(payload);
-    const { unsigned } = computeIntrinsicUnsigned(meta, activePulse);
+    const { unsigned } = computeIntrinsicUnsigned(meta, nowPulse);
 
     const seal = {
       version: 1,
@@ -1510,8 +1526,8 @@ function PulseHoneycombInner({ pulse, originUrl, originHash, registryRev, onClos
       stamp: "0",
     } as const;
 
-    return bootstrapSeries(seal, meta, activePulse, 64);
-  }, [activePulse, registryRev]);
+    return bootstrapSeries(seal, meta, nowPulse, 64);
+  }, [activePulse, nowPulse, registryRev]);
 
   const layout = useMemo(() => {
     const N = nodesRaw.length;
