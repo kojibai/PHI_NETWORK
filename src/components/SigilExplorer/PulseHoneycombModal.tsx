@@ -1833,7 +1833,7 @@ function PulseHoneycombInner({ pulse, originUrl, originHash, registryRev, onClos
 
         <div className="phmBottomActions">
           <button type="button" className="phmMiniBtn" onClick={openSelected} disabled={!selected}>
-            Open
+            Proof of Breath™
           </button>
           <button type="button" className="phmMiniBtn phmMiniBtn--glow" onClick={rememberSelected} disabled={!selected}>
             Remember
