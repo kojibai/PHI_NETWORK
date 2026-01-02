@@ -1,12 +1,17 @@
 "use client";
 
 /**
- * PulseHoneycombModal.tsx — v41.3.0
+ * PulseHoneycombModal.tsx — v41.3.1
  * - Clean live chart (no 128/512/2k/max controls)
  * - Φ ⇄ USD value toggle
  * - Rich hover/lock tooltip rendered via portal (never clipped)
  * - Proof strip (PhiKey + KaiSig + key hash) in header-right
  * - Slim bottom bar actions
+ *
+ * FIX (41.3.1):
+ * - Removed setState-in-effect cascade by deriving unitMode from selection
+ *   with a user override (unitOverride). No more:
+ *     useEffect(() => setUnitMode(...), [selectedIsDerived])
  */
 
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -30,7 +35,7 @@ import {
   parseHashFromUrl,
 } from "./url";
 
-const PHM_MODAL_VERSION = "41.3.0";
+const PHM_MODAL_VERSION = "41.3.1";
 
 type EdgeMode = "none" | "parent" | "parent+children" | "all";
 
@@ -830,7 +835,6 @@ function buildSvgPathFromValues(values: number[], w: number, h: number, pad: num
   return { d, minV, maxV, xAt, yAt };
 }
 
-
 function formatValue(mode: UnitMode, v: number): string {
   if (!Number.isFinite(v)) return "—";
   if (mode === "phi") return `${formatPhiNumber(v)} Φ`;
@@ -1337,7 +1341,10 @@ export default function PulseHoneycombModal(props: PulseHoneycombModalProps) {
 function PulseHoneycombInner({ pulse, originUrl, originHash, registryRev, onClose }: PulseHoneycombInnerProps) {
   const [edgeMode] = useState<EdgeMode>("parent+children");
   const [selectedOverride, setSelectedOverride] = useState<string | null>(null);
-  const [unitMode, setUnitMode] = useState<UnitMode>("phi");
+
+  // FIX: unitMode is derived (derived nodes default to USD) + optional user override
+  const [unitOverride, setUnitOverride] = useState<UnitMode | null>(null);
+
   const [nowPulse, setNowPulse] = useState(() => getKaiPulseEternalInt(new Date()));
 
   const viewportRef = useRef<HTMLDivElement | null>(null);
@@ -1427,9 +1434,8 @@ function PulseHoneycombInner({ pulse, originUrl, originHash, registryRev, onClos
   const selected = useMemo(() => (selectedHash ? byHash.get(selectedHash) ?? null : null), [selectedHash, byHash]);
   const selectedIsDerived = !!selected?.originHash;
 
-  useEffect(() => {
-    setUnitMode(selectedIsDerived ? "usd" : "phi");
-  }, [selectedIsDerived]);
+  // FIX: Derived default + optional user override (no effect / no cascade)
+  const unitMode: UnitMode = unitOverride ?? (selectedIsDerived ? "usd" : "phi");
 
   const activeMoment = useMemo(() => (activePulse != null ? momentFromPulse(activePulse) : null), [activePulse]);
   const activePulseLabel = activePulse != null ? activePulse.toLocaleString() : "—";
@@ -1618,6 +1624,10 @@ function PulseHoneycombInner({ pulse, originUrl, originHash, registryRev, onClos
   const selectHash = (hash: string) => {
     const h = hash.toLowerCase();
     setSelectedOverride(h);
+
+    // FIX: reset override so the new selection uses its default (derived→USD, root→Φ)
+    setUnitOverride(null);
+
     broadcastSelectedHash(h);
     setUserInteracted(false);
     setUserPan({ x: 0, y: 0 });
@@ -1682,7 +1692,12 @@ function PulseHoneycombInner({ pulse, originUrl, originHash, registryRev, onClos
     await copyText(selected.bestUrl);
   };
 
-  const toggleUnit = () => setUnitMode((m) => (m === "phi" ? "usd" : "phi"));
+  const toggleUnit = () => {
+    setUnitOverride((cur) => {
+      const base: UnitMode = cur ?? (selectedIsDerived ? "usd" : "phi");
+      return base === "phi" ? "usd" : "phi";
+    });
+  };
 
   const mainValue =
     unitMode === "phi"
