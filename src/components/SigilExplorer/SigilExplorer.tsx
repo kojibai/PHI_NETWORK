@@ -1249,7 +1249,7 @@ function ExplorerToolbar({
               onClick={() => onViewModeChange(viewMode === "keystream" ? "lattice" : "keystream")}
               aria-pressed={viewMode === "lattice"}
             >
-              {viewMode === "keystream" ? "Memory Lattice" : "Keystream"}
+              {viewMode === "keystream" ? "Memory" : "Keystream"}
             </button>
           </div>
 
@@ -2368,7 +2368,7 @@ const SigilExplorer: React.FC = () => {
               )}
             </>
           ) : (
-            <div className="kx-view kx-view--lattice" aria-label="Memory lattice">
+            <div className="kx-view kx-view--lattice" aria-label="Memory">
               <SigilHoneycombExplorer className="kx-lattice" syncMode="embedded" onOpenPulseView={handleOpenPulseView} />
             </div>
           )}
