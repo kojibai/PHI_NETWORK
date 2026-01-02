@@ -169,6 +169,16 @@
 
 .phmSigilMeta{
   display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  width: 100%;
+  flex: 1;
+}
+
+.phmSigilMetaMain{
+  display: flex;
   flex-direction: column;
   gap: 2px;
   min-width: 0;
@@ -179,6 +189,35 @@
   font-weight: 900;
   color: rgba(255,255,255,0.95);
   letter-spacing: 0.4px;
+}
+
+.phmSigilKeys{
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  min-width: 120px;
+}
+
+.phmSigilKey{
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.phmSigilKeyLabel{
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.5);
+}
+
+.phmSigilKeyValue{
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 11px;
+  font-weight: 700;
+  color: rgba(191,252,255,0.9);
 }
 
 .phmSigilSub{
@@ -582,6 +621,79 @@
 .phmHint{
   left: 10px;
   bottom: 10px;
+}
+
+.phmHintButton{
+  pointer-events: auto;
+  cursor: pointer;
+  border: 1px solid rgba(255,255,255,0.18);
+  color: rgba(255,255,255,0.82);
+  transition: border-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
+}
+
+.phmHintButton:hover{
+  border-color: rgba(191,252,255,0.6);
+  color: rgba(255,255,255,0.95);
+  transform: translateY(-1px);
+}
+
+.phmAtlasPanel{
+  position: absolute;
+  left: 12px;
+  bottom: 54px;
+  width: 240px;
+  padding: 10px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.16);
+  background: rgba(0,0,0,0.6);
+  box-shadow: 0 12px 28px rgba(0,0,0,0.45);
+  backdrop-filter: blur(12px);
+  color: rgba(255,255,255,0.86);
+  font-size: 11px;
+  z-index: 5;
+}
+
+.phmAtlasPanelHead{
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.phmAtlasTitle{
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.phmAtlasPanelBody{
+  display: grid;
+  gap: 6px;
+}
+
+.phmAtlasRow{
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.phmAtlasHint{
+  margin-top: 6px;
+  font-size: 10px;
+  color: rgba(255,255,255,0.55);
+}
+
+.phmAtlasPanelActions{
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.phmAtlasClose{
+  height: 22px;
+  min-width: 22px;
+  padding: 0;
 }
 /* BeatRing interactivity */
 .phmBeatTick{

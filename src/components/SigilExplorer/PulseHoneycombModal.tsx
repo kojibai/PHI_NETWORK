@@ -29,6 +29,7 @@ type HoneyNode = {
   hash: string;
   bestUrl: string;
   sources: string[];
+  payload?: Record<string, unknown>;
 
   pulse?: number;
   beat?: number;
@@ -70,6 +71,7 @@ type EdgeLine = {
 export type PulseHoneycombModalProps = {
   open: boolean;
   pulse: number | null;
+  nowPulse?: number | null;
   originUrl?: string;
   originHash?: string;
   anchor?: { x: number; y: number };
@@ -336,6 +338,19 @@ function shortHash(h: string, n = 10): string {
   return h.length <= n ? h : h.slice(0, n);
 }
 
+function formatAtlasId(originHash?: string, originUrl?: string, activePulse?: number | null): string {
+  if (originHash) return `atlas-${shortHash(originHash, 16)}`;
+  if (originUrl) {
+    try {
+      return `atlas-${new URL(originUrl).host}`;
+    } catch {
+      return `atlas-${shortHash(originUrl, 16)}`;
+    }
+  }
+  if (activePulse != null) return `pulse-${activePulse.toLocaleString()}`;
+  return "atlas-unknown";
+}
+
 function extractHashFromUrlLoose(url: string): string | null {
   const h = parseHashFromUrl(url);
   if (typeof h === "string" && h.length) return h.toLowerCase();
@@ -450,6 +465,7 @@ function buildNodesForPulse(pulse: number): HoneyNode[] {
       hash,
       bestUrl: explorerOpenUrl(url),
       sources: [url],
+      payload: payloadLoose,
 
       pulse: p,
       beat: readFiniteNumber(payloadLoose.beat),
@@ -473,6 +489,7 @@ function buildNodesForPulse(pulse: number): HoneyNode[] {
         hash,
         bestUrl: partial.bestUrl ?? explorerOpenUrl(url),
         sources: [url],
+        payload: payloadLoose,
         pulse: partial.pulse,
         beat: partial.beat,
         stepIndex: partial.stepIndex,
@@ -499,6 +516,7 @@ function buildNodesForPulse(pulse: number): HoneyNode[] {
     byHash.set(hash, {
       ...existing,
       sources: Array.from(mergedSources),
+      payload: preferIncoming ? payloadLoose : existing.payload ?? payloadLoose,
       pulse: existing.pulse ?? partial.pulse,
       beat: preferIncoming && partial.beat !== undefined ? partial.beat : existing.beat ?? partial.beat,
       stepIndex: preferIncoming && partial.stepIndex !== undefined ? partial.stepIndex : existing.stepIndex ?? partial.stepIndex,
@@ -680,9 +698,10 @@ const SigilHex = React.memo(function SigilHex(props: {
   y: number;
   selected: boolean;
   isOrigin: boolean;
+  nowPulse: number | null;
   onClick: () => void;
 }) {
-  const { node, x, y, selected, isOrigin, onClick } = props;
+  const { node, x, y, selected, isOrigin, nowPulse, onClick } = props;
 
   const pulseValue = typeof node.pulse === "number" && Number.isFinite(node.pulse) ? node.pulse : 0;
   const sigilPulse = wrapPulseForSigil(pulseValue);
@@ -691,6 +710,9 @@ const SigilHex = React.memo(function SigilHex(props: {
   const sigilKey = `${sigilPulse}:${chakraDay}`;
   const renderSigil = useDeferredSigilRender(sigilKey);
   const depth = (hashToUnit(node.hash) - 0.5) * 220 * PHI;
+  const livePhi = useMemo(() => (node.payload ? computeLivePhi(node.payload, nowPulse) : null), [node.payload, nowPulse]);
+  const usdPerPhi = useMemo(() => (node.payload ? computeUsdPerPhi(node.payload, nowPulse) : null), [node.payload, nowPulse]);
+  const liveUsd = livePhi != null && usdPerPhi != null ? livePhi * usdPerPhi : null;
 
   const ariaParts: string[] = [];
   if (typeof node.pulse === "number") ariaParts.push(`pulse ${node.pulse}`);
@@ -741,7 +763,8 @@ const SigilHex = React.memo(function SigilHex(props: {
           <span className="sigilHexBeat">
             {kks.beat}:{kks.stepIndex}
           </span>
-          <span className="sigilHexDelta">{formatPhi(node.phiDelta)}</span>
+          <span className="sigilHexDelta">{livePhi != null ? `${formatPhiNumber(livePhi)} Φ` : "—"}</span>
+          <span className="sigilHexUsd">{liveUsd != null ? `$${formatUsd(liveUsd)}` : "—"}</span>
         </div>
 
         <div className="sigilHexBot">
@@ -761,7 +784,7 @@ const SigilHex = React.memo(function SigilHex(props: {
 ───────────────────────────────────────────────────────────── */
 
 export default function PulseHoneycombModal(props: PulseHoneycombModalProps) {
-  const { open, pulse, originUrl, originHash, anchor, onClose } = props;
+  const { open, pulse, nowPulse, originUrl, originHash, anchor, onClose } = props;
 
   const shellRef = useRef<HTMLDivElement | null>(null);
 
@@ -889,16 +912,18 @@ export default function PulseHoneycombModal(props: PulseHoneycombModalProps) {
         aria-label="Pulse Atlas"
         data-anchored={anchored ? "1" : "0"}
       >
-        <PulseHoneycombInner key={key} {...props} />
+        <PulseHoneycombInner key={key} {...props} nowPulse={nowPulse} />
       </div>
     </div>,
     portalEl,
   );
 }
 
-function PulseHoneycombInner({ pulse, originUrl, originHash, registryRev, onClose }: PulseHoneycombModalProps) {
+function PulseHoneycombInner({ pulse, nowPulse, originUrl, originHash, registryRev, onClose }: PulseHoneycombModalProps) {
   const [edgeMode] = useState<EdgeMode>("parent+children");
   const [selectedOverride, setSelectedOverride] = useState<string | null>(null);
+  const [atlasPanelOpen, setAtlasPanelOpen] = useState(false);
+  const [atlasPanelExpanded, setAtlasPanelExpanded] = useState(false);
 
   const viewportRef = useRef<HTMLDivElement | null>(null);
 
@@ -932,6 +957,7 @@ function PulseHoneycombInner({ pulse, originUrl, originHash, registryRev, onClos
   }, []);
 
   const activePulse = typeof pulse === "number" ? pulse : null;
+  const pricingPulse = typeof nowPulse === "number" ? nowPulse : activePulse;
   void registryRev;
 
   const nodesRaw = useMemo(() => {
@@ -987,6 +1013,42 @@ function PulseHoneycombInner({ pulse, originUrl, originHash, registryRev, onClos
     selected && typeof selected.pulse === "number" && Number.isFinite(selected.pulse) ? wrapPulseForSigil(selected.pulse) : null;
 
   const selectedKks = selectedPulse != null ? deriveKksFromPulse(selectedPulse) : null;
+  const atlasId = useMemo(() => formatAtlasId(originHash, originUrl, activePulse), [originHash, originUrl, activePulse]);
+  const atlasStats = useMemo(() => {
+    const uniqueSources = new Set<string>();
+    let transferCount = 0;
+    let totalDegree = 0;
+    const chakraCounts = new Map<string, number>();
+    let anchor: HoneyNode | null = null;
+
+    for (const node of nodesRaw) {
+      node.sources.forEach((s) => uniqueSources.add(s));
+      if (node.transferDirection) transferCount += 1;
+      totalDegree += node.degree;
+      const chakra = node.chakraDay ?? "Unknown";
+      chakraCounts.set(chakra, (chakraCounts.get(chakra) ?? 0) + 1);
+      if (!anchor || node.degree > anchor.degree) anchor = node;
+    }
+
+    let topChakra: string | null = null;
+    let topCount = 0;
+    chakraCounts.forEach((count, chakra) => {
+      if (count > topCount) {
+        topChakra = chakra;
+        topCount = count;
+      }
+    });
+
+    return {
+      nodeCount: nodesRaw.length,
+      sourceCount: uniqueSources.size,
+      transferCount,
+      avgDegree: nodesRaw.length ? totalDegree / nodesRaw.length : 0,
+      anchorHash: anchor?.hash ?? null,
+      topChakra,
+      topChakraCount: topCount,
+    };
+  }, [nodesRaw]);
 
   const activeMoment = useMemo(() => (activePulse != null ? momentFromPulse(activePulse) : null), [activePulse]);
   const activePulseLabel = activePulse != null ? activePulse.toLocaleString() : "—";
@@ -1003,11 +1065,11 @@ function PulseHoneycombInner({ pulse, originUrl, originHash, registryRev, onClos
       const p = readFiniteNumber(payloadLoose.pulse);
       if (p !== activePulse) continue;
 
-      const phiValue = computeLivePhi(payloadLoose, activePulse);
+      const phiValue = computeLivePhi(payloadLoose, pricingPulse);
       if (phiValue != null) phiTotal += phiValue;
 
       if (usdPerPhi == null) {
-        const found = computeUsdPerPhi(payloadLoose, activePulse);
+        const found = computeUsdPerPhi(payloadLoose, pricingPulse);
         if (found != null) usdPerPhi = found;
       }
     }
@@ -1015,7 +1077,7 @@ function PulseHoneycombInner({ pulse, originUrl, originHash, registryRev, onClos
     const phi = Number.isFinite(phiTotal) ? phiTotal : null;
     const usd = phi != null && usdPerPhi != null ? phi * usdPerPhi : null;
     return { phi, usd, usdPerPhi };
-  }, [activePulse, registryRev]);
+  }, [activePulse, pricingPulse, registryRev]);
 
   const chartBundle = useMemo<ChartBundle | null>(() => {
     if (activePulse == null) return null;
@@ -1223,13 +1285,29 @@ function PulseHoneycombInner({ pulse, originUrl, originHash, registryRev, onClos
               )}
             </div>
             <div className="phmSigilMeta">
-              <div className="phmSigilPulse">☤KAI {activePulseLabel}</div>
-              <div className="phmSigilSub">
-                <span>Beat {activeMoment?.beat ?? "—"}</span>
-                <span className="phmDot">•</span>
-                <span>Step {activeMoment?.stepIndex ?? "—"}</span>
-                <span className="phmDot">•</span>
-                <span>{activeChakraDay}</span>
+              <div className="phmSigilMetaMain">
+                <div className="phmSigilPulse">☤KAI {activePulseLabel}</div>
+                <div className="phmSigilSub">
+                  <span>Beat {activeMoment?.beat ?? "—"}</span>
+                  <span className="phmDot">•</span>
+                  <span>Step {activeMoment?.stepIndex ?? "—"}</span>
+                  <span className="phmDot">•</span>
+                  <span>{activeChakraDay}</span>
+                </div>
+              </div>
+              <div className="phmSigilKeys" aria-label="Active ΦKey and KaiSignature">
+                <div className="phmSigilKey">
+                  <span className="phmSigilKeyLabel">ΦKey</span>
+                  <span className="phmSigilKeyValue" title={selected?.userPhiKey ?? "No ΦKey"}>
+                    {selected?.userPhiKey ? shortHash(selected.userPhiKey, 18) : "—"}
+                  </span>
+                </div>
+                <div className="phmSigilKey">
+                  <span className="phmSigilKeyLabel">KaiSig</span>
+                  <span className="phmSigilKeyValue" title={selected?.kaiSignature ?? "No KaiSignature"}>
+                    {selected?.kaiSignature ? shortHash(selected.kaiSignature, 18) : "—"}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
@@ -1324,12 +1402,66 @@ function PulseHoneycombInner({ pulse, originUrl, originHash, registryRev, onClos
                   y={it.y}
                   isOrigin={originCandidate != null && it.node.hash === originCandidate}
                   selected={it.node.hash === selectedHash}
+                  nowPulse={pricingPulse}
                   onClick={() => selectHash(it.node.hash)}
                 />
               ))}
             </div>
 
-            <div className="combHint phmHint">Pulse lattice • drag to pan • scroll to zoom</div>
+            <button
+              type="button"
+              className="combHint phmHint phmHintButton"
+              onClick={() => setAtlasPanelOpen((prev) => !prev)}
+              aria-expanded={atlasPanelOpen}
+            >
+              Atlas ID: {atlasId}
+            </button>
+            {atlasPanelOpen ? (
+              <div className="phmAtlasPanel" role="dialog" aria-label="Pulse atlas details">
+                <div className="phmAtlasPanelHead">
+                  <span className="phmAtlasTitle">Pulse Atlas Details</span>
+                  <button type="button" className="phmBtn phmAtlasClose" onClick={() => setAtlasPanelOpen(false)}>
+                    ✕
+                  </button>
+                </div>
+                <div className="phmAtlasPanelBody">
+                  <div className="phmAtlasRow">
+                    <span>Glyphs</span>
+                    <span>{atlasStats.nodeCount}</span>
+                  </div>
+                  <div className="phmAtlasRow">
+                    <span>Sources linked</span>
+                    <span>{atlasStats.sourceCount}</span>
+                  </div>
+                  <div className="phmAtlasRow">
+                    <span>Transfers tagged</span>
+                    <span>{atlasStats.transferCount}</span>
+                  </div>
+                  {atlasPanelExpanded ? (
+                    <>
+                      <div className="phmAtlasRow">
+                        <span>Avg degree</span>
+                        <span>{atlasStats.avgDegree.toFixed(1)}</span>
+                      </div>
+                      <div className="phmAtlasRow">
+                        <span>Top chakra</span>
+                        <span>{atlasStats.topChakra ? `${atlasStats.topChakra} (${atlasStats.topChakraCount})` : "—"}</span>
+                      </div>
+                      <div className="phmAtlasRow">
+                        <span>Anchor glyph</span>
+                        <span>{atlasStats.anchorHash ? shortHash(atlasStats.anchorHash, 12) : "—"}</span>
+                      </div>
+                      <div className="phmAtlasHint">Drag to pan • Scroll to zoom</div>
+                    </>
+                  ) : null}
+                </div>
+                <div className="phmAtlasPanelActions">
+                  <button type="button" className="phmBtn" onClick={() => setAtlasPanelExpanded((prev) => !prev)}>
+                    {atlasPanelExpanded ? "Less" : "More"}
+                  </button>
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
 
@@ -1417,20 +1549,6 @@ function PulseHoneycombInner({ pulse, originUrl, originHash, registryRev, onClos
                         shortHash(selected.originHash, 14)
                       )}
                     </div>
-                  </>
-                )}
-
-                {selected?.userPhiKey && (
-                  <>
-                    <div className="k">PhiKey</div>
-                    <div className="v mono">{shortHash(selected.userPhiKey, 20)}</div>
-                  </>
-                )}
-
-                {selected?.kaiSignature && (
-                  <>
-                    <div className="k">KaiSig</div>
-                    <div className="v mono">{shortHash(selected.kaiSignature, 20)}</div>
                   </>
                 )}
 

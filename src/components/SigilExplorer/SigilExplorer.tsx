@@ -2388,6 +2388,7 @@ const SigilExplorer: React.FC = () => {
       <PulseHoneycombModal
         open={pulseView.open}
         pulse={pulseView.pulse}
+        nowPulse={nowPulse}
         originUrl={pulseView.originUrl}
         originHash={pulseView.originHash}
         anchor={pulseView.anchor}

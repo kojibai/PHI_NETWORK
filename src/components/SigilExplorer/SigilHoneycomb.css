@@ -466,6 +466,11 @@
   color: rgba(255, 215, 128, 0.9);
 }
 
+.sigilHexUsd {
+  font-size: 10px;
+  color: rgba(191, 252, 255, 0.82);
+}
+
 .combInspector {
   border-left: 1px solid rgba(255, 255, 255, 0.08);
   background:
