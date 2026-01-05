@@ -1,0 +1,35 @@
+/* SigilMarkets/styles/breathe.css */
+
+/* Breath timing (5.236s cycle) */
+:root{
+  --sm-breath: 5.236s;
+  --sm-in: 3.236s;
+  --sm-out: 2s;
+}
+
+/* A gentle breathing glow for "alive" UI */
+@keyframes smBreathGlow{
+  0%   { transform: scale(1);   filter: blur(0px); opacity: 0.72; }
+  50%  { transform: scale(1.03); filter: blur(0.1px); opacity: 1; }
+  100% { transform: scale(1);   filter: blur(0px); opacity: 0.72; }
+}
+
+.sm-breathe{
+  animation: smBreathGlow var(--sm-breath) ease-in-out infinite;
+}
+
+.sm-breathe-soft{
+  animation: smBreathGlow var(--sm-breath) ease-in-out infinite;
+  opacity: 0.9;
+}
+
+/* Pulse shimmer (subtle) */
+@keyframes smPulseShimmer{
+  0% { opacity: 0.25; transform: translateY(0px); }
+  40% { opacity: 0.65; }
+  100% { opacity: 0.25; transform: translateY(-1px); }
+}
+
+.sm-pulse{
+  animation: smPulseShimmer 1.2s ease-in-out infinite;
+}

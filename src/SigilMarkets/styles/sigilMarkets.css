@@ -1,0 +1,4083 @@
+/* SigilMarkets/styles/sigilMarkets.css */
+
+/* Root tokens (module-scoped via data-sm-root attr) */
+[data-sm-root="1"],
+html,
+body,
+#root{
+  height: 100%;
+}
+
+html,
+body{
+  margin: 0;
+  padding: 0;
+  background: #05060d;
+}
+
+[data-sm-root="1"]{
+  --sm-bg: #070910;
+  --sm-panel: rgba(255,255,255,0.06);
+  --sm-panel2: rgba(255,255,255,0.08);
+  --sm-stroke: rgba(255,255,255,0.10);
+  --sm-stroke2: rgba(255,255,255,0.16);
+
+  --sm-text: rgba(255,255,255,0.92);
+  --sm-dim: rgba(255,255,255,0.70);
+  --sm-dimmer: rgba(255,255,255,0.56);
+
+  --sm-cyan: rgba(191,252,255,0.92);
+  --sm-cyan2: rgba(35,255,240,0.22);
+  --sm-violet: rgba(183,163,255,0.92);
+  --sm-violet2: rgba(183,163,255,0.20);
+  --sm-gold: rgba(255,219,138,0.90);
+  --sm-red: rgba(255,104,104,0.90);
+  --sm-green: rgba(120,255,200,0.90);
+  --accent-color: rgba(0, 255, 255, 0.92);
+
+  --chakra-ink-0: #ff3b6b;
+  --chakra-ark-0: #ff6aa6;
+  --chakra-ink-1: #ff8a3d;
+  --chakra-ark-1: #ffc07a;
+  --chakra-ink-2: #ffd24a;
+  --chakra-ark-2: #fff2a6;
+  --chakra-ink-3: #26ffc4;
+  --chakra-ark-3: #a6ffe9;
+  --chakra-ink-4: #33f6ff;
+  --chakra-ark-4: #a8fbff;
+  --chakra-ink-5: #7e86ff;
+  --chakra-ark-5: #c6c9ff;
+  --chakra-ink-6: #c18bff;
+  --chakra-ark-6: #ead8ff;
+
+  --sm-radius: 18px;
+  --sm-radius2: 24px;
+  --sm-shadow: 0 16px 50px rgba(0,0,0,0.45);
+
+  --sm-dock-h: 70px;
+  --sm-topbar-h: 60px;
+  --sm-dock-clearance: 18px;
+  --sm-scroll-gap: 28px;
+ 
+  --sm-gap: 12px;
+  --sm-pad: 14px;
+
+  --sm-font: ui-sans-serif, system-ui, -apple-system, "SF Pro Display", "SF Pro Text", "Inter", Arial, sans-serif;
+  --sm-safe-top: env(safe-area-inset-top, 0px);
+}
+
+[data-sm-root="1"]{
+  color: var(--sm-text);
+  font-family: var(--sm-font);
+  min-height: 100vh;
+  background: #05060d;
+}
+
+.sm-shell{
+  width: 100%;
+  height: 100%;
+  min-height: 100vh;
+  background:
+    radial-gradient(1100px 800px at 20% 10%, rgba(191,252,255,0.12), transparent 55%),
+    radial-gradient(900px 700px at 88% 16%, rgba(183,163,255,0.10), transparent 55%),
+    radial-gradient(900px 700px at 60% 90%, rgba(255,219,138,0.06), transparent 55%),
+    linear-gradient(180deg, #070910, #04050a 70%, #050513);
+  position: relative;
+  overflow: hidden;
+}
+
+.sm-window-scroll{
+  overflow: visible;
+}
+
+.sm-container-scroll{
+  overflow: hidden;
+}
+
+.sm-scroll{
+  height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: calc(var(--sm-dock-h) + var(--sm-dock-clearance) + var(--sm-scroll-gap) + env(safe-area-inset-bottom));
+  scroll-padding-bottom: calc(var(--sm-dock-h) + var(--sm-dock-clearance) + var(--sm-scroll-gap) + env(safe-area-inset-bottom));
+}
+
+.sm-routes{
+  min-height: 100%;
+  padding-bottom: calc(var(--sm-dock-h) + var(--sm-dock-clearance) + var(--sm-scroll-gap) + env(safe-area-inset-bottom));
+}
+
+/* Dock */
+.sm-dock{
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+  z-index: 50;
+  pointer-events: none;
+}
+
+.sm-dock-inner{
+  pointer-events: auto;
+  height: var(--sm-dock-h);
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 20px;
+  box-shadow: 0 16px 42px rgba(0,0,0,0.45);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+  padding: 6px;
+}
+
+.sm-dock-btn{
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--sm-dim);
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  gap: 2px;
+  padding: 6px 4px;
+  position: relative;
+  transition: transform 120ms ease, background 160ms ease, color 160ms ease;
+}
+
+.sm-dock-btn:active{
+  transform: scale(0.98);
+}
+
+.sm-dock-btn.is-active{
+  color: var(--sm-text);
+  background: rgba(255,255,255,0.08);
+}
+
+.sm-dock-icon{
+  font-size: 17px;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sm-dock-icon img{
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+
+.sm-dock-label{
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  opacity: 0.95;
+}
+
+.sm-dock-badge{
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  background: rgba(255,104,104,0.92);
+  color: #0b0b12;
+  font-weight: 800;
+  font-size: 9px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.20);
+  box-shadow: 0 10px 24px rgba(0,0,0,0.35);
+}
+
+.sm-dock-kai{
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 8px;
+  color: rgba(255,255,255,0.55);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}
+
+.sm-dock-kai-dot{
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(191,252,255,0.65);
+  box-shadow: 0 0 0 6px rgba(191,252,255,0.08);
+}
+
+/* Verahai How-To dock + sheet */
+.vhHowToDock{
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--sm-dock-h) + 8px + env(safe-area-inset-bottom));
+  display: flex;
+  justify-content: center;
+  z-index: 55;
+  pointer-events: none;
+}
+
+.vhHowToButton{
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--sm-text);
+  border: 1px solid transparent;
+  background:
+    linear-gradient(135deg, rgba(255,255,255,0.16), rgba(255,255,255,0.06)) padding-box,
+    linear-gradient(135deg, rgba(191,252,255,0.45), rgba(183,163,255,0.32)) border-box;
+  box-shadow: 0 12px 26px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.15);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  transition: transform 140ms ease, box-shadow 160ms ease, border-color 160ms ease, background 200ms ease;
+}
+
+.vhHowToButton:hover{
+  transform: translateY(-1px);
+  box-shadow: 0 16px 32px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.2);
+}
+
+.vhHowToButton:active{
+  transform: translateY(0);
+}
+
+.vhHowToButton:focus-visible{
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(191,252,255,0.6), 0 14px 32px rgba(0,0,0,0.42);
+}
+
+.vhHowToSheet .sm-sheet-panel{
+  background:
+    linear-gradient(160deg, rgba(7,10,16,0.92), rgba(7,10,16,0.98)) padding-box,
+    linear-gradient(120deg, rgba(191,252,255,0.35), rgba(183,163,255,0.25)) border-box;
+  border: 1px solid transparent;
+  box-shadow: 0 28px 70px rgba(0,0,0,0.55);
+}
+
+.vhHowToContent{
+  display: grid;
+  gap: 12px;
+  color: var(--sm-text);
+}
+
+.vhHowToCarousel{
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 100%;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  gap: 10px;
+  padding-bottom: 4px;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.vhHowToCarousel::-webkit-scrollbar{
+  display: none;
+}
+
+.vhHowToSlide{
+  scroll-snap-align: center;
+  padding: 12px 12px 4px;
+  border-radius: 16px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.08);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08);
+}
+
+.vhHowToSlideTop{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-size: 11px;
+  color: var(--sm-dimmer);
+}
+
+.vhHowToStepBadge{
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(191,252,255,0.12);
+  color: var(--sm-cyan);
+  border: 1px solid rgba(191,252,255,0.2);
+  font-weight: 600;
+}
+
+.vhHowToSlide h3{
+  margin: 0 0 6px;
+  font-size: 14px;
+  letter-spacing: 0.02em;
+}
+
+.vhHowToSlide p{
+  margin: 0;
+  color: var(--sm-dim);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.vhHowToSteps ul{
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--sm-text);
+}
+
+.vhHowToNote{
+  margin: 10px 0 0;
+  color: var(--sm-dimmer);
+  font-size: 12px;
+}
+
+.vhHowToDots{
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+
+.vhHowToDot{
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  border: 0;
+  background: rgba(255,255,255,0.2);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.15);
+  transition: transform 160ms ease, background 160ms ease;
+}
+
+.vhHowToDot.is-active{
+  transform: scale(1.2);
+  background: rgba(191,252,255,0.8);
+  box-shadow: 0 0 0 3px rgba(191,252,255,0.18);
+}
+
+.vhHowToDivider{
+  margin: 6px 0 2px;
+}
+
+.vhHowToToggle{
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--sm-dimmer);
+}
+
+.vhHowToToggle input{
+  width: 16px;
+  height: 16px;
+  accent-color: rgba(191,252,255,0.9);
+}
+
+.vhHowToFooter{
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 6px;
+}
+
+/* Shared page layout */
+.sm-page{
+  padding: 0 calc(var(--sm-pad) + env(safe-area-inset-right)) var(--sm-pad) calc(var(--sm-pad) + env(safe-area-inset-left));
+  max-width: 980px;
+  margin: 0 auto;
+}
+
+.sm-honeycomb-page{
+  position: relative;
+  isolation: isolate;
+  border-radius: calc(var(--sm-radius2) + 6px);
+  background:
+    radial-gradient(1200px 800px at 50% -10%, rgba(0,0,0,0.55), transparent 60%),
+    radial-gradient(1000px 780px at 20% 15%, rgba(35,255,240,0.16), transparent 58%),
+    radial-gradient(980px 760px at 85% 85%, rgba(183,163,255,0.16), transparent 62%),
+    linear-gradient(180deg, rgba(7,9,16,0.9), rgba(4,5,10,0.92));
+  box-shadow: 0 20px 60px rgba(0,0,0,0.45);
+}
+
+.sm-honeycomb-page::before,
+.sm-honeycomb-page::after{
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.sm-honeycomb-page::before{
+  background:
+    repeating-linear-gradient(
+      180deg,
+      rgba(255,255,255,0.03) 0px,
+      rgba(255,255,255,0.03) 1px,
+      rgba(0,0,0,0) 4px,
+      rgba(0,0,0,0) 8px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      rgba(255,255,255,0.015) 0px,
+      rgba(255,255,255,0.015) 1px,
+      rgba(0,0,0,0) 6px,
+      rgba(0,0,0,0) 12px
+    );
+  mix-blend-mode: overlay;
+  opacity: 0.4;
+}
+
+.sm-honeycomb-page::after{
+  background:
+    radial-gradient(720px 520px at 25% 22%, rgba(35,255,240,0.16), transparent 60%),
+    radial-gradient(740px 520px at 80% 68%, rgba(183,163,255,0.18), transparent 62%),
+    radial-gradient(680px 520px at 15% 85%, rgba(98,218,255,0.14), transparent 62%);
+  filter: blur(12px);
+  opacity: 0.6;
+}
+
+.sm-honeycomb-page > *{
+  position: relative;
+  z-index: 1;
+}
+
+.sm-card{
+  background: var(--sm-panel);
+  border: 1px solid var(--sm-stroke);
+  border-radius: var(--sm-radius2);
+  box-shadow: var(--sm-shadow);
+}
+
+.sm-card2{
+  background: var(--sm-panel2);
+  border: 1px solid var(--sm-stroke);
+  border-radius: var(--sm-radius2);
+}
+
+.sm-row{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sm-title{
+  font-size: 20px;
+  letter-spacing: 0.01em;
+  line-height: 1.15;
+}
+
+.sm-subtitle{
+  font-size: 13px;
+  color: var(--sm-dim);
+  line-height: 1.25;
+}
+
+.sm-pill{
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.10);
+  color: rgba(255,255,255,0.72);
+  font-size: 12px;
+}
+
+.sm-btn{
+  appearance: none;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(255,255,255,0.06);
+  color: var(--sm-text);
+  border-radius: 14px;
+  padding: 10px 12px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  transition: transform 120ms ease, background 160ms ease, border 160ms ease;
+}
+
+.sm-btn:active{
+  transform: scale(0.98);
+}
+
+.sm-btn-primary{
+  background: rgba(191,252,255,0.14);
+  border-color: rgba(191,252,255,0.24);
+}
+
+.sm-btn-danger{
+  background: rgba(255,104,104,0.12);
+  border-color: rgba(255,104,104,0.22);
+}
+
+.sm-muted{
+  color: var(--sm-dim);
+}
+
+.sm-small{
+  font-size: 12px;
+  color: var(--sm-dim);
+}
+
+/* Responsive */
+@media (max-width: 520px){
+  [data-sm-root="1"]{
+    --sm-dock-h: 56px;
+    --sm-dock-clearance: 12px;
+    --sm-topbar-h: 54px;
+  }
+  .sm-page{
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+  .sm-dock-label{
+    display: none;
+  }
+  .sm-dock-icon{
+    font-size: 16px;
+  }
+  .sm-dock-icon img{
+    width: 16px;
+    height: 16px;
+  }
+  .sm-dock-badge{
+    top: 2px;
+    right: 6px;
+  }
+}
+/* Add these styles to SigilMarkets/styles/sigilMarkets.css (near .sm-btn) */
+
+.sm-btn-core{
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  user-select: none;
+}
+
+.sm-btn-inner{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.sm-btn-ico{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.92;
+}
+
+.sm-btn-label{
+  line-height: 1;
+}
+
+.sm-btn-sm{ padding: 8px 10px; border-radius: 12px; font-size: 13px; }
+.sm-btn-md{ padding: 10px 12px; border-radius: 14px; font-size: 14px; }
+.sm-btn-lg{ padding: 12px 14px; border-radius: 16px; font-size: 15px; }
+
+.sm-btn-default{ background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.14); }
+.sm-btn-ghost{ background: transparent; border-color: rgba(255,255,255,0.10); }
+.sm-btn-ghost:hover{ background: rgba(255,255,255,0.05); }
+
+.sm-btn.is-disabled{
+  opacity: 0.58;
+  cursor: not-allowed;
+}
+
+.sm-btn.is-loading{
+  color: rgba(255,255,255,0.70);
+}
+
+.sm-btn-spinner{
+  position: absolute;
+  right: 10px;
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  justify-content: center;
+}
+
+.sm-btn-spinner-dot{
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(191,252,255,0.85);
+  opacity: 0.35;
+  animation: smBtnDot 900ms ease-in-out infinite;
+}
+
+.sm-btn-spinner-dot:nth-child(2){ animation-delay: 120ms; }
+.sm-btn-spinner-dot:nth-child(3){ animation-delay: 240ms; }
+
+@keyframes smBtnDot{
+  0%, 100%{ transform: translateY(0px); opacity: 0.35; }
+  45%{ transform: translateY(-2px); opacity: 0.95; }
+}
+/* Add these styles to SigilMarkets/styles/sigilMarkets.css */
+
+.sm-card-core{
+  width: 100%;
+}
+
+.sm-card-plain{
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: var(--sm-radius2);
+}
+
+.sm-card-header,
+.sm-card-content,
+.sm-card-footer{
+  padding: 14px;
+}
+
+.sm-card-header{
+  padding-bottom: 10px;
+}
+
+.sm-card-footer{
+  padding-top: 10px;
+}
+
+.sm-card-header.is-compact,
+.sm-card-content.is-compact,
+.sm-card-footer.is-compact{
+  padding: 10px 12px;
+}
+
+.sm-card-divider{
+  height: 1px;
+  width: 100%;
+  background: rgba(255,255,255,0.10);
+  opacity: 0.9;
+}
+/* Add these styles to SigilMarkets/styles/sigilMarkets.css */
+
+.sm-chip{
+  appearance: none;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.06);
+  color: rgba(255,255,255,0.78);
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  user-select: none;
+  transition: transform 120ms ease, background 160ms ease, border-color 160ms ease, color 160ms ease;
+}
+
+.sm-chip:active{ transform: scale(0.98); }
+
+.sm-chip-sm{ padding: 6px 10px; font-size: 12px; }
+.sm-chip-md{ padding: 8px 12px; font-size: 13px; }
+
+.sm-chip-ico{ opacity: 0.9; display: inline-flex; align-items: center; justify-content: center; }
+.sm-chip-label{ line-height: 1; }
+
+.sm-chip-soft{ }
+.sm-chip-solid{ background: rgba(255,255,255,0.12); border-color: rgba(255,255,255,0.18); }
+.sm-chip-outline{ background: transparent; border-color: rgba(255,255,255,0.18); }
+
+.sm-chip.is-selected{
+  color: rgba(255,255,255,0.92);
+  background: rgba(255,255,255,0.10);
+  border-color: rgba(255,255,255,0.22);
+}
+
+/* Tone accents */
+.sm-chip-cyan.is-selected{ background: rgba(191,252,255,0.14); border-color: rgba(191,252,255,0.26); }
+.sm-chip-violet.is-selected{ background: rgba(183,163,255,0.14); border-color: rgba(183,163,255,0.26); }
+.sm-chip-gold.is-selected{ background: rgba(255,219,138,0.14); border-color: rgba(255,219,138,0.26); }
+.sm-chip-danger.is-selected{ background: rgba(255,104,104,0.14); border-color: rgba(255,104,104,0.26); }
+.sm-chip-success.is-selected{ background: rgba(120,255,200,0.14); border-color: rgba(120,255,200,0.26); }
+/* Add these styles to SigilMarkets/styles/sigilMarkets.css */
+
+.sm-divider{
+  width: 100%;
+  height: 1px;
+  background: rgba(255,255,255,0.10);
+  opacity: 0.9;
+}
+
+.sm-divider.is-strong{
+  background: rgba(255,255,255,0.16);
+}
+
+.sm-divider.is-vertical{
+  width: 1px;
+  height: 100%;
+}
+/* Add these styles to SigilMarkets/styles/sigilMarkets.css */
+
+.sm-ico-core{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  letter-spacing: 0.02em;
+  transform: translateY(-0.5px);
+}
+
+.sm-ico{ color: rgba(255,255,255,0.86); }
+.sm-ico-dim{ color: rgba(255,255,255,0.62); }
+
+.sm-ico-cyan{ color: var(--sm-cyan); }
+.sm-ico-violet{ color: var(--sm-violet); }
+.sm-ico-gold{ color: var(--sm-gold); }
+.sm-ico-danger{ color: var(--sm-red); }
+.sm-ico-success{ color: var(--sm-green); }
+/* Add these styles to SigilMarkets/styles/sigilMarkets.css */
+
+.sm-ring{
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sm-ring-svg{
+  display: block;
+  transform: rotate(-90deg);
+}
+
+.sm-ring-track{
+  stroke: rgba(255,255,255,0.10);
+}
+
+.sm-ring-bar{
+  stroke: rgba(191,252,255,0.9);
+  filter: drop-shadow(0 8px 18px rgba(0,0,0,0.25));
+}
+
+.sm-ring-label{
+  position: absolute;
+  font-size: 11px;
+  color: rgba(255,255,255,0.78);
+  letter-spacing: 0.02em;
+}
+
+/* tones */
+.sm-ring-cyan .sm-ring-bar{ stroke: rgba(191,252,255,0.90); }
+.sm-ring-violet .sm-ring-bar{ stroke: rgba(183,163,255,0.90); }
+.sm-ring-gold .sm-ring-bar{ stroke: rgba(255,219,138,0.90); }
+.sm-ring-danger .sm-ring-bar{ stroke: rgba(255,104,104,0.92); }
+.sm-ring-success .sm-ring-bar{ stroke: rgba(120,255,200,0.92); }
+.sm-ring-dim .sm-ring-bar{ stroke: rgba(255,255,255,0.45); }
+/* Add these styles to SigilMarkets/styles/sigilMarkets.css */
+
+.sm-seg{
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 16px;
+  padding: 4px;
+  gap: 4px;
+}
+
+.sm-seg.is-sm{ border-radius: 14px; }
+.sm-seg.is-disabled{ opacity: 0.6; }
+
+.sm-seg-btn{
+  appearance: none;
+  border: 0;
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  background: transparent;
+  color: rgba(255,255,255,0.70);
+  transition: background 160ms ease, color 160ms ease, transform 120ms ease;
+}
+
+.sm-seg.is-sm .sm-seg-btn{
+  padding: 8px 10px;
+  border-radius: 11px;
+  font-size: 13px;
+}
+
+.sm-seg-btn:active{ transform: scale(0.99); }
+
+.sm-seg-btn.is-active{
+  background: rgba(255,255,255,0.10);
+  color: rgba(255,255,255,0.92);
+}
+
+/* tone accents (only when active) */
+.sm-seg-btn.is-active.is-cyan{ background: rgba(191,252,255,0.14); }
+.sm-seg-btn.is-active.is-violet{ background: rgba(183,163,255,0.14); }
+.sm-seg-btn.is-active.is-gold{ background: rgba(255,219,138,0.14); }
+.sm-seg-btn.is-active.is-danger{ background: rgba(255,104,104,0.14); }
+.sm-seg-btn.is-active.is-success{ background: rgba(120,255,200,0.14); }
+/* Add these styles to SigilMarkets/styles/sigilMarkets.css */
+
+.sm-sheet{
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+
+.sm-sheet.is-open{
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.sm-sheet-backdrop{
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.sm-sheet-panel{
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 0;
+  width: min(980px, 100%);
+  border-radius: 26px 26px 0 0;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.12);
+  box-shadow: 0 -20px 70px rgba(0,0,0,0.55);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  padding-bottom: env(safe-area-inset-bottom);
+  max-height: 88vh;
+  overflow: hidden;
+}
+
+.sm-sheet.is-sm .sm-sheet-panel{ max-height: 62vh; }
+.sm-sheet.is-lg .sm-sheet-panel{ max-height: 94vh; }
+
+.sm-sheet-grab{
+  display: grid;
+  place-items: center;
+  padding: 10px 0 4px;
+}
+
+.sm-sheet-grab span{
+  width: 46px;
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.20);
+}
+
+.sm-sheet-head{
+  padding: 10px 14px 0;
+}
+
+.sm-sheet-title{
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: 0.01em;
+  color: rgba(255,255,255,0.92);
+}
+
+.sm-sheet-subtitle{
+  margin-top: 4px;
+  font-size: 12px;
+  color: rgba(255,255,255,0.66);
+  line-height: 1.35;
+}
+
+.sm-sheet-body{
+  padding: 12px 14px 14px;
+  overflow: auto;
+  max-height: calc(88vh - 120px);
+  -webkit-overflow-scrolling: touch;
+}
+
+.sm-sheet-footer{
+  padding: 12px 14px 14px;
+  border-top: 1px solid rgba(255,255,255,0.10);
+}
+/* Add these styles to SigilMarkets/styles/sigilMarkets.css */
+
+.sm-tip-host{
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.sm-tip{
+  position: fixed;
+  z-index: 120;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(2px) scale(0.98);
+  transition: opacity 120ms ease, transform 120ms ease;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: rgba(0,0,0,0.72);
+  color: rgba(255,255,255,0.92);
+  border: 1px solid rgba(255,255,255,0.14);
+  box-shadow: 0 18px 60px rgba(0,0,0,0.55);
+  max-width: min(320px, 90vw);
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.sm-tip.is-open{
+  opacity: 1;
+  transform: translateY(0px) scale(1);
+}
+/* Add these styles to SigilMarkets/styles/sigilMarkets.css */
+
+.sm-toast-host{
+  position: fixed;
+  top: 10px;
+  left: 0;
+  right: 0;
+  z-index: 140;
+  display: grid;
+  gap: 10px;
+  place-items: center;
+  pointer-events: none;
+  padding: 0 12px;
+}
+
+.sm-toast{
+  pointer-events: auto;
+  width: min(520px, 100%);
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 18px;
+  box-shadow: 0 24px 70px rgba(0,0,0,0.55);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  padding: 10px 12px;
+  opacity: 0;
+  transform: translateY(-6px) scale(0.985);
+  animation: smToastLife var(--sm-toast-ttl, 2600ms) ease-out forwards;
+}
+
+.sm-toast-head{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.sm-toast-title{
+  font-weight: 900;
+  letter-spacing: 0.01em;
+  font-size: 13px;
+  color: rgba(255,255,255,0.92);
+}
+
+.sm-toast-msg{
+  margin-top: 4px;
+  font-size: 12px;
+  color: rgba(255,255,255,0.72);
+  line-height: 1.35;
+}
+
+.sm-toast-x{
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: rgba(255,255,255,0.70);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.sm-toast.is-success{ border-color: rgba(120,255,200,0.22); }
+.sm-toast.is-warning{ border-color: rgba(255,219,138,0.22); }
+.sm-toast.is-error{ border-color: rgba(255,104,104,0.22); }
+.sm-toast.is-info{ border-color: rgba(191,252,255,0.16); }
+
+@keyframes smToastLife{
+  0%{ opacity: 0; transform: translateY(-6px) scale(0.985); }
+  12%{ opacity: 1; transform: translateY(0) scale(1); }
+  82%{ opacity: 1; transform: translateY(0) scale(1); }
+  100%{ opacity: 0; transform: translateY(-4px) scale(0.985); }
+}
+
+@media (prefers-reduced-motion: reduce){
+  .sm-toast{
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}
+/* Add these styles to SigilMarkets/styles/sigilMarkets.css */
+
+.sm-topbar{
+  position: sticky;
+  top: 0;
+  z-index: 60;
+  margin-bottom: var(--sm-pad);
+  padding-top: env(safe-area-inset-top);
+  isolation: isolate;
+}
+
+.sm-topbar::before{
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 12% 20%, rgba(255,255,255,0.18), transparent 55%),
+    radial-gradient(circle at 88% 30%, rgba(120,255,200,0.12), transparent 60%),
+    linear-gradient(135deg, rgba(0,0,0,0.05), rgba(255,255,255,0.06));
+  opacity: 0.9;
+  z-index: -2;
+  pointer-events: none;
+}
+
+.sm-topbar::after{
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.08);
+  z-index: -1;
+  pointer-events: none;
+}
+
+@media (display-mode: standalone), (display-mode: fullscreen) {
+  .sm-shell{
+    box-sizing: border-box;
+    padding-top: var(--sm-safe-top);
+  }
+
+  .sm-topbar{
+    padding-top: 0;
+  }
+}
+
+.sm-topbar-row{
+  min-height: var(--sm-topbar-h);
+  height: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px var(--sm-pad);
+  position: relative;
+  z-index: 1;
+}
+
+.sm-topbar-left{
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.sm-topbar-back{
+  appearance: none;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(255,255,255,0.05);
+  border-radius: 14px;
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 10px 20px rgba(0,0,0,0.15);
+  transition: transform 140ms ease, border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.sm-topbar-back:hover{
+  border-color: rgba(255,255,255,0.24);
+  box-shadow: 0 14px 26px rgba(0,0,0,0.22);
+  transform: translateY(-1px);
+}
+
+.sm-topbar-back:active{
+  transform: translateY(0);
+}
+
+.sm-topbar-titles{
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  align-items: start;
+}
+
+.sm-topbar-title{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: clamp(12px, 4.4vw, 15px);
+  font-weight: 900;
+  letter-spacing: 0.01em;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: unset;
+}
+
+.sm-topbar-title-core{
+  position: relative;
+  background: linear-gradient(120deg, #ffffff 10%, rgba(191,252,255,0.9) 48%, #ffd27a 85%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: 0 0 12px rgba(191,252,255,0.45);
+  animation: sm-title-glow 4.6s ease-in-out infinite;
+}
+
+.sm-topbar-title-mark{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: rgba(255,255,255,0.86);
+  border: 1px solid rgba(255,255,255,0.2);
+  background: linear-gradient(135deg, rgba(255,255,255,0.18), rgba(0,0,0,0.1));
+  box-shadow: inset 0 0 12px rgba(255,255,255,0.1), 0 0 12px rgba(191,252,255,0.22);
+  text-transform: uppercase;
+}
+
+.sm-topbar-sub{
+  font-size: 12px;
+  color: rgba(255,255,255,0.66);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sm-topbar-sub--seal{
+  display: none;
+  text-align: center;
+  max-width: 160px;
+  white-space: normal;
+}
+
+.sm-topbar-right{
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.sm-topbar-right-sub{
+  font-size: 11px;
+  color: rgba(191,252,255,0.78);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  line-height: 1.1;
+}
+
+.sm-topbar-seal-wrap{
+  display: grid;
+  gap: 2px;
+  justify-items: center;
+  min-width: 0;
+}
+
+@media (max-width: 720px){
+  .sm-topbar-sub{
+    font-size: clamp(6px, 1.4vw, 6.4px);
+  }
+
+  .sm-topbar-sub--title{
+    display: none;
+  }
+
+  .sm-topbar-sub--seal{
+    display: block;
+    max-width: 100px;
+  }
+
+  .sm-topbar-seal-wrap{
+    gap: 4px;
+    min-width: 0;
+  }
+}
+
+@media (max-width: 420px){
+  .sm-topbar-sub--seal{
+    display: none;
+  }
+}
+
+.sm-topbar-glyph{
+  display: grid;
+  gap: 2px;
+  padding: 6px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(12, 16, 28, 0.6);
+  box-shadow: inset 0 0 20px rgba(0,0,0,0.18);
+  min-width: 92px;
+}
+
+.sm-topbar-glyph--inline{
+  padding: 0;
+  border: 0;
+  min-width: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.sm-topbar-glyph--inline .sm-topbar-glyph-values{
+  gap: 3px;
+}
+
+.sm-topbar-glyph--inline .sm-topbar-glyph-phi{
+  font-size: 12px;
+}
+
+.sm-topbar-glyph--inline .sm-topbar-glyph-usd{
+  font-size: 11px;
+}
+
+.sm-topbar-glyph-title{
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.62);
+}
+
+.sm-topbar-glyph-dot{
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(0,255,224,0.9);
+  box-shadow: 0 0 10px rgba(0,255,224,0.6);
+}
+
+.sm-topbar-glyph-values{
+  display: grid;
+  gap: 2px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.1;
+}
+
+.sm-topbar-glyph-phi{
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: rgba(255,255,255,0.95);
+  font-variant-numeric: tabular-nums;
+}
+
+.sm-topbar-glyph-phi-icon{
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+
+.sm-topbar-glyph-slash{
+  opacity: 0.65;
+  margin: 0 2px;
+}
+
+.sm-topbar-glyph-usd{
+  color: rgba(191,252,255,0.82);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* LIVE indicator (top right) */
+.topbar-live{
+  appearance: none;
+  -webkit-appearance: none;
+
+  display: flex;
+  align-items: center;
+  gap: 12px;
+
+  padding: 8px 12px;
+  border-radius: 999px;
+
+  border: 1px solid rgba(0, 255, 160, 0.22);
+  background: rgba(10, 14, 24, 0.45);
+
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+
+  cursor: pointer;
+  text-align: left;
+  user-select: none;
+
+  transform: translateZ(0);
+}
+.topbar-live:focus-visible{
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.14),
+    0 0 0 6px rgba(120, 220, 255, 0.1);
+}
+
+/* Topbar time tint inputs (set via style vars) */
+.topbar-live{
+  --kai-chakra: var(--chakra-ink-3);
+  --kai-ark: var(--chakra-ark-3);
+  --kai-month: var(--chakra-ink-2);
+}
+
+/* Fine-grained time styling */
+.kai-tag,
+.kai-sep{
+  color: rgba(245, 247, 255, 0.62);
+}
+
+.kai-num{
+  font-variant-numeric: tabular-nums;
+}
+
+.kai-num--chakra{
+  color: var(--kai-chakra);
+  text-shadow: 0 0 16px rgba(0, 0, 0, 0.55);
+}
+
+.kai-num--ark{
+  color: var(--kai-ark);
+  text-shadow: 0 0 16px rgba(0, 0, 0, 0.55);
+}
+
+.kai-num--month{
+  color: var(--kai-month);
+  text-shadow: 0 0 16px rgba(0, 0, 0, 0.55);
+}
+
+/* PERF: glow via pseudo-element; animate opacity/scale only */
+.live-orb{
+  position: relative;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: rgba(0, 255, 160, 0.95);
+  box-shadow: 0 0 10px rgba(0, 255, 160, 0.55);
+  transform: translateZ(0);
+}
+.live-orb::after{
+  content: "";
+  position: absolute;
+  inset: -10px;
+  border-radius: 999px;
+  background: radial-gradient(
+    circle,
+    rgba(0, 255, 160, 0.55),
+    transparent 62%
+  );
+  opacity: 0.55;
+  transform: scale(0.92);
+  animation: liveOrbBreath var(--breath-s) ease-in-out infinite;
+  will-change: transform, opacity;
+  pointer-events: none;
+}
+@keyframes liveOrbBreath{
+  0%,
+  100%{
+    opacity: 0.45;
+    transform: scale(0.9);
+  }
+  50%{
+    opacity: 0.8;
+    transform: scale(1.15);
+  }
+}
+
+.live-text{
+  display: flex;
+  flex-direction: column;
+  line-height: 1.1;
+  gap: 2px;
+}
+.live-title{
+  font-weight: 800;
+  letter-spacing: 0.12em;
+}
+.live-meta{
+  opacity: 0.9;
+  font-size: 12px;
+}
+
+/* KAI PILL: ALWAYS ONE LINE (auto-shrink on small) */
+.topbar-live{
+  min-width: 0 !important;
+  width: max-content;
+  max-width: 76vw;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+
+  padding: clamp(4px, 1.2vw, 6px) clamp(8px, 2.2vw, 12px);
+  gap: clamp(6px, 1.8vw, 12px);
+  min-height: 38px;
+}
+
+.live-scroll{
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scroll-behavior: smooth;
+  padding-bottom: 2px;
+}
+.live-scroll::-webkit-scrollbar{
+  height: 6px;
+}
+.live-scroll::-webkit-scrollbar-thumb{
+  background: rgba(120, 220, 255, 0.35);
+  border-radius: 999px;
+}
+.live-scroll::-webkit-scrollbar-track{
+  background: transparent;
+}
+
+.live-orb{
+  flex: 0 0 auto;
+}
+
+.live-text{
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  white-space: nowrap;
+  line-height: 1.1;
+  min-width: 0;
+  overflow: visible;
+}
+
+.live-line{
+  display: inline-flex;
+  align-items: center;
+  gap: clamp(6px, 1.6vw, 10px);
+  min-width: 0;
+}
+
+.live-line--balance{
+  font-size: clamp(9px, 1.8vw, 11px);
+  opacity: 0.92;
+}
+
+.live-line--kai{
+  font-size: clamp(8px, 1.6vw, 11px);
+  opacity: 0.9;
+  letter-spacing: 0.04em;
+}
+
+.live-balance-icon{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+  flex: 0 0 auto;
+}
+
+.live-balance-text{
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+}
+
+.live-title,
+.live-meta{
+  display: inline-flex;
+  align-items: baseline;
+  line-height: 1;
+  white-space: nowrap;
+
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, "SF Mono", Consolas,
+    "Liberation Mono", "Courier New", monospace;
+  font-variant-numeric: tabular-nums;
+  text-transform: uppercase;
+}
+
+.live-title{
+  font-size: clamp(10px, 2.2vw, 13px);
+  letter-spacing: clamp(0.08em, 0.6vw, 0.14em);
+}
+
+.live-meta{
+  font-size: clamp(8px, 1.6vw, 12px);
+  letter-spacing: clamp(0.06em, 0.55vw, 0.12em);
+  opacity: 0.86;
+}
+
+@media (max-width: 560px){
+  .topbar-live{ max-width: 84vw; }
+  .live-scroll{ margin-right: -2px; }
+}
+
+.live-meta{
+  min-width: 0;
+  overflow: visible;
+}
+
+.sm-phi-icon{
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  vertical-align: -0.12em;
+}
+
+.live-meta--pulse{
+  flex: 0 0 auto;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+@media (max-width: 420px){
+  .topbar-live{ max-width: 70vw; }
+  .topbar-live{ gap: 8px; }
+  .live-text{ gap: 8px; }
+}
+
+.sm-topbar-kai{
+  appearance: none;
+  border: 1px solid rgba(255,255,255,0.16);
+  background: linear-gradient(135deg, rgba(12,20,30,0.52), rgba(255,255,255,0.06));
+  color: rgba(255,255,255,0.86);
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  box-shadow: 0 10px 20px rgba(0,0,0,0.18), inset 0 0 12px rgba(255,255,255,0.06);
+  transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.sm-topbar-kai:hover{
+  border-color: rgba(191,252,255,0.38);
+  box-shadow: 0 12px 24px rgba(0,0,0,0.24), inset 0 0 12px rgba(191,252,255,0.12);
+  transform: translateY(-1px);
+}
+
+.sm-topbar-kai:active{
+  transform: translateY(0) scale(0.98);
+}
+
+.sm-topbar-kai:focus-visible{
+  outline: 2px solid rgba(191,252,255,0.5);
+  outline-offset: 2px;
+}
+
+.sm-topbar-kai-dot{
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(191,252,255,0.72);
+  box-shadow: 0 0 0 6px rgba(191,252,255,0.10);
+  animation: sm-kai-pulse 2.8s ease-in-out infinite;
+}
+
+.sm-topbar-kai-text{
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.sm-topbar-kai-tag{
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.56);
+}
+
+.sm-topbar-seal{
+  box-shadow: 0 12px 26px rgba(0,0,0,0.28), 0 0 18px rgba(255,210,122,0.25);
+  border: 1px solid rgba(255,210,122,0.38);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.sm-topbar-seal:hover{
+  box-shadow: 0 14px 30px rgba(0,0,0,0.32), 0 0 22px rgba(255,210,122,0.3);
+}
+
+@keyframes sm-kai-pulse{
+  0%{ box-shadow: 0 0 0 4px rgba(191,252,255,0.12); }
+  50%{ box-shadow: 0 0 0 10px rgba(191,252,255,0.08); }
+  100%{ box-shadow: 0 0 0 4px rgba(191,252,255,0.12); }
+}
+
+@keyframes sm-title-glow{
+  0%{ filter: drop-shadow(0 0 6px rgba(191,252,255,0.3)); }
+  50%{ filter: drop-shadow(0 0 12px rgba(255,210,122,0.45)); }
+  100%{ filter: drop-shadow(0 0 6px rgba(191,252,255,0.3)); }
+}
+
+@media (prefers-reduced-motion: reduce){
+  .sm-topbar-title-core,
+  .sm-topbar-kai-dot{
+    animation: none;
+  }
+}
+/* Add these styles to SigilMarkets/styles/sigilMarkets.css */
+
+.sm-grid-head{ margin-top: 10px; }
+
+.sm-grid-filters{
+  display: grid;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.sm-grid-filter-row{
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sm-grid-search{
+  flex: 1;
+  min-width: 0;
+  appearance: none;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(255,255,255,0.05);
+  color: rgba(255,255,255,0.78);
+  border-radius: 16px;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sm-grid-search-txt{
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 13px;
+}
+
+.sm-grid-search-ico{
+  width: 28px;
+  height: 28px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background: rgba(255,219,138,0.10);
+  border: 1px solid rgba(255,219,138,0.18);
+}
+
+.sm-grid-cat-row{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+@media (max-width: 520px){
+  .sm-grid-cat-row{
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 2px;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .sm-grid-cat-row::-webkit-scrollbar{
+    display: none;
+  }
+  .sm-grid-cat-row .sm-chip-sm{
+    font-size: clamp(10px, 2.8vw, 12px);
+    padding: 4px 8px;
+  }
+}
+
+@media (max-width: 360px){
+  .sm-grid-cat-row .sm-chip-sm{
+    font-size: clamp(9px, 3.2vw, 11px);
+    padding: 3px 7px;
+  }
+}
+
+.sm-market-sections{
+  display: grid;
+  gap: 16px;
+}
+
+.sm-market-section{
+  border-radius: 22px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.03);
+  box-shadow: 0 20px 50px rgba(0,0,0,0.35);
+  overflow: hidden;
+}
+
+.sm-market-section-toggle{
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--sm-text);
+  padding: 14px 16px;
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.sm-market-section-toggle:active{
+  transform: translateY(1px);
+}
+
+.sm-market-section-title{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sm-market-section-count{
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.08);
+  color: rgba(255,255,255,0.75);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.sm-market-section-icon{
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.08);
+  color: rgba(255,255,255,0.72);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.sm-market-section-body{
+  padding: 6px 14px 14px;
+}
+
+.sm-grid{
+  margin-top: 6px;
+  display: grid;
+  gap: 12px;
+  position: relative;
+  z-index: 1;
+  perspective: 1200px;
+  transform-style: preserve-3d;
+  overflow: visible;
+  width: 100%;
+  min-width: 0;
+}
+
+.sm-grid.is-honeycomb{
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@media (min-width: 720px){
+  .sm-grid.is-honeycomb{ grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (min-width: 980px){
+  .sm-grid.is-honeycomb{ grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+.sm-grid.is-list{
+  grid-template-columns: 1fr;
+}
+
+.sm-grid-cell{
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  text-align: left;
+  transform-style: preserve-3d;
+  min-width: 0;
+}
+
+.sm-grid-card{
+  padding: 14px;
+  border-radius: 22px;
+  position: relative;
+  transform: translateZ(0);
+  transition: transform 220ms ease, box-shadow 220ms ease, border-color 220ms ease;
+  background:
+    radial-gradient(120% 180% at 0% 0%, rgba(35,255,240,0.14), transparent 60%),
+    radial-gradient(120% 180% at 100% 100%, rgba(183,163,255,0.16), transparent 60%),
+    rgba(9,12,20,0.58);
+  border: 1px solid rgba(255,255,255,0.14);
+  box-shadow: 0 18px 50px rgba(0,0,0,0.45);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.sm-grid-card::before{
+  content: "";
+  position: absolute;
+  inset: 1px;
+  border-radius: 20px;
+  border: 1px solid rgba(255,255,255,0.08);
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.sm-grid-cell:hover .sm-grid-card,
+.sm-grid-cell:focus-visible .sm-grid-card{
+  transform: translateY(-4px) rotateX(1.5deg);
+  border-color: rgba(255,255,255,0.24);
+  box-shadow: 0 24px 60px rgba(0,0,0,0.55), 0 0 32px rgba(35,255,240,0.12);
+}
+
+.sm-grid-card-top{
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.sm-grid-q{
+  font-size: 14px;
+  font-weight: 900;
+  letter-spacing: 0.01em;
+  line-height: 1.2;
+  color: rgba(255,255,255,0.92);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.sm-grid-meta{
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.sm-grid-dot{
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(191,252,255,0.65);
+  box-shadow: 0 0 0 5px rgba(191,252,255,0.08);
+}
+
+.sm-grid-prices{
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.sm-grid-price{
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,0.10);
+  background:
+    radial-gradient(120% 180% at 0% 0%, rgba(191,252,255,0.12), transparent 60%),
+    radial-gradient(120% 180% at 100% 100%, rgba(183,163,255,0.12), transparent 60%),
+    rgba(255,255,255,0.04);
+  padding: 10px 10px;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04);
+}
+
+.sm-grid-price-k{
+  font-size: 11px;
+  color: rgba(255,255,255,0.60);
+  font-weight: 900;
+  letter-spacing: 0.06em;
+}
+
+.sm-grid-price-v{
+  margin-top: 6px;
+  font-size: 18px;
+  font-weight: 950;
+  letter-spacing: 0.01em;
+}
+
+.sm-grid-price.yes .sm-grid-price-v{ color: rgba(191,252,255,0.92); }
+.sm-grid-price.no  .sm-grid-price-v{ color: rgba(183,163,255,0.92); }
+
+.sm-empty{
+  margin-top: 14px;
+}
+
+.sm-skel-cell{
+  height: 170px;
+  border-radius: 22px;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: linear-gradient(90deg, rgba(255,255,255,0.05), rgba(255,255,255,0.10), rgba(255,255,255,0.05));
+  background-size: 240% 100%;
+  animation: smSkel 1.2s ease-in-out infinite;
+}
+
+@keyframes smSkel{
+  0%{ background-position: 0% 50%; opacity: 0.75; }
+  50%{ background-position: 100% 50%; opacity: 1; }
+  100%{ background-position: 0% 50%; opacity: 0.75; }
+}
+/* Add these styles to SigilMarkets/styles/sigilMarkets.css */
+
+.sm-stake{
+  display: grid;
+  gap: 10px;
+}
+
+.sm-stake-top{
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.sm-stake-k{
+  font-size: 12px;
+  color: rgba(255,255,255,0.62);
+  font-weight: 900;
+  letter-spacing: 0.06em;
+}
+
+.sm-stake-v{
+  margin-top: 6px;
+  font-size: 20px;
+  font-weight: 950;
+  letter-spacing: 0.01em;
+}
+
+.sm-stake-slider{
+  position: relative;
+  display: grid;
+  gap: 6px;
+}
+
+.sm-stake-slider input[type="range"]{
+  width: 100%;
+  accent-color: rgba(191,252,255,0.85);
+}
+
+.sm-stake-pct{
+  font-size: 12px;
+  color: rgba(255,255,255,0.62);
+  justify-self: end;
+}
+
+.sm-stake-presets{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.sm-stake-input{
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.sm-input{
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.05);
+  color: rgba(255,255,255,0.90);
+  outline: none;
+}
+
+.sm-input::placeholder{
+  color: rgba(255,255,255,0.45);
+}
+/* Add these styles to SigilMarkets/styles/sigilMarkets.css */
+
+.sm-quote-head{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.sm-quote-title{
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 0.01em;
+  color: rgba(255,255,255,0.86);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sm-quote-side-pill{
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.06);
+  font-weight: 900;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+}
+
+.sm-quote-side-pill.is-yes{
+  border-color: rgba(191,252,255,0.24);
+  background: rgba(191,252,255,0.12);
+  color: rgba(191,252,255,0.92);
+}
+
+.sm-quote-side-pill.is-no{
+  border-color: rgba(183,163,255,0.24);
+  background: rgba(183,163,255,0.12);
+  color: rgba(183,163,255,0.92);
+}
+
+.sm-quote-grid{
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.sm-quote-row{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.sm-quote-k{
+  font-size: 12px;
+  color: rgba(255,255,255,0.62);
+}
+
+.sm-quote-v{
+  font-size: 12px;
+  color: rgba(255,255,255,0.90);
+  font-weight: 800;
+}
+/* Add these styles to SigilMarkets/styles/sigilMarkets.css */
+
+.sm-lock-hero{
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(255,255,255,0.06);
+}
+
+.sm-lock-hero-ico{
+  width: 38px;
+  height: 38px;
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255,219,138,0.18);
+  background: rgba(255,219,138,0.10);
+}
+
+.sm-lock-hero-title{
+  font-size: 14px;
+  font-weight: 950;
+  letter-spacing: 0.01em;
+}
+
+.sm-lock-hero-sub{
+  margin-top: 2px;
+  font-size: 12px;
+  color: rgba(255,255,255,0.62);
+}
+
+.sm-lock-grid{
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.sm-lock-row{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sm-lock-k{
+  font-size: 12px;
+  color: rgba(255,255,255,0.62);
+}
+
+.sm-lock-v{
+  font-size: 12px;
+  color: rgba(255,255,255,0.90);
+  font-weight: 900;
+}
+
+.sm-lock-warn{
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,104,104,0.22);
+  background: rgba(255,104,104,0.10);
+  color: rgba(255,255,255,0.86);
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sm-lock-footer{
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+/* Add these styles to SigilMarkets/styles/sigilMarkets.css */
+
+.sm-mint-hero{
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(255,255,255,0.06);
+}
+
+.sm-mint-badge{
+  width: 38px;
+  height: 38px;
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(191,252,255,0.18);
+  background: rgba(191,252,255,0.10);
+}
+
+.sm-mint-title{
+  font-size: 14px;
+  font-weight: 950;
+  letter-spacing: 0.01em;
+}
+
+.sm-mint-sub{
+  margin-top: 2px;
+  font-size: 12px;
+  color: rgba(255,255,255,0.62);
+}
+
+.sm-mint-grid{
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.sm-mint-row{
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sm-mint-k{
+  font-size: 12px;
+  color: rgba(255,255,255,0.62);
+}
+
+.sm-mint-v{
+  font-size: 12px;
+  color: rgba(255,255,255,0.90);
+  font-weight: 900;
+}
+
+.sm-mint-footer{
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+/* Add these styles to SigilMarkets/styles/sigilMarkets.css */
+
+.sm-countdown{
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 20px;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(255,255,255,0.06);
+}
+
+.sm-countdown-k{
+  font-size: 12px;
+  color: rgba(255,255,255,0.62);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 800;
+}
+
+.sm-countdown-v{
+  margin-top: 4px;
+  font-size: 13px;
+  font-weight: 950;
+  color: rgba(255,255,255,0.90);
+}
+
+.sm-countdown-v.is-soon{
+  color: rgba(255,219,138,0.92);
+}
+/* Add these styles to SigilMarkets/styles/sigilMarkets.css */
+
+.sm-mkt-header{
+  margin-top: 10px;
+}
+
+.sm-mkt-header-top{
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sm-mkt-header-left{
+  min-width: 0;
+  flex: 1;
+}
+
+.sm-mkt-header-q{
+  font-size: 18px;
+  font-weight: 950;
+  letter-spacing: 0.01em;
+  line-height: 1.15;
+}
+
+.sm-mkt-header-sub{
+  margin-top: 6px;
+  font-size: 12px;
+  color: rgba(255,255,255,0.62);
+  letter-spacing: 0.02em;
+}
+
+.sm-mkt-header-desc{
+  margin-top: 10px;
+  font-size: 13px;
+  color: rgba(255,255,255,0.74);
+  line-height: 1.35;
+}
+
+.sm-mkt-header-right{
+  flex: 0 0 auto;
+}
+
+.sm-mkt-header-actions{
+  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+/* Add these styles to SigilMarkets/styles/sigilMarkets.css */
+
+.sm-chart{
+  border-radius: 22px;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(255,255,255,0.06);
+  overflow: hidden;
+}
+
+.sm-chart-head{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px 0;
+}
+
+.sm-chart-title{
+  font-size: 13px;
+  font-weight: 950;
+  letter-spacing: 0.01em;
+}
+
+.sm-chart-right{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sm-chart-pill{
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(255,255,255,0.05);
+  font-size: 12px;
+  color: rgba(255,255,255,0.80);
+}
+
+.sm-chart-pill.dim{
+  color: rgba(255,255,255,0.56);
+}
+
+.sm-chart-canvas-wrap{
+  padding: 10px 10px 12px;
+}
+
+.sm-chart-canvas{
+  width: 100%;
+  display: block;
+  border-radius: 18px;
+  background: rgba(0,0,0,0.10);
+}
+/* Add these styles to SigilMarkets/styles/sigilMarkets.css */
+
+.sm-order{
+  margin-top: 12px;
+  display: grid;
+  gap: 12px;
+}
+
+.sm-order-top{
+  display: grid;
+  gap: 4px;
+}
+
+.sm-order-title{
+  font-size: 15px;
+  font-weight: 950;
+  letter-spacing: 0.01em;
+}
+
+.sm-order-sub{
+  font-size: 12px;
+  color: rgba(255,255,255,0.66);
+  line-height: 1.35;
+}
+
+.sm-order-status{
+  font-size: 12px;
+  color: rgba(255,215,128,0.9);
+  line-height: 1.35;
+}
+
+.sm-order-cta{
+  margin-top: 12px;
+  display: flex;
+  justify-content: flex-end;
+}
+/* Add these styles to SigilMarkets/styles/sigilMarkets.css */
+
+.sm-rules-head{
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sm-rules-title{
+  font-size: 13px;
+  font-weight: 950;
+  color: rgba(255,255,255,0.86);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sm-rules-badges{
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.sm-rules-block{
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.sm-rules-k{
+  font-size: 12px;
+  color: rgba(255,255,255,0.62);
+  font-weight: 900;
+  letter-spacing: 0.06em;
+}
+
+.sm-rules-v{
+  font-size: 13px;
+  color: rgba(255,255,255,0.78);
+  line-height: 1.4;
+}
+
+.sm-rules-list{
+  margin: 0;
+  padding-left: 16px;
+  color: rgba(255,255,255,0.78);
+  font-size: 13px;
+  line-height: 1.45;
+}
+/* Add these styles to SigilMarkets/styles/sigilMarkets.css */
+
+.sm-act-head{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.sm-act-title{
+  font-size: 13px;
+  font-weight: 950;
+  color: rgba(255,255,255,0.86);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sm-act-list{
+  margin-top: 10px;
+  display: grid;
+  gap: 10px;
+}
+
+.sm-act-item{
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  gap: 10px;
+  align-items: start;
+  padding: 10px 10px;
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.04);
+}
+
+.sm-act-ico{
+  width: 34px;
+  height: 34px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(0,0,0,0.08);
+  color: rgba(255,255,255,0.78);
+  font-weight: 900;
+}
+
+.sm-act-line{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.sm-act-label{
+  font-size: 13px;
+  font-weight: 900;
+  color: rgba(255,255,255,0.86);
+}
+
+.sm-act-pulse{
+  font-size: 12px;
+  color: rgba(255,255,255,0.55);
+}
+
+.sm-act-sub{
+  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  color: rgba(255,255,255,0.72);
+  font-size: 12px;
+}
+
+.sm-act-side{
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.10);
+  font-weight: 950;
+  letter-spacing: 0.06em;
+}
+
+.sm-act-side.is-yes{
+  border-color: rgba(191,252,255,0.22);
+  background: rgba(191,252,255,0.10);
+  color: rgba(191,252,255,0.92);
+}
+
+.sm-act-side.is-no{
+  border-color: rgba(183,163,255,0.22);
+  background: rgba(183,163,255,0.10);
+  color: rgba(183,163,255,0.92);
+}
+
+.sm-act-mono{
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+}
+/* Add these styles to SigilMarkets/styles/sigilMarkets.css */
+
+.sm-mkt-stack{
+  margin-top: 12px;
+  display: grid;
+  gap: 12px;
+}
+/* Add these styles to SigilMarkets/styles/sigilMarkets.css */
+
+.sm-vault-stack{
+  margin-top: 12px;
+  display: grid;
+  gap: 12px;
+}
+
+.sm-vault-row{
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+@media (max-width: 720px){
+  .sm-vault-row{ grid-template-columns: 1fr; }
+}
+
+.sm-vault-sigil-top{
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.sm-vault-sigil-title{
+  font-size: 16px;
+  font-weight: 950;
+}
+
+.sm-vault-sigil-sub{
+  margin-top: 4px;
+  font-size: 12px;
+  color: rgba(255,255,255,0.62);
+}
+
+.sm-vault-sigil-badges{
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.sm-vault-sigil-meta{
+  margin-top: 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.sm-vault-sigil-line{
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.sm-vault-sigil-k{
+  font-size: 12px;
+  color: rgba(255,255,255,0.62);
+}
+
+.sm-vault-sigil-v{
+  font-size: 12px;
+  color: rgba(255,255,255,0.82);
+}
+
+.mono{
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+}
+
+.sm-vault-bal-head{
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.sm-vault-bal-title{
+  font-size: 13px;
+  font-weight: 950;
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  color: rgba(255,255,255,0.86);
+}
+
+.sm-vault-bal-total{
+  font-size: 13px;
+  font-weight: 950;
+  color: rgba(255,219,138,0.92);
+}
+
+.sm-vault-bal-grid{
+  margin-top: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.sm-vault-bal-row{
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.sm-vault-bal-row .k{
+  font-size: 12px;
+  color: rgba(255,255,255,0.62);
+}
+
+.sm-vault-bal-row .v{
+  font-size: 12px;
+  font-weight: 900;
+  color: rgba(255,255,255,0.90);
+}
+
+.sm-vault-locks-head{
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
+.sm-vault-locks-title{
+  font-size: 13px;
+  font-weight: 950;
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  color: rgba(255,255,255,0.86);
+}
+
+.sm-vault-locks-list{
+  margin-top: 10px;
+  display: grid;
+  gap: 10px;
+}
+
+.sm-vault-lock{
+  padding: 10px 12px;
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.04);
+}
+
+.sm-vault-lock.is-live{
+  border-color: rgba(255,219,138,0.18);
+  background: rgba(255,219,138,0.06);
+}
+
+.sm-vault-lock-top{
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
+.sm-vault-lock-status{
+  font-size: 11px;
+  font-weight: 950;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.10);
+  color: rgba(255,255,255,0.70);
+}
+
+.sm-vault-lock-status.locked{
+  border-color: rgba(255,219,138,0.22);
+  color: rgba(255,219,138,0.92);
+}
+
+.sm-vault-lock-mid{
+  margin-top: 8px;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
+.sm-vault-lock-amt{
+  font-weight: 950;
+}
+
+.sm-vault-lock-pulse{
+  font-size: 12px;
+  color: rgba(255,255,255,0.55);
+}
+
+.sm-vault-growth-head{
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.sm-vault-growth-title{
+  font-size: 13px;
+  font-weight: 950;
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  color: rgba(255,255,255,0.86);
+}
+
+.sm-vault-growth-right{
+  color: rgba(183,163,255,0.92);
+  font-weight: 950;
+}
+
+.sm-vault-growth-canvas{
+  margin-top: 10px;
+}
+
+.sm-vault-growth-c{
+  width: 100%;
+  height: 110px;
+  display: block;
+  border-radius: 18px;
+  background: rgba(0,0,0,0.10);
+}
+
+.sm-vault-streak{
+  display: grid;
+  gap: 8px;
+}
+
+.sm-vault-streak-title{
+  font-size: 13px;
+  font-weight: 950;
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  color: rgba(255,255,255,0.86);
+}
+
+.sm-vault-streak-v{
+  font-size: 14px;
+  font-weight: 950;
+  color: rgba(255,255,255,0.90);
+}
+
+.sm-vault-actions{
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+/* Add these styles to SigilMarkets/styles/sigilMarkets.css */
+
+.sm-pos-stack{
+  margin-top: 12px;
+  display: grid;
+  gap: 14px;
+}
+
+.sm-pos-head{
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
+.sm-pos-title{
+  font-size: 13px;
+  font-weight: 950;
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  color: rgba(255,255,255,0.86);
+}
+
+.sm-pos-list{
+  margin-top: 10px;
+  display: grid;
+  gap: 10px;
+}
+
+.sm-pos-card-btn{
+  border: 0;
+  background: transparent;
+  padding: 0;
+  text-align: left;
+}
+
+.sm-pos-card-q{
+  font-size: 13px;
+  font-weight: 950;
+  color: rgba(255,255,255,0.90);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.sm-pos-card-top{
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.sm-pos-card-mid{
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.sm-pos-side{
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.10);
+  font-weight: 950;
+  letter-spacing: 0.06em;
+  font-size: 12px;
+}
+
+.sm-pos-side.is-yes{
+  border-color: rgba(191,252,255,0.22);
+  background: rgba(191,252,255,0.10);
+  color: rgba(191,252,255,0.92);
+}
+
+.sm-pos-side.is-no{
+  border-color: rgba(183,163,255,0.22);
+  background: rgba(183,163,255,0.10);
+  color: rgba(183,163,255,0.92);
+}
+
+.sm-pos-mono{
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  color: rgba(255,255,255,0.78);
+}
+
+.sm-pos-detail{
+  margin-top: 12px;
+}
+
+.sm-pos-detail-q{
+  font-size: 16px;
+  font-weight: 950;
+  line-height: 1.2;
+}
+
+.sm-pos-detail-row{
+  margin-top: 10px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.sm-pos-detail-grid{
+  margin-top: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.sm-pos-detail-grid .row{
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.sm-pos-detail-grid .k{
+  font-size: 12px;
+  color: rgba(255,255,255,0.62);
+}
+
+.sm-pos-detail-grid .v{
+  font-size: 12px;
+  color: rgba(255,255,255,0.90);
+  font-weight: 900;
+}
+
+.sm-pos-detail-actions{
+  margin-top: 10px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.sm-pos-timeline{
+  margin-top: 10px;
+}
+
+.sm-pos-tl-title{
+  font-size: 13px;
+  font-weight: 950;
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  color: rgba(255,255,255,0.86);
+}
+
+.sm-pos-tl-list{
+  margin-top: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.sm-pos-tl-item{
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  color: rgba(255,255,255,0.78);
+}
+
+.sm-pos-tl-item .k{
+  color: rgba(255,255,255,0.62);
+}
+/* Add these styles to SigilMarkets/styles/sigilMarkets.css */
+
+.sm-claim{
+  display: grid;
+  gap: 10px;
+}
+
+.sm-claim-row{
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+}
+
+.sm-claim-row .k{ color: rgba(255,255,255,0.62); }
+.sm-claim-row .v{ color: rgba(255,255,255,0.90); font-weight: 900; }
+.sm-claim-trophy{
+  margin-top: 6px;
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(12,16,20,0.4);
+}
+.sm-claim-trophy__label{
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.55);
+}
+.sm-claim-trophy__img{
+  width: 100%;
+  max-width: 280px;
+  height: auto;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.2);
+  background: rgba(0,0,0,0.28);
+}
+/* Add these styles to SigilMarkets/styles/sigilMarkets.css */
+
+.sm-proph-toolbar{
+  margin-top: 12px;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.sm-proph-left, .sm-proph-right{
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.sm-proph-list{
+  margin-top: 12px;
+  display: grid;
+  gap: 12px;
+}
+
+.sm-proph-item{
+  display: grid;
+  gap: 8px;
+}
+
+.sm-proph-btn{
+  border: 0;
+  padding: 0;
+  background: transparent;
+  text-align: left;
+}
+
+.sm-proph-top{
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.sm-proph-q{
+  font-size: 13px;
+  font-weight: 950;
+  color: rgba(255,255,255,0.90);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.sm-proph-mid{
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.sm-proph-side{
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.10);
+  font-weight: 950;
+  letter-spacing: 0.06em;
+  font-size: 12px;
+}
+
+.sm-proph-side.is-yes{
+  border-color: rgba(191,252,255,0.22);
+  background: rgba(191,252,255,0.10);
+  color: rgba(191,252,255,0.92);
+}
+
+.sm-proph-side.is-no{
+  border-color: rgba(183,163,255,0.22);
+  background: rgba(183,163,255,0.10);
+  color: rgba(183,163,255,0.92);
+}
+
+.sm-proph-foot{
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.sm-proph-actions{
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sm-proph-sigil-grid{
+  margin-top: 12px;
+  display: grid;
+  gap: 14px;
+}
+
+.sm-proph-sigil-list{
+  display: grid;
+  gap: 12px;
+}
+
+.sm-proph-sigil-item{
+  display: grid;
+  gap: 8px;
+}
+
+.sm-proph-sigil-card{
+  border: 1px solid rgba(255,255,255,0.08);
+}
+
+.sm-proph-sigil-top{
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.sm-proph-sigil-text{
+  font-size: 14px;
+  font-weight: 900;
+  color: rgba(255,255,255,0.92);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.sm-proph-sigil-meta{
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.sm-proph-sigil-actions{
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.sm-proph-sigil-row{
+  display: grid;
+  gap: 12px;
+}
+
+@media (min-width: 720px){
+  .sm-proph-sigil-row{
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.sm-proph-sigil-field{
+  display: grid;
+  gap: 6px;
+}
+
+.sm-proph-sigil-evidence{
+  display: grid;
+  gap: 10px;
+}
+
+.sm-proph-sigil-evidence-row{
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.sm-proph-sigil-evidence-list{
+  display: grid;
+  gap: 6px;
+}
+
+.sm-proph-sigil-evidence-item{
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.04);
+}
+
+.sm-proph-sigil-status{
+  margin-top: 6px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.sm-proph-sigil-badges{
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sm-proph-sigil-zk{
+  margin-top: 8px;
+}
+
+.sm-sigil-raw{
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #05060c;
+}
+
+.sm-err{ color: rgba(255,105,105,0.92); }
+.sm-warn{ color: rgba(255,208,120,0.92); }
+
+.sm-vault-proph-list{
+  margin-top: 12px;
+  display: grid;
+  gap: 12px;
+}
+
+.sm-vault-proph-empty{
+  margin-top: 12px;
+}
+
+.sm-select{
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.05);
+  color: rgba(255,255,255,0.90);
+  outline: none;
+}
+
+.sm-label{
+  font-size: 12px;
+  color: rgba(255,255,255,0.62);
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.sm-textarea{
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.05);
+  color: rgba(255,255,255,0.90);
+  outline: none;
+  resize: vertical;
+}
+
+.sm-seal-field{ display: grid; gap: 8px; }
+.sm-seal-label{ font-size: 12px; color: rgba(255,255,255,0.62); font-weight: 900; letter-spacing: 0.06em; }
+
+.sm-lead-head{
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.sm-lead-title{
+  font-size: 13px;
+  font-weight: 950;
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  color: rgba(255,255,255,0.86);
+}
+
+.sm-lead-list{
+  margin-top: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.sm-lead-row{
+  display: grid;
+  grid-template-columns: 34px 1fr 70px 54px;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.04);
+}
+
+.sm-lead-row .rank{ font-weight: 950; color: rgba(255,255,255,0.72); }
+.sm-lead-row .stat{ text-align: right; font-weight: 950; color: rgba(255,255,255,0.86); }
+.sm-lead-row .stat.dim{ color: rgba(255,255,255,0.62); }
+/* Add these styles to SigilMarkets/styles/sigilMarkets.css */
+
+.sm-res-stack{
+  margin-top: 12px;
+  display: grid;
+  gap: 12px;
+}
+
+.sm-outcome-top{
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.sm-outcome-title{
+  font-size: 13px;
+  font-weight: 950;
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  color: rgba(255,255,255,0.86);
+}
+
+.sm-outcome-big{
+  margin-top: 10px;
+  font-size: 44px;
+  font-weight: 1000;
+  letter-spacing: 0.08em;
+  text-align: center;
+}
+
+.sm-outcome-big.is-yes{ color: rgba(120,255,200,0.92); }
+.sm-outcome-big.is-no{ color: rgba(255,104,104,0.92); }
+.sm-outcome-big.is-void{ color: rgba(183,163,255,0.92); }
+
+.sm-outcome-sub{
+  margin-top: 10px;
+  text-align: center;
+  font-size: 12px;
+  color: rgba(255,255,255,0.62);
+}
+
+.sm-ev-head{
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.sm-ev-title{
+  font-size: 13px;
+  font-weight: 950;
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  color: rgba(255,255,255,0.86);
+}
+
+.sm-ev-summary{
+  margin-top: 10px;
+  font-size: 13px;
+  color: rgba(255,255,255,0.78);
+  line-height: 1.4;
+}
+
+.sm-ev-block{ margin-top: 10px; display: grid; gap: 8px; }
+.sm-ev-k{
+  font-size: 12px;
+  color: rgba(255,255,255,0.62);
+  font-weight: 900;
+  letter-spacing: 0.06em;
+}
+
+.sm-ev-list{
+  margin: 0;
+  padding-left: 16px;
+  color: rgba(255,255,255,0.78);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.sm-ev-link{
+  color: rgba(191,252,255,0.88);
+  text-decoration: none;
+}
+
+.sm-res-actions{
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.sm-res-sigil-top{
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
+.sm-res-sigil-title{
+  font-size: 13px;
+  font-weight: 950;
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  color: rgba(255,255,255,0.86);
+}
+
+.sm-res-sigil-big{
+  margin-top: 10px;
+  font-size: 14px;
+  font-weight: 950;
+  color: rgba(255,255,255,0.86);
+}
+
+.sm-res-sigil-meta{
+  margin-top: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.sm-res-sigil-meta .row{
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+}
+
+.sm-res-sigil-meta .k{ color: rgba(255,255,255,0.62); }
+.sm-res-sigil-meta .v{ color: rgba(255,255,255,0.90); font-weight: 900; }
+/* Add these styles to SigilMarkets/styles/sigilMarkets.css */
+
+.sm-inhale{
+  display: grid;
+  gap: 12px;
+}
+
+.sm-inhale-pick{
+  display: grid;
+  gap: 8px;
+}
+
+.sm-inhale-err{
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,104,104,0.22);
+  background: rgba(255,104,104,0.10);
+  color: rgba(255,255,255,0.86);
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sm-inhale-proof{
+  padding: 12px;
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(255,255,255,0.06);
+  display: grid;
+  gap: 10px;
+}
+
+.sm-inhale-proof-top{
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.sm-inhale-proof-title{
+  font-size: 13px;
+  font-weight: 950;
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  color: rgba(255,255,255,0.86);
+}
+
+.sm-inhale-line{
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+}
+
+.sm-inhale-line .k{
+  color: rgba(255,255,255,0.62);
+  font-weight: 900;
+  letter-spacing: 0.06em;
+}
+
+.sm-inhale-line .v{
+  color: rgba(255,255,255,0.90);
+  font-weight: 900;
+}
+/* Add these styles to SigilMarkets/styles/sigilMarkets.css */
+
+.sm-scan{
+  margin-top: 12px;
+}
+
+.sm-scan-head{
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
+.sm-scan-title{
+  font-size: 13px;
+  font-weight: 950;
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  color: rgba(255,255,255,0.86);
+}
+
+.sm-scan-err{
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,104,104,0.22);
+  background: rgba(255,104,104,0.10);
+  color: rgba(255,255,255,0.86);
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sm-scan-meta{
+  margin-top: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.sm-scan-meta .row{
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+}
+
+.sm-scan-fields{
+  margin-top: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.sm-scan-field{
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+}
+
+.sm-scan-field .k{
+  color: rgba(255,255,255,0.62);
+  font-weight: 900;
+  letter-spacing: 0.06em;
+}
+
+.sm-scan-field .v{
+  color: rgba(255,255,255,0.90);
+  font-weight: 900;
+}
+
+.sm-scan-json{
+  margin-top: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.sm-scan-pre{
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(0,0,0,0.16);
+  color: rgba(255,255,255,0.82);
+  font-size: 12px;
+  line-height: 1.35;
+  overflow: auto;
+}
+/* Add these styles to SigilMarkets/styles/sigilMarkets.css (optional) */
+
+.sm-export-pos{ display: grid; gap: 10px; }
+.sm-export-pos-row{ display: flex; justify-content: space-between; gap: 10px; font-size: 12px; }
+.sm-export-pos-row .k{ color: rgba(255,255,255,0.62); font-weight: 900; letter-spacing: 0.06em; }
+.sm-export-pos-row .v{ color: rgba(255,255,255,0.90); font-weight: 900; }
+.sm-export-pos-tags{ display: flex; gap: 8px; flex-wrap: wrap; }
+/* Add these styles to SigilMarkets/styles/sigilMarkets.css (optional, matches existing aesthetic) */
+
+.sm-transfer{ display: grid; gap: 10px; }
+.sm-transfer-row{ display: flex; justify-content: space-between; gap: 10px; font-size: 12px; }
+.sm-transfer-row .k{ color: rgba(255,255,255,0.62); font-weight: 900; letter-spacing: 0.06em; }
+.sm-transfer-row .v{ color: rgba(255,255,255,0.90); font-weight: 900; }
+.sm-transfer-modes{ display: flex; gap: 8px; flex-wrap: wrap; }
+.sm-transfer-warn{
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,219,138,0.22);
+  background: rgba(255,219,138,0.10);
+  color: rgba(255,255,255,0.86);
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+/* Add to SigilMarkets/styles/sigilMarkets.css */
+
+.sm-search{
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(255,255,255,0.05);
+  padding: 10px 12px;
+}
+
+.sm-search-ico{
+  width: 28px;
+  height: 28px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(0,0,0,0.08);
+}
+
+.sm-search-in{
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: rgba(255,255,255,0.90);
+  font-size: 13px;
+}
+
+.sm-search-in::placeholder{
+  color: rgba(255,255,255,0.45);
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Eternal KaiKlok Popover — fullscreen overlay
+   ───────────────────────────────────────────────────────────── */
+
+.klock-pop {
+  position: fixed;
+  inset: 0;
+  z-index: 999999;
+  display: grid;
+  place-items: stretch;
+  padding: 0;
+
+  width: 100vw;
+  height: 100vh;
+
+  background: radial-gradient(
+      1400px 900px at 18% 8%,
+      rgba(255, 220, 140, 0.18),
+      transparent 64%
+    ),
+    radial-gradient(
+      1200px 820px at 82% 16%,
+      rgba(120, 220, 255, 0.16),
+      transparent 62%
+    ),
+    radial-gradient(
+      900px 700px at 50% 110%,
+      rgba(190, 130, 255, 0.1),
+      transparent 60%
+    ),
+    rgba(2, 4, 8, 0.72);
+
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+
+  overscroll-behavior: contain;
+  isolation: isolate;
+
+  contain: layout paint;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+@supports (height: 100dvh) {
+  .klock-pop {
+    height: 100dvh;
+  }
+}
+
+.klock-pop__panel {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  overflow: hidden;
+
+  border: 1px solid rgba(255, 255, 255, 0.1);
+
+  box-shadow: inset 0 0 0 1px rgba(255, 216, 120, 0.1),
+    inset 0 0 0 2px rgba(120, 220, 255, 0.06), 0 40px 120px rgba(0, 0, 0, 0.55);
+
+  background: radial-gradient(
+      1600px 900px at 12% 6%,
+      rgba(255, 210, 120, 0.16),
+      transparent 68%
+    ),
+    radial-gradient(
+      1400px 900px at 88% 10%,
+      rgba(120, 220, 255, 0.12),
+      transparent 66%
+    ),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02));
+
+  contain: layout paint;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+.klock-pop__panel::before {
+  content: "";
+  position: absolute;
+  inset: -25%;
+  background: radial-gradient(
+      closest-side at 30% 30%,
+      rgba(255, 231, 160, 0.16),
+      transparent 62%
+    ),
+    radial-gradient(
+      closest-side at 70% 40%,
+      rgba(120, 220, 255, 0.12),
+      transparent 60%
+    );
+  pointer-events: none;
+  opacity: 0.9;
+  transform: translateZ(0);
+  animation: klock-breathe var(--klock-breath, var(--breath-s)) ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+.klock-pop__panel::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.35;
+  background: linear-gradient(transparent, rgba(255, 255, 255, 0.05)),
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.05) 0 1px, transparent 1px 36px),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.04) 0 1px, transparent 1px 44px);
+  mix-blend-mode: overlay;
+}
+
+@keyframes klock-breathe {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.82;
+  }
+  50% {
+    transform: translate3d(0, -1.2%, 0) scale(1.03);
+    opacity: 0.98;
+  }
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.86;
+  }
+}
+
+.klock-pop__close {
+  position: absolute;
+  top: calc(14px + env(safe-area-inset-top, 0px));
+  right: calc(14px + env(safe-area-inset-right, 0px));
+
+  width: 54px;
+  height: 54px;
+  border-radius: 999px;
+
+  display: grid;
+  place-items: center;
+
+  cursor: pointer;
+  user-select: none;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: rgba(255, 225, 150, 0.12);
+
+  border: 1px solid var(--klock-border-strong, rgba(255, 231, 160, 0.62));
+  background: rgba(8, 12, 20, 0.46);
+  color: rgba(240, 246, 255, 0.96);
+
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55),
+    0 0 0 1px rgba(255, 255, 255, 0.1) inset;
+
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+
+  z-index: 50;
+  transform: translateZ(0);
+}
+.klock-pop__close:focus-visible {
+  outline: none;
+  box-shadow: var(--klock-ring, 0 0 0 2px rgba(255, 225, 150, 0.22)),
+    0 18px 60px rgba(0, 0, 0, 0.55);
+}
+
+.klock-pop__body {
+  position: relative;
+  z-index: 1;
+  height: 100%;
+  overflow: hidden;
+  padding: 0;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.klock-stage {
+  height: 100%;
+  width: 100%;
+  display: grid;
+  place-items: center;
+
+  padding: calc(18px + env(safe-area-inset-top, 0px))
+    calc(18px + env(safe-area-inset-right, 0px))
+    calc(18px + env(safe-area-inset-bottom, 0px))
+    calc(18px + env(safe-area-inset-left, 0px));
+}
+
+.klock-stage__inner {
+  width: min(98vmin, 1280px);
+  height: min(98vmin, 1280px);
+  aspect-ratio: 1 / 1;
+
+  display: grid;
+  place-items: center;
+
+  margin: 0 auto;
+
+  filter: drop-shadow(0 30px 90px rgba(0, 0, 0, 0.55));
+}
+
+.klock-stage__inner > * {
+  width: 100% !important;
+  height: 100% !important;
+  max-width: none !important;
+  max-height: none !important;
+  margin: 0 !important;
+}
+.klock-stage__inner :where(svg, canvas, img) {
+  width: 100% !important;
+  height: 100% !important;
+  max-width: none !important;
+  max-height: none !important;
+  display: block;
+}
+.klock-stage__inner :where(.wrap, .container, .root) {
+  height: 100% !important;
+}
+
+@media (max-width: 720px) {
+  .klock-stage {
+    padding: calc(12px + env(safe-area-inset-top, 0px))
+      calc(12px + env(safe-area-inset-right, 0px))
+      calc(12px + env(safe-area-inset-bottom, 0px))
+      calc(12px + env(safe-area-inset-left, 0px));
+  }
+  .klock-stage__inner {
+    width: min(98vmin, 1280px);
+    height: min(98vmin, 1280px);
+  }
+}
+
+.klock-pop .kai-klock-shell {
+  max-width: none;
+  width: clamp(360px, 88vmin, 1400px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .klock-pop__panel::before {
+    animation: none;
+  }
+}
+.vhHowToBody { white-space: pre-wrap; }
+
+.vhHowToCta{
+  margin-top: 14px;
+  display: grid;
+  gap: 8px;
+}
+
+.vhHowToCtaHint{
+  font-size: 12px;
+  opacity: .78;
+  line-height: 1.25;
+  margin: 0;
+}
+.sm-chart {
+  /* Line + glow */
+  --sm-chart-line: rgba(255, 255, 255, 0.80);
+  --sm-chart-glow: rgba(191, 252, 255, 0.18);
+
+  /* Fill */
+  --sm-chart-fill-top: rgba(191, 252, 255, 0.10);
+  --sm-chart-fill-bot: rgba(255, 255, 255, 0.00);
+
+  /* Grid / baseline */
+  --sm-chart-grid: rgba(255, 255, 255, 0.06);
+  --sm-chart-base: rgba(255, 255, 255, 0.10);
+
+  /* Head dot */
+  --sm-chart-dot: rgba(191, 252, 255, 0.92);
+
+  /* Frost */
+  --sm-chart-sheen-a: rgba(255, 255, 255, 0.08);
+  --sm-chart-sheen-b: rgba(255, 255, 255, 0.00);
+  --sm-chart-grain-alpha: 0.035;
+}
+
+/* Container glass (your existing classnames; tweak as desired) */
+.sm-chart-canvas-wrap {
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  overflow: hidden;
+}
+/* Premium file picker (frosted, consistent, mobile-friendly) */
+.sm-proph-sigil-file-input {
+  width: 100%;
+  box-sizing: border-box;
+
+  font-size: 12px;
+  line-height: 1.2;
+  color: var(--sm-fg, rgba(255, 255, 255, 0.88));
+
+  padding: 10px 12px;
+
+  border-radius: 12px;
+  border: 1px solid var(--sm-border, rgba(255, 255, 255, 0.14));
+  background: var(--sm-glass, rgba(255, 255, 255, 0.06));
+  backdrop-filter: blur(12px);
+
+  outline: none;
+}
+
+.sm-proph-sigil-file-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.sm-proph-sigil-file-input:focus-visible {
+  border-color: var(--sm-focus, rgba(255, 255, 255, 0.28));
+  box-shadow: 0 0 0 3px var(--sm-focus-ring, rgba(255, 255, 255, 0.12));
+}
+
+/* Standards-compliant */
+.sm-proph-sigil-file-input::file-selector-button {
+  margin-right: 10px;
+
+  border-radius: 10px;
+  border: 1px solid var(--sm-border, rgba(255, 255, 255, 0.18));
+  background: var(--sm-btn, rgba(255, 255, 255, 0.10));
+  color: inherit;
+
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+
+  cursor: pointer;
+  transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
+}
+
+.sm-proph-sigil-file-input::file-selector-button:hover {
+  background: var(--sm-btn-hover, rgba(255, 255, 255, 0.16));
+  border-color: var(--sm-border-hover, rgba(255, 255, 255, 0.26));
+}
+
+.sm-proph-sigil-file-input::file-selector-button:active {
+  transform: translateY(1px);
+}
+
+/* Safari */
+.sm-proph-sigil-file-input::-webkit-file-upload-button {
+  margin-right: 10px;
+
+  border-radius: 10px;
+  border: 1px solid var(--sm-border, rgba(255, 255, 255, 0.18));
+  background: var(--sm-btn, rgba(255, 255, 255, 0.10));
+  color: inherit;
+
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+
+  cursor: pointer;
+  transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sm-proph-sigil-file-input::file-selector-button,
+  .sm-proph-sigil-file-input::-webkit-file-upload-button {
+    transition: none;
+  }
+}
+
+/* Make the "Remove" button feel XS without needing size="xs" */
+.sm-proph-sigil-remove-btn {
+  padding: 4px 8px !important;
+  font-size: 11px !important;
+  line-height: 1 !important;
+  border-radius: 10px !important;
+}
+.sm-proph-sigil-file-input {
+  width: 100%;
+  box-sizing: border-box;
+
+  font-size: 12px;
+  line-height: 1.2;
+  color: var(--sm-fg, rgba(255, 255, 255, 0.88));
+
+  padding: 10px 12px;
+
+  border-radius: 12px;
+  border: 1px solid var(--sm-border, rgba(255, 255, 255, 0.14));
+  background: var(--sm-glass, rgba(255, 255, 255, 0.06));
+  backdrop-filter: blur(12px);
+
+  outline: none;
+}
+
+.sm-proph-sigil-file-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.sm-proph-sigil-file-input:focus-visible {
+  border-color: var(--sm-focus, rgba(255, 255, 255, 0.28));
+  box-shadow: 0 0 0 3px var(--sm-focus-ring, rgba(255, 255, 255, 0.12));
+}
+
+/* Modern browsers */
+.sm-proph-sigil-file-input::file-selector-button {
+  margin-right: 10px;
+  border-radius: 10px;
+  border: 1px solid var(--sm-border, rgba(255, 255, 255, 0.18));
+  background: var(--sm-btn, rgba(255, 255, 255, 0.10));
+  color: inherit;
+
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+
+  cursor: pointer;
+  transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
+}
+
+.sm-proph-sigil-file-input::file-selector-button:hover {
+  background: var(--sm-btn-hover, rgba(255, 255, 255, 0.16));
+  border-color: var(--sm-border-hover, rgba(255, 255, 255, 0.26));
+}
+
+.sm-proph-sigil-file-input::file-selector-button:active {
+  transform: translateY(1px);
+}
+
+/* Safari */
+.sm-proph-sigil-file-input::-webkit-file-upload-button {
+  margin-right: 10px;
+  border-radius: 10px;
+  border: 1px solid var(--sm-border, rgba(255, 255, 255, 0.18));
+  background: var(--sm-btn, rgba(255, 255, 255, 0.10));
+  color: inherit;
+
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+
+  cursor: pointer;
+  transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sm-proph-sigil-file-input::file-selector-button,
+  .sm-proph-sigil-file-input::-webkit-file-upload-button {
+    transition: none;
+  }
+}
