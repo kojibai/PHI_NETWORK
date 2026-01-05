@@ -1,7 +1,7 @@
 // SigilMarkets/views/Prophecy/ProphecySigilComposer.tsx
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import type { KaiMoment, KaiPulse, PhiMicro } from "../../types/marketTypes";
 import type { EvidenceBundle, EvidenceItem } from "../../types/oracleTypes";
 import { asEvidenceLabel, asEvidenceUrl } from "../../types/oracleTypes";
@@ -45,6 +45,7 @@ export const ProphecySigilComposer = (props: ProphecySigilComposerProps) => {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [zkStatus, setZkStatus] = useState<"idle" | "generating" | "ready" | "error">("idle");
+  const [zkReadyKey, setZkReadyKey] = useState<string | null>(null);
 
   const remaining = TEXT_LIMIT - text.length;
 
@@ -68,9 +69,24 @@ export const ProphecySigilComposer = (props: ProphecySigilComposerProps) => {
 
   const liveMoment = useMemo(() => momentFromUTC(), [props.now.pulse, props.now.beat, props.now.stepIndex]);
 
-  useEffect(() => {
-    if (!busy && zkStatus === "ready") setZkStatus("idle");
-  }, [busy, category, escrowRaw, expirationRaw, evidenceItems, text, zkStatus]);
+  const inputKey = useMemo(
+    () =>
+      JSON.stringify({
+        text,
+        category,
+        expirationRaw,
+        escrowRaw,
+        evidenceItems,
+      }),
+    [category, escrowRaw, evidenceItems, expirationRaw, text],
+  );
+
+  const effectiveZkStatus = useMemo(() => {
+    if (zkStatus !== "ready") return zkStatus;
+    if (busy) return zkStatus;
+    if (zkReadyKey && zkReadyKey !== inputKey) return "idle";
+    return zkStatus;
+  }, [busy, inputKey, zkReadyKey, zkStatus]);
 
   const addUrl = (): void => {
     const v = urlInput.trim();
@@ -134,6 +150,7 @@ export const ProphecySigilComposer = (props: ProphecySigilComposerProps) => {
       setError(res.error);
       setBusy(false);
       setZkStatus("error");
+      setZkReadyKey(null);
       return;
     }
 
@@ -142,8 +159,11 @@ export const ProphecySigilComposer = (props: ProphecySigilComposerProps) => {
     setExpirationRaw("");
     setEscrowRaw("");
     setEvidenceItems([]);
+    setUrlInput("");
     setBusy(false);
+    setError(null);
     setZkStatus("ready");
+    setZkReadyKey(inputKey);
   };
 
   return (
@@ -248,8 +268,13 @@ export const ProphecySigilComposer = (props: ProphecySigilComposerProps) => {
             <Chip size="sm" selected={false} variant="outline" tone={activeVault ? "gold" : "default"}>
               Signature {activeVault ? "✓" : "–"}
             </Chip>
-            <Chip size="sm" selected={false} variant="outline" tone={zkStatus === "ready" ? "success" : zkStatus === "error" ? "danger" : "default"}>
-              ZK {zkStatus === "ready" ? "✓" : zkStatus === "generating" ? "…" : "–"}
+            <Chip
+              size="sm"
+              selected={false}
+              variant="outline"
+              tone={effectiveZkStatus === "ready" ? "success" : effectiveZkStatus === "error" ? "danger" : "default"}
+            >
+              ZK {effectiveZkStatus === "ready" ? "✓" : effectiveZkStatus === "generating" ? "…" : "–"}
             </Chip>
           </div>
         </div>

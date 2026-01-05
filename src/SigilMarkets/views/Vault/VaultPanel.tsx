@@ -44,7 +44,10 @@ export const VaultPanel = (props: VaultPanelProps) => {
 
   const [dwOpen, setDwOpen] = useState<boolean>(false);
   const [dwMode, setDwMode] = useState<"deposit" | "withdraw">("deposit");
-  const [isCompactAmount, setIsCompactAmount] = useState(false);
+  const [isCompactAmount, setIsCompactAmount] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.matchMedia("(max-width: 520px)").matches;
+  });
 
   const title = "Vault";
 
@@ -73,7 +76,6 @@ export const VaultPanel = (props: VaultPanelProps) => {
     if (typeof window === "undefined") return;
     const media = window.matchMedia("(max-width: 520px)");
     const handleChange = () => setIsCompactAmount(media.matches);
-    handleChange();
     if (typeof media.addEventListener === "function") {
       media.addEventListener("change", handleChange);
       return () => media.removeEventListener("change", handleChange);

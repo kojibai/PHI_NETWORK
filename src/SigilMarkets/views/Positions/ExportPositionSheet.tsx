@@ -70,10 +70,12 @@ export const ExportPositionSheet = (props: ExportPositionSheetProps) => {
     }
   };
 
+  const resolvedSvgText = p.sigil?.payload ? svgText : null;
+  const resolvedClaimSvgText = shouldLabelClaimProof ? claimSvgText : null;
+
   useEffect(() => {
     let mounted = true;
     if (!p.sigil?.payload) {
-      setSvgText(null);
       return () => {
         mounted = false;
       };
@@ -94,7 +96,6 @@ export const ExportPositionSheet = (props: ExportPositionSheetProps) => {
 
   useEffect(() => {
     let mounted = true;
-    setClaimSvgText(null);
 
     if (!shouldLabelClaimProof || !activeVault || !p.resolution) {
       return () => {
@@ -183,7 +184,7 @@ export const ExportPositionSheet = (props: ExportPositionSheetProps) => {
             <SigilExportButton
               filenameBase={filenameBase}
               svgUrl={shouldLabelClaimProof ? undefined : p.sigil?.url}
-              svgText={(shouldLabelClaimProof ? claimSvgText : svgText) ?? undefined}
+              svgText={(shouldLabelClaimProof ? resolvedClaimSvgText : resolvedSvgText) ?? undefined}
               pngSizePx={2048}
               mode="zip"
               label={exportLabel}

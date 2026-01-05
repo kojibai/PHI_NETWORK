@@ -29,8 +29,10 @@ type HowToStep = Readonly<{
 
 export const SigilHowTo = () => {
   const [open, setOpen] = useState(false);
-  const [dismissed, setDismissed] = useState(false);
-  const [hydrated, setHydrated] = useState(false);
+  const [dismissed, setDismissed] = useState(() => {
+    const res = loadFromStorage(SM_HOWTO_DISMISSED_KEY, decodeBoolean);
+    return res.ok && res.value === true;
+  });
   const [activeStep, setActiveStep] = useState(0);
 
   const { actions: ui } = useSigilMarketsUi();
@@ -39,44 +41,39 @@ export const SigilHowTo = () => {
   // Step 1 action opens SigilModal (mint window)
   const [sigilModalOpen, setSigilModalOpen] = useState(false);
 
-  // When SigilModal closes, resume HowTo on Step 2 so the user never gets lost.
-  const [resumeStep, setResumeStep] = useState<number | null>(null);
-
   const closeRef = useRef<HTMLButtonElement | null>(null);
   const carouselRef = useRef<HTMLDivElement | null>(null);
   const rafRef = useRef<number | null>(null);
   const toggleId = useId();
 
   useEffect(() => {
-    const res = loadFromStorage(SM_HOWTO_DISMISSED_KEY, decodeBoolean);
-    if (res.ok && res.value === true) setDismissed(true);
-    setHydrated(true);
-  }, []);
-
-  useEffect(() => {
     if (!open) return;
     const id = window.requestAnimationFrame(() => closeRef.current?.focus());
     return () => window.cancelAnimationFrame(id);
-  }, [open, resumeStep]);
+  }, [open]);
 
-  // When sheet opens, go to resumed step if we have one (otherwise Step 1).
+  const scrollToStep = useCallback((step: number, behavior: ScrollBehavior = "auto"): void => {
+    const el = carouselRef.current;
+    if (!el) return;
+    el.scrollTo({ left: el.clientWidth * step, behavior });
+  }, []);
+
+  const openSheet = useCallback(
+    (step = 0): void => {
+      setActiveStep(step);
+      setOpen(true);
+      if (typeof window !== "undefined") {
+        window.requestAnimationFrame(() => scrollToStep(step, "auto"));
+      }
+    },
+    [scrollToStep],
+  );
+
   useEffect(() => {
     if (!open) return;
-
-    const resume = resumeStep;
-    if (resume !== null) setResumeStep(null);
-
-    const idx = resume ?? 0;
-    setActiveStep(idx);
-
-    const id = window.requestAnimationFrame(() => {
-      const el = carouselRef.current;
-      if (!el) return;
-      el.scrollTo({ left: el.clientWidth * idx, behavior: "auto" });
-    });
-
+    const id = window.requestAnimationFrame(() => scrollToStep(activeStep, "auto"));
     return () => window.cancelAnimationFrame(id);
-  }, [open]);
+  }, [activeStep, open, scrollToStep]);
 
   useEffect(() => {
     return () => {
@@ -84,7 +81,7 @@ export const SigilHowTo = () => {
     };
   }, []);
 
-  const showTrigger = useMemo(() => (hydrated ? !dismissed : true), [dismissed, hydrated]);
+  const showTrigger = useMemo(() => !dismissed, [dismissed]);
 
   const setDismissedPersisted = (next: boolean): void => {
     setDismissed(next);
@@ -98,18 +95,12 @@ export const SigilHowTo = () => {
     // Close HowTo so the user sees ONE clear action.
     setOpen(false);
 
-    // When SigilModal closes, bring them back to Step 2 (index 1).
-    setResumeStep(1);
-
     setSigilModalOpen(true);
   };
 
   const onSigilModalClose = (): void => {
     setSigilModalOpen(false);
-
-    // Reopen HowTo at Step 2 (index 1) to continue the guided flow.
-    setResumeStep(1);
-    setOpen(true);
+    openSheet(1);
   };
 
   const openInhaleFromStep2 = useCallback((): void => {
@@ -229,7 +220,7 @@ export const SigilHowTo = () => {
           <button
             type="button"
             className="vhHowToButton"
-            onClick={() => setOpen(true)}
+            onClick={() => openSheet(0)}
             aria-label="How to learn about Vérahai"
           >
             <span className="vhHowToButtonLabel">How to</span>

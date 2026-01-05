@@ -1,7 +1,7 @@
 // SigilMarkets/views/MarketGrid/MarketGrid.tsx
 "use client";
 
-import { useEffect, useMemo, useState, type RefObject } from "react";
+import { useMemo, useState, type RefObject } from "react";
 import type { KaiMoment, MarketCategory } from "../../types/marketTypes";
 import { useMarketGrid } from "../../hooks/useMarketGrid";
 import { useSigilMarketsUi } from "../../state/uiStore";
@@ -64,26 +64,23 @@ export const MarketGrid = (props: MarketGridProps) => {
     [grouped],
   );
 
-  const [openCategories, setOpenCategories] = useState<Set<MarketCategory>>(new Set());
+  const [closedCategories, setClosedCategories] = useState<Set<MarketCategory>>(new Set());
 
-  const openKey = useMemo(() => {
-    const activeKey = filters.categories.join("|");
-    const availableKey = availableCategories.join("|");
-    return `${activeKey}::${availableKey}`;
-  }, [availableCategories, filters.categories]);
-
-  useEffect(() => {
-    const next = new Set<MarketCategory>();
+  const openCategories = useMemo(() => {
     if (filters.categories.length > 0) {
-      filters.categories.forEach((cat) => next.add(cat));
-    } else {
-      availableCategories.forEach((cat) => next.add(cat));
+      return new Set<MarketCategory>(filters.categories);
     }
-    setOpenCategories(next);
-  }, [openKey]);
+
+    const next = new Set<MarketCategory>();
+    availableCategories.forEach((cat) => {
+      if (!closedCategories.has(cat)) next.add(cat);
+    });
+    return next;
+  }, [availableCategories, closedCategories, filters.categories]);
 
   const toggleCategory = (cat: MarketCategory): void => {
-    setOpenCategories((prev) => {
+    if (filters.categories.length > 0) return;
+    setClosedCategories((prev) => {
       const next = new Set(prev);
       if (next.has(cat)) next.delete(cat);
       else next.add(cat);

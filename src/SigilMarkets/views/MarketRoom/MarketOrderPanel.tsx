@@ -1,7 +1,7 @@
 // SigilMarkets/views/MarketRoom/MarketOrderPanel.tsx
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import type { KaiMoment, Market, MarketQuote, MarketQuoteRequest, MarketSide, PhiMicro, PriceMicro } from "../../types/marketTypes";
 import { ONE_PHI_MICRO } from "../../types/marketTypes";
 
@@ -226,11 +226,7 @@ export const MarketOrderPanel = (props: MarketOrderPanelProps) => {
     setLoading(false);
   };
 
-  useEffect(() => {
-    if (!confirmOpen) return;
-    if (marketStatus === "open") return;
-    setConfirmOpen(false);
-  }, [confirmOpen, marketStatus]);
+  const isConfirmOpen = confirmOpen && marketStatus === "open";
 
   return (
     <div className="sm-order" data-sm="order">
@@ -286,7 +282,7 @@ export const MarketOrderPanel = (props: MarketOrderPanelProps) => {
       </Card>
 
       <LockConfirmSheet
-        open={confirmOpen}
+        open={isConfirmOpen}
         onClose={() => setConfirmOpen(false)}
         now={props.now}
         quote={quote}
