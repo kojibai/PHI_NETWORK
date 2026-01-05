@@ -43,6 +43,7 @@ import { useBodyScrollLock } from "./hooks/useBodyScrollLock";
 import { useDisableZoom } from "./hooks/useDisableZoom";
 import { useVisualViewportSize } from "./hooks/useVisualViewportSize";
 import HomePriceTickerFallback from "./components/HomePriceTickerFallback";
+import type { SigilMarketsShellProps } from "./SigilMarkets/SigilMarketsShell";
 
 import "./App.css";
 
@@ -84,6 +85,13 @@ type EternalKlockProps = { initialDetailsOpen?: boolean };
 const EternalKlockLazy = lazy(
   () => import("./components/EternalKlock"),
 ) as React.LazyExoticComponent<React.ComponentType<EternalKlockProps>>;
+
+const SigilMarketsShell = lazy(
+  () =>
+    import("./SigilMarkets/SigilMarketsShell").then((mod) => ({
+      default: mod.SigilMarketsShell,
+    })),
+) as React.LazyExoticComponent<React.ComponentType<SigilMarketsShellProps>>;
 
 /* ──────────────────────────────────────────────────────────────────────────────
    Splash killer (homepage only)
@@ -144,6 +152,7 @@ const SHELL_ROUTES_TO_WARM: readonly string[] = [
   "/mint",
   "/voh",
   "/keystream",
+  "/markets",
   "/klock",
   "/klok",
   "/sigil/new",
@@ -192,6 +201,12 @@ type ExplorerPopoverProps = {
 };
 
 type VerifyPopoverProps = {
+  open: boolean;
+  onClose: () => void;
+  children: React.ReactNode;
+};
+
+type SigilMarketsPopoverProps = {
   open: boolean;
   onClose: () => void;
   children: React.ReactNode;
@@ -604,6 +619,124 @@ function ExplorerFallback(): React.JSX.Element {
   );
 }
 
+function SigilMarketsPopover({
+  open,
+  onClose,
+  children,
+}: SigilMarketsPopoverProps): React.JSX.Element | null {
+  const isClient = typeof document !== "undefined";
+  const vvSize = useVisualViewportSize();
+
+  const portalHost = useMemo<HTMLElement | null>(() => {
+    if (!isClient) return null;
+    return getPortalHost();
+  }, [isClient]);
+
+  useBodyScrollLock(open && isClient);
+
+  useEffect(() => {
+    if (!open || !isClient) return;
+
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === "Escape") onClose();
+    };
+
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open, onClose, isClient]);
+
+  const closeBtnRef = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    window.requestAnimationFrame(() => closeBtnRef.current?.focus());
+  }, [open]);
+
+  const overlayStyle = useMemo<ExplorerPopoverStyle | undefined>(() => {
+    if (!open || !isClient) return undefined;
+
+    const h = vvSize.height;
+    const w = vvSize.width;
+
+    return {
+      position: "fixed",
+      inset: 0,
+      pointerEvents: "auto",
+      height: h > 0 ? `${h}px` : undefined,
+      width: w > 0 ? `${w}px` : undefined,
+
+      ["--sx-breath"]: "5.236s",
+      ["--sx-border"]: "rgba(60, 220, 205, 0.35)",
+      ["--sx-border-strong"]: "rgba(55, 255, 228, 0.55)",
+      ["--sx-ring"]:
+        "0 0 0 2px rgba(55, 255, 228, 0.25), 0 0 0 6px rgba(55, 255, 228, 0.12)",
+    };
+  }, [open, isClient, vvSize]);
+
+  const onBackdropPointerDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>): void => {
+      if (e.target === e.currentTarget) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    },
+    [],
+  );
+
+  const onBackdropClick = useCallback((e: React.MouseEvent<HTMLDivElement>): void => {
+    if (e.target === e.currentTarget) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  }, []);
+
+  const onClosePointerDown = useCallback(
+    (e: React.PointerEvent<HTMLButtonElement>): void => {
+      e.preventDefault();
+      e.stopPropagation();
+    },
+    [],
+  );
+
+  if (!open || !isClient || !portalHost) return null;
+
+  return createPortal(
+    <div
+      className="explorer-pop"
+      style={overlayStyle}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Sigil Markets"
+      onPointerDown={onBackdropPointerDown}
+      onClick={onBackdropClick}
+    >
+      <div className="explorer-pop__panel" role="document">
+        <button
+          ref={closeBtnRef}
+          type="button"
+          className="explorer-pop__close kx-x"
+          onPointerDown={onClosePointerDown}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onClose();
+          }}
+          aria-label="Close Sigil Markets"
+          title="Close (Esc)"
+        >
+          ×
+        </button>
+
+        <div className="explorer-pop__body">{children}</div>
+
+        <div className="sr-only" aria-live="polite">
+          Sigil Markets portal open
+        </div>
+      </div>
+    </div>,
+    portalHost,
+  );
+}
+
 function KlockPopover({ open, onClose, children }: KlockPopoverProps): React.JSX.Element | null {
   const isClient = typeof document !== "undefined";
   const vvSize = useVisualViewportSize();
@@ -821,6 +954,30 @@ export function KlockRoute(): React.JSX.Element {
 
       <div className="sr-only" aria-live="polite">
         Eternal KaiKlok portal open
+      </div>
+    </>
+  );
+}
+
+export function SigilMarketsRoute(): React.JSX.Element {
+  const navigate = useNavigate();
+  const [open, setOpen] = useState<boolean>(true);
+
+  const handleClose = useCallback((): void => {
+    setOpen(false);
+    navigate("/", { replace: true });
+  }, [navigate]);
+
+  return (
+    <>
+      <SigilMarketsPopover open={open} onClose={handleClose}>
+        <Suspense fallback={null}>
+          <SigilMarketsShell />
+        </Suspense>
+      </SigilMarketsPopover>
+
+      <div className="sr-only" aria-live="polite">
+        Sigil Markets portal open
       </div>
     </>
   );
@@ -1232,6 +1389,7 @@ export function AppChrome(): React.JSX.Element {
     if (p.startsWith("/mint")) return "Mint ΦKEY";
     if (p.startsWith("/voh")) return "KaiVoh™";
     if (p.startsWith("/keystream")) return "PhiStream";
+    if (p.startsWith("/markets")) return "Sigil Markets";
     if (p.startsWith("/klock")) return "KaiKlok";
     return "Sovereign Gate";
   }, [location.pathname]);
@@ -1247,6 +1405,7 @@ export function AppChrome(): React.JSX.Element {
       p.startsWith("/voh") ||
       p.startsWith("/mint") ||
       p.startsWith("/keystream") ||
+      p.startsWith("/markets") ||
       p.startsWith("/klock")
     );
   }, [location.pathname]);
@@ -1546,6 +1705,15 @@ export function AppChrome(): React.JSX.Element {
                     <div className="nav-item__label">Attestation</div>
                     <div className="nav-item__desc">Proof Of Breath™</div>
                   </button>
+
+                  <NavLink
+                    to="/markets"
+                    className={({ isActive }) => `nav-item ${isActive ? "nav-item--active" : ""}`}
+                    aria-label="Sigil Markets: prophecy exchange"
+                  >
+                    <div className="nav-item__label">Sigil Markets</div>
+                    <div className="nav-item__desc">Prophecy exchange</div>
+                  </NavLink>
                 </div>
 
                 {/* Structural fix: prevent SovereignDeclarations from eating extra height */}
