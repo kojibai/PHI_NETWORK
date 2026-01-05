@@ -7,6 +7,7 @@ import {
   KaiVohRoute,
   KlockRoute,
   NotFound,
+  SigilMarketsRoute,
   SigilMintRoute,
 } from "../App";
 import KaiSplashScreen from "../components/KaiSplashScreen";
@@ -149,6 +150,7 @@ export default function AppRouter(): React.JSX.Element {
           <Route path="voh" element={<KaiVohRoute />} />
           <Route path="explorer" element={<ExplorerRoute />} />
           <Route path="keystream" element={<ExplorerRoute />} />
+          <Route path="markets" element={<SigilMarketsRoute />} />
           <Route path="klock" element={<KlockRoute />} />
           <Route path="klok" element={<KlockRoute />} />
           <Route path="*" element={withChromeSuspense(<NotFound />)} />
