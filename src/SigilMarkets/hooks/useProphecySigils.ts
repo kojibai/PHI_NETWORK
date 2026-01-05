@@ -149,7 +149,7 @@ export const useProphecySigils = (): UseProphecySigilsResult => {
         beat: payload.beat,
         stepIndex: payload.stepIndex,
         stepPct: payload.stepPct,
-        chakraDay: payload.chakraDay as SigilSharePayloadLoose["chakraDay"],
+        chakraDay: payload.chakraDay,
         stepsPerBeat: STEPS_BEAT,
         kaiSignature: payload.kaiSignature,
         userPhiKey: payload.userPhiKey,

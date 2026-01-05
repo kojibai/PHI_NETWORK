@@ -349,6 +349,11 @@ function festivalMultiplier(
 
 export type Quote = ReturnType<typeof quotePhiForUsd>;
 
+export function usdValueFromPhi(phi: number, usdPerPhi: number): number {
+  if (!Number.isFinite(phi) || !Number.isFinite(usdPerPhi)) return 0;
+  return Math.max(0, phi) * Math.max(0, usdPerPhi);
+}
+
 export function quotePhiForUsd(
   ctx: IssuanceContext,
   policy: IssuancePolicy = DEFAULT_ISSUANCE_POLICY

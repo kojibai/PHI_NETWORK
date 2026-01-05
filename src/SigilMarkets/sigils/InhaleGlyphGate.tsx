@@ -32,13 +32,14 @@ import { useSigilMarketsRuntimeConfig } from "../state/runtimeConfig";
 import { fetchVaultSnapshot } from "../api/vaultApi";
 
 import type { KaiSignature, SvgHash, UserPhiKey, VaultRecord } from "../types/vaultTypes";
-import { asKaiSignature, asSvgHash, asUserPhiKey } from "../types/vaultTypes";
+import { asKaiSignature, asSvgHash, asUserPhiKey, normCanonicalHash } from "../types/vaultTypes";
 import type { PhiMicro } from "../types/marketTypes";
 import { computeIntrinsicUnsigned, type SigilMetadataLite } from "../../utils/valuation";
 import { extractEmbeddedMetaFromSvg, extractProofBundleMetaFromSvg } from "../../utils/sigilMetadata";
 import { resolveGlyphPhi } from "../../utils/glyphValue";
 import { validateMeta as verifierValidateMeta } from "../../verifier/validator";
 import { ETERNAL_STEPS_PER_BEAT } from "../../SovereignSolar";
+import type { ChakraDay } from "../../utils/kai_pulse";
 import { makeSigilUrlLoose, type SigilSharePayloadLoose } from "../../utils/sigilUrl";
 import { registerSigilUrl } from "../../utils/sigilRegistry";
 import { enqueueInhaleKrystal, flushInhaleQueue } from "../../components/SigilExplorer/inhaleQueue";
@@ -69,7 +70,7 @@ type ParsedIdentity = Readonly<{
   kaiSignature: KaiSignature;
 
   pulse?: number;
-  chakraDay?: string;
+  chakraDay?: ChakraDay;
   canonicalHash?: string;
   sigilMeta?: SigilMetadataLite;
   sigilPayload?: SigilSharePayloadLoose;
@@ -79,6 +80,9 @@ type ParsedIdentity = Readonly<{
 
 const isString = (v: unknown): v is string => typeof v === "string";
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
+const CHAKRA_DAYS = ["Root", "Sacral", "Solar Plexus", "Heart", "Throat", "Third Eye", "Crown"] as const;
+const isChakraDay = (v: unknown): v is ChakraDay =>
+  typeof v === "string" && (CHAKRA_DAYS as readonly string[]).includes(v);
 
 const readFileText = (file: File): Promise<string> =>
   new Promise((resolve, reject) => {
@@ -179,7 +183,8 @@ const parseIdentityFromSvg = async (rawSvg: string, precomputedSvgHash?: SvgHash
 
   // Optional UI fields
   const pulseStr = extractAttr(svg, ["data-pulse", "data-kai-pulse", "data-kaipulse"]);
-  const chakraDay = extractAttr(svg, ["data-chakra-day", "data-chakraDay", "data-chakraday"]) ?? undefined;
+  const chakraDayRaw = extractAttr(svg, ["data-chakra-day", "data-chakraDay", "data-chakraday"]) ?? undefined;
+  const chakraDay = isChakraDay(chakraDayRaw) ? chakraDayRaw : undefined;
 
   let pulse: number | undefined;
   if (pulseStr && /^\d+$/.test(pulseStr)) {
@@ -374,11 +379,11 @@ export const InhaleGlyphGate = (props: InhaleGlyphGateProps) => {
                 : null;
             const beat = typeof sigilMeta.beat === "number" ? sigilMeta.beat : null;
             const stepIndex = typeof sigilMeta.stepIndex === "number" ? sigilMeta.stepIndex : null;
-            const chakraDay = typeof sigilMeta.chakraDay === "string" ? sigilMeta.chakraDay : null;
+            const chakraDay = isChakraDay(sigilMeta.chakraDay) ? sigilMeta.chakraDay : null;
 
             if (pulse != null && beat != null && stepIndex != null && chakraDay && canonicalHash) {
               const exportedAtPulse = (sigilMeta as { exportedAtPulse?: number }).exportedAtPulse;
-              sigilPayload = {
+              const payload: SigilSharePayloadLoose = {
                 pulse,
                 beat,
                 stepIndex,
@@ -389,7 +394,8 @@ export const InhaleGlyphGate = (props: InhaleGlyphGateProps) => {
                 userPhiKey: typeof sigilMeta.userPhiKey === "string" ? sigilMeta.userPhiKey : undefined,
                 exportedAtPulse: typeof exportedAtPulse === "number" ? exportedAtPulse : undefined,
               };
-              sigilUrl = makeSigilUrlLoose(canonicalHash, sigilPayload);
+              sigilPayload = payload;
+              sigilUrl = makeSigilUrlLoose(canonicalHash, payload);
             }
           }
 
@@ -451,7 +457,7 @@ export const InhaleGlyphGate = (props: InhaleGlyphGateProps) => {
     const identitySigil = {
       svgHash: parsed.svgHash,
       url: parsed.sigilUrl,
-      canonicalHash: parsed.canonicalHash,
+      canonicalHash: parsed.canonicalHash ? normCanonicalHash(parsed.canonicalHash) : undefined,
       valuePhiMicro,
       availablePhiMicro: valuePhiMicro,
       lastValuedPulse: valuePhiMicro !== undefined ? now.pulse : undefined,

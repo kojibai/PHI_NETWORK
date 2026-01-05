@@ -7,6 +7,7 @@ import type {
   MicroDecimalString,
   PhiMicro,
 } from "./marketTypes";
+import type { ChakraDay } from "../../utils/kai_pulse";
 import type { EvidenceBundle } from "./oracleTypes";
 import type { KaiSignature, SvgHash, UserPhiKey } from "./vaultTypes";
 
@@ -42,7 +43,7 @@ export type ProphecySigilPayloadV1 = Readonly<{
   beat: number;
   stepIndex: number;
   stepPct: number;
-  chakraDay: string;
+  chakraDay: ChakraDay;
 
   createdAtPulse: KaiPulse;
 

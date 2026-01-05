@@ -9,7 +9,7 @@ export type PhiIconProps = Readonly<{
   title?: string;
 }>;
 
-export const PhiIcon = (props: PhiIconProps): JSX.Element => {
+export const PhiIcon = (props: PhiIconProps): React.ReactElement => {
   const { size = 14, className, title } = props;
 
   return (
