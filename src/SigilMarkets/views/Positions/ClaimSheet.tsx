@@ -66,13 +66,12 @@ export const ClaimSheet = (props: ClaimSheetProps) => {
   } | null>(null);
   const [bundleBusy, setBundleBusy] = useState(false);
 
-  useEffect(() => {
-    if (!props.open) {
-      setClaimSigil(null);
-      setLoading(false);
-      setBundleBusy(false);
-    }
-  }, [props.open]);
+  const handleClose = (): void => {
+    setClaimSigil(null);
+    setLoading(false);
+    setBundleBusy(false);
+    props.onClose();
+  };
 
   useEffect(() => {
     return () => {
@@ -249,12 +248,12 @@ export const ClaimSheet = (props: ClaimSheetProps) => {
   return (
     <Sheet
       open={props.open}
-      onClose={props.onClose}
+      onClose={handleClose}
       title={title}
       subtitle={canRefund ? "Prophecy voided/canceled. Your stake returns." : "You won. Your shares redeem into your Vault."}
       footer={
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
-          <Button variant="ghost" onClick={props.onClose} disabled={loading}>
+          <Button variant="ghost" onClick={handleClose} disabled={loading}>
             Cancel
           </Button>
           <Button
