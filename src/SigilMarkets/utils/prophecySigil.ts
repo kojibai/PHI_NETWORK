@@ -5,7 +5,7 @@ import type { EvidenceBundle } from "../types/oracleTypes";
 import type { ProphecyId, ProphecySigilPayloadV1, ProphecySigilZkBundle } from "../types/prophecySigilTypes";
 import { asProphecyId } from "../types/prophecySigilTypes";
 import type { KaiPulse, MicroDecimalString, PhiMicro } from "../types/marketTypes";
-import type { KaiMoment as KaiMomentExact } from "../../utils/kai_pulse";
+import type { ChakraDay, KaiMoment as KaiMomentExact } from "../../utils/kai_pulse";
 import { asMicroDecimalString } from "../types/marketTypes";
 import type { KaiSignature, UserPhiKey } from "../types/vaultTypes";
 import { sha256Hex } from "./ids";
@@ -20,6 +20,9 @@ type JSONValue = JSONPrimitive | ReadonlyArray<JSONValue> | JSONObject;
 
 type UnknownRecord = Record<string, unknown>;
 const isRecord = (v: unknown): v is UnknownRecord => typeof v === "object" && v !== null;
+const CHAKRA_DAYS = ["Root", "Sacral", "Solar Plexus", "Heart", "Throat", "Third Eye", "Crown"] as const;
+const isChakraDay = (v: unknown): v is ChakraDay =>
+  typeof v === "string" && (CHAKRA_DAYS as readonly string[]).includes(v);
 
 const isJsonPrimitive = (v: unknown): v is JSONPrimitive =>
   v === null || typeof v === "string" || typeof v === "number" || typeof v === "boolean";
@@ -157,7 +160,9 @@ export const parseProphecySigilSvg = (svgText: string): ParsedProphecySigil => {
   const doc = parser.parseFromString(svgText, "image/svg+xml");
   const svg = doc.documentElement;
 
-  const payload: Partial<ProphecySigilPayloadV1> = {};
+  type Mutable<T> = { -readonly [K in keyof T]: T[K] };
+  type MutableProphecyPayload = Partial<Mutable<ProphecySigilPayloadV1>>;
+  const payload: MutableProphecyPayload = {};
   const meta = getFirstMetadataJson(doc);
   if (meta && isRecord(meta)) {
     Object.assign(payload, meta as Partial<ProphecySigilPayloadV1>);
@@ -203,7 +208,7 @@ export const parseProphecySigilSvg = (svgText: string): ParsedProphecySigil => {
   if (stepPctRaw && payload.stepPct == null) payload.stepPct = Number(stepPctRaw);
 
   const chakraDay = getAttr(svg, "data-chakra-day");
-  if (chakraDay && !payload.chakraDay) payload.chakraDay = chakraDay;
+  if (chakraDay && !payload.chakraDay && isChakraDay(chakraDay)) payload.chakraDay = chakraDay;
 
   const canonicalHash = getAttr(svg, "data-payload-hash") ?? getAttr(svg, "data-canonical-hash");
   if (canonicalHash && !payload.canonicalHash) payload.canonicalHash = canonicalHash;
@@ -246,7 +251,7 @@ export const parseProphecySigilSvg = (svgText: string): ParsedProphecySigil => {
       : undefined;
 
   return {
-    payload,
+    payload: payload as Partial<ProphecySigilPayloadV1>,
     textDecoded: payload.text,
     zk,
   };
@@ -287,7 +292,7 @@ export const buildProphecySvg = (payload: ProphecySigilPayloadV1, textEncoded?: 
   const textEnc = payload.textEnc ?? "uri";
   const encodedText = textEncoded ?? encodeURIComponent(payload.text);
 
-  const zk = payload.zk ?? {};
+  const zk: Partial<ProphecySigilZkBundle> = payload.zk ?? {};
   const proofJson = zk.proof ? JSON.stringify(zk.proof) : "";
   const publicInputsJson = zk.publicInputs ? JSON.stringify(zk.publicInputs) : "";
   const poseidonHash = zk.poseidonHash ?? "";

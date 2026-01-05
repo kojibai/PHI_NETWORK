@@ -108,7 +108,7 @@ const toneClass = (tone: NonNullable<IconProps["tone"]>): string => {
 };
 
 // ✅ Explicit return type breaks the self-referential inference path that triggers TS7022
-export const Icon = (props: IconProps): JSX.Element => {
+export const Icon = (props: IconProps): React.ReactElement => {
   const { name, size = 16, tone = "default", className, style, title } = props;
 
   const cls = useMemo(() => cx("sm-ico-core", toneClass(tone), className), [tone, className]);

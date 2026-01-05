@@ -13,6 +13,11 @@ import {
   parseProphecySigilSvg,
 } from "../utils/prophecySigil";
 import type { ProphecySigilPayloadV1 } from "../types/prophecySigilTypes";
+import type { ChakraDay } from "../../utils/kai_pulse";
+
+const CHAKRA_DAYS = ["Root", "Sacral", "Solar Plexus", "Heart", "Throat", "Third Eye", "Crown"] as const;
+const isChakraDay = (v: unknown): v is ChakraDay =>
+  typeof v === "string" && (CHAKRA_DAYS as readonly string[]).includes(v);
 
 const loadVkey = async (): Promise<unknown | null> => {
   try {
@@ -80,6 +85,7 @@ export const useProphecySigilVerification = (svg: string | undefined, now: KaiMo
 
       let canonicalHashOk: boolean | null = null;
       let canonicalHash: string | undefined = typeof payload.canonicalHash === "string" ? payload.canonicalHash : undefined;
+      const chakraDay = isChakraDay(payload.chakraDay) ? payload.chakraDay : undefined;
 
       const hasCoreFields =
         typeof payload.prophecyId === "string" &&
@@ -91,7 +97,7 @@ export const useProphecySigilVerification = (svg: string | undefined, now: KaiMo
         typeof payload.beat === "number" &&
         typeof payload.stepIndex === "number" &&
         typeof payload.stepPct === "number" &&
-        typeof payload.chakraDay === "string";
+        chakraDay != null;
 
       if (hasCoreFields) {
         const base = buildProphecyPayloadBase({
@@ -109,7 +115,7 @@ export const useProphecySigilVerification = (svg: string | undefined, now: KaiMo
             beat: payload.beat,
             stepIndex: payload.stepIndex,
             stepPctAcrossBeat: payload.stepPct,
-            chakraDay: payload.chakraDay,
+            chakraDay,
             weekday: "Solhara",
           },
         });

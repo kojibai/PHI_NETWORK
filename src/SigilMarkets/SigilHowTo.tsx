@@ -40,7 +40,7 @@ export const SigilHowTo = () => {
   const [sigilModalOpen, setSigilModalOpen] = useState(false);
 
   // When SigilModal closes, resume HowTo on Step 2 so the user never gets lost.
-  const resumeStepRef = useRef<number | null>(null);
+  const [resumeStep, setResumeStep] = useState<number | null>(null);
 
   const closeRef = useRef<HTMLButtonElement | null>(null);
   const carouselRef = useRef<HTMLDivElement | null>(null);
@@ -57,14 +57,14 @@ export const SigilHowTo = () => {
     if (!open) return;
     const id = window.requestAnimationFrame(() => closeRef.current?.focus());
     return () => window.cancelAnimationFrame(id);
-  }, [open]);
+  }, [open, resumeStep]);
 
   // When sheet opens, go to resumed step if we have one (otherwise Step 1).
   useEffect(() => {
     if (!open) return;
 
-    const resume = resumeStepRef.current;
-    resumeStepRef.current = null;
+    const resume = resumeStep;
+    if (resume !== null) setResumeStep(null);
 
     const idx = resume ?? 0;
     setActiveStep(idx);
@@ -99,7 +99,7 @@ export const SigilHowTo = () => {
     setOpen(false);
 
     // When SigilModal closes, bring them back to Step 2 (index 1).
-    resumeStepRef.current = 1;
+    setResumeStep(1);
 
     setSigilModalOpen(true);
   };
@@ -108,7 +108,7 @@ export const SigilHowTo = () => {
     setSigilModalOpen(false);
 
     // Reopen HowTo at Step 2 (index 1) to continue the guided flow.
-    resumeStepRef.current = 1;
+    setResumeStep(1);
     setOpen(true);
   };
 

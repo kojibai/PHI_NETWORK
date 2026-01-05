@@ -21,6 +21,7 @@ import {
   removeFromStorage,
   saveToStorage,
   wrapEnvelope,
+  type JsonValue,
   type Decoder,
   type PersistResult,
   type StorageLike,
@@ -326,7 +327,7 @@ export const SigilMarketsProphecySigilProvider = (props: Readonly<{ children: Re
 
   useEffect(() => {
     if (state.lastUpdatedPulse === lastPersistedPulseRef.current) return;
-    const envelope = wrapEnvelope(serializeStore(state), 1);
+    const envelope = wrapEnvelope(serializeStore(state) as JsonValue, 1);
     const res = saveToStorage(SM_PROPHECY_SIGILS_KEY, envelope, storageRef.current);
     if (res.ok) lastPersistedPulseRef.current = state.lastUpdatedPulse;
   }, [state]);

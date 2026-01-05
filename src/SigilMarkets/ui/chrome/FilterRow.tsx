@@ -8,7 +8,16 @@ interface FilterRowProps {
 export const FilterRow = ({ value, onChange }: FilterRowProps) => {
   return (
     <div className="sm-filter-row">
-      <Segmented options={['all', 'open', 'locked', 'resolved']} value={value} onChange={onChange} />
+      <Segmented
+        options={[
+          { value: "all", label: "All" },
+          { value: "open", label: "Open" },
+          { value: "locked", label: "Locked" },
+          { value: "resolved", label: "Resolved" },
+        ]}
+        value={value}
+        onChange={onChange}
+      />
     </div>
   );
 };

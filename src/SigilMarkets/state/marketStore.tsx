@@ -1044,20 +1044,21 @@ export const SigilMarketsMarketProvider = (props: Readonly<{ children: ReactNode
     };
 
     const resolveMarket = (args: Readonly<{ marketId: MarketId; resolution: BinaryMarketState["resolution"] }>): void => {
-      if (!args.resolution) return;
+      const resolution = args.resolution;
+      if (!resolution) return;
       const key = args.marketId as unknown as string;
       setAndMaybePersist(
         (prev) => {
           const existing = prev.byId[key];
           if (!existing) return prev;
-          const nextStatus = args.resolution.outcome === "VOID" ? "voided" : "resolved";
-          const resolvedPulse = args.resolution.resolvedPulse;
+          const nextStatus = resolution.outcome === "VOID" ? "voided" : "resolved";
+          const resolvedPulse = resolution.resolvedPulse;
           const nextMarket: Market = {
             ...existing,
             state: {
               ...existing.state,
               status: nextStatus,
-              resolution: args.resolution,
+              resolution,
               updatedPulse: Math.max(existing.state.updatedPulse, resolvedPulse),
             },
           };
