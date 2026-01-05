@@ -29,8 +29,10 @@ type HowToStep = Readonly<{
 
 export const SigilHowTo = () => {
   const [open, setOpen] = useState(false);
-  const [dismissed, setDismissed] = useState(false);
-  const [hydrated, setHydrated] = useState(false);
+  const [dismissed, setDismissed] = useState(() => {
+    const res = loadFromStorage(SM_HOWTO_DISMISSED_KEY, decodeBoolean);
+    return res.ok && res.value === true;
+  });
   const [activeStep, setActiveStep] = useState(0);
 
   const { actions: ui } = useSigilMarketsUi();
@@ -43,12 +45,6 @@ export const SigilHowTo = () => {
   const carouselRef = useRef<HTMLDivElement | null>(null);
   const rafRef = useRef<number | null>(null);
   const toggleId = useId();
-
-  useEffect(() => {
-    const res = loadFromStorage(SM_HOWTO_DISMISSED_KEY, decodeBoolean);
-    if (res.ok && res.value === true) setDismissed(true);
-    setHydrated(true);
-  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -85,7 +81,7 @@ export const SigilHowTo = () => {
     };
   }, []);
 
-  const showTrigger = useMemo(() => (hydrated ? !dismissed : true), [dismissed, hydrated]);
+  const showTrigger = useMemo(() => !dismissed, [dismissed]);
 
   const setDismissedPersisted = (next: boolean): void => {
     setDismissed(next);
