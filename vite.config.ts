@@ -12,7 +12,7 @@ export default defineConfig({
     proxy: {
       "/api": "http://localhost:8787",
       "/sigils": {
-        target: "https://m.phi.network",
+        target: "https://m.kai.ac",
         changeOrigin: true,
         secure: true,
       },
