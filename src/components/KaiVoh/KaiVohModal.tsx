@@ -200,6 +200,7 @@ export default function KaiVohModal({ open, onClose }: KaiVohModalProps) {
    */
   useEffect(() => {
     if (!open) return;
+    const allowEscapeClose = !window.matchMedia?.("(pointer: coarse)")?.matches;
 
     // Save prior styles (restore exactly)
     const prev = {
@@ -279,6 +280,7 @@ export default function KaiVohModal({ open, onClose }: KaiVohModalProps) {
       }
 
       const target = e.target as Node | null;
+      if (isEditableElement(target as Element | null)) return;
       const insideScrollRegion = target ? s.contains(target) : false;
 
       // Never allow swipe gestures outside the modal scroll region.
@@ -308,6 +310,7 @@ export default function KaiVohModal({ open, onClose }: KaiVohModalProps) {
       }
 
       const target = e.target as Node | null;
+      if (isEditableElement(target as Element | null)) return;
       const insideScrollRegion = target ? s.contains(target) : false;
 
       if (!insideScrollRegion) {
@@ -327,7 +330,8 @@ export default function KaiVohModal({ open, onClose }: KaiVohModalProps) {
     // Escape + focus trap
     const onKeyDown = (e: KeyboardEvent): void => {
       if (e.key === "Escape") {
-        if (isEditableElement(document.activeElement)) return;
+        if (!allowEscapeClose) return;
+        if (isEditableElement(document.activeElement) || isEditableElement(e.target as Element | null)) return;
         e.preventDefault();
         e.stopPropagation();
         handleClose();
