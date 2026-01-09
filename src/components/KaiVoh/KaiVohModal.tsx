@@ -280,7 +280,6 @@ export default function KaiVohModal({ open, onClose }: KaiVohModalProps) {
       }
 
       const target = e.target as Node | null;
-      if (isEditableElement(target as Element | null)) return;
       const insideScrollRegion = target ? s.contains(target) : false;
 
       // Never allow swipe gestures outside the modal scroll region.
@@ -310,7 +309,6 @@ export default function KaiVohModal({ open, onClose }: KaiVohModalProps) {
       }
 
       const target = e.target as Node | null;
-      if (isEditableElement(target as Element | null)) return;
       const insideScrollRegion = target ? s.contains(target) : false;
 
       if (!insideScrollRegion) {
