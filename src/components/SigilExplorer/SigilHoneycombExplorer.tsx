@@ -809,6 +809,54 @@ export default function SigilHoneycombExplorer({
     return () => ro.disconnect();
   }, []);
 
+  // Prevent browser-level pull-to-refresh / overscroll refresh while honeycomb is open.
+  useEffect(() => {
+    if (!HAS_WINDOW) return;
+
+    const html = document.documentElement as HTMLElement | null;
+    const body = document.body as HTMLElement | null;
+    const root =
+      (document.scrollingElement as HTMLElement | null) ||
+      (document.documentElement as HTMLElement | null);
+
+    const prev = {
+      htmlOverscroll: html?.style.overscrollBehavior ?? "",
+      htmlOverscrollY: html?.style.overscrollBehaviorY ?? "",
+      bodyOverscroll: body?.style.overscrollBehavior ?? "",
+      bodyOverscrollY: body?.style.overscrollBehaviorY ?? "",
+      rootOverscroll: root?.style.overscrollBehavior ?? "",
+      rootOverscrollY: root?.style.overscrollBehaviorY ?? "",
+    };
+
+    if (html) {
+      html.style.overscrollBehavior = "none";
+      html.style.overscrollBehaviorY = "none";
+    }
+    if (body) {
+      body.style.overscrollBehavior = "none";
+      body.style.overscrollBehaviorY = "none";
+    }
+    if (root) {
+      root.style.overscrollBehavior = "none";
+      root.style.overscrollBehaviorY = "none";
+    }
+
+    return () => {
+      if (html) {
+        html.style.overscrollBehavior = prev.htmlOverscroll;
+        html.style.overscrollBehaviorY = prev.htmlOverscrollY;
+      }
+      if (body) {
+        body.style.overscrollBehavior = prev.bodyOverscroll;
+        body.style.overscrollBehaviorY = prev.bodyOverscrollY;
+      }
+      if (root) {
+        root.style.overscrollBehavior = prev.rootOverscroll;
+        root.style.overscrollBehaviorY = prev.rootOverscrollY;
+      }
+    };
+  }, []);
+
   /* ─────────────────────────────────────────────────────────────
      LahMahTor breath sync (standalone mode only)
   ────────────────────────────────────────────────────────────── */
