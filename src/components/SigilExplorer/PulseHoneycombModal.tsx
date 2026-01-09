@@ -1236,6 +1236,7 @@ export default function PulseHoneycombModal(props: PulseHoneycombModalProps) {
   const { open, pulse, originUrl, originHash, anchor, registryRev, onClose } = props;
 
   const shellRef = useRef<HTMLDivElement | null>(null);
+  const lockedScrollYRef = useRef<number>(0);
 
   const isCompactSheet = useMediaQuery("(max-width: 720px), (max-height: 720px)");
   const anchored = !!anchor && !isCompactSheet;
@@ -1245,6 +1246,71 @@ export default function PulseHoneycombModal(props: PulseHoneycombModalProps) {
     shellRef,
     anchor,
   });
+
+  useEffect(() => {
+    if (!open) return;
+    if (!isCompactSheet) return;
+    if (!HAS_WINDOW) return;
+
+    const prev = {
+      bodyPosition: document.body.style.position,
+      bodyTop: document.body.style.top,
+      bodyLeft: document.body.style.left,
+      bodyRight: document.body.style.right,
+      bodyWidth: document.body.style.width,
+      bodyHeight: document.body.style.height,
+      bodyOverflow: document.body.style.overflow,
+      htmlOverflow: document.documentElement.style.overflow,
+      htmlHeight: document.documentElement.style.height,
+      htmlOverscroll: document.documentElement.style.getPropertyValue("overscroll-behavior"),
+      bodyOverscroll: document.body.style.getPropertyValue("overscroll-behavior"),
+      htmlTouchAction: document.documentElement.style.touchAction,
+    };
+
+    lockedScrollYRef.current = window.scrollY || window.pageYOffset || 0;
+    document.body.style.position = "fixed";
+    document.body.style.top = `-${lockedScrollYRef.current}px`;
+    document.body.style.left = "0";
+    document.body.style.right = "0";
+    document.body.style.width = "100%";
+    document.body.style.height = "100%";
+    document.body.style.overflow = "hidden";
+
+    document.documentElement.style.overflow = "hidden";
+    document.documentElement.style.height = "100%";
+    document.documentElement.style.setProperty("overscroll-behavior", "none");
+    document.body.style.setProperty("overscroll-behavior", "none");
+    document.documentElement.style.touchAction = "manipulation";
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (!e.cancelable) return;
+      const target = e.target as Node | null;
+      if (target && shellRef.current?.contains(target)) return;
+      e.preventDefault();
+    };
+
+    document.addEventListener("touchmove", onTouchMove, { passive: false });
+
+    return () => {
+      document.removeEventListener("touchmove", onTouchMove);
+
+      document.body.style.position = prev.bodyPosition;
+      document.body.style.top = prev.bodyTop;
+      document.body.style.left = prev.bodyLeft;
+      document.body.style.right = prev.bodyRight;
+      document.body.style.width = prev.bodyWidth;
+      document.body.style.height = prev.bodyHeight;
+      document.body.style.overflow = prev.bodyOverflow;
+
+      document.documentElement.style.overflow = prev.htmlOverflow;
+      document.documentElement.style.height = prev.htmlHeight;
+      document.documentElement.style.setProperty("overscroll-behavior", prev.htmlOverscroll);
+      document.body.style.setProperty("overscroll-behavior", prev.bodyOverscroll);
+      document.documentElement.style.touchAction = prev.htmlTouchAction;
+
+      window.scrollTo(0, lockedScrollYRef.current);
+    };
+  }, [open, isCompactSheet]);
 
   // ESC close + focus close
   useEffect(() => {
