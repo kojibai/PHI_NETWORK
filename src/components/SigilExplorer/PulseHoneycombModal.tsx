@@ -1260,6 +1260,7 @@ export default function PulseHoneycombModal(props: PulseHoneycombModalProps) {
       bodyWidth: document.body.style.width,
       bodyHeight: document.body.style.height,
       bodyOverflow: document.body.style.overflow,
+      bodyTouchAction: document.body.style.touchAction,
       htmlOverflow: document.documentElement.style.overflow,
       htmlHeight: document.documentElement.style.height,
       htmlOverscroll: document.documentElement.style.getPropertyValue("overscroll-behavior"),
@@ -1280,7 +1281,8 @@ export default function PulseHoneycombModal(props: PulseHoneycombModalProps) {
     document.documentElement.style.height = "100%";
     document.documentElement.style.setProperty("overscroll-behavior", "none");
     document.body.style.setProperty("overscroll-behavior", "none");
-    document.documentElement.style.touchAction = "manipulation";
+    document.documentElement.style.touchAction = "none";
+    document.body.style.touchAction = "none";
 
     const onTouchMove = (e: TouchEvent) => {
       if (!e.cancelable) return;
@@ -1301,6 +1303,7 @@ export default function PulseHoneycombModal(props: PulseHoneycombModalProps) {
       document.body.style.width = prev.bodyWidth;
       document.body.style.height = prev.bodyHeight;
       document.body.style.overflow = prev.bodyOverflow;
+      document.body.style.touchAction = prev.bodyTouchAction;
 
       document.documentElement.style.overflow = prev.htmlOverflow;
       document.documentElement.style.height = prev.htmlHeight;
@@ -1448,6 +1451,48 @@ function PulseHoneycombInner({ pulse, originUrl, originHash, registryRev, onClos
 
     ro.observe(el);
     return () => ro.disconnect();
+  }, []);
+
+  // Touch guard: prevent pull-to-refresh while interacting with the viewport.
+  useEffect(() => {
+    if (!HAS_WINDOW) return;
+    const el = viewportRef.current;
+    if (!el) return;
+
+    let lastY = 0;
+    let lastX = 0;
+
+    const onTouchStart = (ev: TouchEvent) => {
+      if (ev.touches.length !== 1) return;
+      lastY = ev.touches[0]?.clientY ?? 0;
+      lastX = ev.touches[0]?.clientX ?? 0;
+    };
+
+    const onTouchMove = (ev: TouchEvent) => {
+      if (!ev.cancelable) return;
+      if (ev.touches.length !== 1) return;
+
+      const y = ev.touches[0]?.clientY ?? 0;
+      const x = ev.touches[0]?.clientX ?? 0;
+      const dy = y - lastY;
+      const dx = x - lastX;
+
+      lastY = y;
+      lastX = x;
+
+      if (Math.abs(dy) <= Math.abs(dx)) return;
+      if (dy > 0 && window.scrollY <= 0) {
+        ev.preventDefault();
+      }
+    };
+
+    el.addEventListener("touchstart", onTouchStart, { passive: true });
+    el.addEventListener("touchmove", onTouchMove, { passive: false });
+
+    return () => {
+      el.removeEventListener("touchstart", onTouchStart);
+      el.removeEventListener("touchmove", onTouchMove);
+    };
   }, []);
 
   const activePulse = typeof pulse === "number" ? pulse : null;
