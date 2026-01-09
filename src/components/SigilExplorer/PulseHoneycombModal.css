@@ -813,6 +813,9 @@
 .phmViewport{
   flex: 1;
   min-height: 0;
+  overscroll-behavior: none;
+  overscroll-behavior-y: none;
+  touch-action: none;
 }
 
 /* Hint bubble */
