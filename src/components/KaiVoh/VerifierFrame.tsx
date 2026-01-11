@@ -3,7 +3,7 @@
 
 /**
  * VerifierFrame — Kai-Sigil Verification Panel
- * v3.2 — True Top Bar (QR + Chip Rail) + No-Wrap Chips
+ * v3.3 — Effect-safe async derivations (no sync setState inside effects)
  *
  * ✅ Mobile-first, never cramped
  * ✅ QR fallback never prints URL
@@ -98,6 +98,9 @@ export type ProofCopy = Readonly<{
   capsuleHash?: string;
 }>;
 
+type CapsuleHashState = Readonly<{ key: string; hash: string }>;
+type QrState = Readonly<{ key: string; dataUrl: string }>;
+
 export default function VerifierFrame({
   pulse,
   kaiSignature,
@@ -109,8 +112,11 @@ export default function VerifierFrame({
 }: VerifierFrameProps): ReactElement {
   const [copyLinkStatus, setCopyLinkStatus] = useState<"idle" | "ok" | "error">("idle");
   const [copyProofStatus, setCopyProofStatus] = useState<"idle" | "ok" | "error">("idle");
-  const [capsuleHash, setCapsuleHash] = useState<string | null>(null);
-  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+
+  // keyed async derivations (avoid sync clearing inside effects)
+  const [capsuleHashState, setCapsuleHashState] = useState<CapsuleHashState | null>(null);
+  const [qrState, setQrState] = useState<QrState | null>(null);
+
   const qrSize = compact ? 92 : 128;
   const rootClass = compact ? "kv-verifier kv-verifier--compact" : "kv-verifier";
   const qrStyle = useMemo(() => ({ "--qr-size": `${qrSize}px` }) as CSSProperties, [qrSize]);
@@ -152,39 +158,48 @@ export default function VerifierFrame({
     };
   }, [chakraDay, kaiSignature, phiKey, pulse, verifierBaseUrl]);
 
+  const capsuleKey = proof.proofCapsule ? proof.verifierSlug : null;
+  const capsuleHash = capsuleKey && capsuleHashState?.key === capsuleKey ? capsuleHashState.hash : null;
+
+  const qrKey = proof.verifierUrl ? `${proof.verifierUrl}::${qrSize}` : null;
+  const qrDataUrl = qrKey && qrState?.key === qrKey ? qrState.dataUrl : null;
+
   useEffect(() => {
     let cancelled = false;
 
+    const capsule = proof.proofCapsule;
+    if (!capsule) return undefined;
+
+    const slug = proof.verifierSlug;
+
     (async (): Promise<void> => {
-      if (!proof.proofCapsule) {
-        setCapsuleHash(null);
-        return;
-      }
       try {
-        const h = await hashProofCapsuleV1(proof.proofCapsule);
-        if (!cancelled) setCapsuleHash(h);
+        const h = await hashProofCapsuleV1(capsule);
+        if (!cancelled) setCapsuleHashState({ key: slug, hash: h });
       } catch {
-        if (!cancelled) setCapsuleHash(null);
+        if (!cancelled) setCapsuleHashState(null);
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [proof.proofCapsule]);
+  }, [proof.proofCapsule, proof.verifierSlug]);
 
   useEffect(() => {
     let cancelled = false;
-    setQrDataUrl(null);
 
-    if (!proof.verifierUrl) return undefined;
+    const url = proof.verifierUrl;
+    if (!url) return undefined;
+
+    const key = `${url}::${qrSize}`;
 
     (async (): Promise<void> => {
       try {
-        const url = await qrDataURL(proof.verifierUrl, { size: qrSize, margin: 2, ecc: "M" });
-        if (!cancelled) setQrDataUrl(url);
+        const dataUrl = await qrDataURL(url, { size: qrSize, margin: 2, ecc: "M" });
+        if (!cancelled) setQrState({ key, dataUrl });
       } catch {
-        if (!cancelled) setQrDataUrl(null);
+        if (!cancelled) setQrState(null);
       }
     })();
 
@@ -209,9 +224,11 @@ export default function VerifierFrame({
   const handleCopyProof = async (): Promise<void> => {
     try {
       let h: string | undefined = capsuleHash ?? undefined;
-      if (!h && proof.proofCapsule) {
-        h = await hashProofCapsuleV1(proof.proofCapsule);
-        setCapsuleHash(h);
+
+      const capsule = proof.proofCapsule;
+      if (!h && capsule) {
+        h = await hashProofCapsuleV1(capsule);
+        setCapsuleHashState({ key: proof.verifierSlug, hash: h });
       }
 
       const payload: ProofCopy = { ...proof, capsuleHash: h };
@@ -225,7 +242,12 @@ export default function VerifierFrame({
   };
 
   return (
-    <section className={rootClass} aria-label="Kai-Sigil verification frame" data-role="verifier-frame" data-seal={sealOk ? "ok" : "off"}>
+    <section
+      className={rootClass}
+      aria-label="Kai-Sigil verification frame"
+      data-role="verifier-frame"
+      data-seal={sealOk ? "ok" : "off"}
+    >
       <div className="kv-topline" aria-hidden="true" />
 
       <div className="kv-wrap">
@@ -272,7 +294,10 @@ export default function VerifierFrame({
               <span className="kv-chip__txt">{PROOF_CANON}</span>
             </div>
 
-            <div className={sealOk ? "kv-chip kv-chip--status kv-chip--ok" : "kv-chip kv-chip--status"} title="Seal status">
+            <div
+              className={sealOk ? "kv-chip kv-chip--status kv-chip--ok" : "kv-chip kv-chip--status"}
+              title="Seal status"
+            >
               <span className="kv-chip__txt">{sealOk ? "OFFICIAL SEAL" : "INCOMPLETE"}</span>
             </div>
           </div>
@@ -324,9 +349,9 @@ export default function VerifierFrame({
               <span className="kv-btn__txt">Open</span>
             </a>
 
-            <button type="button" onClick={() => void handleCopyLink()} className="kv-btn kv-btn--ghost" title="💠 Remember Link">
+            <button type="button" onClick={() => void handleCopyLink()} className="kv-btn kv-btn--ghost" title="💠 Remember Path">
               <RememberIcon />
-              <span className="kv-btn__txt">{copyLinkStatus === "ok" ? "Remembered" : "Link"}</span>
+              <span className="kv-btn__txt">{copyLinkStatus === "ok" ? "Remembered" : "Path"}</span>
             </button>
 
             <button type="button" onClick={() => void handleCopyProof()} className="kv-btn kv-btn--ghost" title="💠 Remember Proof">
