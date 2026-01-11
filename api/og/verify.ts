@@ -3,7 +3,7 @@ import QRCode from "qrcode";
 
 import { parseSlug } from "../../src/utils/verifySigil";
 
-type PngInstance = InstanceType<typeof PNG>;
+type PngInstance = InstanceType<typeof PNG> & { data: Buffer };
 type Rgba = [number, number, number, number];
 
 const FONT_5X7: Record<string, string[]> = {
@@ -166,7 +166,8 @@ function statusFromQuery(value: string | null): "verified" | "failed" | "standby
 
 async function makeQrMatrix(text: string): Promise<{ size: number; data: boolean[] }> {
   const qr = QRCode.create(text, { errorCorrectionLevel: "M" });
-  return { size: qr.modules.size, data: qr.modules.data as boolean[] };
+  const data = Array.from(qr.modules.data, (value) => value === 1);
+  return { size: qr.modules.size, data };
 }
 
 function headerValue(
@@ -207,7 +208,10 @@ export default async function handler(
   const statusColor: Rgba = status === "verified" ? [56, 231, 166, 255] : status === "failed" ? [255, 107, 107, 255] : [181, 199, 221, 255];
   const textColor: Rgba = [230, 242, 255, 255];
 
-  const png = new PNG({ width: 1200, height: 630 });
+  const png = new PNG({ width: 1200, height: 630 }) as PngInstance;
+  if (!png.data) {
+    throw new Error("PNG buffer not initialized");
+  }
   drawGradient(png, [12, 18, 26, 255], [6, 10, 15, 255]);
 
   fillRect(png, 60, 60, 1080, 510, [18, 26, 38, 235]);
