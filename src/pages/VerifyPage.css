@@ -333,6 +333,21 @@ html.verify-shell, body.verify-shell{
   .seal-ic{ width: 16px; height: 16px; font-size: 0.72rem; }
   .seal-lbl,
   .seal-txt{ font-size: 0.66rem; }
+  .vseals{
+    flex-wrap: nowrap;
+    gap: 6px;
+  }
+  .vseals > *{ flex: 0 1 auto; }
+  .vseal-value{
+    min-width: 0;
+    padding: 4px 8px;
+  }
+  .vseal-value-label{ font-size: 0.54rem; letter-spacing: 0.18em; }
+  .vseal-value-phi{ font-size: 0.72rem; }
+  .vseal-value-usd{ font-size: 0.64rem; }
+  .seal{ padding: 4px 6px; }
+  .seal-lbl,
+  .seal-txt{ font-size: 0.60rem; }
 }
 
 /* Body layout */
