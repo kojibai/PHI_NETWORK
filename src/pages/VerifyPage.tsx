@@ -1086,7 +1086,6 @@ export default function VerifyPage(): ReactElement {
         const { challengeBytes } = await buildKasChallenge("unlock", bundleHashValue);
         const assertion = await getWebAuthnAssertionJson({
           challenge: challengeBytes,
-          allowCredIds: [authorSig.credId],
           preferInternal: true,
         });
         const ok = await verifyWebAuthnAssertion({
