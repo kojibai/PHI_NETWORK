@@ -869,24 +869,25 @@ export default function VerifyPage(): ReactElement {
 
   const receiptJson = useMemo(() => {
     if (!proofCapsule) return "";
-    const receipt: Record<string, unknown> = {
+    const receipt = {
       hashAlg: PROOF_HASH_ALG,
       canon: PROOF_CANON,
       proofCapsule,
       capsuleHash,
       verifierUrl: proofVerifierUrl || currentVerifyUrl,
-    };
+    } as const;
 
-    if (svgHash) receipt.svgHash = svgHash;
-    if (bundleHash) receipt.bundleHash = bundleHash;
-    if (embeddedProof?.shareUrl) receipt.shareUrl = embeddedProof.shareUrl;
+    const extended: Record<string, unknown> = { ...receipt };
+    if (svgHash) extended.svgHash = svgHash;
+    if (bundleHash) extended.bundleHash = bundleHash;
+    if (embeddedProof?.shareUrl) extended.shareUrl = embeddedProof.shareUrl;
     if (zkMeta?.zkPoseidonHash) {
-      receipt.zkPoseidonHash = zkMeta.zkPoseidonHash;
-      receipt.zkVerified = Boolean(zkVerify);
-      receipt.zkScheme = "groth16-poseidon";
+      extended.zkPoseidonHash = zkMeta.zkPoseidonHash;
+      extended.zkVerified = Boolean(zkVerify);
+      extended.zkScheme = "groth16-poseidon";
     }
 
-    return jcsCanonicalize(receipt);
+    return jcsCanonicalize(extended as Parameters<typeof jcsCanonicalize>[0]);
   }, [bundleHash, capsuleHash, currentVerifyUrl, embeddedProof?.shareUrl, proofCapsule, proofVerifierUrl, svgHash, zkMeta?.zkPoseidonHash, zkVerify]);
 
   const onShareReceipt = useCallback(async () => {
