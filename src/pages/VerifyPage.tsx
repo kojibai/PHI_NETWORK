@@ -138,7 +138,11 @@ type SharedReceipt = {
   bundleHash?: string;
   verifierUrl?: string;
   shareUrl?: string;
+  authorSig?: ProofBundleMeta["authorSig"];
   zkPoseidonHash?: string;
+  zkProof?: ProofBundleMeta["zkProof"];
+  proofHints?: ProofBundleMeta["proofHints"];
+  zkPublicInputs?: ProofBundleMeta["zkPublicInputs"];
 };
 
 function parseProofCapsule(raw: unknown): ProofCapsuleV1 | null {
@@ -152,6 +156,25 @@ function parseProofCapsule(raw: unknown): ProofCapsuleV1 | null {
   return raw as ProofCapsuleV1;
 }
 
+function buildSharedReceiptFromObject(raw: unknown): SharedReceipt | null {
+  if (!isRecord(raw)) return null;
+  const proofCapsule = parseProofCapsule(raw.proofCapsule);
+  if (!proofCapsule) return null;
+  return {
+    proofCapsule,
+    capsuleHash: typeof raw.capsuleHash === "string" ? raw.capsuleHash : undefined,
+    svgHash: typeof raw.svgHash === "string" ? raw.svgHash : undefined,
+    bundleHash: typeof raw.bundleHash === "string" ? raw.bundleHash : undefined,
+    verifierUrl: typeof raw.verifierUrl === "string" ? raw.verifierUrl : undefined,
+    shareUrl: typeof raw.shareUrl === "string" ? raw.shareUrl : undefined,
+    authorSig: raw.authorSig as ProofBundleMeta["authorSig"],
+    zkPoseidonHash: typeof raw.zkPoseidonHash === "string" ? raw.zkPoseidonHash : undefined,
+    zkProof: "zkProof" in raw ? raw.zkProof : undefined,
+    proofHints: "proofHints" in raw ? raw.proofHints : undefined,
+    zkPublicInputs: "zkPublicInputs" in raw ? raw.zkPublicInputs : undefined,
+  };
+}
+
 function readSharedReceiptFromLocation(): SharedReceipt | null {
   if (typeof window === "undefined") return null;
   const params = new URLSearchParams(window.location.search);
@@ -160,18 +183,17 @@ function readSharedReceiptFromLocation(): SharedReceipt | null {
   try {
     const decoded = new TextDecoder().decode(base64UrlDecode(encoded));
     const raw = JSON.parse(decoded);
-    if (!isRecord(raw)) return null;
-    const proofCapsule = parseProofCapsule(raw.proofCapsule);
-    if (!proofCapsule) return null;
-    return {
-      proofCapsule,
-      capsuleHash: typeof raw.capsuleHash === "string" ? raw.capsuleHash : undefined,
-      svgHash: typeof raw.svgHash === "string" ? raw.svgHash : undefined,
-      bundleHash: typeof raw.bundleHash === "string" ? raw.bundleHash : undefined,
-      verifierUrl: typeof raw.verifierUrl === "string" ? raw.verifierUrl : undefined,
-      shareUrl: typeof raw.shareUrl === "string" ? raw.shareUrl : undefined,
-      zkPoseidonHash: typeof raw.zkPoseidonHash === "string" ? raw.zkPoseidonHash : undefined,
-    };
+    return buildSharedReceiptFromObject(raw);
+  } catch {
+    return null;
+  }
+}
+
+function parseSharedReceiptFromText(text: string): SharedReceipt | null {
+  if (!text.trim().startsWith("{")) return null;
+  try {
+    const raw = JSON.parse(text);
+    return buildSharedReceiptFromObject(raw);
   } catch {
     return null;
   }
@@ -680,6 +702,14 @@ export default function VerifyPage(): ReactElement {
       setResult({ status: "error", message: "Inhale or paste the sealed SVG (ΦKey).", slug });
       return;
     }
+    const receipt = parseSharedReceiptFromText(raw);
+    if (receipt) {
+      setSharedReceipt(receipt);
+      setSvgText("");
+      setResult({ status: "idle" });
+      setNotice("Receipt loaded.");
+      return;
+    }
     setSharedReceipt(null);
     setBusy(true);
     try {
@@ -795,7 +825,11 @@ export default function VerifyPage(): ReactElement {
       bundleHash: sharedReceipt.bundleHash,
       shareUrl: sharedReceipt.shareUrl,
       verifierUrl: sharedReceipt.verifierUrl,
+      authorSig: sharedReceipt.authorSig,
       zkPoseidonHash: sharedReceipt.zkPoseidonHash,
+      zkProof: sharedReceipt.zkProof,
+      proofHints: sharedReceipt.proofHints,
+      zkPublicInputs: sharedReceipt.zkPublicInputs,
     };
 
     (async () => {
@@ -1014,6 +1048,10 @@ export default function VerifyPage(): ReactElement {
     if (svgHash) extended.svgHash = svgHash;
     if (bundleHash) extended.bundleHash = bundleHash;
     if (embeddedProof?.shareUrl) extended.shareUrl = embeddedProof.shareUrl;
+    if (embeddedProof?.authorSig) extended.authorSig = embeddedProof.authorSig;
+    if (embeddedProof?.zkProof) extended.zkProof = embeddedProof.zkProof;
+    if (embeddedProof?.proofHints) extended.proofHints = embeddedProof.proofHints;
+    if (embeddedProof?.zkPublicInputs) extended.zkPublicInputs = embeddedProof.zkPublicInputs;
     if (zkMeta?.zkPoseidonHash) {
       extended.zkPoseidonHash = zkMeta.zkPoseidonHash;
       extended.zkVerified = Boolean(zkVerify);
