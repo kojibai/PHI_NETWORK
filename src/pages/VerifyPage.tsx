@@ -26,12 +26,13 @@ import { tryVerifyGroth16 } from "../components/VerifierStamper/zk";
 import { isKASAuthorSig, type KASAuthorSig } from "../utils/authorSig";
 import { verifyBundleAuthorSig } from "../utils/webauthnKAS";
 import { buildKasChallenge, isReceiveSig, verifyWebAuthnAssertion, type ReceiveSig } from "../utils/webauthnReceive";
-import { base64UrlDecode, base64UrlEncode } from "../utils/sha256";
+import { base64UrlDecode, base64UrlEncode, sha256Hex } from "../utils/sha256";
 import { getKaiPulseEternalInt } from "../SovereignSolar";
 import { useKaiTicker } from "../hooks/useKaiTicker";
 import { useValuation } from "./SigilPage/useValuation";
 import type { SigilMetadataLite } from "../utils/valuation";
 import { jcsCanonicalize } from "../utils/jcs";
+import { svgCanonicalForHash } from "../utils/svgProof";
 
 /* ────────────────────────────────────────────────────────────────
    Utilities
@@ -45,6 +46,10 @@ function formatProofValue(value: unknown): string {
   } catch {
     return String(value);
   }
+}
+
+async function sha256Bytes(data: Uint8Array): Promise<string> {
+  return (await sha256Hex(data)).toLowerCase();
 }
 
 function parseJsonString(value: unknown): unknown {
@@ -68,6 +73,8 @@ type DebitLoose = {
 };
 
 type EmbeddedPhiSource = "balance" | "embedded" | "live";
+
+type AttestationState = boolean | "missing";
 
 function readLedgerBalance(raw: unknown): { originalAmount: number; remaining: number } | null {
   if (!isRecord(raw)) return null;
@@ -469,12 +476,15 @@ export default function VerifyPage(): ReactElement {
   const [capsuleHash, setCapsuleHash] = useState<string>("");
   const [svgHash, setSvgHash] = useState<string>("");
   const [bundleHash, setBundleHash] = useState<string>("");
+  const [svgBytesHash, setSvgBytesHash] = useState<string>("");
 
   const [embeddedProof, setEmbeddedProof] = useState<ProofBundleMeta | null>(null);
   const [notice, setNotice] = useState<string>("");
 
   const [authorSigVerified, setAuthorSigVerified] = useState<boolean | null>(null);
   const [receiveSigVerified, setReceiveSigVerified] = useState<boolean | null>(null);
+  const [identityAttested, setIdentityAttested] = useState<AttestationState>("missing");
+  const [artifactAttested, setArtifactAttested] = useState<AttestationState>("missing");
 
   const [zkVerify, setZkVerify] = useState<boolean | null>(null);
   const [zkVkey, setZkVkey] = useState<unknown>(null);
@@ -602,6 +612,23 @@ export default function VerifyPage(): ReactElement {
     }
   }, [svgText]);
 
+  React.useEffect(() => {
+    let active = true;
+    const raw = svgText.trim();
+    if (!raw) {
+      setSvgBytesHash("");
+      return;
+    }
+    const bytes = new TextEncoder().encode(svgCanonicalForHash(raw));
+    (async () => {
+      const hash = await sha256Bytes(bytes);
+      if (active) setSvgBytesHash(hash);
+    })();
+    return () => {
+      active = false;
+    };
+  }, [svgText]);
+
   // Toast auto-dismiss (so it never lives forever)
   React.useEffect(() => {
     if (!notice) return;
@@ -685,7 +712,6 @@ export default function VerifyPage(): ReactElement {
         setResult({ status: "error", message: "Upload a sealed .svg (embedded <metadata> JSON).", slug });
         return;
       }
-      setSharedReceipt(null);
       const text = await readFileText(file);
       setSvgText(text);
       setResult({ status: "idle" });
@@ -722,7 +748,6 @@ export default function VerifyPage(): ReactElement {
       setNotice("Receipt loaded.");
       return;
     }
-    setSharedReceipt(null);
     setBusy(true);
     try {
       const next = await verifySigilSvg(slug, raw);
@@ -969,6 +994,85 @@ export default function VerifyPage(): ReactElement {
     };
   }, [authorSigVerified, bundleHash, embeddedProof?.authorSig]);
 
+  React.useEffect(() => {
+    let active = true;
+    if (!sharedReceipt) {
+      setIdentityAttested("missing");
+      return;
+    }
+    const authorSig = sharedReceipt.authorSig;
+    const receiptCapsuleHash = sharedReceipt.capsuleHash ?? "";
+    if (!authorSig || !receiptCapsuleHash) {
+      setIdentityAttested("missing");
+      return;
+    }
+
+    (async () => {
+      const capsuleHashNext = await hashProofCapsuleV1(sharedReceipt.proofCapsule);
+      const capsuleMatches = capsuleHashNext === receiptCapsuleHash;
+
+      const bundleSeed = {
+        hashAlg: PROOF_HASH_ALG,
+        canon: PROOF_CANON,
+        proofCapsule: sharedReceipt.proofCapsule,
+        capsuleHash: capsuleHashNext,
+        svgHash: sharedReceipt.svgHash,
+        shareUrl: sharedReceipt.shareUrl,
+        verifierUrl: sharedReceipt.verifierUrl,
+        zkPoseidonHash: sharedReceipt.zkPoseidonHash,
+        zkProof: sharedReceipt.zkProof,
+        proofHints: sharedReceipt.proofHints,
+        zkPublicInputs: sharedReceipt.zkPublicInputs,
+        authorSig: sharedReceipt.authorSig ?? null,
+      };
+      const bundleUnsigned = buildBundleUnsigned(bundleSeed);
+      const bundleHashNext = await hashBundle(bundleUnsigned);
+
+      const authorBundleHash = isKASAuthorSig(authorSig) ? bundleHashFromAuthorSig(authorSig) : null;
+      const receiptBundleHash = sharedReceipt.bundleHash ?? "";
+      const receiptBundleMatch = receiptBundleHash ? receiptBundleHash === bundleHashNext : null;
+      const authorBundleMatch = authorBundleHash ? authorBundleHash === bundleHashNext : null;
+      const bundleHashMatches =
+        receiptBundleMatch === false || authorBundleMatch === false ? false : receiptBundleMatch === null && authorBundleMatch === null ? null : true;
+
+      const authorSigOk = isKASAuthorSig(authorSig) ? await verifyBundleAuthorSig(authorBundleHash ?? bundleHashNext, authorSig) : false;
+
+      if (!active) return;
+      if (!capsuleMatches) {
+        setIdentityAttested(false);
+        return;
+      }
+      if (bundleHashMatches === false) {
+        setIdentityAttested(false);
+        return;
+      }
+      if (bundleHashMatches === null) {
+        setIdentityAttested("missing");
+        return;
+      }
+      setIdentityAttested(authorSigOk);
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [sharedReceipt]);
+
+  React.useEffect(() => {
+    const raw = svgText.trim();
+    if (!raw) {
+      setArtifactAttested("missing");
+      return;
+    }
+    const expectedSvgHash = sharedReceipt?.svgHash ?? embeddedProof?.svgHash ?? "";
+    if (!expectedSvgHash) {
+      setArtifactAttested("missing");
+      return;
+    }
+    if (!svgBytesHash) return;
+    setArtifactAttested(svgBytesHash === expectedSvgHash);
+  }, [embeddedProof?.svgHash, sharedReceipt?.svgHash, svgBytesHash, svgText]);
+
   // Groth16 verify (logic unchanged)
   React.useEffect(() => {
     let active = true;
@@ -1038,6 +1142,20 @@ export default function VerifyPage(): ReactElement {
     if (zkVerify === null) return "na";
     return zkVerify ? "valid" : "invalid";
   }, [busy, zkMeta?.zkPoseidonHash, zkVerify]);
+
+  const hasSvgBytes = Boolean(svgText.trim());
+  const expectedSvgHash = sharedReceipt?.svgHash ?? embeddedProof?.svgHash ?? "";
+  const identityStatusLabel = identityAttested === true ? "Verified" : identityAttested === false ? "Not Present" : "Not provided";
+  const artifactStatusLabel =
+    artifactAttested === true
+      ? "Verified"
+      : artifactAttested === false
+        ? "Failed"
+        : !hasSvgBytes
+          ? "Not present"
+          : expectedSvgHash
+            ? "Not present"
+            : "No reference hash";
 
   const receiveCredId = useMemo(() => (receiveSig ? receiveSig.credId : ""), [receiveSig]);
   const receiveNonce = useMemo(() => (receiveSig ? receiveSig.nonce : ""), [receiveSig]);
@@ -1232,6 +1350,7 @@ export default function VerifyPage(): ReactElement {
             </div>
           ) : null}
         </div>
+
       </header>
 
       {/* Body */}
@@ -1244,7 +1363,7 @@ export default function VerifyPage(): ReactElement {
                 <div className="vcard-title">Inhale ΦKey</div>
                 <div className="vcard-sub">Tap to inhale a sealed ΦKey. Deep payloads open in Expanded Views.</div>
               </div>
-
+ 
               <div className="vcard-body vfit">
                 <div className={dragActive ? "vdropzone is-drag" : "vdropzone"} onDragOver={onDragOver} onDragEnter={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}>
                   {/* hidden file input */}
@@ -1296,7 +1415,10 @@ export default function VerifyPage(): ReactElement {
                           disabled={!svgText.trim()}
                         />
                       </div>
-
+                     <div className="vmini-grid vmini-grid--2" aria-label="Attestation status">
+                <MiniField label="Identity" value={identityStatusLabel} />
+                <MiniField label="Sigil-Glyph" value={artifactStatusLabel} />
+              </div>
                       <div className="vmini-grid vmini-grid--2" aria-label="Quick readout">
                         <MiniField label="Inhaled" value={svgText.trim() ? "true" : "false"} />
                         <MiniField label="Attestation" value={embeddedProof ? "present" : "—"} />
@@ -1439,6 +1561,8 @@ export default function VerifyPage(): ReactElement {
                   <IconBtn icon="💠" title="Remember bundle hash" ariaLabel="Remember bundle hash" onClick={() => void remember(bundleHash, "Bundle hash")} disabled={!bundleHash} />
                 </div>
               </div>
+
+
 
               {result.status === "ok" && displayPhi != null ? (
                 <div className="vmini-grid vmini-grid--2 vvaluation-dashboard" aria-label="Live valuation">
@@ -1622,7 +1746,6 @@ export default function VerifyPage(): ReactElement {
           value={svgText}
           onChange={(e) => {
             setSvgText(e.currentTarget.value);
-            setSharedReceipt(null);
             setResult({ status: "idle" });
           }}
           spellCheck={false}
