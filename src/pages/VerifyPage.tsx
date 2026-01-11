@@ -1166,15 +1166,15 @@ export default function VerifyPage(): ReactElement {
     !hasSvgBytes || !hasKasIdentity
       ? "Not present"
       : identityScanBusy
-        ? "Scanning…"
+        ? "Aligning…"
         : identityAttested === true
-          ? "Verified"
+          ? "Present (Verified)"
           : identityAttested === false
             ? "Not verified"
-            : "Scan required";
+            : "Alignment required";
   const artifactStatusLabel =
     artifactAttested === true
-      ? "Present"
+      ? "Present (Verified)"
       : artifactAttested === false
         ? "Failed"
         : !hasSvgBytes
