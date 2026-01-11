@@ -24,10 +24,9 @@ import { extractProofBundleMetaFromSvg, type ProofBundleMeta } from "../utils/si
 import { derivePhiKeyFromSig } from "../components/VerifierStamper/sigilUtils";
 import { tryVerifyGroth16 } from "../components/VerifierStamper/zk";
 import { isKASAuthorSig, type KASAuthorSig } from "../utils/authorSig";
-import { verifyBundleAuthorSig } from "../utils/webauthnKAS";
+import { isWebAuthnAvailable, verifyBundleAuthorSig } from "../utils/webauthnKAS";
 import {
   buildKasChallenge,
-  findStoredKasPasskeyByCredId,
   getWebAuthnAssertionJson,
   isReceiveSig,
   verifyWebAuthnAssertion,
@@ -1079,10 +1078,9 @@ export default function VerifyPage(): ReactElement {
       if (identityScanBusy) return;
       setIdentityScanBusy(true);
       try {
-        const stored = findStoredKasPasskeyByCredId(authorSig.credId);
-        if (!stored) {
+        if (!isWebAuthnAvailable()) {
           setIdentityAttested(false);
-          setNotice("No passkey found for this identity. Please verify on a device with the original passkey.");
+          setNotice("WebAuthn is not available in this browser. Please verify on a device with passkeys enabled.");
           return;
         }
         const { challengeBytes } = await buildKasChallenge("unlock", bundleHashValue);
