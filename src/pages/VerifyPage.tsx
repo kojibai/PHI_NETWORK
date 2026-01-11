@@ -25,7 +25,14 @@ import { derivePhiKeyFromSig } from "../components/VerifierStamper/sigilUtils";
 import { tryVerifyGroth16 } from "../components/VerifierStamper/zk";
 import { isKASAuthorSig, type KASAuthorSig } from "../utils/authorSig";
 import { verifyBundleAuthorSig } from "../utils/webauthnKAS";
-import { buildKasChallenge, isReceiveSig, verifyWebAuthnAssertion, type ReceiveSig } from "../utils/webauthnReceive";
+import {
+  buildKasChallenge,
+  findStoredKasPasskeyByCredId,
+  getWebAuthnAssertionJson,
+  isReceiveSig,
+  verifyWebAuthnAssertion,
+  type ReceiveSig,
+} from "../utils/webauthnReceive";
 import { base64UrlDecode, base64UrlEncode, sha256Hex } from "../utils/sha256";
 import { getKaiPulseEternalInt } from "../SovereignSolar";
 import { useKaiTicker } from "../hooks/useKaiTicker";
@@ -484,6 +491,8 @@ export default function VerifyPage(): ReactElement {
   const [authorSigVerified, setAuthorSigVerified] = useState<boolean | null>(null);
   const [receiveSigVerified, setReceiveSigVerified] = useState<boolean | null>(null);
   const [identityAttested, setIdentityAttested] = useState<AttestationState>("missing");
+  const [identityScanRequested, setIdentityScanRequested] = useState<boolean>(false);
+  const [identityScanBusy, setIdentityScanBusy] = useState<boolean>(false);
   const [artifactAttested, setArtifactAttested] = useState<AttestationState>("missing");
 
   const [zkVerify, setZkVerify] = useState<boolean | null>(null);
@@ -752,6 +761,12 @@ export default function VerifyPage(): ReactElement {
     try {
       const next = await verifySigilSvg(slug, raw);
       setResult(next);
+      if (next.status === "ok") {
+        setIdentityAttested("missing");
+        setIdentityScanRequested(true);
+      } else {
+        setIdentityScanRequested(false);
+      }
     } finally {
       setBusy(false);
     }
@@ -995,68 +1010,11 @@ export default function VerifyPage(): ReactElement {
   }, [authorSigVerified, bundleHash, embeddedProof?.authorSig]);
 
   React.useEffect(() => {
-    let active = true;
-    if (!sharedReceipt) {
+    if (!svgText.trim()) {
       setIdentityAttested("missing");
-      return;
+      setIdentityScanRequested(false);
     }
-    const authorSig = sharedReceipt.authorSig;
-    const receiptCapsuleHash = sharedReceipt.capsuleHash ?? "";
-    if (!authorSig || !receiptCapsuleHash) {
-      setIdentityAttested("missing");
-      return;
-    }
-
-    (async () => {
-      const capsuleHashNext = await hashProofCapsuleV1(sharedReceipt.proofCapsule);
-      const capsuleMatches = capsuleHashNext === receiptCapsuleHash;
-
-      const bundleSeed = {
-        hashAlg: PROOF_HASH_ALG,
-        canon: PROOF_CANON,
-        proofCapsule: sharedReceipt.proofCapsule,
-        capsuleHash: capsuleHashNext,
-        svgHash: sharedReceipt.svgHash,
-        shareUrl: sharedReceipt.shareUrl,
-        verifierUrl: sharedReceipt.verifierUrl,
-        zkPoseidonHash: sharedReceipt.zkPoseidonHash,
-        zkProof: sharedReceipt.zkProof,
-        proofHints: sharedReceipt.proofHints,
-        zkPublicInputs: sharedReceipt.zkPublicInputs,
-        authorSig: sharedReceipt.authorSig ?? null,
-      };
-      const bundleUnsigned = buildBundleUnsigned(bundleSeed);
-      const bundleHashNext = await hashBundle(bundleUnsigned);
-
-      const authorBundleHash = isKASAuthorSig(authorSig) ? bundleHashFromAuthorSig(authorSig) : null;
-      const receiptBundleHash = sharedReceipt.bundleHash ?? "";
-      const receiptBundleMatch = receiptBundleHash ? receiptBundleHash === bundleHashNext : null;
-      const authorBundleMatch = authorBundleHash ? authorBundleHash === bundleHashNext : null;
-      const bundleHashMatches =
-        receiptBundleMatch === false || authorBundleMatch === false ? false : receiptBundleMatch === null && authorBundleMatch === null ? null : true;
-
-      const authorSigOk = isKASAuthorSig(authorSig) ? await verifyBundleAuthorSig(authorBundleHash ?? bundleHashNext, authorSig) : false;
-
-      if (!active) return;
-      if (!capsuleMatches) {
-        setIdentityAttested(false);
-        return;
-      }
-      if (bundleHashMatches === false) {
-        setIdentityAttested(false);
-        return;
-      }
-      if (bundleHashMatches === null) {
-        setIdentityAttested("missing");
-        return;
-      }
-      setIdentityAttested(authorSigOk);
-    })();
-
-    return () => {
-      active = false;
-    };
-  }, [sharedReceipt]);
+  }, [svgText]);
 
   React.useEffect(() => {
     const raw = svgText.trim();
@@ -1116,6 +1074,58 @@ export default function VerifyPage(): ReactElement {
     };
   }, [zkMeta, zkVkey]);
 
+  const attemptIdentityScan = useCallback(
+    async (authorSig: KASAuthorSig, bundleHashValue: string): Promise<void> => {
+      if (identityScanBusy) return;
+      setIdentityScanBusy(true);
+      try {
+        const stored = findStoredKasPasskeyByCredId(authorSig.credId);
+        if (!stored) {
+          setIdentityAttested(false);
+          setNotice("No passkey found for this identity. Please verify on a device with the original passkey.");
+          return;
+        }
+        const { challengeBytes } = await buildKasChallenge("unlock", bundleHashValue);
+        const assertion = await getWebAuthnAssertionJson({
+          challenge: challengeBytes,
+          allowCredIds: [authorSig.credId],
+          preferInternal: true,
+        });
+        const ok = await verifyWebAuthnAssertion({
+          assertion,
+          expectedChallenge: challengeBytes,
+          pubKeyJwk: authorSig.pubKeyJwk,
+          expectedCredId: authorSig.credId,
+        });
+        setIdentityAttested(ok);
+        if (!ok) setNotice("Identity verification failed.");
+      } catch {
+        setIdentityAttested(false);
+        setNotice("Identity verification canceled.");
+      } finally {
+        setIdentityScanBusy(false);
+        setIdentityScanRequested(false);
+      }
+    },
+    [identityScanBusy]
+  );
+
+  React.useEffect(() => {
+    if (!identityScanRequested) return;
+    if (!svgText.trim()) {
+      setIdentityScanRequested(false);
+      return;
+    }
+    const authorSig = embeddedProof?.authorSig;
+    if (!authorSig || !isKASAuthorSig(authorSig)) {
+      setIdentityAttested("missing");
+      setIdentityScanRequested(false);
+      return;
+    }
+    if (!bundleHash) return;
+    void attemptIdentityScan(authorSig, bundleHash);
+  }, [attemptIdentityScan, bundleHash, embeddedProof?.authorSig, identityScanRequested, svgText]);
+
   const badge: { kind: BadgeKind; title: string; subtitle?: string } = useMemo(() => {
     if (busy) return { kind: "busy", title: "SEALING", subtitle: "Deterministic proof rails executing." };
     if (result.status === "ok") return { kind: "ok", title: "PROOF OF BREATH™", subtitle: "Human-origin seal affirmed." };
@@ -1145,10 +1155,20 @@ export default function VerifyPage(): ReactElement {
 
   const hasSvgBytes = Boolean(svgText.trim());
   const expectedSvgHash = sharedReceipt?.svgHash ?? embeddedProof?.svgHash ?? "";
-  const identityStatusLabel = identityAttested === true ? "Verified" : identityAttested === false ? "Not Present" : "Not provided";
+  const hasKasIdentity = Boolean(embeddedProof?.authorSig && isKASAuthorSig(embeddedProof.authorSig));
+  const identityStatusLabel =
+    !hasSvgBytes || !hasKasIdentity
+      ? "Not present"
+      : identityScanBusy
+        ? "Scanning…"
+        : identityAttested === true
+          ? "Verified"
+          : identityAttested === false
+            ? "Not verified"
+            : "Scan required";
   const artifactStatusLabel =
     artifactAttested === true
-      ? "Verified"
+      ? "Present"
       : artifactAttested === false
         ? "Failed"
         : !hasSvgBytes
