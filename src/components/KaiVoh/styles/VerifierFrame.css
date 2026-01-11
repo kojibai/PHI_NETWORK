@@ -55,6 +55,7 @@
 }
 
 .kv-qr-shell{
+  --qr-size: 128px;
   border-radius: 18px;
   border: 1px solid rgba(255,255,255,0.16);
   background: rgba(0,0,0,0.18);
@@ -72,10 +73,17 @@
   place-items: center;
 }
 
+.kv-qr-image{
+  width: var(--qr-size);
+  height: var(--qr-size);
+  display: block;
+  border-radius: 8px;
+}
+
 /* Fallback never prints URL */
 .kv-qr-fallback{
-  width: 132px;
-  height: 132px;
+  width: var(--qr-size);
+  height: var(--qr-size);
   border-radius: 14px;
   display: grid;
   place-items: center;
