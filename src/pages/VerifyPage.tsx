@@ -1084,10 +1084,19 @@ export default function VerifyPage(): ReactElement {
           return;
         }
         const { challengeBytes } = await buildKasChallenge("unlock", bundleHashValue);
-        const assertion = await getWebAuthnAssertionJson({
-          challenge: challengeBytes,
-          preferInternal: true,
-        });
+        let assertion: Awaited<ReturnType<typeof getWebAuthnAssertionJson>>;
+        try {
+          assertion = await getWebAuthnAssertionJson({
+            challenge: challengeBytes,
+            allowCredIds: [authorSig.credId],
+            preferInternal: true,
+          });
+        } catch {
+          assertion = await getWebAuthnAssertionJson({
+            challenge: challengeBytes,
+            preferInternal: true,
+          });
+        }
         const ok = await verifyWebAuthnAssertion({
           assertion,
           expectedChallenge: challengeBytes,
