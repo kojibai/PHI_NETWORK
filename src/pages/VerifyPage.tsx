@@ -21,11 +21,12 @@ import {
   type ProofCapsuleV1,
 } from "../components/KaiVoh/verifierProof";
 import { extractProofBundleMetaFromSvg, type ProofBundleMeta } from "../utils/sigilMetadata";
+import { derivePhiKeyFromSig } from "../components/VerifierStamper/sigilUtils";
 import { tryVerifyGroth16 } from "../components/VerifierStamper/zk";
 import { isKASAuthorSig, type KASAuthorSig } from "../utils/authorSig";
 import { verifyBundleAuthorSig } from "../utils/webauthnKAS";
 import { buildKasChallenge, isReceiveSig, verifyWebAuthnAssertion, type ReceiveSig } from "../utils/webauthnReceive";
-import { base64UrlDecode } from "../utils/sha256";
+import { base64UrlDecode, base64UrlEncode } from "../utils/sha256";
 import { getKaiPulseEternalInt } from "../SovereignSolar";
 import { useKaiTicker } from "../hooks/useKaiTicker";
 import { useValuation } from "./SigilPage/useValuation";
@@ -43,6 +44,18 @@ function formatProofValue(value: unknown): string {
     return JSON.stringify(value, null, 2);
   } catch {
     return String(value);
+  }
+}
+
+function parseJsonString(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  const trimmed = value.trim();
+  if (!trimmed) return value;
+  if (!(trimmed.startsWith("{") || trimmed.startsWith("["))) return value;
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return value;
   }
 }
 
@@ -128,6 +141,86 @@ function readSlugFromLocation(): string {
   if (m2?.[1]) return m2[1];
 
   return "";
+}
+
+type SharedReceipt = {
+  proofCapsule: ProofCapsuleV1;
+  capsuleHash?: string;
+  svgHash?: string;
+  bundleHash?: string;
+  verifierUrl?: string;
+  shareUrl?: string;
+  authorSig?: ProofBundleMeta["authorSig"];
+  zkPoseidonHash?: string;
+  zkProof?: ProofBundleMeta["zkProof"];
+  proofHints?: ProofBundleMeta["proofHints"];
+  zkPublicInputs?: ProofBundleMeta["zkPublicInputs"];
+};
+
+function parseProofCapsule(raw: unknown): ProofCapsuleV1 | null {
+  if (!isRecord(raw)) return null;
+  if (raw.v !== "KPV-1") return null;
+  if (typeof raw.pulse !== "number" || !Number.isFinite(raw.pulse)) return null;
+  if (typeof raw.chakraDay !== "string") return null;
+  if (typeof raw.kaiSignature !== "string") return null;
+  if (typeof raw.phiKey !== "string") return null;
+  if (typeof raw.verifierSlug !== "string") return null;
+  return raw as ProofCapsuleV1;
+}
+
+function buildSharedReceiptFromObject(raw: unknown): SharedReceipt | null {
+  if (!isRecord(raw)) return null;
+  const proofCapsule = parseProofCapsule(raw.proofCapsule);
+  if (!proofCapsule) return null;
+  return {
+    proofCapsule,
+    capsuleHash: typeof raw.capsuleHash === "string" ? raw.capsuleHash : undefined,
+    svgHash: typeof raw.svgHash === "string" ? raw.svgHash : undefined,
+    bundleHash: typeof raw.bundleHash === "string" ? raw.bundleHash : undefined,
+    verifierUrl: typeof raw.verifierUrl === "string" ? raw.verifierUrl : undefined,
+    shareUrl: typeof raw.shareUrl === "string" ? raw.shareUrl : undefined,
+    authorSig: raw.authorSig as ProofBundleMeta["authorSig"],
+    zkPoseidonHash: typeof raw.zkPoseidonHash === "string" ? raw.zkPoseidonHash : undefined,
+    zkProof: "zkProof" in raw ? raw.zkProof : undefined,
+    proofHints: "proofHints" in raw ? raw.proofHints : undefined,
+    zkPublicInputs: "zkPublicInputs" in raw ? raw.zkPublicInputs : undefined,
+  };
+}
+
+function readSharedReceiptFromLocation(): SharedReceipt | null {
+  if (typeof window === "undefined") return null;
+  const params = new URLSearchParams(window.location.search);
+  const encoded = params.get("r") ?? params.get("receipt");
+  if (!encoded) return null;
+  try {
+    const decoded = new TextDecoder().decode(base64UrlDecode(encoded));
+    const raw = JSON.parse(decoded);
+    return buildSharedReceiptFromObject(raw);
+  } catch {
+    return null;
+  }
+}
+
+function parseSharedReceiptFromText(text: string): SharedReceipt | null {
+  if (!text.trim().startsWith("{")) return null;
+  try {
+    const raw = JSON.parse(text);
+    return buildSharedReceiptFromObject(raw);
+  } catch {
+    return null;
+  }
+}
+
+function encodeReceiptParam(receiptJson: string): string {
+  const bytes = new TextEncoder().encode(receiptJson);
+  return base64UrlEncode(bytes);
+}
+
+function buildReceiptShareUrl(baseUrl: string, receiptJson: string): string {
+  const base = baseUrl || "/verify";
+  const url = new URL(base, typeof window !== "undefined" ? window.location.origin : "http://localhost");
+  url.searchParams.set("r", encodeReceiptParam(receiptJson));
+  return url.toString();
 }
 
 async function readFileText(file: File): Promise<string> {
@@ -363,12 +456,14 @@ export default function VerifyPage(): ReactElement {
 
   const slugRaw = useMemo(() => readSlugFromLocation(), []);
   const slug = useMemo(() => parseSlug(slugRaw), [slugRaw]);
+  const initialReceipt = useMemo(() => readSharedReceiptFromLocation(), []);
 
   const [panel, setPanel] = useState<PanelKey>("inhale");
 
   const [svgText, setSvgText] = useState<string>("");
   const [result, setResult] = useState<VerifyResult>({ status: "idle" });
   const [busy, setBusy] = useState<boolean>(false);
+  const [sharedReceipt, setSharedReceipt] = useState<SharedReceipt | null>(initialReceipt);
 
   const [proofCapsule, setProofCapsule] = useState<ProofCapsuleV1 | null>(null);
   const [capsuleHash, setCapsuleHash] = useState<string>("");
@@ -590,6 +685,7 @@ export default function VerifyPage(): ReactElement {
         setResult({ status: "error", message: "Upload a sealed .svg (embedded <metadata> JSON).", slug });
         return;
       }
+      setSharedReceipt(null);
       const text = await readFileText(file);
       setSvgText(text);
       setResult({ status: "idle" });
@@ -618,6 +714,15 @@ export default function VerifyPage(): ReactElement {
       setResult({ status: "error", message: "Inhale or paste the sealed SVG (ΦKey).", slug });
       return;
     }
+    const receipt = parseSharedReceiptFromText(raw);
+    if (receipt) {
+      setSharedReceipt(receipt);
+      setSvgText("");
+      setResult({ status: "idle" });
+      setNotice("Receipt loaded.");
+      return;
+    }
+    setSharedReceipt(null);
     setBusy(true);
     try {
       const next = await verifySigilSvg(slug, raw);
@@ -640,6 +745,28 @@ export default function VerifyPage(): ReactElement {
         setEmbeddedProof(null);
         setAuthorSigVerified(null);
         setNotice("");
+        return;
+      }
+
+      if (sharedReceipt && !svgText.trim()) {
+        setProofCapsule(sharedReceipt.proofCapsule);
+        setSvgHash(sharedReceipt.svgHash ?? "");
+        setCapsuleHash(sharedReceipt.capsuleHash ?? "");
+        setBundleHash(sharedReceipt.bundleHash ?? "");
+        setEmbeddedProof({
+          proofCapsule: sharedReceipt.proofCapsule,
+          svgHash: sharedReceipt.svgHash,
+          capsuleHash: sharedReceipt.capsuleHash,
+          bundleHash: sharedReceipt.bundleHash,
+          shareUrl: sharedReceipt.shareUrl,
+          verifierUrl: sharedReceipt.verifierUrl,
+          authorSig: sharedReceipt.authorSig,
+          zkPoseidonHash: sharedReceipt.zkPoseidonHash,
+          zkProof: sharedReceipt.zkProof,
+          proofHints: sharedReceipt.proofHints,
+          zkPublicInputs: sharedReceipt.zkPublicInputs,
+        });
+        setAuthorSigVerified(null);
         return;
       }
 
@@ -701,7 +828,81 @@ export default function VerifyPage(): ReactElement {
     return () => {
       active = false;
     };
-  }, [result, slug.raw, svgText]);
+  }, [result, sharedReceipt, slug.raw, svgText]);
+
+  React.useEffect(() => {
+    let active = true;
+    if (!sharedReceipt || svgText.trim()) return;
+    const capsule = sharedReceipt.proofCapsule;
+    const embed: ProofBundleMeta = {
+      proofCapsule: capsule,
+      svgHash: sharedReceipt.svgHash,
+      capsuleHash: sharedReceipt.capsuleHash,
+      bundleHash: sharedReceipt.bundleHash,
+      shareUrl: sharedReceipt.shareUrl,
+      verifierUrl: sharedReceipt.verifierUrl,
+      authorSig: sharedReceipt.authorSig,
+      zkPoseidonHash: sharedReceipt.zkPoseidonHash,
+      zkProof: sharedReceipt.zkProof,
+      proofHints: sharedReceipt.proofHints,
+      zkPublicInputs: sharedReceipt.zkPublicInputs,
+    };
+
+    (async () => {
+      const derivedPhiKey = await derivePhiKeyFromSig(capsule.kaiSignature);
+      const slugPulseMatches = slug.pulse == null ? null : slug.pulse === capsule.pulse;
+      const slugShortSigMatches =
+        slug.shortSig == null ? null : slug.shortSig === capsule.kaiSignature.slice(0, slug.shortSig.length);
+      const derivedPhiKeyMatchesEmbedded = capsule.phiKey ? derivedPhiKey === capsule.phiKey : null;
+
+      if (!active) return;
+      const checks = {
+        hasSignature: true,
+        slugPulseMatches,
+        slugShortSigMatches,
+        derivedPhiKeyMatchesEmbedded,
+      } as const;
+      const hardFail =
+        checks.slugPulseMatches === false ||
+        checks.slugShortSigMatches === false ||
+        checks.derivedPhiKeyMatchesEmbedded === false;
+      const baseEmbedded = {
+        pulse: capsule.pulse,
+        chakraDay: capsule.chakraDay,
+        kaiSignature: capsule.kaiSignature,
+        phiKey: capsule.phiKey,
+        proofCapsule: capsule,
+      };
+
+      setResult(
+        hardFail
+          ? {
+              status: "error",
+              message: "Verification failed: one or more checks did not match.",
+              slug,
+              embedded: baseEmbedded,
+              derivedPhiKey,
+              checks,
+            }
+          : {
+              status: "ok",
+              slug,
+              embedded: baseEmbedded,
+              derivedPhiKey,
+              checks,
+            },
+      );
+      setEmbeddedProof(embed);
+      setProofCapsule(capsule);
+      setCapsuleHash(sharedReceipt.capsuleHash ?? "");
+      setSvgHash(sharedReceipt.svgHash ?? "");
+      setBundleHash(sharedReceipt.bundleHash ?? "");
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [sharedReceipt, slug, svgText]);
 
   React.useEffect(() => {
     if (result.status !== "ok" || !bundleHash) {
@@ -747,6 +948,27 @@ export default function VerifyPage(): ReactElement {
     };
   }, [receiveSig, bundleHash]);
 
+  React.useEffect(() => {
+    let active = true;
+    if (!embeddedProof?.authorSig || !bundleHash) return;
+    if (authorSigVerified !== null) return;
+    const authorSigNext = embeddedProof.authorSig;
+
+    (async () => {
+      if (!isKASAuthorSig(authorSigNext)) {
+        if (active) setAuthorSigVerified(false);
+        return;
+      }
+      const authorBundleHash = bundleHashFromAuthorSig(authorSigNext);
+      const ok = await verifyBundleAuthorSig(authorBundleHash ?? bundleHash, authorSigNext);
+      if (active) setAuthorSigVerified(ok);
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [authorSigVerified, bundleHash, embeddedProof?.authorSig]);
+
   // Groth16 verify (logic unchanged)
   React.useEffect(() => {
     let active = true;
@@ -764,24 +986,18 @@ export default function VerifyPage(): ReactElement {
           const vkey = (await res.json()) as unknown;
           if (!active) return;
           setZkVkey(vkey);
+          return;
         } catch {
           return;
         }
       }
 
-      const inputs =
-        typeof zkMeta.zkPublicInputs === "string"
-          ? (() => {
-              try {
-                return JSON.parse(zkMeta.zkPublicInputs);
-              } catch {
-                return [zkMeta.zkPublicInputs];
-              }
-            })()
-          : zkMeta.zkPublicInputs;
+      const parsedProof = parseJsonString(zkMeta.zkProof);
+      const parsedInputs = parseJsonString(zkMeta.zkPublicInputs);
+      const inputs = Array.isArray(parsedInputs) || typeof parsedInputs === "object" ? parsedInputs : [parsedInputs];
 
       const verified = await tryVerifyGroth16({
-        proof: zkMeta.zkProof,
+        proof: parsedProof,
         publicSignals: inputs,
         vkey: zkVkey ?? undefined,
         fallbackVkey: zkVkey ?? undefined,
@@ -881,6 +1097,10 @@ export default function VerifyPage(): ReactElement {
     if (svgHash) extended.svgHash = svgHash;
     if (bundleHash) extended.bundleHash = bundleHash;
     if (embeddedProof?.shareUrl) extended.shareUrl = embeddedProof.shareUrl;
+    if (embeddedProof?.authorSig) extended.authorSig = embeddedProof.authorSig;
+    if (embeddedProof?.zkProof) extended.zkProof = embeddedProof.zkProof;
+    if (embeddedProof?.proofHints) extended.proofHints = embeddedProof.proofHints;
+    if (embeddedProof?.zkPublicInputs) extended.zkPublicInputs = embeddedProof.zkPublicInputs;
     if (zkMeta?.zkPoseidonHash) {
       extended.zkPoseidonHash = zkMeta.zkPoseidonHash;
       extended.zkVerified = Boolean(zkVerify);
@@ -890,8 +1110,15 @@ export default function VerifyPage(): ReactElement {
     return jcsCanonicalize(extended as Parameters<typeof jcsCanonicalize>[0]);
   }, [bundleHash, capsuleHash, currentVerifyUrl, embeddedProof?.shareUrl, proofCapsule, proofVerifierUrl, svgHash, zkMeta?.zkPoseidonHash, zkVerify]);
 
+  const shareReceiptUrl = useMemo(() => {
+    if (!receiptJson) return "";
+    const base = proofVerifierUrl || currentVerifyUrl;
+    if (!base) return "";
+    return buildReceiptShareUrl(base, receiptJson);
+  }, [currentVerifyUrl, proofVerifierUrl, receiptJson]);
+
   const onShareReceipt = useCallback(async () => {
-    const url = currentVerifyUrl || proofVerifierUrl;
+    const url = shareReceiptUrl || proofVerifierUrl || currentVerifyUrl;
     const title = `Proof of Breath™ — ${shareStatus}`;
     const text = `${shareStatus} • Pulse ${verifierPulse} • ΦKey ${sharePhiShort} • KAS ${shareKas} • G16 ${shareG16}`;
 
@@ -906,7 +1133,7 @@ export default function VerifyPage(): ReactElement {
 
     const ok = await copyTextToClipboard(url);
     setNotice(ok ? "Link Remembered." : "Remember failed. Use manual remember.");
-  }, [currentVerifyUrl, proofVerifierUrl, shareG16, shareKas, sharePhiShort, shareStatus, verifierPulse]);
+  }, [currentVerifyUrl, proofVerifierUrl, shareG16, shareKas, sharePhiShort, shareReceiptUrl, shareStatus, verifierPulse]);
 
   const onCopyReceipt = useCallback(async () => {
     if (!receiptJson) return;
@@ -1062,6 +1289,7 @@ export default function VerifyPage(): ReactElement {
                           ariaLabel="Clear"
                           onClick={() => {
                             setSvgText("");
+                            setSharedReceipt(null);
                             setResult({ status: "idle" });
                             setNotice("");
                           }}
@@ -1394,6 +1622,7 @@ export default function VerifyPage(): ReactElement {
           value={svgText}
           onChange={(e) => {
             setSvgText(e.currentTarget.value);
+            setSharedReceipt(null);
             setResult({ status: "idle" });
           }}
           spellCheck={false}
