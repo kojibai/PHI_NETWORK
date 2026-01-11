@@ -11,11 +11,11 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import type { ReactElement } from "react";
-import * as ReactQrCodeModule from "react-qr-code";
+import type { CSSProperties, ReactElement } from "react";
 import "./styles/VerifierFrame.css";
 
 import type { ChakraDay } from "../../utils/kai_pulse";
+import { qrDataURL } from "../../lib/qr";
 import {
   buildVerifierSlug,
   buildVerifierUrl,
@@ -37,46 +37,6 @@ export interface VerifierFrameProps {
   compact?: boolean;
   verifierBaseUrl?: string;
 }
-
-type QRCodeProps = {
-  value: string;
-  size?: number;
-  bgColor?: string;
-  fgColor?: string;
-  level?: "L" | "M" | "Q" | "H";
-};
-type QRCodeComponent = (props: QRCodeProps) => ReactElement;
-
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null;
-}
-function isFn(v: unknown): v is (...args: never[]) => unknown {
-  return typeof v === "function";
-}
-
-/** ESM/CJS interop-safe resolver */
-function pickQrComponent(mod: unknown): QRCodeComponent {
-  if (isRecord(mod)) {
-    const def = mod.default;
-    if (isFn(def)) return def as unknown as QRCodeComponent;
-
-    const named = mod.QRCode;
-    if (isFn(named)) return named as unknown as QRCodeComponent;
-  }
-  if (isFn(mod)) return mod as unknown as QRCodeComponent;
-
-  // NEVER print the URL here (it causes visual clutter).
-  return function QRCodeFallback(): ReactElement {
-    return (
-      <div className="kv-qr-fallback" aria-label="QR unavailable">
-        <div className="kv-qr-fallback__mark">QR</div>
-        <div className="kv-qr-fallback__sub">Open link</div>
-      </div>
-    );
-  };
-}
-
-const QR = pickQrComponent(ReactQrCodeModule);
 
 function truncateMiddle(value: string, head = 10, tail = 10): string {
   if (!value) return "";
@@ -150,6 +110,10 @@ export default function VerifierFrame({
   const [copyLinkStatus, setCopyLinkStatus] = useState<"idle" | "ok" | "error">("idle");
   const [copyProofStatus, setCopyProofStatus] = useState<"idle" | "ok" | "error">("idle");
   const [capsuleHash, setCapsuleHash] = useState<string | null>(null);
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+  const qrSize = compact ? 92 : 128;
+  const rootClass = compact ? "kv-verifier kv-verifier--compact" : "kv-verifier";
+  const qrStyle = useMemo(() => ({ "--qr-size": `${qrSize}px` }) as CSSProperties, [qrSize]);
 
   const proof = useMemo<ProofCopy>(() => {
     const baseRaw = verifierBaseUrl ?? defaultHostedVerifierBaseUrl();
@@ -209,8 +173,25 @@ export default function VerifierFrame({
     };
   }, [proof.proofCapsule]);
 
-  const qrSize = compact ? 92 : 128;
-  const rootClass = compact ? "kv-verifier kv-verifier--compact" : "kv-verifier";
+  useEffect(() => {
+    let cancelled = false;
+    setQrDataUrl(null);
+
+    if (!proof.verifierUrl) return undefined;
+
+    (async (): Promise<void> => {
+      try {
+        const url = await qrDataURL(proof.verifierUrl, { size: qrSize, margin: 2, ecc: "M" });
+        if (!cancelled) setQrDataUrl(url);
+      } catch {
+        if (!cancelled) setQrDataUrl(null);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [proof.verifierUrl, qrSize]);
 
   const pulseLabel = Number.isFinite(pulse) && pulse > 0 ? String(pulse) : "—";
   const captionClean = typeof caption === "string" ? caption.trim() : "";
@@ -250,9 +231,30 @@ export default function VerifierFrame({
       <div className="kv-wrap">
         {/* TOP BAR: QR + chip rail (never cramped) */}
         <div className="kv-topbar" aria-label="Verifier top bar">
-          <div className="kv-qr-shell" role="img" aria-label={`QR code for verifier pulse ${pulseLabel}`} title="Scan to open verifier">
+          <div
+            className="kv-qr-shell"
+            role="img"
+            aria-label={`QR code for verifier pulse ${pulseLabel}`}
+            title="Scan to open verifier"
+            style={qrStyle}
+          >
             <div className="kv-qr-inner">
-              <QR value={proof.verifierUrl} size={qrSize} bgColor="#00000000" fgColor="#ffffff" level="M" />
+              {qrDataUrl ? (
+                <img
+                  className="kv-qr-image"
+                  src={qrDataUrl}
+                  width={qrSize}
+                  height={qrSize}
+                  alt={`QR code for verifier pulse ${pulseLabel}`}
+                  loading="eager"
+                  decoding="async"
+                />
+              ) : (
+                <div className="kv-qr-fallback" aria-label="QR unavailable">
+                  <div className="kv-qr-fallback__mark">QR</div>
+                  <div className="kv-qr-fallback__sub">Open link</div>
+                </div>
+              )}
             </div>
           </div>
 
