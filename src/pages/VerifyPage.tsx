@@ -1442,8 +1442,8 @@ export default function VerifyPage(): ReactElement {
                         />
                       </div>
                      <div className="vmini-grid vmini-grid--2" aria-label="Attestation status">
-                <MiniField label="Identity" value={identityStatusLabel} />
-                <MiniField label="Sigil-Glyph" value={artifactStatusLabel} />
+                <MiniField label="Identity (Owner)" value={identityStatusLabel} />
+                <MiniField label="Sigil-Glyph (Artifact)" value={artifactStatusLabel} />
               </div>
                       <div className="vmini-grid vmini-grid--2" aria-label="Quick readout">
                         <MiniField label="Inhaled" value={svgText.trim() ? "true" : "false"} />
