@@ -840,24 +840,42 @@ export default function VerifyPage(): ReactElement {
       const derivedPhiKeyMatchesEmbedded = capsule.phiKey ? derivedPhiKey === capsule.phiKey : null;
 
       if (!active) return;
-      setResult({
-        status: "ok",
-        slug,
-        embedded: {
-          pulse: capsule.pulse,
-          chakraDay: capsule.chakraDay,
-          kaiSignature: capsule.kaiSignature,
-          phiKey: capsule.phiKey,
-          proofCapsule: capsule,
-        },
-        derivedPhiKey,
-        checks: {
-          hasSignature: true,
-          slugPulseMatches,
-          slugShortSigMatches,
-          derivedPhiKeyMatchesEmbedded,
-        },
-      });
+      const checks = {
+        hasSignature: true,
+        slugPulseMatches,
+        slugShortSigMatches,
+        derivedPhiKeyMatchesEmbedded,
+      } as const;
+      const hardFail =
+        checks.slugPulseMatches === false ||
+        checks.slugShortSigMatches === false ||
+        checks.derivedPhiKeyMatchesEmbedded === false;
+      const baseEmbedded = {
+        pulse: capsule.pulse,
+        chakraDay: capsule.chakraDay,
+        kaiSignature: capsule.kaiSignature,
+        phiKey: capsule.phiKey,
+        proofCapsule: capsule,
+      };
+
+      setResult(
+        hardFail
+          ? {
+              status: "error",
+              message: "Verification failed: one or more checks did not match.",
+              slug,
+              embedded: baseEmbedded,
+              derivedPhiKey,
+              checks,
+            }
+          : {
+              status: "ok",
+              slug,
+              embedded: baseEmbedded,
+              derivedPhiKey,
+              checks,
+            },
+      );
       setEmbeddedProof(embed);
       setProofCapsule(capsule);
       setCapsuleHash(sharedReceipt.capsuleHash ?? "");
