@@ -932,6 +932,27 @@ export default function VerifyPage(): ReactElement {
     };
   }, [receiveSig, bundleHash]);
 
+  React.useEffect(() => {
+    let active = true;
+    if (!embeddedProof?.authorSig || !bundleHash) return;
+    if (authorSigVerified !== null) return;
+    const authorSigNext = embeddedProof.authorSig;
+
+    (async () => {
+      if (!isKASAuthorSig(authorSigNext)) {
+        if (active) setAuthorSigVerified(false);
+        return;
+      }
+      const authorBundleHash = bundleHashFromAuthorSig(authorSigNext);
+      const ok = await verifyBundleAuthorSig(authorBundleHash ?? bundleHash, authorSigNext);
+      if (active) setAuthorSigVerified(ok);
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [authorSigVerified, bundleHash, embeddedProof?.authorSig]);
+
   // Groth16 verify (logic unchanged)
   React.useEffect(() => {
     let active = true;
