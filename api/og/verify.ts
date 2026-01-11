@@ -149,6 +149,10 @@ function drawBadge(png: PngInstance, x: number, y: number, ok: boolean | null): 
   fillRect(png, x, y, 2, size, stroke);
   fillRect(png, x + size - 2, y, 2, size, stroke);
 
+  if (ok === null) {
+    drawLine(png, x + 4, y + 9, x + 14, y + 9, [140, 170, 210, 220]);
+    return;
+  }
   if (ok) {
     drawLine(png, x + 4, y + 10, x + 8, y + 14, [56, 231, 166, 255]);
     drawLine(png, x + 8, y + 14, x + 14, y + 4, [56, 231, 166, 255]);

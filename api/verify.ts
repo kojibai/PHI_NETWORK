@@ -7,6 +7,21 @@ type SlugInfo = {
   shortSig: string | null;
 };
 
+type ProofCapsule = {
+  v: "KPV-1";
+  pulse: number;
+  chakraDay: string;
+  kaiSignature: string;
+  phiKey: string;
+  verifierSlug: string;
+};
+
+type SharedReceipt = {
+  proofCapsule: ProofCapsule;
+  authorSig?: unknown;
+  zkVerified?: boolean;
+};
+
 function parseSlug(rawSlug: string): SlugInfo {
   let raw = (rawSlug || "").trim();
   try {
@@ -29,6 +44,53 @@ function statusFromQuery(value: string | null): "verified" | "failed" | "standby
   if (v === "verified" || v === "ok" || v === "valid") return "verified";
   if (v === "failed" || v === "error" || v === "invalid") return "failed";
   return "standby";
+}
+
+function parseProofCapsule(raw: unknown): ProofCapsule | null {
+  if (!raw || typeof raw !== "object") return null;
+  const record = raw as Record<string, unknown>;
+  if (record.v !== "KPV-1") return null;
+  if (typeof record.pulse !== "number" || !Number.isFinite(record.pulse)) return null;
+  if (typeof record.chakraDay !== "string") return null;
+  if (typeof record.kaiSignature !== "string") return null;
+  if (typeof record.phiKey !== "string") return null;
+  if (typeof record.verifierSlug !== "string") return null;
+  return record as ProofCapsule;
+}
+
+function parseSharedReceipt(raw: unknown): SharedReceipt | null {
+  if (!raw || typeof raw !== "object") return null;
+  const record = raw as Record<string, unknown>;
+  const proofCapsule = parseProofCapsule(record.proofCapsule);
+  if (!proofCapsule) return null;
+  return {
+    proofCapsule,
+    authorSig: record.authorSig,
+    zkVerified: typeof record.zkVerified === "boolean" ? record.zkVerified : undefined,
+  };
+}
+
+function decodeBase64Url(input: string): string | null {
+  try {
+    const base64 = input.replace(/-/g, "+").replace(/_/g, "/");
+    const pad = base64.length % 4 === 0 ? "" : "=".repeat(4 - (base64.length % 4));
+    return Buffer.from(`${base64}${pad}`, "base64").toString("utf-8");
+  } catch {
+    return null;
+  }
+}
+
+function readReceiptFromParams(params: URLSearchParams): SharedReceipt | null {
+  const encoded = params.get("r") ?? params.get("receipt");
+  if (!encoded) return null;
+  const decoded = decodeBase64Url(encoded);
+  if (!decoded) return null;
+  try {
+    const raw = JSON.parse(decoded);
+    return parseSharedReceipt(raw);
+  } catch {
+    return null;
+  }
 }
 
 function buildMetaTags(params: {
@@ -151,19 +213,32 @@ export default async function handler(
   const requestUrl = new URL(req.url ?? "/", origin);
   const slugRaw = requestUrl.searchParams.get("slug") ?? "";
   const slug = parseSlug(slugRaw);
-  const status = statusFromQuery(requestUrl.searchParams.get("status"));
+  const receipt = readReceiptFromParams(requestUrl.searchParams);
+  const receiptSlug = receipt?.proofCapsule.verifierSlug ?? "";
+  const canonicalSlug = slug.raw || slugRaw || receiptSlug;
+  const receiptMatchesSlug =
+    receipt != null && (!canonicalSlug || receipt.proofCapsule.verifierSlug === canonicalSlug);
+  const statusParam = statusFromQuery(requestUrl.searchParams.get("status"));
+  const status = receiptMatchesSlug && statusParam === "standby" ? "verified" : statusParam;
 
   const statusLabel = status === "verified" ? "VERIFIED" : status === "failed" ? "FAILED" : "STANDBY";
-  const pulseLabel = slug.pulse ? String(slug.pulse) : "—";
+  const receiptPulse = receiptMatchesSlug ? receipt?.proofCapsule.pulse : null;
+  const pulseLabel = receiptPulse ? String(receiptPulse) : slug.pulse ? String(slug.pulse) : "—";
   const title = `Proof of Breath™ — ${statusLabel}`;
   const description = `Proof of Breath™ • ${statusLabel} • Pulse ${pulseLabel}`;
 
-  const canonicalSlug = slug.raw || slugRaw;
   const verifyUrl = `${origin}/verify/${encodeURIComponent(canonicalSlug)}`;
 
   const ogUrl = new URL(`${origin}/api/og/verify`);
   ogUrl.searchParams.set("slug", canonicalSlug);
   ogUrl.searchParams.set("status", status);
+  if (receiptMatchesSlug && receipt) {
+    ogUrl.searchParams.set("pulse", String(receipt.proofCapsule.pulse));
+    ogUrl.searchParams.set("phiKey", receipt.proofCapsule.phiKey);
+    if (receipt.proofCapsule.chakraDay) ogUrl.searchParams.set("chakraDay", receipt.proofCapsule.chakraDay);
+    if (receipt.authorSig) ogUrl.searchParams.set("kas", "1");
+    if (receipt.zkVerified != null) ogUrl.searchParams.set("g16", receipt.zkVerified ? "1" : "0");
+  }
 
   const meta = buildMetaTags({
     title: escapeHtml(title),
