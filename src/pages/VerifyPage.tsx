@@ -47,6 +47,18 @@ function formatProofValue(value: unknown): string {
   }
 }
 
+function parseJsonString(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  const trimmed = value.trim();
+  if (!trimmed) return value;
+  if (!(trimmed.startsWith("{") || trimmed.startsWith("["))) return value;
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return value;
+  }
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -970,24 +982,18 @@ export default function VerifyPage(): ReactElement {
           const vkey = (await res.json()) as unknown;
           if (!active) return;
           setZkVkey(vkey);
+          return;
         } catch {
           return;
         }
       }
 
-      const inputs =
-        typeof zkMeta.zkPublicInputs === "string"
-          ? (() => {
-              try {
-                return JSON.parse(zkMeta.zkPublicInputs);
-              } catch {
-                return [zkMeta.zkPublicInputs];
-              }
-            })()
-          : zkMeta.zkPublicInputs;
+      const parsedProof = parseJsonString(zkMeta.zkProof);
+      const parsedInputs = parseJsonString(zkMeta.zkPublicInputs);
+      const inputs = Array.isArray(parsedInputs) || typeof parsedInputs === "object" ? parsedInputs : [parsedInputs];
 
       const verified = await tryVerifyGroth16({
-        proof: zkMeta.zkProof,
+        proof: parsedProof,
         publicSignals: inputs,
         vkey: zkVkey ?? undefined,
         fallbackVkey: zkVkey ?? undefined,
