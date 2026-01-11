@@ -879,6 +879,7 @@ html.verify-shell, body.verify-shell{
   overflow: hidden;
   display: grid;
   place-items: center;
+  flex: 0 0 auto;
 }
 
 .vsigil-img{
@@ -893,6 +894,29 @@ html.verify-shell, body.verify-shell{
   .vsigil-thumb{ width: 74px; height: 74px; border-radius: 16px; }
 }
 
+@media (max-width: 420px){
+  .vhead-top{
+    flex-wrap: nowrap;
+    align-items: center;
+  }
+  .vsigil-thumb{
+    width: 56px;
+    height: 56px;
+    border-radius: 12px;
+  }
+  .official{
+    width: auto;
+    flex: 1 1 auto;
+  }
+  .official-title{
+    font-size: 0.64rem;
+    letter-spacing: 0.10em;
+  }
+  .official-sub{
+    font-size: 0.68rem;
+  }
+}
+
 /* ────────────────────────────────────────────────────────────────
    Official badge: make it less wide + add checkmark in ring
 ─────────────────────────────────────────────────────────────── */
@@ -900,6 +924,7 @@ html.verify-shell, body.verify-shell{
 .official{
   /* was min(360px,100%) — tighten so sigil preview can sit beside it */
   width: min(280px, 100%);
+  min-width: 0;
 }
 
 .official-ring{
