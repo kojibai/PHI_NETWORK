@@ -3,6 +3,8 @@ import QRCode from "qrcode";
 
 import { parseSlug } from "../../src/utils/verifySigil";
 
+type PngInstance = InstanceType<typeof PNG> & { data: Buffer };
+type PngSyncWriter = { sync: { write: (png: PngInstance) => Buffer } };
 type Rgba = [number, number, number, number];
 
 const FONT_5X7: Record<string, string[]> = {
@@ -57,7 +59,7 @@ function normalizeText(text: string): string {
     .toUpperCase();
 }
 
-function fillRect(png: PNG, x: number, y: number, w: number, h: number, color: Rgba): void {
+function fillRect(png: PngInstance, x: number, y: number, w: number, h: number, color: Rgba): void {
   const [r, g, b, a] = color;
   for (let yy = y; yy < y + h; yy += 1) {
     if (yy < 0 || yy >= png.height) continue;
@@ -72,7 +74,7 @@ function fillRect(png: PNG, x: number, y: number, w: number, h: number, color: R
   }
 }
 
-function drawText(png: PNG, textRaw: string, x: number, y: number, scale: number, color: Rgba): void {
+function drawText(png: PngInstance, textRaw: string, x: number, y: number, scale: number, color: Rgba): void {
   const text = normalizeText(textRaw);
   let cursor = x;
   for (const char of text) {
@@ -94,7 +96,7 @@ function measureText(textRaw: string, scale: number): number {
   return text.length * (FONT_WIDTH + 1) * scale;
 }
 
-function drawGradient(png: PNG, top: Rgba, bottom: Rgba): void {
+function drawGradient(png: PngInstance, top: Rgba, bottom: Rgba): void {
   const [tr, tg, tb] = top;
   const [br, bg, bb] = bottom;
   for (let y = 0; y < png.height; y += 1) {
@@ -114,7 +116,7 @@ function parseBool(value: string | null): boolean | null {
   return null;
 }
 
-function drawLine(png: PNG, x0: number, y0: number, x1: number, y1: number, color: Rgba): void {
+function drawLine(png: PngInstance, x0: number, y0: number, x1: number, y1: number, color: Rgba): void {
   const dx = Math.abs(x1 - x0);
   const dy = -Math.abs(y1 - y0);
   const sx = x0 < x1 ? 1 : -1;
@@ -137,7 +139,7 @@ function drawLine(png: PNG, x0: number, y0: number, x1: number, y1: number, colo
   }
 }
 
-function drawBadge(png: PNG, x: number, y: number, ok: boolean | null): void {
+function drawBadge(png: PngInstance, x: number, y: number, ok: boolean | null): void {
   const size = 18;
   const stroke: Rgba = [160, 200, 240, 200];
   const fill: Rgba = [12, 18, 28, 255];
@@ -165,14 +167,34 @@ function statusFromQuery(value: string | null): "verified" | "failed" | "standby
 
 async function makeQrMatrix(text: string): Promise<{ size: number; data: boolean[] }> {
   const qr = QRCode.create(text, { errorCorrectionLevel: "M" });
-  return { size: qr.modules.size, data: qr.modules.data as boolean[] };
+  const data = Array.from(qr.modules.data, (value) => value === 1);
+  return { size: qr.modules.size, data };
+}
+
+function headerValue(
+  headers: Record<string, string | string[] | undefined> | undefined,
+  key: string
+): string | undefined {
+  if (!headers) return undefined;
+  const value = headers[key] ?? headers[key.toLowerCase()] ?? headers[key.toUpperCase()];
+  if (Array.isArray(value)) return value[0];
+  return value;
+}
+
+function requestOrigin(req: { headers?: Record<string, string | string[] | undefined> }): string {
+  const protoHeader = headerValue(req.headers, "x-forwarded-proto") ?? "https";
+  const proto = protoHeader.split(",")[0]?.trim() || "https";
+  const hostHeader = headerValue(req.headers, "x-forwarded-host") ?? headerValue(req.headers, "host");
+  const host = hostHeader?.split(",")[0]?.trim();
+  if (!host) return "http://localhost";
+  return `${proto}://${host}`;
 }
 
 export default async function handler(
-  req: { url?: string },
+  req: { url?: string; headers?: Record<string, string | string[] | undefined> },
   res: { setHeader: (key: string, value: string) => void; end: (body: Buffer) => void; statusCode: number }
 ): Promise<void> {
-  const base = "https://verahai.com";
+  const base = requestOrigin(req);
   const url = new URL(req.url ?? "/", base);
   const slugRaw = url.searchParams.get("slug") ?? "";
   const slug = parseSlug(slugRaw);
@@ -188,7 +210,10 @@ export default async function handler(
   const statusColor: Rgba = status === "verified" ? [56, 231, 166, 255] : status === "failed" ? [255, 107, 107, 255] : [181, 199, 221, 255];
   const textColor: Rgba = [230, 242, 255, 255];
 
-  const png = new PNG({ width: 1200, height: 630 });
+  const png = new PNG({ width: 1200, height: 630 }) as PngInstance;
+  if (!png.data) {
+    throw new Error("PNG buffer not initialized");
+  }
   drawGradient(png, [12, 18, 26, 255], [6, 10, 15, 255]);
 
   fillRect(png, 60, 60, 1080, 510, [18, 26, 38, 235]);
@@ -236,7 +261,7 @@ export default async function handler(
   res.statusCode = 200;
   res.setHeader("Content-Type", "image/png");
   res.setHeader("Cache-Control", "public, max-age=3600, s-maxage=86400");
-  res.end(PNG.sync.write(png));
+  res.end((PNG as typeof PNG & PngSyncWriter).sync.write(png));
 }
 
 export const config = {
