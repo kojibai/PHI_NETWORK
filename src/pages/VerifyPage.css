@@ -219,9 +219,9 @@ html.verify-shell, body.verify-shell{
 }
 .vseal-value{
   display: grid;
-  gap: 2px;
-  padding: 6px 12px;
-  border-radius: 12px;
+  gap: 1px;
+  padding: 2px 8px;
+  border-radius: 8px;
   border: 1px solid rgba(255,255,255,0.14);
   background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03));
   box-shadow: 0 10px 22px rgba(0,0,0,0.18), 0 0 0 1px rgba(255,255,255,0.05) inset;
@@ -235,17 +235,17 @@ html.verify-shell, body.verify-shell{
 }
 .vseal-value-phi{
   font-weight: 1000;
-  font-size: 0.84rem;
+  font-size: 0.78rem;
 }
 .vseal-value-usd{
-  font-size: 0.74rem;
+  font-size: 0.68rem;
   color: var(--inkDim);
 }
 .seal{
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
+  gap: 5px;
+  padding: 2px 7px;
   border-radius: 999px;
   border: 1px solid rgba(255,255,255,0.14);
   background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03));
@@ -253,14 +253,14 @@ html.verify-shell, body.verify-shell{
   white-space: nowrap;
 }
 .seal-ic{
-  width: 18px; height: 18px; display:grid; place-items:center;
+  width: 14px; height: 14px; display:grid; place-items:center;
   border-radius: 999px;
   border: 1px solid rgba(255,255,255,0.18);
   background: rgba(0,0,0,0.18);
-  font-weight: 1000; font-size: 0.80rem;
+  font-weight: 1000; font-size: 0.66rem;
 }
-.seal-lbl{ font-weight: 1000; letter-spacing: 0.10em; font-size: 0.72rem; color: var(--inkFaint); }
-.seal-txt{ font-weight: 1000; letter-spacing: 0.10em; font-size: 0.72rem; }
+.seal-lbl{ font-weight: 1000; letter-spacing: 0.10em; font-size: 0.64rem; color: var(--inkFaint); }
+.seal-txt{ font-weight: 1000; letter-spacing: 0.10em; font-size: 0.64rem; }
 .seal[data-state="valid"]{ border-color: rgba(0,255,160,0.22); }
 .seal[data-state="valid"] .seal-ic{ border-color: rgba(0,255,160,0.30); box-shadow: 0 0 0 4px rgba(0,255,160,0.08); }
 .seal[data-state="invalid"]{ border-color: rgba(255,80,80,0.22); }
@@ -329,10 +329,10 @@ html.verify-shell, body.verify-shell{
   .official-ring{ width: 18px; height: 18px; }
   .official-title{ font-size: 0.70rem; letter-spacing: 0.12em; }
   .official-sub{ font-size: 0.72rem; }
-  .seal{ padding: 4px 8px; }
-  .seal-ic{ width: 16px; height: 16px; font-size: 0.72rem; }
+  .seal{ padding: 2px 6px; }
+  .seal-ic{ width: 12px; height: 12px; font-size: 0.62rem; }
   .seal-lbl,
-  .seal-txt{ font-size: 0.66rem; }
+  .seal-txt{ font-size: 0.58rem; }
   .vseals{
     flex-wrap: nowrap;
     gap: 6px;
@@ -340,14 +340,14 @@ html.verify-shell, body.verify-shell{
   .vseals > *{ flex: 0 1 auto; }
   .vseal-value{
     min-width: 0;
-    padding: 4px 8px;
+    padding: 2px 6px;
   }
-  .vseal-value-label{ font-size: 0.54rem; letter-spacing: 0.18em; }
-  .vseal-value-phi{ font-size: 0.72rem; }
-  .vseal-value-usd{ font-size: 0.64rem; }
-  .seal{ padding: 4px 6px; }
+  .vseal-value-label{ font-size: 0.50rem; letter-spacing: 0.16em; }
+  .vseal-value-phi{ font-size: 0.66rem; }
+  .vseal-value-usd{ font-size: 0.60rem; }
+  .seal{ padding: 2px 5px; }
   .seal-lbl,
-  .seal-txt{ font-size: 0.60rem; }
+  .seal-txt{ font-size: 0.56rem; }
 }
 
 /* Body layout */
