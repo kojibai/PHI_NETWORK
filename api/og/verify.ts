@@ -4,6 +4,7 @@ import QRCode from "qrcode";
 import { parseSlug } from "../../src/utils/verifySigil";
 
 type PngInstance = InstanceType<typeof PNG> & { data: Buffer };
+type PngSyncWriter = { sync: { write: (png: PngInstance) => Buffer } };
 type Rgba = [number, number, number, number];
 
 const FONT_5X7: Record<string, string[]> = {
@@ -260,7 +261,7 @@ export default async function handler(
   res.statusCode = 200;
   res.setHeader("Content-Type", "image/png");
   res.setHeader("Cache-Control", "public, max-age=3600, s-maxage=86400");
-  res.end(PNG.sync.write(png));
+  res.end((PNG as typeof PNG & PngSyncWriter).sync.write(png));
 }
 
 export const config = {
