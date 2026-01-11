@@ -220,8 +220,8 @@ html.verify-shell, body.verify-shell{
 .vseal-value{
   display: grid;
   gap: 2px;
-  padding: 6px 12px;
-  border-radius: 12px;
+  padding: 4px 10px;
+  border-radius: 10px;
   border: 1px solid rgba(255,255,255,0.14);
   background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03));
   box-shadow: 0 10px 22px rgba(0,0,0,0.18), 0 0 0 1px rgba(255,255,255,0.05) inset;
@@ -244,8 +244,8 @@ html.verify-shell, body.verify-shell{
 .seal{
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
+  gap: 6px;
+  padding: 4px 9px;
   border-radius: 999px;
   border: 1px solid rgba(255,255,255,0.14);
   background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03));
@@ -253,11 +253,11 @@ html.verify-shell, body.verify-shell{
   white-space: nowrap;
 }
 .seal-ic{
-  width: 18px; height: 18px; display:grid; place-items:center;
+  width: 16px; height: 16px; display:grid; place-items:center;
   border-radius: 999px;
   border: 1px solid rgba(255,255,255,0.18);
   background: rgba(0,0,0,0.18);
-  font-weight: 1000; font-size: 0.80rem;
+  font-weight: 1000; font-size: 0.72rem;
 }
 .seal-lbl{ font-weight: 1000; letter-spacing: 0.10em; font-size: 0.72rem; color: var(--inkFaint); }
 .seal-txt{ font-weight: 1000; letter-spacing: 0.10em; font-size: 0.72rem; }
@@ -329,8 +329,8 @@ html.verify-shell, body.verify-shell{
   .official-ring{ width: 18px; height: 18px; }
   .official-title{ font-size: 0.70rem; letter-spacing: 0.12em; }
   .official-sub{ font-size: 0.72rem; }
-  .seal{ padding: 4px 8px; }
-  .seal-ic{ width: 16px; height: 16px; font-size: 0.72rem; }
+  .seal{ padding: 3px 8px; }
+  .seal-ic{ width: 14px; height: 14px; font-size: 0.68rem; }
   .seal-lbl,
   .seal-txt{ font-size: 0.66rem; }
   .vseals{
@@ -340,12 +340,12 @@ html.verify-shell, body.verify-shell{
   .vseals > *{ flex: 0 1 auto; }
   .vseal-value{
     min-width: 0;
-    padding: 4px 8px;
+    padding: 3px 8px;
   }
   .vseal-value-label{ font-size: 0.54rem; letter-spacing: 0.18em; }
   .vseal-value-phi{ font-size: 0.72rem; }
   .vseal-value-usd{ font-size: 0.64rem; }
-  .seal{ padding: 4px 6px; }
+  .seal{ padding: 3px 6px; }
   .seal-lbl,
   .seal-txt{ font-size: 0.60rem; }
 }
