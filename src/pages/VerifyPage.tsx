@@ -199,7 +199,7 @@ async function copyTextToClipboard(text: string): Promise<boolean> {
 function ensureMetaTag(attr: "name" | "property", key: string, content: string): void {
   if (typeof document === "undefined") return;
   if (!content) return;
-  const selector = `meta[${attr}=\"${key}\"]`;
+  const selector = `meta[${attr}="${key}"]`;
   let el = document.head?.querySelector(selector) as HTMLMetaElement | null;
   if (!el) {
     el = document.createElement("meta");
@@ -905,13 +905,13 @@ export default function VerifyPage(): ReactElement {
     }
 
     const ok = await copyTextToClipboard(url);
-    setNotice(ok ? "Link copied." : "Copy failed. Use manual copy.");
+    setNotice(ok ? "Link Remembered." : "Remember failed. Use manual remember.");
   }, [currentVerifyUrl, proofVerifierUrl, shareG16, shareKas, sharePhiShort, shareStatus, verifierPulse]);
 
   const onCopyReceipt = useCallback(async () => {
     if (!receiptJson) return;
     const ok = await copyTextToClipboard(receiptJson);
-    setNotice(ok ? "Receipt JSON copied." : "Copy failed. Use manual copy.");
+    setNotice(ok ? "Proof JSON remembered." : "Remember failed. Use manual remember.");
   }, [receiptJson]);
 
   const activePanelTitle =
@@ -992,14 +992,14 @@ export default function VerifyPage(): ReactElement {
           </div>
 
           {proofCapsule ? (
-            <div className="vreceipt-row" aria-label="Receipt actions">
-              <div className="vreceipt-label">Receipt</div>
+            <div className="vreceipt-row" aria-label="Proof actions">
+              <div className="vreceipt-label">Proof</div>
               <div className="vreceipt-actions">
                 <button type="button" className="vbtn vbtn--ghost" onClick={() => void onShareReceipt()}>
-                  Share
+                   ➦
                 </button>
                 <button type="button" className="vbtn vbtn--ghost" onClick={() => void onCopyReceipt()}>
-                  Copy Receipt JSON
+                  💠
                 </button>
               </div>
             </div>

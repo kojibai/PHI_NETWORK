@@ -1339,3 +1339,17 @@ html.verify-shell, body.verify-shell{
 .vfoot-right .vbtn{
   font-size: 16px;
 }
+.vreceipt-actions .vbtn{
+  display: grid !important;
+  place-items: center !important;
+  padding: 0 !important; /* optional: only if you want perfect circle math */
+}
+
+.vreceipt-actions .vbtn .vbtn-ic{
+  display: grid !important;
+  place-items: center !important;
+  width: 20px;
+  height: 20px;
+  margin: 0 !important;
+  transform: translateY(0) !important;
+}
