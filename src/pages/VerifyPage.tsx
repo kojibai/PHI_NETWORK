@@ -30,6 +30,7 @@ import { getKaiPulseEternalInt } from "../SovereignSolar";
 import { useKaiTicker } from "../hooks/useKaiTicker";
 import { useValuation } from "./SigilPage/useValuation";
 import type { SigilMetadataLite } from "../utils/valuation";
+import { jcsCanonicalize } from "../utils/jcs";
 
 /* ────────────────────────────────────────────────────────────────
    Utilities
@@ -163,6 +164,49 @@ function isSvgFile(file: File): boolean {
   const name = (file.name || "").toLowerCase();
   const type = (file.type || "").toLowerCase();
   return name.endsWith(".svg") || type === "image/svg+xml";
+}
+
+async function copyTextToClipboard(text: string): Promise<boolean> {
+  const value = text.trim();
+  if (!value) return false;
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(value);
+      return true;
+    }
+  } catch {
+    // fallback below
+  }
+
+  try {
+    const textarea = document.createElement("textarea");
+    textarea.value = value;
+    textarea.setAttribute("readonly", "");
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    textarea.style.pointerEvents = "none";
+    document.body.appendChild(textarea);
+    textarea.select();
+    textarea.setSelectionRange(0, textarea.value.length);
+    const ok = document.execCommand("copy");
+    document.body.removeChild(textarea);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+function ensureMetaTag(attr: "name" | "property", key: string, content: string): void {
+  if (typeof document === "undefined") return;
+  if (!content) return;
+  const selector = `meta[${attr}="${key}"]`;
+  let el = document.head?.querySelector(selector) as HTMLMetaElement | null;
+  if (!el) {
+    el = document.createElement("meta");
+    el.setAttribute(attr, key);
+    document.head?.appendChild(el);
+  }
+  el.setAttribute("content", content);
 }
 
 type BadgeKind = "idle" | "busy" | "ok" | "fail";
@@ -471,6 +515,34 @@ export default function VerifyPage(): ReactElement {
     return () => window.clearTimeout(t);
   }, [notice]);
 
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+    const statusLabel = result.status === "ok" ? "VERIFIED" : result.status === "error" ? "FAILED" : "STANDBY";
+    const origin = window.location.origin;
+    const slugValue = slug.raw || slugRaw || "";
+    const ogUrl = new URL(`${origin}/verify/${encodeURIComponent(slugValue)}`);
+    const ogImageUrl = new URL(`${origin}/api/og/verify`);
+    ogImageUrl.searchParams.set("slug", slugValue);
+    ogImageUrl.searchParams.set("status", statusLabel.toLowerCase());
+    if (result.status === "ok") {
+      ogImageUrl.searchParams.set("pulse", String(result.embedded.pulse ?? slug.pulse ?? ""));
+      ogImageUrl.searchParams.set("phiKey", result.derivedPhiKey ?? "");
+      if (result.embedded.chakraDay) ogImageUrl.searchParams.set("chakraDay", result.embedded.chakraDay);
+      if (authorSigVerified != null) ogImageUrl.searchParams.set("kas", authorSigVerified ? "1" : "0");
+      if (zkVerify != null) ogImageUrl.searchParams.set("g16", zkVerify ? "1" : "0");
+    }
+
+    document.title = `Proof of Breath™ — ${statusLabel}`;
+    ensureMetaTag("property", "og:title", `Proof of Breath™ — ${statusLabel}`);
+    ensureMetaTag("property", "og:description", `Proof of Breath™ • ${statusLabel} • Pulse ${slug.pulse ?? "—"}`);
+    ensureMetaTag("property", "og:url", ogUrl.toString());
+    ensureMetaTag("property", "og:image", ogImageUrl.toString());
+    ensureMetaTag("name", "twitter:card", "summary_large_image");
+    ensureMetaTag("name", "twitter:title", `Proof of Breath™ — ${statusLabel}`);
+    ensureMetaTag("name", "twitter:description", `Proof of Breath™ • ${statusLabel} • Pulse ${slug.pulse ?? "—"}`);
+    ensureMetaTag("name", "twitter:image", ogImageUrl.toString());
+  }, [authorSigVerified, result, slug.pulse, slug.raw, slugRaw, zkVerify]);
+
   const zkMeta = useMemo(() => {
     if (embeddedProof) return embeddedProof;
     if (result.status !== "ok") return null;
@@ -489,6 +561,10 @@ export default function VerifyPage(): ReactElement {
   const embeddedProofHints = useMemo(() => (zkMeta?.proofHints ? formatProofValue(zkMeta.proofHints) : ""), [zkMeta]);
 
   const proofVerifierUrl = useMemo(() => (proofCapsule ? buildVerifierUrl(proofCapsule.pulse, proofCapsule.kaiSignature) : ""), [proofCapsule]);
+  const currentVerifyUrl = useMemo(() => {
+    if (typeof window === "undefined") return "";
+    return window.location.href;
+  }, [slugRaw]);
 
   const remember = useCallback(async (text: string, label: string): Promise<void> => {
     const t = (text || "").trim();
@@ -786,6 +862,58 @@ export default function VerifyPage(): ReactElement {
   const verifierPhi = result.status === "ok" ? result.derivedPhiKey : "—";
   const verifierChakra = result.status === "ok" ? result.embedded.chakraDay : undefined;
 
+  const shareStatus = result.status === "ok" ? "VERIFIED" : result.status === "error" ? "FAILED" : "STANDBY";
+  const sharePhiShort = verifierPhi && verifierPhi !== "—" ? ellipsizeMiddle(verifierPhi, 12, 10) : "—";
+  const shareKas = sealKAS === "valid" ? "✅" : "❌";
+  const shareG16 = sealZK === "valid" ? "✅" : "❌";
+
+  const receiptJson = useMemo(() => {
+    if (!proofCapsule) return "";
+    const receipt = {
+      hashAlg: PROOF_HASH_ALG,
+      canon: PROOF_CANON,
+      proofCapsule,
+      capsuleHash,
+      verifierUrl: proofVerifierUrl || currentVerifyUrl,
+    } as const;
+
+    const extended: Record<string, unknown> = { ...receipt };
+    if (svgHash) extended.svgHash = svgHash;
+    if (bundleHash) extended.bundleHash = bundleHash;
+    if (embeddedProof?.shareUrl) extended.shareUrl = embeddedProof.shareUrl;
+    if (zkMeta?.zkPoseidonHash) {
+      extended.zkPoseidonHash = zkMeta.zkPoseidonHash;
+      extended.zkVerified = Boolean(zkVerify);
+      extended.zkScheme = "groth16-poseidon";
+    }
+
+    return jcsCanonicalize(extended as Parameters<typeof jcsCanonicalize>[0]);
+  }, [bundleHash, capsuleHash, currentVerifyUrl, embeddedProof?.shareUrl, proofCapsule, proofVerifierUrl, svgHash, zkMeta?.zkPoseidonHash, zkVerify]);
+
+  const onShareReceipt = useCallback(async () => {
+    const url = currentVerifyUrl || proofVerifierUrl;
+    const title = `Proof of Breath™ — ${shareStatus}`;
+    const text = `${shareStatus} • Pulse ${verifierPulse} • ΦKey ${sharePhiShort} • KAS ${shareKas} • G16 ${shareG16}`;
+
+    if (navigator.share) {
+      try {
+        await navigator.share({ title, text, url });
+        return;
+      } catch (err) {
+        if (err instanceof Error && err.name === "AbortError") return;
+      }
+    }
+
+    const ok = await copyTextToClipboard(url);
+    setNotice(ok ? "Link Remembered." : "Remember failed. Use manual remember.");
+  }, [currentVerifyUrl, proofVerifierUrl, shareG16, shareKas, sharePhiShort, shareStatus, verifierPulse]);
+
+  const onCopyReceipt = useCallback(async () => {
+    if (!receiptJson) return;
+    const ok = await copyTextToClipboard(receiptJson);
+    setNotice(ok ? "Proof JSON remembered." : "Remember failed. Use manual remember.");
+  }, [receiptJson]);
+
   const activePanelTitle =
     panel === "inhale" ? "Inhale" : panel === "capsule" ? "Vessel" : panel === "proof" ? "Proof" : panel === "zk" ? "ZK" : "Audit";
 
@@ -862,6 +990,20 @@ export default function VerifyPage(): ReactElement {
             <MiniField label="Pulse" value={kpiPulse} />
             <MiniField label="Φ-Key" value={kpiPhiKey === "—" ? "—" : ellipsizeMiddle(kpiPhiKey, 12, 10)} title={kpiPhiKey} />
           </div>
+
+          {proofCapsule ? (
+            <div className="vreceipt-row" aria-label="Proof actions">
+              <div className="vreceipt-label">Proof</div>
+              <div className="vreceipt-actions">
+                <button type="button" className="vbtn vbtn--ghost" onClick={() => void onShareReceipt()}>
+                   ➦
+                </button>
+                <button type="button" className="vbtn vbtn--ghost" onClick={() => void onCopyReceipt()}>
+                  💠
+                </button>
+              </div>
+            </div>
+          ) : null}
         </div>
       </header>
 
