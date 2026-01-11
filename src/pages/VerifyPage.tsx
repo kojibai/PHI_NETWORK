@@ -930,6 +930,32 @@ export default function VerifyPage(): ReactElement {
   }, [sharedReceipt, slug, svgText]);
 
   React.useEffect(() => {
+    let active = true;
+    const shareUrl = sharedReceipt?.shareUrl;
+    if (!shareUrl || svgText.trim()) return;
+
+    (async () => {
+      try {
+        const res = await fetch(shareUrl, { cache: "no-store" });
+        if (!res.ok) return;
+        const contentType = res.headers.get("content-type") ?? "";
+        const text = await res.text();
+        if (!active) return;
+        const trimmed = text.trim();
+        if (contentType.includes("image/svg+xml") || trimmed.startsWith("<svg")) {
+          setSvgText(text);
+        }
+      } catch {
+        return;
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [sharedReceipt?.shareUrl, svgText]);
+
+  React.useEffect(() => {
     if (result.status !== "ok" || !bundleHash) {
       setReceiveSig(null);
       setReceiveSigVerified(null);
