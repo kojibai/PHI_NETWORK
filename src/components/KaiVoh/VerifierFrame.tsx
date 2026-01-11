@@ -26,7 +26,9 @@ import {
   PROOF_CANON,
   PROOF_HASH_ALG,
   type ProofCapsuleV1,
+  type ProofFrameV1,
 } from "./verifierProof";
+import type { AuthorSig } from "../../utils/authorSig";
 
 export interface VerifierFrameProps {
   pulse: number;
@@ -36,6 +38,14 @@ export interface VerifierFrameProps {
   chakraDay?: ChakraDay | string;
   compact?: boolean;
   verifierBaseUrl?: string;
+  svgHash: string;
+  bundleHash?: string;
+  shareUrl?: string;
+  authorSig?: AuthorSig | null;
+  zkPoseidonHash?: string;
+  zkProof?: unknown;
+  proofHints?: unknown;
+  zkPublicInputs?: unknown;
 }
 
 function truncateMiddle(value: string, head = 10, tail = 10): string {
@@ -78,25 +88,7 @@ function RememberIcon(): ReactElement {
   );
 }
 
-export type ProofCopy = Readonly<{
-  v: "KVPF-1";
-  hashAlg: string;
-  canon: string;
-
-  verifierUrl: string;
-  verifierBaseUrl: string;
-  verifierSlug: string;
-
-  pulse: number;
-  chakraDay?: ChakraDay;
-
-  kaiSignature: string;
-  kaiSignatureShort: string;
-  phiKey: string;
-
-  proofCapsule: ProofCapsuleV1 | null;
-  capsuleHash?: string;
-}>;
+export type ProofCopy = ProofFrameV1;
 
 type CapsuleHashState = Readonly<{ key: string; hash: string }>;
 type QrState = Readonly<{ key: string; dataUrl: string }>;
@@ -109,6 +101,14 @@ export default function VerifierFrame({
   chakraDay,
   compact = false,
   verifierBaseUrl,
+  svgHash,
+  bundleHash,
+  shareUrl,
+  authorSig,
+  zkPoseidonHash,
+  zkProof,
+  proofHints,
+  zkPublicInputs,
 }: VerifierFrameProps): ReactElement {
   const [copyLinkStatus, setCopyLinkStatus] = useState<"idle" | "ok" | "error">("idle");
   const [copyProofStatus, setCopyProofStatus] = useState<"idle" | "ok" | "error">("idle");
@@ -155,8 +155,30 @@ export default function VerifierFrame({
       phiKey: phiKeyClean,
       proofCapsule: capsule,
       capsuleHash: undefined,
+      svgHash,
+      bundleHash,
+      shareUrl,
+      authorSig,
+      zkPoseidonHash,
+      zkProof,
+      proofHints,
+      zkPublicInputs,
     };
-  }, [chakraDay, kaiSignature, phiKey, pulse, verifierBaseUrl]);
+  }, [
+    authorSig,
+    bundleHash,
+    chakraDay,
+    kaiSignature,
+    phiKey,
+    proofHints,
+    pulse,
+    shareUrl,
+    svgHash,
+    verifierBaseUrl,
+    zkPoseidonHash,
+    zkProof,
+    zkPublicInputs,
+  ]);
 
   const capsuleKey = proof.proofCapsule ? proof.verifierSlug : null;
   const capsuleHash = capsuleKey && capsuleHashState?.key === capsuleKey ? capsuleHashState.hash : null;

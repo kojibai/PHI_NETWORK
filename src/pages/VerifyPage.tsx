@@ -30,7 +30,6 @@ import { getKaiPulseEternalInt } from "../SovereignSolar";
 import { useKaiTicker } from "../hooks/useKaiTicker";
 import { useValuation } from "./SigilPage/useValuation";
 import type { SigilMetadataLite } from "../utils/valuation";
-import { jcsCanonicalize } from "../utils/jcs";
 
 /* ────────────────────────────────────────────────────────────────
    Utilities
@@ -152,6 +151,10 @@ function bytesToHex(bytes: Uint8Array): string {
     .join("");
 }
 
+function looksLikeBundleHash(value: string): boolean {
+  return /^[0-9a-f]{64}$/i.test((value || "").trim());
+}
+
 function bundleHashFromAuthorSig(authorSig: KASAuthorSig): string | null {
   try {
     return bytesToHex(base64UrlDecode(authorSig.challenge));
@@ -207,6 +210,15 @@ function ensureMetaTag(attr: "name" | "property", key: string, content: string):
     document.head?.appendChild(el);
   }
   el.setAttribute("content", content);
+}
+
+function buildShareUrl(bundleHash: string): string {
+  if (typeof window === "undefined") return "";
+  const base = typeof import.meta !== "undefined" && typeof import.meta.env?.BASE_URL === "string" ? import.meta.env.BASE_URL : "/";
+  const trimmed = base.replace(/\/+$/, "");
+  const prefix = trimmed.length > 0 ? trimmed : "";
+  const path = `${prefix}/s/${encodeURIComponent(bundleHash)}`;
+  return new URL(path, window.location.origin).toString();
 }
 
 type BadgeKind = "idle" | "busy" | "ok" | "fail";
@@ -565,6 +577,8 @@ export default function VerifyPage(): ReactElement {
     if (typeof window === "undefined") return "";
     return window.location.href;
   }, [slugRaw]);
+  const shareUrl = useMemo(() => (bundleHash ? buildShareUrl(bundleHash) : ""), [bundleHash]);
+  const shareSlugUrl = useMemo(() => (looksLikeBundleHash(slug.raw) ? buildShareUrl(slug.raw) : ""), [slug.raw]);
 
   const remember = useCallback(async (text: string, label: string): Promise<void> => {
     const t = (text || "").trim();
@@ -867,33 +881,26 @@ export default function VerifyPage(): ReactElement {
   const shareKas = sealKAS === "valid" ? "✅" : "❌";
   const shareG16 = sealZK === "valid" ? "✅" : "❌";
 
-  const receiptJson = useMemo(() => {
-    if (!proofCapsule) return "";
-    const receipt = {
-      hashAlg: PROOF_HASH_ALG,
-      canon: PROOF_CANON,
-      proofCapsule,
-      capsuleHash,
-      verifierUrl: proofVerifierUrl || currentVerifyUrl,
-    } as const;
-
-    const extended: Record<string, unknown> = { ...receipt };
-    if (svgHash) extended.svgHash = svgHash;
-    if (bundleHash) extended.bundleHash = bundleHash;
-    if (embeddedProof?.shareUrl) extended.shareUrl = embeddedProof.shareUrl;
-    if (zkMeta?.zkPoseidonHash) {
-      extended.zkPoseidonHash = zkMeta.zkPoseidonHash;
-      extended.zkVerified = Boolean(zkVerify);
-      extended.zkScheme = "groth16-poseidon";
-    }
-
-    return jcsCanonicalize(extended as Parameters<typeof jcsCanonicalize>[0]);
-  }, [bundleHash, capsuleHash, currentVerifyUrl, embeddedProof?.shareUrl, proofCapsule, proofVerifierUrl, svgHash, zkMeta?.zkPoseidonHash, zkVerify]);
+  const receiptText = useMemo(() => {
+    if (!proofCapsule || !shareUrl) return "";
+    const bundleShort = bundleHash ? ellipsizeMiddle(bundleHash, 10, 8) : "—";
+    const svgShort = svgHash ? ellipsizeMiddle(svgHash, 10, 8) : "—";
+    const lines = [
+      `Proof of Breath™ — ${shareStatus}`,
+      shareUrl,
+      `Pulse ${verifierPulse}`,
+      `ΦKey ${sharePhiShort}`,
+      `bundleHash ${bundleShort}`,
+      `svgHash ${svgShort}`,
+      `KAS ${shareKas} • G16 ${shareG16}`,
+    ];
+    return lines.filter(Boolean).join("\n");
+  }, [bundleHash, proofCapsule, shareG16, shareKas, sharePhiShort, shareStatus, shareUrl, svgHash, verifierPulse]);
 
   const onShareReceipt = useCallback(async () => {
-    const url = currentVerifyUrl || proofVerifierUrl;
+    const url = shareUrl || currentVerifyUrl || proofVerifierUrl;
     const title = `Proof of Breath™ — ${shareStatus}`;
-    const text = `${shareStatus} • Pulse ${verifierPulse} • ΦKey ${sharePhiShort} • KAS ${shareKas} • G16 ${shareG16}`;
+    const text = `VERIFIED LINK • Pulse ${verifierPulse} • ΦKey ${sharePhiShort} • bundle ${bundleHash ? ellipsizeMiddle(bundleHash, 10, 8) : "—"} • KAS ${shareKas} • G16 ${shareG16}`;
 
     if (navigator.share) {
       try {
@@ -905,14 +912,14 @@ export default function VerifyPage(): ReactElement {
     }
 
     const ok = await copyTextToClipboard(url);
-    setNotice(ok ? "Link Remembered." : "Remember failed. Use manual remember.");
-  }, [currentVerifyUrl, proofVerifierUrl, shareG16, shareKas, sharePhiShort, shareStatus, verifierPulse]);
+    setNotice(ok ? "Share link remembered." : "Remember failed. Use manual remember.");
+  }, [bundleHash, currentVerifyUrl, proofVerifierUrl, shareG16, shareKas, sharePhiShort, shareStatus, shareUrl, verifierPulse]);
 
   const onCopyReceipt = useCallback(async () => {
-    if (!receiptJson) return;
-    const ok = await copyTextToClipboard(receiptJson);
-    setNotice(ok ? "Proof JSON remembered." : "Remember failed. Use manual remember.");
-  }, [receiptJson]);
+    if (!receiptText) return;
+    const ok = await copyTextToClipboard(receiptText);
+    setNotice(ok ? "Verified receipt remembered." : "Remember failed. Use manual remember.");
+  }, [receiptText]);
 
   const activePanelTitle =
     panel === "inhale" ? "Inhale" : panel === "capsule" ? "Vessel" : panel === "proof" ? "Proof" : panel === "zk" ? "ZK" : "Audit";
@@ -960,6 +967,14 @@ export default function VerifyPage(): ReactElement {
             <span className="vlink-k">Path</span>
             <code className="vlink-v mono">/verify/{slug.raw || "—"}</code>
           </div>
+          {shareSlugUrl && !svgText.trim() ? (
+            <div className="vlink" aria-label="Share link hint">
+              <span className="vlink-k">Share</span>
+              <a className="vlink-v mono" href={shareSlugUrl}>
+                {shareSlugUrl}
+              </a>
+            </div>
+          ) : null}
         </div>
 
         <div className="vhead-right">
@@ -992,17 +1007,32 @@ export default function VerifyPage(): ReactElement {
           </div>
 
           {proofCapsule ? (
-            <div className="vreceipt-row" aria-label="Proof actions">
-              <div className="vreceipt-label">Proof</div>
-              <div className="vreceipt-actions">
-                <button type="button" className="vbtn vbtn--ghost" onClick={() => void onShareReceipt()}>
-                   ➦
-                </button>
-                <button type="button" className="vbtn vbtn--ghost" onClick={() => void onCopyReceipt()}>
-                  💠
-                </button>
+            <>
+              <div className="vreceipt-row" aria-label="Proof actions">
+                <div className="vreceipt-label">Share</div>
+                <div className="vreceipt-actions">
+                  <button type="button" className="vbtn vbtn--ghost" onClick={() => void onShareReceipt()}>
+                     ➦
+                  </button>
+                  <button type="button" className="vbtn vbtn--ghost" onClick={() => void onCopyReceipt()}>
+                    💠
+                  </button>
+                </div>
               </div>
-            </div>
+              {shareUrl ? (
+                <div className="vreceipt-row" aria-label="Primary share link">
+                  <div className="vreceipt-label">Share link</div>
+                  <div className="vreceipt-actions">
+                    <a className="vbtn vbtn--ghost" href={shareUrl} target="_blank" rel="noreferrer">
+                      /s/{bundleHash ? bundleHash.slice(0, 10) : "—"}
+                    </a>
+                    <button type="button" className="vbtn vbtn--ghost" onClick={() => void remember(shareUrl, "Share link")}>
+                      💠
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+            </>
           ) : null}
         </div>
       </header>
@@ -1112,7 +1142,20 @@ export default function VerifyPage(): ReactElement {
               <div className="vcard-body vfit">
                 <div className="vgrid-2 vgrid-2--capsule">
                   <div className="vframe-wrap">
-                    <VerifierFrame pulse={verifierPulse} kaiSignature={verifierSig} phiKey={verifierPhi} chakraDay={verifierChakra} compact />
+                  <VerifierFrame
+                    pulse={verifierPulse}
+                    kaiSignature={verifierSig}
+                    phiKey={verifierPhi}
+                    chakraDay={verifierChakra}
+                    compact
+                    svgHash={svgHash}
+                    bundleHash={bundleHash || undefined}
+                    authorSig={embeddedProof?.authorSig ?? null}
+                    zkPoseidonHash={zkMeta?.zkPoseidonHash ?? undefined}
+                    zkProof={zkMeta?.zkProof}
+                    proofHints={zkMeta?.proofHints}
+                    zkPublicInputs={zkMeta?.zkPublicInputs}
+                  />
                   </div>
 
                   <div className="vstack">

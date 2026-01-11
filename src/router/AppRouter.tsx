@@ -13,20 +13,20 @@ import KaiSplashScreen from "../components/KaiSplashScreen";
 
 // Standalone pages stay lazy (RouteLoader allowed here)
 const SigilFeedPage = React.lazy(() => import("../pages/SigilFeedPage"));
-const SigilPage = React.lazy(() => import("../pages/SigilPage/SigilPage"));
 const PShort = React.lazy(() => import("../pages/PShort"));
 const VerifyPage = React.lazy(() => import("../pages/VerifyPage"));
 const VerifyEmbedPage = React.lazy(() => import("../pages/VerifyEmbedPage"));
+const ShareVerifyPage = React.lazy(() => import("../pages/ShareVerifyPage"));
 
 // ✅ HOME MUST BE INSTANT → eager import (no Suspense fallback)
 import VerifierStamper from "../components/VerifierStamper/VerifierStamper";
 
 const PREFETCH_LAZY_ROUTES: ReadonlyArray<() => Promise<unknown>> = [
   () => import("../pages/SigilFeedPage"),
-  () => import("../pages/SigilPage/SigilPage"),
   () => import("../pages/PShort"),
   () => import("../pages/VerifyPage"),
   () => import("../pages/VerifyEmbedPage"),
+  () => import("../pages/ShareVerifyPage"),
 ];
 
 function shouldPrefetchLazyRoutes(): boolean {
@@ -126,8 +126,8 @@ export default function AppRouter(): React.JSX.Element {
 
       <Routes>
         {/* ───────────── Standalone routes (RouteLoader is allowed here) ───────────── */}
-        <Route path="s" element={withStandaloneSuspense(<SigilPage />)} />
-        <Route path="s/:hash" element={withStandaloneSuspense(<SigilPage />)} />
+        <Route path="s" element={withStandaloneSuspense(<ShareVerifyPage />)} />
+        <Route path="s/:hash" element={withStandaloneSuspense(<ShareVerifyPage />)} />
 
         <Route path="stream" element={withStandaloneSuspense(<SigilFeedPage />)} />
         <Route path="stream/p/:token" element={withStandaloneSuspense(<SigilFeedPage />)} />

@@ -980,6 +980,9 @@ function KaiVohFlow(): ReactElement {
             phiKey={verifierData.phiKey}
             chakraDay={verifierData.chakraDay}
             compact={false}
+            svgHash={verifierData.svgHash}
+            bundleHash={verifierData.bundleHash}
+            authorSig={verifierData.authorSig}
           />
 
           <p className="kv-verify-copy">

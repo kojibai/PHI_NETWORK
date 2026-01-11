@@ -137,6 +137,35 @@ export type ProofCapsuleV1 = Readonly<{
   verifierSlug: string;
 }>;
 
+export type ProofFrameV1 = Readonly<{
+  v: "KVPF-1";
+  hashAlg: string;
+  canon: string;
+
+  verifierUrl: string;
+  verifierBaseUrl: string;
+  verifierSlug: string;
+
+  pulse: number;
+  chakraDay?: ChakraDay;
+
+  kaiSignature: string;
+  kaiSignatureShort: string;
+  phiKey: string;
+
+  proofCapsule: ProofCapsuleV1 | null;
+  capsuleHash?: string;
+
+  svgHash: string;
+  bundleHash?: string;
+  shareUrl?: string;
+  authorSig?: AuthorSig | null;
+  zkPoseidonHash?: string;
+  zkProof?: unknown;
+  proofHints?: unknown;
+  zkPublicInputs?: unknown;
+}>;
+
 /**
  * Deterministic canonical JSON (sorted keys; UTF-8; no whitespace).
  * This prevents “same data, different JSON order” from changing the hash.
