@@ -270,6 +270,11 @@ html.verify-shell, body.verify-shell{
 
 /* KPIs */
 .vkpis{ display:grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.vreceipt-row{ display:flex; align-items:center; justify-content:space-between; gap: 12px; margin-top: 12px; flex-wrap:wrap; }
+.vreceipt-label{ font-size: 0.66rem; letter-spacing: 0.34em; text-transform: uppercase; color: rgba(190,220,255,0.7); }
+.vreceipt-actions{ display:flex; gap: 8px; flex-wrap:wrap; }
+.vbtn--ghost{ padding: 8px 12px; border-radius: 999px; font-size: 0.78rem; background: rgba(14,24,36,0.72); border: 1px solid rgba(120,180,255,0.22); color: rgba(230,242,255,0.92); }
+.vbtn--ghost:hover{ border-color: rgba(120,200,255,0.45); }
 
 .mini{
   border-radius: 14px;
@@ -301,6 +306,7 @@ html.verify-shell, body.verify-shell{
   .vseals{ justify-content: flex-start; }
   .official{ justify-self: start; }
   .vkpis{ grid-template-columns: 1fr; }
+  .vreceipt-row{ align-items:flex-start; }
 }
 
 @media (max-width: 600px){

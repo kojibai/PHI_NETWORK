@@ -16,6 +16,7 @@ const SigilFeedPage = React.lazy(() => import("../pages/SigilFeedPage"));
 const SigilPage = React.lazy(() => import("../pages/SigilPage/SigilPage"));
 const PShort = React.lazy(() => import("../pages/PShort"));
 const VerifyPage = React.lazy(() => import("../pages/VerifyPage"));
+const VerifyEmbedPage = React.lazy(() => import("../pages/VerifyEmbedPage"));
 
 // ✅ HOME MUST BE INSTANT → eager import (no Suspense fallback)
 import VerifierStamper from "../components/VerifierStamper/VerifierStamper";
@@ -25,6 +26,7 @@ const PREFETCH_LAZY_ROUTES: ReadonlyArray<() => Promise<unknown>> = [
   () => import("../pages/SigilPage/SigilPage"),
   () => import("../pages/PShort"),
   () => import("../pages/VerifyPage"),
+  () => import("../pages/VerifyEmbedPage"),
 ];
 
 function shouldPrefetchLazyRoutes(): boolean {
@@ -141,6 +143,7 @@ export default function AppRouter(): React.JSX.Element {
         <Route path="p" element={withStandaloneSuspense(<PShort />)} />
 
         <Route path="verify/*" element={withStandaloneSuspense(<VerifyPage />)} />
+        <Route path="embed/verify/:slug" element={withStandaloneSuspense(<VerifyEmbedPage />)} />
 
         {/* ───────────── App shell routes (NO RouteLoader, home = instant) ───────────── */}
         <Route element={<AppChrome />}>

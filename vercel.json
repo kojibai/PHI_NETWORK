@@ -6,6 +6,7 @@
     { "source": "/profile", "destination": "/" },
     { "source": "/success", "destination": "/" },
     { "source": "/s/:hash", "destination": "/" },
+    { "source": "/verify/:slug", "destination": "/api/verify?slug=:slug" },
 
     { "source": "/api/(.*)", "destination": "/api/$1" },
     { "source": "/_next/(.*)", "destination": "/_next/$1" },
