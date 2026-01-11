@@ -298,7 +298,7 @@ export default function VerifierFrame({
               className={sealOk ? "kv-chip kv-chip--status kv-chip--ok" : "kv-chip kv-chip--status"}
               title="Seal status"
             >
-              <span className="kv-chip__txt">{sealOk ? "OFFICIAL SEAL" : "INCOMPLETE"}</span>
+              <span className="kv-chip__txt">{sealOk ? "SOVEREIGN SEAL" : "INCOMPLETE"}</span>
             </div>
           </div>
         </div>

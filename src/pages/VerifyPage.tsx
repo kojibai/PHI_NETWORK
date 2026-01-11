@@ -1200,7 +1200,7 @@ export default function VerifyPage(): ReactElement {
             <OfficialBadge kind={badge.kind} title={badge.title} subtitle={badge.subtitle} />
           </div>
 
-          <div className="vseals" aria-label="Official seals">
+          <div className="vseals" aria-label="Sovereign seals">
             <SealPill label="KAS" state={sealKAS} detail={embeddedProof?.authorSig ? "Author seal (WebAuthn KAS)" : "No author seal present"} />
             <SealPill label="G16" state={sealZK} detail={zkMeta?.zkPoseidonHash ? "Groth16 + Poseidon rail" : "No ZK rail present"} />
             {result.status === "ok" && displayPhi != null ? (
