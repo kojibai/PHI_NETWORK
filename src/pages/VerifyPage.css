@@ -145,8 +145,9 @@ html.verify-shell, body.verify-shell{
 .vtitle{
   font-weight: 1000;
   letter-spacing: 0.02em;
-  font-size: clamp(1.02rem, 2.1vw, 1.42rem);
+  font-size: clamp(0.86rem, 3.8vw, 1.42rem);
   text-shadow: 0 0 24px rgba(55,255,228,0.10);
+  white-space: nowrap;
 }
 
 .vsub{
@@ -311,11 +312,16 @@ html.verify-shell, body.verify-shell{
 
 @media (max-width: 600px){
   .vhead{
-    padding: calc(var(--pad) - 2px);
-    gap: 8px;
+    padding: calc(var(--pad) - 3px);
+    gap: 6px;
   }
-  .vtitle{ font-size: 0.98rem; }
+  .vhead-left,
+  .vhead-right{ gap: 6px; }
+  .vtitle{ font-size: clamp(0.78rem, 4.6vw, 1.02rem); letter-spacing: 0.015em; }
   .vsub{ font-size: 0.78rem; }
+  .vlink{ padding: 6px 8px; gap: 8px; }
+  .vlink-k{ font-size: 0.68rem; }
+  .vlink-v{ font-size: 0.82rem; }
   .official{
     width: 100%;
     padding: 8px 10px;
