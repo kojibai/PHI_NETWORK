@@ -51,9 +51,49 @@ async function readIndexHtml(): Promise<string> {
   }
 }
 
-export default async function handler(req: { url?: string }, res: { setHeader: (key: string, value: string) => void; end: (body: string) => void; statusCode: number }): Promise<void> {
-  const base = "https://verahai.com";
-  const requestUrl = new URL(req.url ?? "/", base);
+type HeaderValue = string | string[] | undefined;
+
+function firstHeader(value: HeaderValue): string | undefined {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) return value[0];
+  return undefined;
+}
+
+function getHeader(headers: Record<string, HeaderValue> | undefined, key: string): string | undefined {
+  if (!headers) return undefined;
+  // Node/Next headers are lowercased, but be safe.
+  const direct = headers[key] ?? headers[key.toLowerCase()] ?? headers[key.toUpperCase()];
+  return firstHeader(direct);
+}
+
+function inferOrigin(req: { headers?: Record<string, HeaderValue> }): string {
+  const headers = req.headers;
+
+  // Prefer forwarded headers (Vercel/Cloudflare/etc.)
+  const xfProtoRaw = getHeader(headers, "x-forwarded-proto");
+  const xfHostRaw = getHeader(headers, "x-forwarded-host");
+
+  const proto = (xfProtoRaw ?? "https").split(",")[0]?.trim() || "https";
+  const host =
+    (xfHostRaw ?? getHeader(headers, "host") ?? process.env.VERCEL_URL ?? "").split(",")[0]?.trim();
+
+  if (host) return `${proto}://${host}`;
+
+  // Last resort: local/dev fallback
+  return "http://localhost:3000";
+}
+
+export default async function handler(
+  req: { url?: string; headers?: Record<string, HeaderValue> },
+  res: {
+    setHeader: (key: string, value: string) => void;
+    end: (body: string) => void;
+    statusCode: number;
+  }
+): Promise<void> {
+  const origin = inferOrigin(req);
+
+  const requestUrl = new URL(req.url ?? "/", origin);
   const slugRaw = requestUrl.searchParams.get("slug") ?? "";
   const slug = parseSlug(slugRaw);
   const status = statusFromQuery(requestUrl.searchParams.get("status"));
@@ -63,7 +103,6 @@ export default async function handler(req: { url?: string }, res: { setHeader: (
   const title = `Proof of Breath™ — ${statusLabel}`;
   const description = `Proof of Breath™ • ${statusLabel} • Pulse ${pulseLabel}`;
 
-  const origin = requestUrl.origin || base;
   const canonicalSlug = slug.raw || slugRaw;
   const verifyUrl = `${origin}/verify/${encodeURIComponent(canonicalSlug)}`;
 
