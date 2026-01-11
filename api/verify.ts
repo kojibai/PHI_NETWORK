@@ -1,7 +1,28 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import { parseSlug } from "../src/utils/verifySigil";
+type SlugInfo = {
+  raw: string;
+  pulse: number | null;
+  shortSig: string | null;
+};
+
+function parseSlug(rawSlug: string): SlugInfo {
+  let raw = (rawSlug || "").trim();
+  try {
+    raw = decodeURIComponent(raw);
+  } catch {
+    // Keep raw as-is when decoding fails (avoid crashing the function).
+  }
+  const m = raw.match(/^(\d+)-([A-Za-z0-9]+)$/);
+  if (!m) return { raw, pulse: null, shortSig: null };
+
+  const pulseNum = Number(m[1]);
+  const pulse = Number.isFinite(pulseNum) && pulseNum > 0 ? pulseNum : null;
+  const shortSig = m[2] ? String(m[2]) : null;
+
+  return { raw, pulse, shortSig };
+}
 
 function statusFromQuery(value: string | null): "verified" | "failed" | "standby" {
   const v = value?.toLowerCase().trim();
