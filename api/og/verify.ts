@@ -183,7 +183,8 @@ function headerValue(
 function requestOrigin(req: { headers?: Record<string, string | string[] | undefined> }): string {
   const protoHeader = headerValue(req.headers, "x-forwarded-proto") ?? "https";
   const proto = protoHeader.split(",")[0]?.trim() || "https";
-  const host = headerValue(req.headers, "x-forwarded-host") ?? headerValue(req.headers, "host");
+  const hostHeader = headerValue(req.headers, "x-forwarded-host") ?? headerValue(req.headers, "host");
+  const host = hostHeader?.split(",")[0]?.trim();
   if (!host) return "http://localhost";
   return `${proto}://${host}`;
 }
