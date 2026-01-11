@@ -1,0 +1,1 @@
+import{gi as e,ui as t}from"./index-B4Gfr4Al.js";var n=e(t(),1);const r=(0,n.createContext)(null);function i(){let e=(0,n.useContext)(r);if(!e)throw Error(`useSigilAuth must be used within <SigilAuthProvider>.`);return e}export{i as n,r as t};
