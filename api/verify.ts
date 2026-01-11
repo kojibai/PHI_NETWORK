@@ -39,7 +39,25 @@ function escapeHtml(value: string): string {
     .replaceAll("'", "&#39;");
 }
 
-async function readIndexHtml(): Promise<string> {
+function buildFallbackHtml(meta: string): string {
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    ${meta}
+  </head>
+  <body>
+    <main style="font-family: system-ui, sans-serif; padding: 24px;">
+      <h1>Verify</h1>
+      <p>Loading the verifier shell failed. Please refresh or open the home page.</p>
+      <p><a href="/">Open home</a></p>
+    </main>
+  </body>
+</html>`;
+}
+
+async function readIndexHtml(origin: string): Promise<string> {
   const root = process.cwd();
   const distPath = path.join(root, "dist", "index.html");
   const fallbackPath = path.join(root, "index.html");
@@ -47,7 +65,23 @@ async function readIndexHtml(): Promise<string> {
   try {
     return await fs.readFile(distPath, "utf8");
   } catch {
-    return await fs.readFile(fallbackPath, "utf8");
+    try {
+      return await fs.readFile(fallbackPath, "utf8");
+    } catch {
+      try {
+        const res = await fetch(`${origin}/index.html`);
+        if (res.ok) return await res.text();
+      } catch {
+        // ignore
+      }
+      try {
+        const res = await fetch(`${origin}/`);
+        if (res.ok) return await res.text();
+      } catch {
+        // ignore
+      }
+      return "";
+    }
   }
 }
 
@@ -117,8 +151,12 @@ export default async function handler(
     image: escapeHtml(ogUrl.toString()),
   });
 
-  const html = await readIndexHtml();
-  const withMeta = html.includes("</head>") ? html.replace("</head>", `${meta}</head>`) : `${meta}${html}`;
+  const html = await readIndexHtml(origin);
+  const withMeta = html
+    ? html.includes("</head>")
+      ? html.replace("</head>", `${meta}</head>`)
+      : `${meta}${html}`
+    : buildFallbackHtml(meta);
 
   res.statusCode = 200;
   res.setHeader("Content-Type", "text/html; charset=utf-8");
