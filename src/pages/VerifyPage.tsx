@@ -760,7 +760,11 @@ export default function VerifyPage(): ReactElement {
           bundleHash: sharedReceipt.bundleHash,
           shareUrl: sharedReceipt.shareUrl,
           verifierUrl: sharedReceipt.verifierUrl,
+          authorSig: sharedReceipt.authorSig,
           zkPoseidonHash: sharedReceipt.zkPoseidonHash,
+          zkProof: sharedReceipt.zkProof,
+          proofHints: sharedReceipt.proofHints,
+          zkPublicInputs: sharedReceipt.zkPublicInputs,
         });
         setAuthorSigVerified(null);
         return;
