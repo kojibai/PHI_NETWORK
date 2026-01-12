@@ -1439,7 +1439,7 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
       };
 
       const sealedSvg = embedProofMetadata(svgString, proofBundle);
-      const baseName = `kai-voh_pulse-${pulseNum}_${kaiSignatureShort}`;
+      const baseName = `☤KAI-Sigil_Glyph_v1-${pulseNum}_${kaiSignatureShort}_${phiKey}`;
       const zip = new JSZip();
       zip.file(`${baseName}.svg`, sealedSvg);
       zip.file(`${baseName}_proof_bundle.json`, JSON.stringify(proofBundle, null, 2));
