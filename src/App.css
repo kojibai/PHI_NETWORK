@@ -987,6 +987,24 @@ a:hover {
   -webkit-backdrop-filter: blur(var(--blur-soft)) saturate(140%);
 }
 
+@media (max-width: 520px) {
+  .app-topbar {
+    padding: 0.7rem clamp(0.7rem, 3vw, 1.1rem);
+    gap: clamp(0.35rem, 1.2vw, 0.6rem);
+  }
+
+  .brand__mark {
+    width: 36px;
+    height: 36px;
+    border-radius: 12px;
+  }
+
+  .brand__mark-img {
+    width: 22px;
+    height: 22px;
+  }
+}
+
 @supports not ((backdrop-filter: blur(1px))) {
   .app-topbar {
     background: rgba(2, 6, 18, 0.92);
@@ -999,6 +1017,14 @@ a:hover {
   align-items: center;
   gap: 0.75rem;
   min-width: 0;
+}
+
+.topbar-left {
+  flex: 1 1 auto;
+}
+
+.topbar-right {
+  flex: 0 1 auto;
 }
 
 .brand {
@@ -1081,17 +1107,18 @@ a:hover {
   display: grid;
   gap: 0.12rem;
   min-width: 0;
+  flex: 1 1 auto;
 }
 
 .brand__title {
-  font-size: clamp(0.96rem, 0.78rem + 0.7vw, 1.28rem);
+  font-size: clamp(0.62rem, 2.3vw, 1.28rem);
   font-weight: 860;
-  letter-spacing: 0.018em;
+  letter-spacing: clamp(0.01em, 0.4vw, 0.018em);
   line-height: 1.05;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: min(52vw, 360px);
+  overflow: visible;
+  text-overflow: unset;
+  max-width: 100%;
 
   color: transparent;
   -webkit-text-fill-color: transparent;
@@ -1138,15 +1165,15 @@ a:hover {
 }
 
 .brand__subtitle {
-  font-size: clamp(0.74rem, 0.66rem + 0.35vw, 0.92rem);
+  font-size: clamp(0.54rem, 2vw, 0.92rem);
   font-weight: 720;
-  letter-spacing: 0.11em;
+  letter-spacing: clamp(0.03em, 0.9vw, 0.11em);
   text-transform: uppercase;
   line-height: 1.15;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: min(52vw, 360px);
+  overflow: visible;
+  text-overflow: unset;
+  max-width: 100%;
 
   background-image: linear-gradient(
     105deg,
@@ -3914,22 +3941,10 @@ html[data-perf="low"] .kk-pop__panel {
   align-items: center;
   min-width: 0;
   max-width: 100%;
-  overflow-x: auto;
-  overflow-y: hidden;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: thin;
-  scroll-behavior: smooth;
-  padding-bottom: 2px; /* keeps scrollbar off text */
-}
-.live-scroll::-webkit-scrollbar{
-  height: 6px;
-}
-.live-scroll::-webkit-scrollbar-thumb{
-  background: rgba(120,220,255,0.35);
-  border-radius: 999px;
-}
-.live-scroll::-webkit-scrollbar-track{
-  background: transparent;
+  overflow: visible;
+  -webkit-overflow-scrolling: auto;
+  scrollbar-width: none;
+  scroll-behavior: auto;
 }
 
 .live-orb{ flex: 0 0 auto; }
@@ -3943,7 +3958,7 @@ html[data-perf="low"] .kk-pop__panel {
   white-space: nowrap;      /* hard lock: one line */
   line-height: 1;
   min-width: 0;             /* allow shrink */
-  overflow: hidden;         /* safety: never break layout */
+  overflow: visible;        /* show full text; rely on font scaling */
 }
 
 /* One typographic system + tabular numerics = baseline stays perfect */
@@ -3962,27 +3977,27 @@ html[data-perf="low"] .kk-pop__panel {
 
 /* ✅ Auto-shrink text size + spacing as viewport shrinks */
 .live-title{
-  font-size: clamp(10px, 2.2vw, 13px);
-  letter-spacing: clamp(0.08em, 0.6vw, 0.14em);
+  font-size: clamp(7px, 1.9vw, 13px);
+  letter-spacing: clamp(0.04em, 0.55vw, 0.14em);
 }
 
 .live-meta{
-  font-size: clamp(9px, 2.0vw, 12px);
-  letter-spacing: clamp(0.06em, 0.55vw, 0.12em);
+  font-size: clamp(6px, 1.7vw, 12px);
+  letter-spacing: clamp(0.03em, 0.5vw, 0.12em);
   opacity: 0.86;
 }
 
-/* Resist squeezing by letting the pill scroll instead of wrapping */
+/* Allow a touch more width on smaller screens. */
 @media (max-width: 560px){
   .topbar-live{ max-width: 84vw; }
   .live-scroll{ margin-right: -2px; }
 }
 
-/* If meta still gets long, it trims (still ONE line) */
+/* Ensure the meta keeps all digits visible (shrink instead of trimming). */
 .live-meta{
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow: visible;
+  text-overflow: unset;
 }
 
 /* Ultra-tight phones: tighten spacing more */
