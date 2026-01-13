@@ -326,7 +326,8 @@ export async function signBundleHash(phiKey: string, bundleHash: string): Promis
   } catch (err) {
     const name = err instanceof DOMException ? err.name : "";
     // If the cached credId is stale (e.g., cleared by browser), refresh and retry once.
-    if (name === "NotAllowedError" || name === "NotFoundError" || name === "InvalidStateError") {
+        // NOTE: NotAllowedError commonly indicates cancel/timeout; do not clear cached passkey.
+    if (name === "NotFoundError" || name === "InvalidStateError") {
       clearStored(phiKey);
       const refreshed = await ensurePasskey(phiKey);
       return await signWithPasskey(refreshed);
