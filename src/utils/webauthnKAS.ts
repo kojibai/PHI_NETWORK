@@ -24,6 +24,17 @@ function isWebAuthnSupported(): boolean {
   );
 }
 
+async function tryRequestPersistentStorage(): Promise<void> {
+  try {
+    if (!navigator.storage?.persist) return;
+    const alreadyPersisted = await navigator.storage.persisted?.();
+    if (alreadyPersisted) return;
+    await navigator.storage.persist();
+  } catch {
+    // Best-effort only.
+  }
+}
+
 function loadStored(phiKey: string): StoredPasskey | null {
   if (typeof window === "undefined") return null;
   const raw = window.localStorage.getItem(`${STORE_PREFIX}${phiKey}`);
@@ -40,6 +51,11 @@ function loadStored(phiKey: string): StoredPasskey | null {
 function saveStored(phiKey: string, record: StoredPasskey): void {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(`${STORE_PREFIX}${phiKey}`, JSON.stringify(record));
+}
+
+function clearStored(phiKey: string): void {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(`${STORE_PREFIX}${phiKey}`);
 }
 
 function parseAuthData(authData: Uint8Array): AuthData {
@@ -99,6 +115,7 @@ export async function ensurePasskey(phiKey: string): Promise<StoredPasskey> {
     throw new Error("WebAuthn is not available in this browser.");
   }
 
+  await tryRequestPersistentStorage();
   const existing = loadStored(phiKey);
   if (existing) return existing;
 
@@ -164,40 +181,49 @@ export async function signBundleHash(phiKey: string, bundleHash: string): Promis
   if (!isWebAuthnSupported()) {
     throw new Error("WebAuthn is not available in this browser.");
   }
-  const stored = loadStored(phiKey);
-  if (!stored) {
-    throw new Error("No passkey found for this Φ-Key. Please register first.");
-  }
+  const stored = await ensurePasskey(phiKey);
 
-  const credIdBytes = base64UrlDecode(stored.credId);
   const challengeBytes = hexToBytes(bundleHash);
 
   const challenge = challengeBytes.slice();
-  const allowId = credIdBytes.slice();
 
-  const assertion = (await navigator.credentials.get({
-    publicKey: {
-      challenge,
-      allowCredentials: [{ id: allowId, type: "public-key" }],
-      userVerification: "required",
-    },
-  })) as PublicKeyCredential | null;
+  const signWithPasskey = async (active: StoredPasskey): Promise<KASAuthorSig> => {
+    const assertion = (await navigator.credentials.get({
+      publicKey: {
+        challenge,
+        allowCredentials: [{ id: base64UrlDecode(active.credId), type: "public-key" }],
+        userVerification: "required",
+      },
+    })) as PublicKeyCredential | null;
 
-  if (!assertion) {
-    throw new Error("Signature request was canceled or failed.");
-  }
+    if (!assertion) {
+      throw new Error("Signature request was canceled or failed.");
+    }
 
-  const response = assertion.response as AuthenticatorAssertionResponse;
-  return {
-    v: "KAS-1",
-    alg: "webauthn-es256",
-    credId: stored.credId,
-    pubKeyJwk: stored.pubKeyJwk,
-    challenge: base64UrlEncode(challengeBytes),
-    signature: base64UrlEncode(new Uint8Array(response.signature)),
-    authenticatorData: base64UrlEncode(new Uint8Array(response.authenticatorData)),
-    clientDataJSON: base64UrlEncode(new Uint8Array(response.clientDataJSON)),
+    const response = assertion.response as AuthenticatorAssertionResponse;
+    return {
+      v: "KAS-1",
+      alg: "webauthn-es256",
+      credId: active.credId,
+      pubKeyJwk: active.pubKeyJwk,
+      challenge: base64UrlEncode(challengeBytes),
+      signature: base64UrlEncode(new Uint8Array(response.signature)),
+      authenticatorData: base64UrlEncode(new Uint8Array(response.authenticatorData)),
+      clientDataJSON: base64UrlEncode(new Uint8Array(response.clientDataJSON)),
+    };
   };
+
+  try {
+    return await signWithPasskey(stored);
+  } catch (err) {
+    const name = err instanceof DOMException ? err.name : "";
+    if (name === "NotAllowedError" || name === "NotFoundError" || name === "InvalidStateError") {
+      clearStored(phiKey);
+      const refreshed = await ensurePasskey(phiKey);
+      return await signWithPasskey(refreshed);
+    }
+    throw err;
+  }
 }
 
 function concatBytes(a: Uint8Array, b: Uint8Array): Uint8Array {

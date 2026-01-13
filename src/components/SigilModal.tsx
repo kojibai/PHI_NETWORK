@@ -38,6 +38,7 @@ import "./SigilModal.css";
 import { downloadBlob } from "../lib/download";
 import { embedProofMetadata } from "../utils/svgProof";
 import { extractEmbeddedMetaFromSvg } from "../utils/sigilMetadata";
+import { registerSigilAuth } from "../utils/sigilRegistry";
 import { buildProofHints, generateZkProofFromPoseidonHash } from "../utils/zkProof";
 import { computeZkPoseidonHash } from "../utils/kai";
 import {
@@ -1429,14 +1430,20 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
         await ensurePasskey(phiKey);
         authorSig = await signBundleHash(phiKey, computedBundleHash);
       } catch (err) {
-        console.warn("Author signature failed; continuing without authorSig.", err);
-        authorSig = null;
+        const reason = err instanceof Error ? err.message : String(err);
+        throw new Error(
+          `KAS signature failed. Please complete Face ID/Touch ID and ensure this PWA opens on the same hostname you registered. Details: ${reason}`
+        );
       }
       const proofBundle: ProofBundle = {
         ...proofBundleBase,
         bundleHash: computedBundleHash,
         authorSig,
       };
+      if (authorSig?.v === "KAS-1") {
+        const authUrl = shareUrl || verifierUrl;
+        if (authUrl) registerSigilAuth(authUrl, authorSig);
+      }
 
       const sealedSvg = embedProofMetadata(svgString, proofBundle);
       const baseName = `☤KAI-Sigil_Glyph_v1-${pulseNum}_${kaiSignatureShort}_Φkey${phiKey}`;
