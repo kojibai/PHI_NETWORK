@@ -188,10 +188,15 @@ export async function signBundleHash(phiKey: string, bundleHash: string): Promis
   const challenge = challengeBytes.slice();
 
   const signWithPasskey = async (active: StoredPasskey): Promise<KASAuthorSig> => {
+    const allowIdBytes = base64UrlDecode(active.credId);
+    const allowIdBuffer = allowIdBytes.buffer.slice(
+      allowIdBytes.byteOffset,
+      allowIdBytes.byteOffset + allowIdBytes.byteLength
+    );
     const assertion = (await navigator.credentials.get({
       publicKey: {
         challenge,
-        allowCredentials: [{ id: base64UrlDecode(active.credId), type: "public-key" }],
+        allowCredentials: [{ id: allowIdBuffer, type: "public-key" }],
         userVerification: "required",
       },
     })) as PublicKeyCredential | null;
