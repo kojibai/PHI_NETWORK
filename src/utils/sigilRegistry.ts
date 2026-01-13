@@ -9,6 +9,7 @@
    - SSR-safe: everything is guarded behind window checks
    ───────────────────────────────────────────────────────────── */
 
+import type { KASAuthorSig } from "./authorSig";
 import { extractPayloadTokenFromUrlString } from "./feedPayload";
 
 export type SigilRegistryGlobal = {
@@ -27,6 +28,9 @@ export const SIGIL_REGISTRY_LS_KEY = "kai:sigils:v1" as const;
 
 /** Legacy/fallback key for older code paths (kept in sync). */
 export const SIGIL_REGISTRY_FALLBACK_LS_KEY = "sigil:urls" as const;
+
+/** Local keystream cache for KAS author signatures keyed by sigil URL/token. */
+export const SIGIL_REGISTRY_AUTH_LS_KEY = "kai:sigils:auth:v1" as const;
 
 /** BroadcastChannel name for cross-tab notifications. */
 export const SIGIL_REGISTRY_CHANNEL_NAME = "kai-sigil-registry" as const;
@@ -55,6 +59,53 @@ function readList(key: string): string[] {
   } catch {
     return [];
   }
+}
+
+function authKeyForUrl(rawUrl: string): string | null {
+  const canonical = canonicalizeUrl(rawUrl);
+  if (!canonical) return null;
+  const token = extractPayloadTokenFromUrlString(canonical);
+  return token ? `t:${token}` : `u:${canonical}`;
+}
+
+function readAuthMap(): Record<string, KASAuthorSig> {
+  if (!hasWindow) return {};
+  try {
+    const raw = window.localStorage.getItem(SIGIL_REGISTRY_AUTH_LS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, KASAuthorSig>;
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeAuthMap(map: Record<string, KASAuthorSig>): void {
+  if (!hasWindow) return;
+  try {
+    window.localStorage.setItem(SIGIL_REGISTRY_AUTH_LS_KEY, JSON.stringify(map));
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Store the KAS author signature alongside a sigil URL in the local keystream cache. */
+export function registerSigilAuth(url: string, authorSig: KASAuthorSig): void {
+  if (!hasWindow) return;
+  const key = authKeyForUrl(url);
+  if (!key) return;
+  const next = readAuthMap();
+  next[key] = authorSig;
+  writeAuthMap(next);
+}
+
+/** Lookup a stored KAS author signature for a sigil URL (if available). */
+export function getRegisteredSigilAuth(url: string): KASAuthorSig | null {
+  if (!hasWindow) return null;
+  const key = authKeyForUrl(url);
+  if (!key) return null;
+  const map = readAuthMap();
+  return map[key] ?? null;
 }
 
 function countAddsInUrl(rawUrl: string): number {
