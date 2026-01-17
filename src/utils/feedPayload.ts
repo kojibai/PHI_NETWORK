@@ -21,6 +21,7 @@ export const TOKEN_HARD_LIMIT = 3500 as const; // absolute cut-off for path usag
  * Type-only import to avoid runtime coupling/cycles.
  */
 import type { SealedEnvelopeV1 } from "./postSeal";
+import type { KsfpInlineBundle } from "../lib/ksfp1";
 import {
   USERNAME_CLAIM_KIND,
   type UsernameClaimGlyphEvidence,
@@ -84,7 +85,15 @@ export type AttachmentFileInline = {
   thumbnail_b64?: string; // optional small preview (image/*), pruned for links
 };
 
-export type AttachmentItem = AttachmentUrl | AttachmentFileRef | AttachmentFileInline;
+export type AttachmentKsfpInline = {
+  kind: "ksfp-inline";
+  name?: string;
+  type?: string;
+  size?: number;
+  bundle: KsfpInlineBundle;
+};
+
+export type AttachmentItem = AttachmentUrl | AttachmentFileRef | AttachmentFileInline | AttachmentKsfpInline;
 
 export type Attachments = {
   version: typeof ATTACHMENTS_VERSION;
@@ -266,8 +275,20 @@ function isAttachmentFileInline(x: unknown): x is AttachmentFileInline {
   );
 }
 
+function isAttachmentKsfpInline(x: unknown): x is AttachmentKsfpInline {
+  if (!isObject(x)) return false;
+  const hasKind = x["kind"] === "ksfp-inline";
+  return (
+    !!hasKind &&
+    isOptionalString(x["name"]) &&
+    isOptionalString(x["type"]) &&
+    isOptionalNumber(x["size"]) &&
+    isObject(x["bundle"])
+  );
+}
+
 function isAttachmentItem(x: unknown): x is AttachmentItem {
-  return isAttachmentUrl(x) || isAttachmentFileRef(x) || isAttachmentFileInline(x);
+  return isAttachmentUrl(x) || isAttachmentFileRef(x) || isAttachmentFileInline(x) || isAttachmentKsfpInline(x);
 }
 
 function isAttachments(x: unknown): x is Attachments {
@@ -532,6 +553,11 @@ export function computeAttachmentStats(p: { attachments?: Attachments }): { tota
       total += it.size ?? 0;
       inline += it.data_b64url.length * 0.75; // b64 expansion ≈ 4/3; inverse ≈ ×0.75
       if (it.thumbnail_b64) inline += it.thumbnail_b64.length * 0.75;
+    } else if (it.kind === "ksfp-inline") {
+      total += it.size ?? it.bundle.origin.byteLength;
+      for (const chunk of it.bundle.lineage) {
+        inline += chunk.payload.data_b64url.length * 0.75;
+      }
     }
   }
   return { totalBytes: Math.round(total), inlinedBytes: Math.round(inline) };
@@ -726,6 +752,12 @@ export function extractPayloadTokenFromLocation(loc?: LocationLike): string | nu
     const fromSearch = searchParams.get("t") ?? searchParams.get("p") ?? searchParams.get("token");
     if (fromSearch) return normalizePayloadToken(fromSearch);
 
+    const rootHash = hashParams.get("root") ?? searchParams.get("root");
+    if (rootHash) {
+      const trimmed = rootHash.startsWith("j:") ? rootHash.slice(2) : rootHash;
+      return normalizePayloadToken(trimmed);
+    }
+
     // /stream/p/<token> or /feed/p/<token> (allow trailing slash)
     const m1 = L.pathname.match(/^\/(?:stream|feed)\/p\/([^/?#]+)\/?$/);
     if (m1?.[1]) return normalizePayloadToken(m1[1]);
@@ -786,6 +818,17 @@ export function extractPayloadTokenFromUrlString(rawUrl: string): string | null 
   }
 
   const path = u.pathname || "";
+
+  {
+    const hashStr = u.hash && u.hash.startsWith("#") ? u.hash.slice(1) : u.hash;
+    const hashParams = new URLSearchParams(hashStr);
+    const searchParams = u.searchParams;
+    const rootRaw = hashParams.get("root") ?? searchParams.get("root");
+    if (rootRaw) {
+      const trimmed = rootRaw.startsWith("j:") ? rootRaw.slice(2) : rootRaw;
+      return normalizePayloadToken(trimmed);
+    }
+  }
 
   // /stream/p/<token> | /feed/p/<token>
   {
@@ -859,7 +902,15 @@ export async function preparePayloadForLink(
 
   // 3) If there are no inline files, nothing to materialize; caller will use hash mode
   const hasInline = pruned.attachments?.items?.some((it) => it.kind === "file-inline") ?? false;
-  if (!hasInline) return pruned;
+  const hasKsfpInline = pruned.attachments?.items?.some((it) => it.kind === "ksfp-inline") ?? false;
+  if (!hasInline && !hasKsfpInline) return pruned;
+
+  if (hasKsfpInline) {
+    throw new Error(
+      "KSFP inline attachments exceed safe token size and cannot be cached. " +
+        "Split the file or reduce size to stay within share limits.",
+    );
+  }
 
   // 4) Try converting inline → cache-backed refs to shrink token
   const hasCaches = typeof globalThis.caches !== "undefined" && typeof globalThis.caches.open === "function";
@@ -1029,6 +1080,21 @@ export function makeFileRefAttachment(params: {
     type: params.type,
     size: params.size,
     url: params.url,
+  };
+}
+
+export function makeKsfpInlineAttachment(params: {
+  name?: string;
+  type?: string;
+  size?: number;
+  bundle: KsfpInlineBundle;
+}): AttachmentKsfpInline {
+  return {
+    kind: "ksfp-inline",
+    name: params.name,
+    type: params.type,
+    size: params.size,
+    bundle: params.bundle,
   };
 }
 
