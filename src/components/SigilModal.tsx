@@ -53,7 +53,8 @@ import {
   type ProofCapsuleV1,
 } from "./KaiVoh/verifierProof";
 import type { AuthorSig } from "../utils/authorSig";
-import { ensurePasskey, signBundleHash } from "../utils/webauthnKAS";
+import { derivePhiKeyUserId, ensurePasskey, saveStoredPasskey, signBundleHash } from "../utils/webauthnKAS";
+import { markUpgraded, registerPhiKey, shouldPromptUpgrade } from "../utils/phiKey";
 import type { SigilProofHints } from "../types/sigil";
 
 /* ✅ SINGLE SOURCE OF TRUTH: src/utils/kai_pulse.ts */
@@ -728,6 +729,11 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
   const [sealOpen, setSealOpen] = useState(false);
   const [sealUrl, setSealUrl] = useState("");
   const [sealHash, setSealHash] = useState("");
+
+  const [upgradePhiKey, setUpgradePhiKey] = useState<string | null>(null);
+  const [upgradeReady, setUpgradeReady] = useState(false);
+  const [upgradeBusy, setUpgradeBusy] = useState(false);
+  const [upgradeError, setUpgradeError] = useState<string | null>(null);
   const sealModeRef = useRef<"live" | "static-date" | "static-pulse" | null>(null);
 
   // canonical child hash from KaiSigil.onReady()
@@ -1428,7 +1434,16 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
       let authorSig: AuthorSig | null = null;
       try {
         await ensurePasskey(phiKey);
-        authorSig = await signBundleHash(phiKey, computedBundleHash);
+        authorSig = await signBundleHash(phiKey, computedBundleHash, svgHash);
+        if (
+          authorSig?.v === "KAS-1" &&
+          authorSig.rpMode === "legacy" &&
+          shouldPromptUpgrade(phiKey, "legacy")
+        ) {
+          setUpgradePhiKey(phiKey);
+          setUpgradeReady(true);
+          setUpgradeError(null);
+        }
       } catch (err) {
         const reason = err instanceof Error ? err.message : String(err);
         throw new Error(
@@ -1469,6 +1484,35 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
       resetToLive();
     }
   };
+
+  const handleUpgradePhiKey = useCallback(async (): Promise<void> => {
+    if (!upgradePhiKey || upgradeBusy) return;
+    setUpgradeBusy(true);
+    setUpgradeError(null);
+    try {
+      const userId = await derivePhiKeyUserId(upgradePhiKey);
+      const registration = await registerPhiKey({
+        userId,
+        userName: upgradePhiKey,
+        displayName: upgradePhiKey,
+      });
+      if (!registration.publicKeyJwk) {
+        throw new Error("Passkey registration did not return a public key.");
+      }
+      saveStoredPasskey(upgradePhiKey, {
+        credId: registration.credentialId,
+        pubKeyJwk: registration.publicKeyJwk,
+        rpId: registration.rpId,
+      });
+      markUpgraded(upgradePhiKey);
+      setUpgradeReady(false);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Upgrade failed.";
+      setUpgradeError(msg);
+    } finally {
+      setUpgradeBusy(false);
+    }
+  }, [upgradePhiKey, upgradeBusy]);
 
   // Meta display helpers
   const harmonicDayText = useMemo(() => {
@@ -1715,6 +1759,23 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
               </>
             )}
           </div>
+
+          {upgradeReady && upgradePhiKey ? (
+            <div className="sigil-upgrade-banner" role="status">
+              <p className="sigil-upgrade-text">
+                You signed in with a legacy passkey. Upgrade once to enable cross-app PhiKey access.
+              </p>
+              <button
+                type="button"
+                className="sigil-upgrade-button"
+                onClick={handleUpgradePhiKey}
+                disabled={upgradeBusy}
+              >
+                {upgradeBusy ? "Upgrading PhiKey…" : "Upgrade to PhiKey (Works Across All Apps)"}
+              </button>
+              {upgradeError ? <p className="sigil-upgrade-error">{upgradeError}</p> : null}
+            </div>
+          ) : null}
 
           {kairos && (
             <details

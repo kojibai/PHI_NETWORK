@@ -2120,3 +2120,39 @@ details.rich-data[open] > summary::after{
 @media (prefers-reduced-motion: reduce){
   .sigil-live-chip.is-live::before{ animation: none !important; }
 }
+
+.sigil-upgrade-banner {
+  margin: 14px 0 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(62, 231, 255, 0.35);
+  background: rgba(7, 18, 25, 0.65);
+  color: rgba(226, 246, 255, 0.95);
+  box-shadow: 0 10px 24px rgba(2, 10, 15, 0.4);
+}
+
+.sigil-upgrade-text {
+  margin: 0 0 8px;
+  font-size: 0.95rem;
+}
+
+.sigil-upgrade-button {
+  border: none;
+  border-radius: 999px;
+  padding: 10px 16px;
+  font-weight: 600;
+  color: #07121c;
+  background: linear-gradient(135deg, rgba(34, 211, 238, 0.95), rgba(168, 85, 247, 0.95));
+  cursor: pointer;
+}
+
+.sigil-upgrade-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.sigil-upgrade-error {
+  margin: 8px 0 0;
+  font-size: 0.85rem;
+  color: rgba(248, 113, 113, 0.95);
+}

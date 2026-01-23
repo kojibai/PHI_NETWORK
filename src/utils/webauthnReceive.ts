@@ -2,6 +2,7 @@ import { decodeCbor } from "./cbor";
 import { base64UrlDecode, base64UrlEncode, sha256Bytes } from "./sha256";
 import { jcsCanonicalize } from "./jcs";
 import type { StoredPasskey } from "./webauthnKAS";
+import { resolveCanonicalRpId, tryLegacyAssertionIfNeeded } from "./phiKey";
 
 export type WebAuthnAssertionJSON = {
   id: string;
@@ -96,10 +97,6 @@ export async function getWebAuthnAssertionJson(args: {
   allowCredIds?: string[];
   preferInternal?: boolean;
 }): Promise<WebAuthnAssertionJSON> {
-  if (typeof navigator === "undefined" || !navigator.credentials?.get) {
-    throw new Error("WebAuthn is not available in this environment.");
-  }
-
   const canUseInternal =
     Boolean(args.preferInternal) &&
     typeof PublicKeyCredential !== "undefined" &&
@@ -116,24 +113,22 @@ export async function getWebAuthnAssertionJson(args: {
       }))
     : undefined;
 
-  const assertion = (await navigator.credentials.get({
-    publicKey: {
-      challenge: toArrayBuffer(args.challenge),
-      allowCredentials,
-      userVerification: "required",
-    },
-  })) as PublicKeyCredential | null;
+  const { credential } = await tryLegacyAssertionIfNeeded({
+    challenge: args.challenge,
+    allowCredentials,
+    userVerification: "required",
+  });
 
-  if (!assertion || assertion.type !== "public-key") {
+  if (!credential || credential.type !== "public-key") {
     throw new Error("Signature request was canceled or failed.");
   }
 
-  const response = assertion.response as AuthenticatorAssertionResponse;
-  const rawIdBytes = new Uint8Array(assertion.rawId);
+  const response = credential.response as AuthenticatorAssertionResponse;
+  const rawIdBytes = new Uint8Array(credential.rawId);
   const userHandleBytes = response.userHandle ? new Uint8Array(response.userHandle) : null;
 
   return {
-    id: assertion.id,
+    id: credential.id,
     rawId: base64UrlEncode(rawIdBytes),
     type: "public-key",
     response: {
@@ -343,7 +338,7 @@ export async function ensureReceiverPasskey(): Promise<StoredPasskey> {
       challenge,
       rp: {
         name: "Kai-Voh",
-        id: typeof window !== "undefined" ? window.location.hostname : "localhost",
+        id: resolveCanonicalRpId(),
       },
       user: {
         id: userId,
@@ -388,6 +383,7 @@ export async function ensureReceiverPasskey(): Promise<StoredPasskey> {
   const record: StoredPasskey = {
     credId: base64UrlEncode(new Uint8Array(credential.rawId)),
     pubKeyJwk,
+    rpId: resolveCanonicalRpId(),
   };
   saveStoredReceiverPasskey(record);
   return record;

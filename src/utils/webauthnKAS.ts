@@ -2,25 +2,25 @@
  *
  * KAS-1 Passkey Manager (WebAuthn ES256)
  * - Creates (or loads) a resident passkey bound to a ΦKey
- * - Signs a deterministic challenge (bundleHash bytes)
+ * - Signs a deterministic glyph challenge (glyphHash + origin + nonce)
  * - Verifies the signature offline using WebCrypto
  *
  * ✅ Fixes TS2322: ArrayBuffer | SharedArrayBuffer not assignable to BufferSource
  *    by *always* copying into a real ArrayBuffer for WebAuthn fields that require BufferSource.
  */
 
-import { decodeCbor } from "./cbor";
 import { base64UrlDecode, base64UrlEncode, hexToBytes, sha256Bytes } from "./sha256";
+import {
+  deriveGlyphChallenge,
+  getPhiAssertionForGlyph,
+  registerPhiKey,
+} from "./phiKey";
 import type { KASAuthorSig } from "./authorSig";
 
 export type StoredPasskey = {
   credId: string; // base64url(rawId)
   pubKeyJwk: JsonWebKey; // P-256 EC public key
-};
-
-type AuthData = {
-  credentialId: Uint8Array;
-  credentialPublicKey: Uint8Array; // COSE_Key bytes
+  rpId?: string;
 };
 
 const STORE_PREFIX = "kai:kas1:passkey:";
@@ -55,11 +55,12 @@ function loadStored(phiKey: string): StoredPasskey | null {
     const parsed = JSON.parse(raw) as unknown;
     if (!parsed || typeof parsed !== "object") return null;
 
-    const rec = parsed as { credId?: unknown; pubKeyJwk?: unknown };
+    const rec = parsed as { credId?: unknown; pubKeyJwk?: unknown; rpId?: unknown };
     if (typeof rec.credId !== "string") return null;
     if (!rec.pubKeyJwk || typeof rec.pubKeyJwk !== "object") return null;
 
-    return { credId: rec.credId, pubKeyJwk: rec.pubKeyJwk as JsonWebKey };
+    const rpId = typeof rec.rpId === "string" ? rec.rpId : undefined;
+    return { credId: rec.credId, pubKeyJwk: rec.pubKeyJwk as JsonWebKey, rpId };
   } catch (err) {
     throw new Error(`Failed to read passkey cache: ${err instanceof Error ? err.message : String(err)}`);
   }
@@ -73,76 +74,6 @@ function saveStored(phiKey: string, record: StoredPasskey): void {
 function clearStored(phiKey: string): void {
   if (typeof window === "undefined") return;
   window.localStorage.removeItem(`${STORE_PREFIX}${phiKey}`);
-}
-
-function parseAuthData(authData: Uint8Array): AuthData {
-  // https://www.w3.org/TR/webauthn-2/#sctn-attested-credential-data
-  // authData: 32 rpIdHash + 1 flags + 4 signCount + [attestedCredData if AT flag] + extensions?
-  if (authData.length < 37) {
-    throw new Error("AuthData too short to contain attested credential data.");
-  }
-
-  const view = new DataView(authData.buffer, authData.byteOffset, authData.byteLength);
-  const flags = authData[32];
-  const hasAttestedCredData = (flags & 0x40) !== 0; // AT flag
-
-  if (!hasAttestedCredData) {
-    throw new Error("Attestation missing credential data (AT flag not set).");
-  }
-
-  let offset = 37;
-  offset += 16; // AAGUID
-
-  if (offset + 2 > authData.length) {
-    throw new Error("AuthData missing credentialId length.");
-  }
-
-  const credIdLen = view.getUint16(offset, false);
-  offset += 2;
-
-  if (offset + credIdLen > authData.length) {
-    throw new Error("AuthData credentialId length out of bounds.");
-  }
-
-  const credentialId = authData.slice(offset, offset + credIdLen);
-  offset += credIdLen;
-
-  const credentialPublicKey = authData.slice(offset);
-  if (credentialPublicKey.length === 0) {
-    throw new Error("Credential public key missing from attestation data.");
-  }
-
-  return { credentialId, credentialPublicKey };
-}
-
-function getCoseValue(key: unknown, label: number): unknown {
-  if (key instanceof Map) return key.get(label);
-  if (typeof key === "object" && key !== null) {
-    const obj = key as Record<string, unknown>;
-    // some CBOR decoders may string-coerce numeric keys
-    return obj[label] ?? obj[String(label)];
-  }
-  return undefined;
-}
-
-function bytesFromCose(value: unknown): Uint8Array {
-  if (value instanceof Uint8Array) return value;
-  if (value instanceof ArrayBuffer) return new Uint8Array(value);
-  if (Array.isArray(value)) return new Uint8Array(value);
-  throw new Error("Invalid COSE coordinate data.");
-}
-
-function coseEc2ToJwk(coseKey: unknown): JsonWebKey {
-  const x = bytesFromCose(getCoseValue(coseKey, -2));
-  const y = bytesFromCose(getCoseValue(coseKey, -3));
-
-  return {
-    kty: "EC",
-    crv: "P-256",
-    x: base64UrlEncode(x),
-    y: base64UrlEncode(y),
-    ext: true,
-  };
 }
 
 /** Always return a *real* ArrayBuffer (never SharedArrayBuffer) by copying bytes. */
@@ -194,21 +125,17 @@ async function importP256Jwk(jwk: JsonWebKey): Promise<CryptoKey> {
   return crypto.subtle.importKey("jwk", jwk, { name: "ECDSA", namedCurve: "P-256" }, false, ["verify"]);
 }
 
-function readAuthDataFromAttestation(decoded: unknown): Uint8Array {
-  const authDataRaw: unknown =
-    decoded instanceof Map ? decoded.get("authData") : typeof decoded === "object" && decoded !== null
-      ? (decoded as Record<string, unknown>)["authData"]
-      : undefined;
+export async function derivePhiKeyUserId(phiKey: string): Promise<Uint8Array> {
+  const userIdFull = await sha256Bytes(`KAS-1|phiKey|${phiKey}`);
+  return userIdFull.slice(0, 16);
+}
 
-  if (!authDataRaw) {
-    throw new Error("Attestation missing authData.");
-  }
+export function saveStoredPasskey(phiKey: string, record: StoredPasskey): void {
+  saveStored(phiKey, record);
+}
 
-  if (authDataRaw instanceof Uint8Array) return authDataRaw;
-  if (authDataRaw instanceof ArrayBuffer) return new Uint8Array(authDataRaw);
-  if (Array.isArray(authDataRaw)) return new Uint8Array(authDataRaw);
-
-  throw new Error("Attestation authData is not a byte array.");
+export function clearStoredPasskey(phiKey: string): void {
+  clearStored(phiKey);
 }
 
 export async function ensurePasskey(phiKey: string): Promise<StoredPasskey> {
@@ -221,103 +148,56 @@ export async function ensurePasskey(phiKey: string): Promise<StoredPasskey> {
   const existing = loadStored(phiKey);
   if (existing) return existing;
 
-  // Deterministic user.id from phiKey (resident passkey user handle)
-  const userIdFull = await sha256Bytes(`KAS-1|phiKey|${phiKey}`);
-  const userId = userIdFull.slice(0, 16);
-
-  // Per-create challenge must be fresh random
-  const challenge = crypto.getRandomValues(new Uint8Array(32));
-
-  const created = await navigator.credentials.create({
-    publicKey: {
-      challenge,
-      rp: {
-        name: "Kai-Voh",
-        id: window.location.hostname,
-      },
-      user: {
-        id: userId,
-        name: phiKey,
-        displayName: phiKey,
-      },
-      pubKeyCredParams: [{ type: "public-key", alg: -7 }], // ES256
-      authenticatorSelection: {
-        userVerification: "required",
-        residentKey: "required",
-        requireResidentKey: true,
-      },
-      timeout: 60_000,
-      attestation: "none",
-    },
+  const userId = await derivePhiKeyUserId(phiKey);
+  const created = await registerPhiKey({
+    userId,
+    userName: phiKey,
+    displayName: phiKey,
   });
-
-  const credential = (created ?? null) as PublicKeyCredential | null;
-  if (!credential) {
-    throw new Error("Passkey creation was canceled or failed.");
+  if (!created.publicKeyJwk) {
+    throw new Error("Passkey creation did not return a public key.");
   }
 
-  const response = credential.response as AuthenticatorAttestationResponse;
-
-  const attestationObjectBytes = new Uint8Array(response.attestationObject);
-  const decoded = decodeCbor(attestationObjectBytes);
-
-  const authData = readAuthDataFromAttestation(decoded);
-  const parsed = parseAuthData(authData);
-
-  const coseKeyDecoded = decodeCbor(parsed.credentialPublicKey);
-  const pubKeyJwk = coseEc2ToJwk(coseKeyDecoded);
-
   const record: StoredPasskey = {
-    credId: base64UrlEncode(new Uint8Array(credential.rawId)),
-    pubKeyJwk,
+    credId: created.credentialId,
+    pubKeyJwk: created.publicKeyJwk,
+    rpId: created.rpId,
   };
 
   saveStored(phiKey, record);
   return record;
 }
 
-export async function signBundleHash(phiKey: string, bundleHash: string): Promise<KASAuthorSig> {
+export async function signBundleHash(phiKey: string, bundleHash: string, glyphHash?: string): Promise<KASAuthorSig> {
   if (!isWebAuthnSupported()) {
     throw new Error("WebAuthn is not available in this browser.");
   }
 
   const stored = await ensurePasskey(phiKey);
 
-  // Deterministic challenge: bundleHash hex -> bytes
-  const challengeBytes = hexToBytes(bundleHash);
-  const challenge = challengeBytes.slice(); // Uint8Array copy
+  const glyphHashValue = glyphHash?.trim() || bundleHash;
 
   const signWithPasskey = async (active: StoredPasskey): Promise<KASAuthorSig> => {
-    const allowIdBytes = base64UrlDecode(active.credId);
-
-    // ✅ FIX: WebAuthn wants BufferSource; TS sees allowIdBytes.buffer as ArrayBuffer|SharedArrayBuffer.
-    // Always pass a *real* ArrayBuffer by copying bytes.
-    const allowId = bytesToArrayBuffer(allowIdBytes);
-
-    const got = await navigator.credentials.get({
-      publicKey: {
-        challenge,
-        allowCredentials: [{ id: allowId, type: "public-key" }],
-        userVerification: "required",
-      },
+    const assertionResult = await getPhiAssertionForGlyph({
+      glyphHash: glyphHashValue,
+      allowCredIds: [active.credId],
     });
-
-    const assertion = (got ?? null) as PublicKeyCredential | null;
-    if (!assertion) {
-      throw new Error("Signature request was canceled or failed.");
-    }
-
-    const response = assertion.response as AuthenticatorAssertionResponse;
 
     return {
       v: "KAS-1",
       alg: "webauthn-es256",
       credId: active.credId,
       pubKeyJwk: active.pubKeyJwk,
-      challenge: base64UrlEncode(challengeBytes),
-      signature: base64UrlEncode(new Uint8Array(response.signature)),
-      authenticatorData: base64UrlEncode(new Uint8Array(response.authenticatorData)),
-      clientDataJSON: base64UrlEncode(new Uint8Array(response.clientDataJSON)),
+      challenge: assertionResult.challenge,
+      signature: assertionResult.assertion.signature,
+      authenticatorData: assertionResult.assertion.authenticatorData,
+      clientDataJSON: assertionResult.assertion.clientDataJSON,
+      glyphHash: assertionResult.glyphHash,
+      requestingOrigin: assertionResult.requestingOrigin,
+      nonce: assertionResult.nonce,
+      assertion: assertionResult.assertion,
+      rpMode: assertionResult.mode,
+      rpId: assertionResult.rpId,
     };
   };
 
@@ -326,7 +206,7 @@ export async function signBundleHash(phiKey: string, bundleHash: string): Promis
   } catch (err) {
     const name = err instanceof DOMException ? err.name : "";
     // If the cached credId is stale (e.g., cleared by browser), refresh and retry once.
-        // NOTE: NotAllowedError commonly indicates cancel/timeout; do not clear cached passkey.
+    // NOTE: NotAllowedError commonly indicates cancel/timeout; do not clear cached passkey.
     if (name === "NotFoundError" || name === "InvalidStateError") {
       clearStored(phiKey);
       const refreshed = await ensurePasskey(phiKey);
@@ -338,10 +218,21 @@ export async function signBundleHash(phiKey: string, bundleHash: string): Promis
 
 export async function verifyBundleAuthorSig(bundleHash: string, authorSig: KASAuthorSig): Promise<boolean> {
   try {
-    // 1) Challenge must match bundleHash bytes (deterministic)
-    const expectedChallenge = hexToBytes(bundleHash);
-    const expectedChallengeB64 = base64UrlEncode(expectedChallenge);
-    if (authorSig.challenge !== expectedChallengeB64) return false;
+    // 1) Challenge must match the expected derivation
+    let expectedChallenge: Uint8Array;
+    if (authorSig.glyphHash && authorSig.requestingOrigin && authorSig.nonce) {
+      const derived = await deriveGlyphChallenge({
+        glyphHash: authorSig.glyphHash,
+        requestingOrigin: authorSig.requestingOrigin,
+        nonce: authorSig.nonce,
+      });
+      if (authorSig.challenge !== derived.challengeB64) return false;
+      expectedChallenge = derived.challengeBytes;
+    } else {
+      expectedChallenge = hexToBytes(bundleHash);
+      const expectedChallengeB64 = base64UrlEncode(expectedChallenge);
+      if (authorSig.challenge !== expectedChallengeB64) return false;
+    }
 
     // 2) clientDataJSON.challenge must match expected challenge
     const clientDataBytes = base64UrlDecode(authorSig.clientDataJSON);

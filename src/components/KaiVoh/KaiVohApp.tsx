@@ -59,7 +59,8 @@ import { derivePhiKeyFromSig } from "../VerifierStamper/sigilUtils";
 import { fetchKaiOrLocal, epochMsFromPulse, type ChakraDay } from "../../utils/kai_pulse";
 import type { AuthorSig } from "../../utils/authorSig";
 import { registerSigilAuth } from "../../utils/sigilRegistry";
-import { ensurePasskey, signBundleHash } from "../../utils/webauthnKAS";
+import { derivePhiKeyUserId, ensurePasskey, saveStoredPasskey, signBundleHash } from "../../utils/webauthnKAS";
+import { markUpgraded, registerPhiKey, shouldPromptUpgrade } from "../../utils/phiKey";
 import { computeZkPoseidonHash } from "../../utils/kai";
 import { buildProofHints, generateZkProofFromPoseidonHash } from "../../utils/zkProof";
 import type { SigilProofHints } from "../../types/sigil";
@@ -537,6 +538,10 @@ function KaiVohFlow(): ReactElement {
   const [verifierData, setVerifierData] = useState<VerifierData | null>(null);
 
   const [flowError, setFlowError] = useState<string | null>(null);
+  const [upgradePhiKey, setUpgradePhiKey] = useState<string | null>(null);
+  const [upgradeReady, setUpgradeReady] = useState(false);
+  const [upgradeBusy, setUpgradeBusy] = useState(false);
+  const [upgradeError, setUpgradeError] = useState<string | null>(null);
 
   const hasConnectedAccounts = useMemo(() => {
     if (!session || !session.connectedAccounts) return false;
@@ -601,6 +606,9 @@ function KaiVohFlow(): ReactElement {
     setFinalMedia(null);
     setVerifierData(null);
     setFlowError(null);
+    setUpgradePhiKey(null);
+    setUpgradeReady(false);
+    setUpgradeError(null);
     setStep("login");
   };
 
@@ -610,6 +618,9 @@ function KaiVohFlow(): ReactElement {
     setFinalMedia(null);
     setVerifierData(null);
     setFlowError(null);
+    setUpgradePhiKey(null);
+    setUpgradeReady(false);
+    setUpgradeError(null);
     setStep("compose");
   };
 
@@ -617,6 +628,35 @@ function KaiVohFlow(): ReactElement {
     if (!finalMedia) return;
     if (finalMedia.type !== "image" || !finalMedia.content.type.includes("svg")) return;
     await downloadSvgBlob(finalMedia.filename, finalMedia.content);
+  };
+
+  const handleUpgradePhiKey = async (): Promise<void> => {
+    if (!upgradePhiKey || upgradeBusy) return;
+    setUpgradeBusy(true);
+    setUpgradeError(null);
+    try {
+      const userId = await derivePhiKeyUserId(upgradePhiKey);
+      const registration = await registerPhiKey({
+        userId,
+        userName: upgradePhiKey,
+        displayName: upgradePhiKey,
+      });
+      if (!registration.publicKeyJwk) {
+        throw new Error("Passkey registration did not return a public key.");
+      }
+      saveStoredPasskey(upgradePhiKey, {
+        credId: registration.credentialId,
+        pubKeyJwk: registration.publicKeyJwk,
+        rpId: registration.rpId,
+      });
+      markUpgraded(upgradePhiKey);
+      setUpgradeReady(false);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Upgrade failed.";
+      setUpgradeError(msg);
+    } finally {
+      setUpgradeBusy(false);
+    }
   };
 
   /* ---------------------------------------------------------------------- */
@@ -813,7 +853,16 @@ function KaiVohFlow(): ReactElement {
           bundleHash = await hashBundle(bundleUnsigned);
           try {
             await ensurePasskey(proofPhiKey);
-            authorSig = await signBundleHash(proofPhiKey, bundleHash);
+            authorSig = await signBundleHash(proofPhiKey, bundleHash, svgHash);
+            if (
+              authorSig?.v === "KAS-1" &&
+              authorSig.rpMode === "legacy" &&
+              shouldPromptUpgrade(proofPhiKey, "legacy")
+            ) {
+              setUpgradePhiKey(proofPhiKey);
+              setUpgradeReady(true);
+              setUpgradeError(null);
+            }
           } catch (err) {
             const reason = err instanceof Error ? err.message : String(err);
             throw new Error(
@@ -1032,6 +1081,22 @@ function KaiVohFlow(): ReactElement {
       />
 
       <main className="kv-main-card">
+        {upgradeReady && upgradePhiKey ? (
+          <div className="kv-upgrade-banner" role="status">
+            <p className="kv-upgrade-text">
+              You signed in with a legacy passkey. Upgrade once to enable cross-app PhiKey access.
+            </p>
+            <button
+              type="button"
+              className="kv-upgrade-button"
+              onClick={handleUpgradePhiKey}
+              disabled={upgradeBusy}
+            >
+              {upgradeBusy ? "Upgrading PhiKey…" : "Upgrade to PhiKey (Works Across All Apps)"}
+            </button>
+            {upgradeError ? <p className="kv-upgrade-error">{upgradeError}</p> : null}
+          </div>
+        ) : null}
         {renderStep()}
         {flowError ? <p className="kv-error">{flowError}</p> : null}
       </main>

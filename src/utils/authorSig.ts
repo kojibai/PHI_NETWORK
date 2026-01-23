@@ -9,6 +9,18 @@ export type KASAuthorSig = {
   signature: string;
   authenticatorData: string;
   clientDataJSON: string;
+  glyphHash?: string;
+  requestingOrigin?: string;
+  nonce?: string;
+  assertion?: {
+    credentialId: string;
+    authenticatorData: string;
+    clientDataJSON: string;
+    signature: string;
+    userHandle: string | null;
+  };
+  rpMode?: "canonical" | "legacy";
+  rpId?: string;
 };
 
 export type AuthorSig = HarmonicSig | KASAuthorSig;
@@ -28,7 +40,7 @@ export function isHarmonicSig(value: unknown): value is HarmonicSig {
 
 export function isKASAuthorSig(value: unknown): value is KASAuthorSig {
   if (!isRecord(value)) return false;
-  return (
+  const base =
     value.v === "KAS-1" &&
     value.alg === "webauthn-es256" &&
     typeof value.credId === "string" &&
@@ -36,8 +48,22 @@ export function isKASAuthorSig(value: unknown): value is KASAuthorSig {
     typeof value.challenge === "string" &&
     typeof value.signature === "string" &&
     typeof value.authenticatorData === "string" &&
-    typeof value.clientDataJSON === "string"
-  );
+    typeof value.clientDataJSON === "string";
+  if (!base) return false;
+
+  if ("assertion" in value && value.assertion !== undefined) {
+    const assertion = value.assertion;
+    if (!isRecord(assertion)) return false;
+    return (
+      typeof assertion.credentialId === "string" &&
+      typeof assertion.authenticatorData === "string" &&
+      typeof assertion.clientDataJSON === "string" &&
+      typeof assertion.signature === "string" &&
+      (assertion.userHandle === null || typeof assertion.userHandle === "string")
+    );
+  }
+
+  return true;
 }
 
 export function parseAuthorSig(value: unknown): AuthorSig | null {

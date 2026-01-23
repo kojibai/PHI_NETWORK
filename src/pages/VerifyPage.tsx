@@ -259,6 +259,7 @@ function bytesToHex(bytes: Uint8Array): string {
 }
 
 function bundleHashFromAuthorSig(authorSig: KASAuthorSig): string | null {
+  if (authorSig.glyphHash && authorSig.requestingOrigin && authorSig.nonce) return null;
   try {
     return bytesToHex(base64UrlDecode(authorSig.challenge));
   } catch {
