@@ -220,17 +220,19 @@ export async function verifyBundleAuthorSig(bundleHash: string, authorSig: KASAu
   try {
     // 1) Challenge must match the expected derivation
     let expectedChallenge: Uint8Array;
+    let expectedChallengeB64: string;
     if (authorSig.glyphHash && authorSig.requestingOrigin && authorSig.nonce) {
       const derived = await deriveGlyphChallenge({
         glyphHash: authorSig.glyphHash,
         requestingOrigin: authorSig.requestingOrigin,
         nonce: authorSig.nonce,
       });
-      if (authorSig.challenge !== derived.challengeB64) return false;
       expectedChallenge = derived.challengeBytes;
+      expectedChallengeB64 = derived.challengeB64;
+      if (authorSig.challenge !== expectedChallengeB64) return false;
     } else {
       expectedChallenge = hexToBytes(bundleHash);
-      const expectedChallengeB64 = base64UrlEncode(expectedChallenge);
+      expectedChallengeB64 = base64UrlEncode(expectedChallenge);
       if (authorSig.challenge !== expectedChallengeB64) return false;
     }
 
