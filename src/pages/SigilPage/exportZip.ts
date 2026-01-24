@@ -349,7 +349,9 @@ export async function exportZIP(ctx: {
     retagSvgIdsForStep(svgEl, claimedMetaCanon.pulse, claimedMetaCanon.beat, sealedStepIndex);
     ensureCanonicalMetadataFirst(svgEl);
 
-    // Update ALL URL surfaces inside the SVG to the canonical manifest URL
+    // Update ALL URL surfaces inside the SVG to the canonical manifest URL.
+    // NOTE: we do NOT mutate any existing proof bundle metadata; a fresh bundle
+    // is computed below with its own shareUrl + bundleHash for verification.
     updateSvgUrlSurfaces(svgEl, fullUrlForManifest);
 
     // Extract URL bits for the manifest file
