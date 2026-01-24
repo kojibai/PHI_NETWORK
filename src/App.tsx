@@ -261,6 +261,32 @@ type BeatStepDMY = {
   year: number; // 0-based
 };
 
+type LiveKaiSnap = {
+  pulse: number;
+  pulseStr: string;
+  beatStepDMY: BeatStepDMY;
+  beatStepLabel: string;
+  dmyLabel: string;
+  chakraDay: ChakraDay;
+};
+
+const DEFAULT_BEAT_STEP_DMY: BeatStepDMY = {
+  beat: 0,
+  step: 0,
+  day: 1,
+  month: 1,
+  year: 0,
+};
+
+const DEFAULT_LIVE_SNAP: LiveKaiSnap = {
+  pulse: 0,
+  pulseStr: formatPulse(0),
+  beatStepDMY: DEFAULT_BEAT_STEP_DMY,
+  beatStepLabel: formatBeatStepLabel(DEFAULT_BEAT_STEP_DMY),
+  dmyLabel: formatDMYLabel(DEFAULT_BEAT_STEP_DMY),
+  chakraDay: "Heart",
+};
+
 function computeBeatStepDMY(m: KaiMoment): BeatStepDMY {
   const pulse = readNum(m, "pulse") ?? 0;
 
@@ -310,6 +336,20 @@ function formatBeatStepLabel(v: BeatStepDMY): string {
 
 function formatDMYLabel(v: BeatStepDMY): string {
   return `D${v.day}/M${v.month}/Y${v.year}`;
+}
+
+function buildLiveKaiSnap(m: KaiMoment): LiveKaiSnap {
+  const pulse = readNum(m, "pulse") ?? 0;
+  const pulseStr = formatPulse(pulse);
+  const bsd = computeBeatStepDMY(m);
+  return {
+    pulse,
+    pulseStr,
+    beatStepDMY: bsd,
+    beatStepLabel: formatBeatStepLabel(bsd),
+    dmyLabel: formatDMYLabel(bsd),
+    chakraDay: m.chakraDay,
+  };
 }
 
 function isFixedSafeHost(el: HTMLElement): boolean {
@@ -866,27 +906,7 @@ function LiveKaiButton({
   breathMs,
   breathsPerDay,
 }: LiveKaiButtonProps): React.JSX.Element {
-  const [snap, setSnap] = useState<{
-    pulse: number;
-    pulseStr: string;
-    beatStepDMY: BeatStepDMY;
-    beatStepLabel: string;
-    dmyLabel: string;
-    chakraDay: ChakraDay;
-  }>(() => {
-    const m = momentFromUTC(new Date());
-    const pulse = readNum(m, "pulse") ?? 0;
-    const pulseStr = formatPulse(pulse);
-    const bsd = computeBeatStepDMY(m);
-    return {
-      pulse,
-      pulseStr,
-      beatStepDMY: bsd,
-      beatStepLabel: formatBeatStepLabel(bsd),
-      dmyLabel: formatDMYLabel(bsd),
-      chakraDay: m.chakraDay,
-    };
-  });
+  const [snap, setSnap] = useState<LiveKaiSnap>(() => DEFAULT_LIVE_SNAP);
 
   const neonTextStyle = useMemo<CSSProperties>(
     () => ({
@@ -942,14 +962,8 @@ function LiveKaiButton({
       if (!alive) return;
       if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
 
-      const m = momentFromUTC(new Date());
-      const pulse = readNum(m, "pulse") ?? 0;
-      const pulseStr = formatPulse(pulse);
-
-      const bsd = computeBeatStepDMY(m);
-      const beatStepLabel = formatBeatStepLabel(bsd);
-      const dmyLabel = formatDMYLabel(bsd);
-
+      const next = buildLiveKaiSnap(momentFromUTC(new Date()));
+      const { pulseStr, beatStepLabel, dmyLabel } = next;
       setSnap((prev) => {
         if (
           prev.pulseStr === pulseStr &&
@@ -958,14 +972,7 @@ function LiveKaiButton({
         ) {
           return prev;
         }
-        return {
-          pulse,
-          pulseStr,
-          beatStepDMY: bsd,
-          beatStepLabel,
-          dmyLabel,
-          chakraDay: m.chakraDay,
-        };
+        return next;
       });
     };
 
