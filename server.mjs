@@ -41,7 +41,15 @@ const sendFile = (res, filePath, cacheControl) => {
 
 const tryServeStatic = (req, res, rootDir) => {
   const url = new URL(req.url, "http://localhost");
-  const pathname = decodeURIComponent(url.pathname);
+  let pathname;
+  try {
+    pathname = decodeURIComponent(url.pathname);
+  } catch (error) {
+    res.statusCode = 400;
+    res.end("Bad Request");
+    console.error("Malformed URL path", error);
+    return true;
+  }
   const filePath = path.join(rootDir, pathname);
   if (!filePath.startsWith(rootDir)) return false;
   if (!fsSync.existsSync(filePath) || fsSync.statSync(filePath).isDirectory()) return false;
