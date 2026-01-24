@@ -75,7 +75,7 @@ function stopVVListenersIfIdle(): void {
 }
 
 export function useVisualViewportSize(): VVSize {
-  const [size, setSize] = useState<VVSize>(() => readVVNow());
+  const [size, setSize] = useState<VVSize>({ width: 0, height: 0 });
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -84,7 +84,7 @@ export function useVisualViewportSize(): VVSize {
 
     const sub = (s: VVSize): void => setSize(s);
     vvStore.subs.add(sub);
-    sub(vvStore.size);
+    sub(readVVNow());
 
     return () => {
       vvStore.subs.delete(sub);
