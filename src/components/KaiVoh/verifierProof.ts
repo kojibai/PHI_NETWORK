@@ -190,8 +190,11 @@ export type ProofBundleLike = {
 type JcsValue = string | number | boolean | null | JcsValue[] | { [k: string]: JcsValue };
 
 export function buildBundleUnsigned(bundle: ProofBundleLike): Record<string, unknown> {
-  const { bundleHash: _bundleHash, authorSig: _authorSig, receiveSig: _receiveSig, ...rest } = bundle;
-  return { ...rest, authorSig: null };
+  const { ...rest } = bundle;
+  const next = { ...rest, authorSig: null };
+  delete (next as { bundleHash?: string }).bundleHash;
+  delete (next as { receiveSig?: string }).receiveSig;
+  return next;
 }
 
 export async function hashBundle(bundleUnsigned: Record<string, unknown>): Promise<string> {

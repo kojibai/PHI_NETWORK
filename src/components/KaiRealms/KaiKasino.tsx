@@ -45,11 +45,15 @@ const PulseForge: React.FC<Props> = ({ currentPhi, onPhiChange }) => {
   const [mode, setMode] = useState<"forge" | "maze">("forge");
 
   const [lastPulse, setLastPulse] = useState<number | null>(null);
-  const [lastPulseAt, setLastPulseAt] = useState<number>(performance.now());
+  const [lastPulseAt, setLastPulseAt] = useState<number>(0);
   const [angle, setAngle] = useState<number>(0); // marker live angle [0,360)
   const [isLocking, setIsLocking] = useState<boolean>(false);
   const [result, setResult] = useState<null | { kind: "hit" | "crit" | "miss"; delta: number }>(null);
   const [streak, setStreak] = useState<number>(0);
+
+  useEffect(() => {
+    setLastPulseAt(performance.now());
+  }, []);
 
   // pulse listener
   useKaiPulse({

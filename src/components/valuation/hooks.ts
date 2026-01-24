@@ -3,7 +3,10 @@ import { useEffect, useState } from "react";
 
 export function useIsMounted() {
   const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  useEffect(() => {
+    const id = window.setTimeout(() => setMounted(true), 0);
+    return () => window.clearTimeout(id);
+  }, []);
   return mounted;
 }
 
@@ -23,8 +26,9 @@ export function useMedia(query: string) {
     if (typeof mql.addEventListener === "function") mql.addEventListener("change", onChange);
     else (mql as { addListener?: (l: LegacyListener) => void }).addListener?.(legacyListener);
 
-    setMatches(mql.matches);
+    const id = window.setTimeout(() => setMatches(mql.matches), 0);
     return () => {
+      window.clearTimeout(id);
       if (typeof mql.removeEventListener === "function") mql.removeEventListener("change", onChange);
       else (mql as { removeListener?: (l: LegacyListener) => void }).removeListener?.(legacyListener);
     };

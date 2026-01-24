@@ -3,7 +3,7 @@
 
 /// <reference types="react" />
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { GlyphData } from "./GlyphUtils";
 import { useKaiPulse } from "./KaiPulseEngine";
 import { drawSigilGlyph } from "./SigilAvatar";
@@ -88,12 +88,15 @@ const RealmView: React.FC<Props> = ({ glyphData, onExit }) => {
   const [gameOver, setGameOver] = useState<boolean>(false);
 
   // Breath timing anchor
-  const lastPulseAtRef = useRef<number>(performance.now()); // ms since last onPulse()
+  const lastPulseAtRef = useRef<number>(0); // ms since last onPulse()
 
   // Networking (keep refs stable to avoid render loops)
   const { sendState, remoteStates } = useGameSession();
   const remoteStatesRef = useRef<RemotePlayerState[]>([]);
   useEffect(() => { remoteStatesRef.current = remoteStates ?? []; }, [remoteStates]);
+  useEffect(() => {
+    lastPulseAtRef.current = performance.now();
+  }, []);
 
   // Game refs (no re-render on every frame)
   const playerXRef = useRef<number>(BASE_W / 2);
@@ -107,6 +110,14 @@ const RealmView: React.FC<Props> = ({ glyphData, onExit }) => {
 
   // Catch feedback (canvas-drawn, no re-render)
   const catchFlashRef = useRef<{ t: number; x: number; kind: "perfect" | "good" } | null>(null);
+
+  const hardReset = useCallback((): void => {
+    orbsRef.current = [];
+    setLives(MAX_LIVES);
+    setStreak(0);
+    setBestStreak((b) => b); // keep best
+    setGameOver(false);
+  }, []);
 
   /* --------------------------- Responsive canvas --------------------------- */
   useEffect(() => {
@@ -161,7 +172,7 @@ const RealmView: React.FC<Props> = ({ glyphData, onExit }) => {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
     };
-  }, [gameOver]);
+  }, [gameOver, hardReset]);
 
   // Pointer / touch control (tap/drag anywhere to steer)
   useEffect(() => {
@@ -408,16 +419,6 @@ const RealmView: React.FC<Props> = ({ glyphData, onExit }) => {
       lastTsRef.current = null;
     };
   }, [glyphData, paused, gameOver, size.w, size.h]);
-
-  /* ----------------------------- Helpers ----------------------------- */
-
-  const hardReset = (): void => {
-    orbsRef.current = [];
-    setLives(MAX_LIVES);
-    setStreak(0);
-    setBestStreak((b) => b); // keep best
-    setGameOver(false);
-  };
 
   /* ----------------------------- View ----------------------------- */
 

@@ -183,6 +183,14 @@ export default function HomePriceChartCard({
   const [sample, setSample] = useState<number>(ctaAmountUsd);
   const [expanded, setExpanded] = useState<boolean>(false);
 
+  // Stripe
+  const [stripePromise, setStripePromise] = useState<ReturnType<typeof loadStripe> | null>(null);
+  const [clientSecret, setClientSecret] = useState<string | null>(null);
+  const [intentId, setIntentId] = useState<string | null>(null);
+  const [elementsKey, setElementsKey] = useState(0);
+  const [success, setSuccess] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
+
   // Notify parent once on mount (no dependency churn)
   const onExpandChangeRef = useRef<Props["onExpandChange"]>(onExpandChange);
   useEffect(() => {
@@ -194,14 +202,6 @@ export default function HomePriceChartCard({
   useEffect(() => {
     setStripePromise(null);
   }, [stripePk]);
-
-  // Stripe
-  const [stripePromise, setStripePromise] = useState<ReturnType<typeof loadStripe> | null>(null);
-  const [clientSecret, setClientSecret] = useState<string | null>(null);
-  const [intentId, setIntentId] = useState<string | null>(null);
-  const [elementsKey, setElementsKey] = useState(0);
-  const [success, setSuccess] = useState(false);
-  const [errorMsg, setErrorMsg] = useState("");
 
   /* ---------- PURE price fn (used by chart engine only) ---------- */
   const computePrice = useCallback(

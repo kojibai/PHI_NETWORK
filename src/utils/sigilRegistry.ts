@@ -266,10 +266,10 @@ export function registerSigilUrl(url: string): void {
   rememberInMemory(abs);
 
   // 1) Upsert into canonical list
-  const changedCanon = upsertUrlList(SIGIL_REGISTRY_LS_KEY, abs).changed;
+  upsertUrlList(SIGIL_REGISTRY_LS_KEY, abs);
 
   // 2) Mirror into fallback list for older code paths
-  const changedFallback = upsertUrlList(SIGIL_REGISTRY_FALLBACK_LS_KEY, abs).changed;
+  upsertUrlList(SIGIL_REGISTRY_FALLBACK_LS_KEY, abs);
 
   // 3) DOM event for same-tab listeners
   try {

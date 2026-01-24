@@ -43,9 +43,8 @@ const nextBoundary = (nowMs: number) => {
 interface Props { kaiPulse?: number } // optional seed; ignored once live
 
 const SigilGlyphButton: React.FC<Props> = () => {
-  const [pulse, setPulse] = useState<number>(0);
-  const [beat, setBeat] = useState<number>(0);
-  const [chakraDay, setChakraDay] = useState<KaiSigilProps["chakraDay"]>("Root");
+  const [kai, setKai] = useState(() => computeLocalKai(new Date()));
+  const { pulse, beat, chakraDay } = kai;
   const [open, setOpen] = useState(false);
 
   // 🔑 unique, stable scope for this instance’s internal SVG ids (prevents collisions with modal)
@@ -59,10 +58,7 @@ const SigilGlyphButton: React.FC<Props> = () => {
   const targetRef = useRef<number>(0);
 
   const applyNow = useCallback(() => {
-    const { pulse: p, beat: b, chakraDay: cd } = computeLocalKai(new Date());
-    setPulse(p);
-    setBeat(b);
-    setChakraDay(cd);
+    setKai(computeLocalKai(new Date()));
   }, []);
 
   const clearTimer = () => {
@@ -96,10 +92,9 @@ const SigilGlyphButton: React.FC<Props> = () => {
 
   /* mount: compute immediately and align to boundary */
   useEffect(() => {
-    applyNow();
     scheduleAligned();
     return () => clearTimer();
-  }, [applyNow, scheduleAligned]);
+  }, [scheduleAligned]);
 
   /* visibility: re-align when returning to foreground */
   useEffect(() => {
@@ -137,7 +132,7 @@ const SigilGlyphButton: React.FC<Props> = () => {
             origin={idScope}
             onReady={(payload?: { hash?: string; pulse?: number }) => {
               if (payload && typeof payload.pulse === "number" && payload.pulse !== pulse) {
-                setPulse(payload.pulse);
+                setKai((prev) => ({ ...prev, pulse: payload.pulse ?? prev.pulse }));
               }
             }}
           />

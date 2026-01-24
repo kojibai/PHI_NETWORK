@@ -74,19 +74,24 @@ export default function useRollingChartSeries({
     setData(next);
   }, [maxPoints]);
 
+  const queueSnap = useCallback(() => {
+    window.setTimeout(() => {
+      snapNow();
+    }, 0);
+  }, [snapNow]);
+
   useEffect(() => {
     dataRef.current = [];
-    setData([]);
-    snapNow();
-  }, [seriesKey, snapNow]);
+    queueSnap();
+  }, [seriesKey, queueSnap]);
 
   useEffect(() => {
-    snapNow();
-  }, [valuePhi, usdPerPhi, snapNow]);
+    queueSnap();
+  }, [valuePhi, usdPerPhi, queueSnap]);
 
   useEffect(() => {
-    if (typeof snapKey === "number") snapNow();
-  }, [snapKey, snapNow]);
+    if (typeof snapKey === "number") queueSnap();
+  }, [snapKey, queueSnap]);
 
   useEffect(() => {
     const id = window.setInterval(() => {

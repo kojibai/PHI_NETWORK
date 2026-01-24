@@ -1,5 +1,5 @@
 // useValueHistory.ts (Kairos-only)
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 
 export type ValuePoint = { t: number; v: number };
 
@@ -30,33 +30,32 @@ export function useValueHistory(opts?: Options) {
   const maxPoints = Math.max(60, Math.floor(opts?.maxPoints ?? 36 * 42 * 8));
   const maxBeats  = Math.max(1, Math.floor(opts?.maxBeats  ?? 36 * 42)); // 42 Kai days
 
-  const bufRef = useRef<ValuePoint[]>([]);
-  const [, setBump] = useState(0);
+  const [series, setSeries] = useState<ValuePoint[]>([]);
 
   const pushSample = useCallback((p: ValuePoint) => {
-    const buf = bufRef.current;
+    setSeries((prev) => {
+      const buf = [...prev];
 
-    // Compute *Kai-beat* cutoff even if the incoming sample is in ms
-    const lastBeatAbs = toAbsKaiBeats(p.t);
-    const cutoffAbs = lastBeatAbs - maxBeats;
+      // Compute *Kai-beat* cutoff even if the incoming sample is in ms
+      const lastBeatAbs = toAbsKaiBeats(p.t);
+      const cutoffAbs = lastBeatAbs - maxBeats;
 
-    // prune by Kai beats
-    let i = 0;
-    while (i < buf.length && toAbsKaiBeats(buf[i].t) < cutoffAbs) i++;
-    if (i > 0) buf.splice(0, i);
+      // prune by Kai beats
+      let i = 0;
+      while (i < buf.length && toAbsKaiBeats(buf[i].t) < cutoffAbs) i++;
+      if (i > 0) buf.splice(0, i);
 
-    // append and cap by count
-    buf.push(p);
-    if (buf.length > maxPoints) buf.splice(0, buf.length - maxPoints);
+      // append and cap by count
+      buf.push(p);
+      if (buf.length > maxPoints) buf.splice(0, buf.length - maxPoints);
 
-    setBump((x) => x + 1); // force rerender
+      return buf;
+    });
   }, [maxPoints, maxBeats]);
 
   const reset = useCallback(() => {
-    bufRef.current = [];
-    setBump((x) => x + 1);
+    setSeries([]);
   }, []);
 
-  // Return a fresh snapshot every render so downstream memos update
-  return { series: bufRef.current.slice(), pushSample, reset };
+  return { series, pushSample, reset };
 }

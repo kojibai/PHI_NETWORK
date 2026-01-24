@@ -10,7 +10,7 @@ import {
   SigilMintRoute,
 } from "../App";
 import KaiSplashScreen from "../components/KaiSplashScreen";
-import { PerfProfiler } from "../perf/perfDebug";
+import { PerfProfiler } from "../perf/PerfProfiler";
 
 // Standalone pages stay lazy (RouteLoader allowed here)
 const SigilFeedPage = React.lazy(() => import("../pages/SigilFeedPage"));
