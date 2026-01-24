@@ -65,9 +65,23 @@ function absoluteUrl(req: IncomingMessage): URL {
   return new URL(`${proto}://${host}${p}`);
 }
 
+function formatErrorForDebug(err: unknown): string {
+  if (err instanceof Error) {
+    return `${err.name}: ${err.message}\n\n${err.stack ?? ""}`;
+  }
+  try {
+    return JSON.stringify(err, null, 2);
+  } catch {
+    return String(err);
+  }
+}
+
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
+  const ABORT_DELAY_MS = 10_000;
+
   try {
     const url = absoluteUrl(req);
+    const DEBUG = url.searchParams.has("__ssr_debug");
 
     const templatePath = path.join(process.cwd(), "dist", "server", "template.html");
     const template = fs.readFileSync(templatePath, "utf8");
@@ -78,6 +92,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
 
     const mod = (await import(entryUrl)) as unknown;
     const render = pickRender(mod);
+
     if (!render) {
       res.statusCode = 500;
       res.setHeader("content-type", "text/plain; charset=utf-8");
@@ -85,21 +100,24 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       return;
     }
 
+    // We want to always return HTML. If SSR fails, we fall back to the empty shell
+    // so the client bundle can still boot + hydrate.
     res.statusCode = 200;
     res.setHeader("content-type", "text/html; charset=utf-8");
     res.setHeader("cache-control", "no-store");
-
-    const ABORT_DELAY_MS = 10_000;
 
     let shellFlushed = false;
     let pipeable: PipeableStream | null = null;
 
     const pass = new PassThrough();
+
+    // When React stream ends, append tail and close response.
     pass.on("end", () => {
       if (!res.writableEnded) res.end(tail);
     });
+
     pass.on("error", () => {
-      if (!res.writableEnded) res.end();
+      if (!res.writableEnded) res.end(tail);
     });
 
     const timeout = setTimeout(() => {
@@ -110,7 +128,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       }
     }, ABORT_DELAY_MS);
 
-    // If client disconnects, abort React stream
+    // Abort if client disconnects
     req.on("close", () => {
       clearTimeout(timeout);
       try {
@@ -125,34 +143,57 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
         if (shellFlushed) return;
         shellFlushed = true;
 
-        // write template head, then stream react, then tail on end
+        // Start with head, then stream React, tail is appended on stream end.
         res.write(head);
         pass.pipe(res, { end: false });
         pipeable?.pipe(pass);
       },
+
       onAllReady() {
         // optional
       },
+
       onShellError(err) {
         clearTimeout(timeout);
-        console.error(err);
-        if (!res.headersSent) {
-          res.statusCode = 500;
-          res.setHeader("content-type", "text/plain; charset=utf-8");
+        console.error("SSR shell error:", err);
+
+        // If shell failed before onShellReady, we still want to return an HTML document.
+        // Debug mode: show error details in the browser.
+        if (!shellFlushed) {
+          if (DEBUG) {
+            if (!res.writableEnded) res.end(`<pre>${escapeHtml(formatErrorForDebug(err))}</pre>`);
+          } else {
+            if (!res.writableEnded) res.end(head + tail);
+          }
+          return;
         }
-        if (!res.writableEnded) res.end("SSR shell error");
+
+        // If shell already started streaming, we can’t safely replace the document.
+        // End what we can.
+        if (!res.writableEnded) res.end(tail);
       },
+
       onError(err) {
-        // recoverable errors can happen; log and keep streaming
-        console.error(err);
+        // recoverable errors can happen; keep streaming if possible
+        console.error("SSR render error:", err);
       },
     };
 
+    // Start React SSR stream
     pipeable = render(url.pathname + url.search, opts);
   } catch (err) {
-    console.error(err);
+    console.error("SSR function crashed:", err);
     res.statusCode = 500;
     res.setHeader("content-type", "text/plain; charset=utf-8");
     res.end("SSR function crashed");
   }
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
 }
