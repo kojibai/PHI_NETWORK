@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { PassThrough } from "node:stream";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import type { PipeableStream } from "react-dom/server";
 
 type SsrRenderOptions = {
@@ -40,9 +41,10 @@ function splitTemplate(template: string): { head: string; tail: string } {
   const root = '<div id="root"></div>';
   const idx = template.indexOf(root);
   if (idx >= 0) {
-    const head = template.slice(0, idx) + '<div id="root">';
-    const tail = "</div>" + template.slice(idx + root.length);
-    return { head, tail };
+    return {
+      head: template.slice(0, idx) + '<div id="root">',
+      tail: "</div>" + template.slice(idx + root.length),
+    };
   }
 
   const bodyClose = "</body>";
@@ -54,88 +56,103 @@ function splitTemplate(template: string): { head: string; tail: string } {
   return { head: template, tail: "" };
 }
 
-export default async function handler(req: Request): Promise<Response> {
-  const url = new URL(req.url);
+function absoluteUrl(req: IncomingMessage): URL {
+  const protoRaw = req.headers["x-forwarded-proto"] ?? "https";
+  const hostRaw = req.headers["x-forwarded-host"] ?? req.headers.host ?? "localhost";
+  const proto = String(protoRaw).split(",")[0].trim();
+  const host = String(hostRaw).split(",")[0].trim();
+  const p = req.url ?? "/";
+  return new URL(`${proto}://${host}${p}`);
+}
 
-  const templatePath = path.join(process.cwd(), "dist", "server", "template.html");
-  const template = fs.readFileSync(templatePath, "utf8");
-  const { head, tail } = splitTemplate(template);
+export default async function handler(req: IncomingMessage, res: ServerResponse) {
+  try {
+    const url = absoluteUrl(req);
 
-  const entryPath = path.join(process.cwd(), "dist", "server", "entry-server.js");
-  const entryUrl = pathToFileURL(entryPath).href;
+    const templatePath = path.join(process.cwd(), "dist", "server", "template.html");
+    const template = fs.readFileSync(templatePath, "utf8");
+    const { head, tail } = splitTemplate(template);
 
-  const mod = (await import(entryUrl)) as unknown;
-  const render = pickRender(mod);
-  if (!render) {
-    return new Response("SSR entry missing render() export", { status: 500 });
-  }
+    const entryPath = path.join(process.cwd(), "dist", "server", "entry-server.js");
+    const entryUrl = pathToFileURL(entryPath).href;
 
-  const ABORT_DELAY_MS = 10_000;
+    const mod = (await import(entryUrl)) as unknown;
+    const render = pickRender(mod);
+    if (!render) {
+      res.statusCode = 500;
+      res.setHeader("content-type", "text/plain; charset=utf-8");
+      res.end("SSR entry missing render() export");
+      return;
+    }
 
-  const stream = new ReadableStream<Uint8Array>({
-    start(controller) {
-      const encoder = new TextEncoder();
-      let shellFlushed = false;
+    res.statusCode = 200;
+    res.setHeader("content-type", "text/html; charset=utf-8");
+    res.setHeader("cache-control", "no-store");
 
-      const nodeStream = new PassThrough();
+    const ABORT_DELAY_MS = 10_000;
 
-      nodeStream.on("data", (chunk) => {
-        controller.enqueue(typeof chunk === "string" ? encoder.encode(chunk) : new Uint8Array(chunk));
-      });
+    let shellFlushed = false;
+    let pipeable: PipeableStream | null = null;
 
-      nodeStream.on("end", () => {
-        controller.enqueue(encoder.encode(tail));
-        controller.close();
-      });
+    const pass = new PassThrough();
+    pass.on("end", () => {
+      if (!res.writableEnded) res.end(tail);
+    });
+    pass.on("error", () => {
+      if (!res.writableEnded) res.end();
+    });
 
-      nodeStream.on("error", (err) => {
-        controller.error(err);
-      });
-
-      let pipeable: PipeableStream | null = null;
-
-      const opts: SsrRenderOptions = {
-        onShellReady() {
-          if (shellFlushed) return;
-          shellFlushed = true;
-
-          controller.enqueue(encoder.encode(head));
-          pipeable?.pipe(nodeStream);
-        },
-        onAllReady() {
-          // no-op
-        },
-        onShellError(err) {
-          controller.error(err);
-        },
-        onError() {
-          // React may call this for recoverable errors during streaming.
-          // We keep streaming unless onShellError fires.
-        },
-      };
-
+    const timeout = setTimeout(() => {
       try {
-        pipeable = render(url.pathname + url.search, opts);
-      } catch (err) {
-        controller.error(err);
-        return;
+        pipeable?.abort();
+      } catch {
+        // ignore
       }
+    }, ABORT_DELAY_MS);
 
-      setTimeout(() => {
-        try {
-          pipeable?.abort();
-        } catch {
-          // ignore
+    // If client disconnects, abort React stream
+    req.on("close", () => {
+      clearTimeout(timeout);
+      try {
+        pipeable?.abort();
+      } catch {
+        // ignore
+      }
+    });
+
+    const opts: SsrRenderOptions = {
+      onShellReady() {
+        if (shellFlushed) return;
+        shellFlushed = true;
+
+        // write template head, then stream react, then tail on end
+        res.write(head);
+        pass.pipe(res, { end: false });
+        pipeable?.pipe(pass);
+      },
+      onAllReady() {
+        // optional
+      },
+      onShellError(err) {
+        clearTimeout(timeout);
+        console.error(err);
+        if (!res.headersSent) {
+          res.statusCode = 500;
+          res.setHeader("content-type", "text/plain; charset=utf-8");
         }
-      }, ABORT_DELAY_MS);
-    },
-  });
+        if (!res.writableEnded) res.end("SSR shell error");
+      },
+      onError(err) {
+        // recoverable errors can happen; log and keep streaming
+        console.error(err);
+      },
+    };
 
-  return new Response(stream, {
-    status: 200,
-    headers: {
-      "content-type": "text/html; charset=utf-8",
-      "cache-control": "no-store",
-    },
-  });
+    pipeable = render(url.pathname + url.search, opts);
+  } catch (err) {
+    console.error(err);
+    res.statusCode = 500;
+    res.setHeader("content-type", "text/plain; charset=utf-8");
+    res.end("SSR function crashed");
+  }
 }
