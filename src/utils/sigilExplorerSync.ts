@@ -96,6 +96,21 @@ function readRemoteTotal(body: ApiSealResponse): number | undefined {
   return total;
 }
 
+/**
+ * IMPORTANT:
+ * In dev we intentionally use a *relative* API base (""), so we can go through Vite proxy.
+ * `new URL(path, "")` throws "Invalid base URL".
+ *
+ * This helper builds URLs safely for both:
+ *  - base = "" (dev proxy): returns "/sigils/seal"
+ *  - base = "https://m.kai.ac": returns "https://m.kai.ac/sigils/seal"
+ */
+function buildUrl(base: string, path: string): string {
+  if (!base) return path; // relative → Vite proxy handles it
+  // base is absolute URL
+  return new URL(path, base).toString();
+}
+
 export function startSigilExplorerSync(): () => void {
   if (!hasWindow) return () => {};
 
@@ -181,11 +196,14 @@ export function startSigilExplorerSync(): () => void {
     try {
       const prevSeal = remoteSeal;
 
-      const res = await apiFetchWithFailover((base) => new URL(API_SEAL_PATH, base).toString(), {
-        method: "GET",
-        cache: "no-store",
-        signal: ac.signal,
-      });
+      const res = await apiFetchWithFailover(
+        (base) => buildUrl(base, API_SEAL_PATH),
+        {
+          method: "GET",
+          cache: "no-store",
+          signal: ac.signal,
+        },
+      );
 
       if (!res) return;
       if (!res.ok && res.status !== 304) return;
@@ -193,6 +211,7 @@ export function startSigilExplorerSync(): () => void {
       let nextSeal = "";
       let remotePulse: number | undefined;
       let remoteTotal: number | undefined;
+
       if (res.status !== 304) {
         try {
           const body = (await res.json()) as ApiSealResponse;
@@ -212,15 +231,19 @@ export function startSigilExplorerSync(): () => void {
       const sealNow = remoteSeal;
       const localLatestPulse = getLatestPulseFromRegistry();
       const localCount = getRegistryCount();
+
       const hasNewerPulse =
         remotePulse != null && (localLatestPulse == null || remotePulse > localLatestPulse);
+
       const hasMoreRemote =
         remoteTotal != null && (localCount == null || remoteTotal > localCount);
+
       const shouldFullSeed =
         reason === "open" ||
         hasNewerPulse ||
         hasMoreRemote ||
         (sealNow && sealNow !== lastFullSeedSeal);
+
       if (shouldFullSeed) {
         seedInhaleFromRegistry();
         lastFullSeedSeal = sealNow;

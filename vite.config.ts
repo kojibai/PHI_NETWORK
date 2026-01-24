@@ -2,33 +2,36 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { BASE_APP_VERSION } from "./src/version";
 
-// https://vite.dev/config/
-export default defineConfig(({ ssrBuild }) => ({
-  plugins: [react()],
-  resolve: {
-    dedupe: ["react", "react-dom", "react/jsx-runtime"],
-  },
-  server: {
-    proxy: {
-      "/api": "http://localhost:8787",
-      "/sigils": {
-        target: "https://m.kai.ac",
-        changeOrigin: true,
-        secure: true,
+export default defineConfig(({ isSsrBuild }) => {
+  const ssrBuild = isSsrBuild === true; // important: may be undefined :contentReference[oaicite:1]{index=1}
+
+  return {
+    plugins: [react()],
+    resolve: {
+      dedupe: ["react", "react-dom", "react/jsx-runtime"],
+    },
+    server: {
+      proxy: {
+        "/api": "http://localhost:8787",
+        "/sigils": {
+          target: "https://m.kai.ac",
+          changeOrigin: true,
+          secure: true,
+        },
       },
     },
-  },
-  define: {
-    "import.meta.env.VITE_APP_VERSION": JSON.stringify(BASE_APP_VERSION),
-  },
-  build: {
-    ssrManifest: !ssrBuild,
-    outDir: ssrBuild ? "dist/server" : "dist/client",
-    rollupOptions: {
-      input: ssrBuild ? undefined : "index.html",
+    define: {
+      "import.meta.env.VITE_APP_VERSION": JSON.stringify(BASE_APP_VERSION),
     },
-  },
-  ssr: {
-    noExternal: ["react-router-dom"],
-  },
-}));
+    build: {
+      ssrManifest: !ssrBuild,
+      outDir: ssrBuild ? "dist/server" : "dist/client",
+      rollupOptions: {
+        input: ssrBuild ? undefined : "index.html",
+      },
+    },
+    ssr: {
+      noExternal: ["react-router-dom"],
+    },
+  };
+});

@@ -1,14 +1,16 @@
 // src/App.tsx
 /* ──────────────────────────────────────────────────────────────────────────────
    App.tsx · ΦNet Sovereign Gate Shell (KaiOS-style PWA)
-   v29.4.4 · INSTANT LOAD / NO-HOMEPAGE-SPLASH / WarmTimer Fix / Heavy UI Deferred
+   v29.4.4+hydrofix · HYDRATION-SAFE FIRST RENDER
 
-   ✅ GOALS (implemented):
-   - Fix linter/TS error: warmTimer not defined → ref-based timer.
-   - Instant first paint: code-split heavy modules (Chart / Modals / Explorer / Klock).
-   - Homepage splash killer: remove any boot/splash overlays on "/" immediately.
-   - SW warming: idle-only + focus rewarm, abort-safe, respects Save-Data/2G.
-   - Zero “loading splash” fallbacks: Suspense fallback is null/blank spacer.
+   ✅ Fixes:
+   - Hydration mismatch by eliminating client-only values on the first render.
+   - Viewport (visualViewport), SW version, and "now time" are applied only after hydration.
+   - Splash killer will NOT mutate nodes inside the React root pre-hydration.
+
+   Notes:
+   - SSR pass + first client pass must be byte-for-byte compatible in rendered markup.
+   - After hydration, layout effects may update styles/attributes with real viewport/time data.
 ────────────────────────────────────────────────────────────────────────────── */
 
 import React, {
@@ -53,6 +55,28 @@ declare global {
 }
 
 /* ──────────────────────────────────────────────────────────────────────────────
+   Environment helpers
+────────────────────────────────────────────────────────────────────────────── */
+const IS_BROWSER = typeof window !== "undefined" && typeof document !== "undefined";
+
+// Isomorphic layout effect (prevents SSR warning; still runs before paint in browser)
+const useIsoLayoutEffect = IS_BROWSER ? useLayoutEffect : useEffect;
+
+/**
+ * Hydration flag:
+ * - false on SSR
+ * - false on first client render (so markup matches SSR)
+ * - flips true in layout effect (before paint), enabling client-only rendering
+ */
+function useHydrated(): boolean {
+  const [hydrated, setHydrated] = useState(false);
+  useIsoLayoutEffect(() => {
+    setHydrated(true);
+  }, []);
+  return hydrated;
+}
+
+/* ──────────────────────────────────────────────────────────────────────────────
    Lazy-loaded heavy modules (instant first paint)
 ────────────────────────────────────────────────────────────────────────────── */
 const KaiVohModal = lazy(
@@ -87,34 +111,44 @@ const EternalKlockLazy = lazy(
 
 /* ──────────────────────────────────────────────────────────────────────────────
    Splash killer (homepage only)
-   - Runs at module eval + again in layout effect to guarantee removal.
+   - IMPORTANT: never remove nodes inside the React root before hydration.
+   - Safe: only targets elements OUTSIDE #root/__next if present.
 ────────────────────────────────────────────────────────────────────────────── */
 function killSplashOnHome(): void {
-  if (typeof document === "undefined" || typeof window === "undefined") return;
+  if (!IS_BROWSER) return;
   if (window.location.pathname !== "/") return;
+
+  const root =
+    document.getElementById("root") ??
+    document.getElementById("__next") ??
+    null;
+
+  const canRemove = (el: HTMLElement): boolean => {
+    if (!root) return true;
+    return !root.contains(el);
+  };
 
   const ids = ["app-splash", "pwa-splash", "splash", "splash-screen", "boot-splash"];
   for (const id of ids) {
     const el = document.getElementById(id);
-    if (el) el.remove();
+    if (el && el instanceof HTMLElement && canRemove(el)) el.remove();
   }
 
   document
     .querySelectorAll<HTMLElement>(
       "[data-splash], .app-splash, .pwa-splash, .splash-screen, .splash, .boot-splash",
     )
-    .forEach((el) => el.remove());
+    .forEach((el) => {
+      if (canRemove(el)) el.remove();
+    });
 }
 
-// Run ASAP on module load (best effort; removes splash without waiting for React)
+// Run ASAP on module load (best effort; SAFE due to root containment guard)
 try {
   killSplashOnHome();
 } catch {
   /* ignore */
 }
-
-// Isomorphic layout effect (prevents paint-flash)
-const useIsoLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
 
 /* ──────────────────────────────────────────────────────────────────────────────
    App constants
@@ -207,12 +241,6 @@ type KlockNavState = { openDetails?: boolean };
 
 type KaiMoment = ReturnType<typeof momentFromUTC>;
 
-function getInitialAppVersion(): string {
-  const swVersion = typeof window !== "undefined" ? window.kairosSwVersion : undefined;
-  if (typeof swVersion === "string" && swVersion.length) return swVersion;
-  return DEFAULT_APP_VERSION;
-}
-
 /* ──────────────────────────────────────────────────────────────────────────────
    KKS v1.0 display math (exact step)
 ────────────────────────────────────────────────────────────────────────────── */
@@ -261,6 +289,40 @@ type BeatStepDMY = {
   year: number; // 0-based
 };
 
+type LiveKaiSnap = {
+  pulse: number;
+  pulseStr: string;
+  beatStepDMY: BeatStepDMY;
+  beatStepLabel: string;
+  dmyLabel: string;
+  chakraDay: ChakraDay;
+};
+
+const DEFAULT_BEAT_STEP_DMY: BeatStepDMY = {
+  beat: 0,
+  step: 0,
+  day: 1,
+  month: 1,
+  year: 0,
+};
+
+function formatBeatStepLabel(v: BeatStepDMY): string {
+  return `${fmt2(v.beat)}:${fmt2(v.step)}`;
+}
+
+function formatDMYLabel(v: BeatStepDMY): string {
+  return `D${v.day}/M${v.month}/Y${v.year}`;
+}
+
+const DEFAULT_LIVE_SNAP: LiveKaiSnap = {
+  pulse: 0,
+  pulseStr: formatPulse(0),
+  beatStepDMY: DEFAULT_BEAT_STEP_DMY,
+  beatStepLabel: formatBeatStepLabel(DEFAULT_BEAT_STEP_DMY),
+  dmyLabel: formatDMYLabel(DEFAULT_BEAT_STEP_DMY),
+  chakraDay: "Heart",
+};
+
 function computeBeatStepDMY(m: KaiMoment): BeatStepDMY {
   const pulse = readNum(m, "pulse") ?? 0;
 
@@ -304,14 +366,23 @@ function computeBeatStepDMY(m: KaiMoment): BeatStepDMY {
   return { beat, step, day, month, year };
 }
 
-function formatBeatStepLabel(v: BeatStepDMY): string {
-  return `${fmt2(v.beat)}:${fmt2(v.step)}`;
+function buildLiveKaiSnap(m: KaiMoment): LiveKaiSnap {
+  const pulse = readNum(m, "pulse") ?? 0;
+  const pulseStr = formatPulse(pulse);
+  const bsd = computeBeatStepDMY(m);
+  return {
+    pulse,
+    pulseStr,
+    beatStepDMY: bsd,
+    beatStepLabel: formatBeatStepLabel(bsd),
+    dmyLabel: formatDMYLabel(bsd),
+    chakraDay: m.chakraDay,
+  };
 }
 
-function formatDMYLabel(v: BeatStepDMY): string {
-  return `D${v.day}/M${v.month}/Y${v.year}`;
-}
-
+/* ──────────────────────────────────────────────────────────────────────────────
+   Portal host utilities (client-only)
+────────────────────────────────────────────────────────────────────────────── */
 function isFixedSafeHost(el: HTMLElement): boolean {
   const cs = window.getComputedStyle(el);
 
@@ -342,58 +413,58 @@ function getPortalHost(): HTMLElement {
   }
   return document.body;
 }
+
 type PortalMountProps = {
   open: boolean;
   children: React.ReactNode;
 };
 
 function PortalMount({ open, children }: PortalMountProps): React.JSX.Element | null {
-  const isClient = typeof document !== "undefined";
+  const hydrated = useHydrated();
 
   const portalHost = useMemo<HTMLElement | null>(() => {
-    if (!isClient) return null;
-    return getPortalHost(); // same host logic as Attestation/Stream/Klock
-  }, [isClient]);
+    if (!hydrated) return null;
+    return getPortalHost();
+  }, [hydrated]);
 
-  // Same scroll-lock semantics as other portals (safe even if child also locks)
-  useBodyScrollLock(open && isClient);
+  useBodyScrollLock(open && hydrated);
 
-  if (!open || !isClient || !portalHost) return null;
-
+  if (!open || !hydrated || !portalHost) return null;
   return createPortal(<>{children}</>, portalHost);
 }
 
 /* ──────────────────────────────────────────────────────────────────────────────
-   Popovers
+   Popovers (hydration-safe)
 ────────────────────────────────────────────────────────────────────────────── */
 function ExplorerPopover({
   open,
   onClose,
   children,
 }: ExplorerPopoverProps): React.JSX.Element | null {
-  const isClient = typeof document !== "undefined";
-  const vvSize = useVisualViewportSize();
+  const hydrated = useHydrated();
+  const vvSizeRaw = useVisualViewportSize();
+  const vvSize = hydrated ? vvSizeRaw : { width: 0, height: 0 };
 
   const portalHost = useMemo<HTMLElement | null>(() => {
-    if (!isClient) return null;
+    if (!hydrated) return null;
     return getPortalHost();
-  }, [isClient]);
+  }, [hydrated]);
 
-  useBodyScrollLock(open && isClient);
+  useBodyScrollLock(open && hydrated);
 
   useEffect(() => {
-    if (!open || !isClient) return;
+    if (!open || !hydrated) return;
     window.dispatchEvent(new CustomEvent(SIGIL_EXPLORER_OPEN_EVENT));
-  }, [open, isClient]);
+  }, [open, hydrated]);
 
   const closeBtnRef = useRef<HTMLButtonElement | null>(null);
   useEffect(() => {
-    if (!open) return;
+    if (!open || !hydrated) return;
     window.requestAnimationFrame(() => closeBtnRef.current?.focus());
-  }, [open]);
+  }, [open, hydrated]);
 
   const overlayStyle = useMemo<ExplorerPopoverStyle | undefined>(() => {
-    if (!open || !isClient) return undefined;
+    if (!open || !hydrated) return undefined;
 
     const h = vvSize.height;
     const w = vvSize.width;
@@ -411,17 +482,14 @@ function ExplorerPopover({
       ["--sx-ring"]:
         "0 0 0 2px rgba(55, 255, 228, 0.25), 0 0 0 6px rgba(55, 255, 228, 0.12)",
     };
-  }, [open, isClient, vvSize]);
+  }, [open, hydrated, vvSize.height, vvSize.width]);
 
-  const onBackdropPointerDown = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>): void => {
-      if (e.target === e.currentTarget) {
-        e.preventDefault();
-        e.stopPropagation();
-      }
-    },
-    [],
-  );
+  const onBackdropPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>): void => {
+    if (e.target === e.currentTarget) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  }, []);
 
   const onBackdropClick = useCallback((e: React.MouseEvent<HTMLDivElement>): void => {
     if (e.target === e.currentTarget) {
@@ -430,15 +498,12 @@ function ExplorerPopover({
     }
   }, []);
 
-  const onClosePointerDown = useCallback(
-    (e: React.PointerEvent<HTMLButtonElement>): void => {
-      e.preventDefault();
-      e.stopPropagation();
-    },
-    [],
-  );
+  const onClosePointerDown = useCallback((e: React.PointerEvent<HTMLButtonElement>): void => {
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
 
-  if (!open || !isClient || !portalHost) return null;
+  if (!open || !hydrated || !portalHost) return null;
 
   return createPortal(
     <div
@@ -479,18 +544,19 @@ function ExplorerPopover({
 }
 
 function VerifyPopover({ open, onClose, children }: VerifyPopoverProps): React.JSX.Element | null {
-  const isClient = typeof document !== "undefined";
-  const vvSize = useVisualViewportSize();
+  const hydrated = useHydrated();
+  const vvSizeRaw = useVisualViewportSize();
+  const vvSize = hydrated ? vvSizeRaw : { width: 0, height: 0 };
 
   const portalHost = useMemo<HTMLElement | null>(() => {
-    if (!isClient) return null;
+    if (!hydrated) return null;
     return getPortalHost();
-  }, [isClient]);
+  }, [hydrated]);
 
-  useBodyScrollLock(open && isClient);
+  useBodyScrollLock(open && hydrated);
 
   useEffect(() => {
-    if (!open || !isClient) return;
+    if (!open || !hydrated) return;
 
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === "Escape") onClose();
@@ -498,16 +564,16 @@ function VerifyPopover({ open, onClose, children }: VerifyPopoverProps): React.J
 
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [open, onClose, isClient]);
+  }, [open, onClose, hydrated]);
 
   const closeBtnRef = useRef<HTMLButtonElement | null>(null);
   useEffect(() => {
-    if (!open) return;
+    if (!open || !hydrated) return;
     window.requestAnimationFrame(() => closeBtnRef.current?.focus());
-  }, [open]);
+  }, [open, hydrated]);
 
   const overlayStyle = useMemo<ExplorerPopoverStyle | undefined>(() => {
-    if (!open || !isClient) return undefined;
+    if (!open || !hydrated) return undefined;
 
     const h = vvSize.height;
     const w = vvSize.width;
@@ -525,17 +591,14 @@ function VerifyPopover({ open, onClose, children }: VerifyPopoverProps): React.J
       ["--sx-ring"]:
         "0 0 0 2px rgba(55, 255, 228, 0.25), 0 0 0 6px rgba(55, 255, 228, 0.12)",
     };
-  }, [open, isClient, vvSize]);
+  }, [open, hydrated, vvSize.height, vvSize.width]);
 
-  const onBackdropPointerDown = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>): void => {
-      if (e.target === e.currentTarget) {
-        e.preventDefault();
-        e.stopPropagation();
-      }
-    },
-    [],
-  );
+  const onBackdropPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>): void => {
+    if (e.target === e.currentTarget) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  }, []);
 
   const onBackdropClick = useCallback(
     (e: React.MouseEvent<HTMLDivElement>): void => {
@@ -548,15 +611,12 @@ function VerifyPopover({ open, onClose, children }: VerifyPopoverProps): React.J
     [onClose],
   );
 
-  const onClosePointerDown = useCallback(
-    (e: React.PointerEvent<HTMLButtonElement>): void => {
-      e.preventDefault();
-      e.stopPropagation();
-    },
-    [],
-  );
+  const onClosePointerDown = useCallback((e: React.PointerEvent<HTMLButtonElement>): void => {
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
 
-  if (!open || !isClient || !portalHost) return null;
+  if (!open || !hydrated || !portalHost) return null;
 
   return createPortal(
     <div
@@ -625,18 +685,19 @@ function ExplorerFallback(): React.JSX.Element {
 }
 
 function KlockPopover({ open, onClose, children }: KlockPopoverProps): React.JSX.Element | null {
-  const isClient = typeof document !== "undefined";
-  const vvSize = useVisualViewportSize();
+  const hydrated = useHydrated();
+  const vvSizeRaw = useVisualViewportSize();
+  const vvSize = hydrated ? vvSizeRaw : { width: 0, height: 0 };
 
   const portalHost = useMemo<HTMLElement | null>(() => {
-    if (!isClient) return null;
+    if (!hydrated) return null;
     return getPortalHost();
-  }, [isClient]);
+  }, [hydrated]);
 
-  useBodyScrollLock(open && isClient);
+  useBodyScrollLock(open && hydrated);
 
   useEffect(() => {
-    if (!open || !isClient) return;
+    if (!open || !hydrated) return;
 
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === "Escape") onClose();
@@ -644,16 +705,16 @@ function KlockPopover({ open, onClose, children }: KlockPopoverProps): React.JSX
 
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [open, onClose, isClient]);
+  }, [open, onClose, hydrated]);
 
   const closeBtnRef = useRef<HTMLButtonElement | null>(null);
   useEffect(() => {
-    if (!open) return;
+    if (!open || !hydrated) return;
     window.requestAnimationFrame(() => closeBtnRef.current?.focus());
-  }, [open]);
+  }, [open, hydrated]);
 
   const overlayStyle = useMemo<KlockPopoverStyle | undefined>(() => {
-    if (!open || !isClient) return undefined;
+    if (!open || !hydrated) return undefined;
 
     const h = vvSize.height;
     const w = vvSize.width;
@@ -672,17 +733,14 @@ function KlockPopover({ open, onClose, children }: KlockPopoverProps): React.JSX
         "0 0 0 2px rgba(255, 225, 150, 0.22), 0 0 0 6px rgba(255, 210, 120, 0.10)",
       ["--klock-scale"]: "5",
     };
-  }, [open, isClient, vvSize]);
+  }, [open, hydrated, vvSize.height, vvSize.width]);
 
-  const onBackdropPointerDown = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>): void => {
-      if (e.target === e.currentTarget) {
-        e.preventDefault();
-        e.stopPropagation();
-      }
-    },
-    [],
-  );
+  const onBackdropPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>): void => {
+    if (e.target === e.currentTarget) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  }, []);
 
   const onBackdropClick = useCallback(
     (e: React.MouseEvent<HTMLDivElement>): void => {
@@ -695,15 +753,12 @@ function KlockPopover({ open, onClose, children }: KlockPopoverProps): React.JSX
     [onClose],
   );
 
-  const onClosePointerDown = useCallback(
-    (e: React.PointerEvent<HTMLButtonElement>): void => {
-      e.preventDefault();
-      e.stopPropagation();
-    },
-    [],
-  );
+  const onClosePointerDown = useCallback((e: React.PointerEvent<HTMLButtonElement>): void => {
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
 
-  if (!open || !isClient || !portalHost) return null;
+  if (!open || !hydrated || !portalHost) return null;
 
   return createPortal(
     <div
@@ -748,7 +803,7 @@ function KlockPopover({ open, onClose, children }: KlockPopoverProps): React.JSX
 }
 
 /* ──────────────────────────────────────────────────────────────────────────────
-   Routes (lazy + no “splash” fallbacks)
+   Routes (lazy + no “splash” fallbacks) — hydration-safe
 ────────────────────────────────────────────────────────────────────────────── */
 export function KaiVohRoute(): React.JSX.Element {
   const navigate = useNavigate();
@@ -775,18 +830,28 @@ export function SigilMintRoute(): React.JSX.Element {
   const navigate = useNavigate();
   const [open, setOpen] = useState<boolean>(true);
 
-  const initialPulse = useMemo<number>(() => momentFromUTC(new Date()).pulse, []);
+  // ✅ Hydration-safe: never compute "now" on SSR/first pass.
+  const [initialPulse, setInitialPulse] = useState<number | null>(null);
+  useIsoLayoutEffect(() => {
+    try {
+      setInitialPulse(momentFromUTC(new Date()).pulse);
+    } catch {
+      setInitialPulse(0);
+    }
+  }, []);
 
   const handleClose = useCallback((): void => {
     setOpen(false);
     navigate("/", { replace: true });
   }, [navigate]);
 
+  const canShow = open && initialPulse !== null;
+
   return (
     <>
-      <PortalMount open={open}>
+      <PortalMount open={canShow}>
         <Suspense fallback={null}>
-          <SigilModal initialPulse={initialPulse} onClose={handleClose} />
+          <SigilModal initialPulse={initialPulse ?? 0} onClose={handleClose} />
         </Suspense>
       </PortalMount>
 
@@ -796,7 +861,6 @@ export function SigilMintRoute(): React.JSX.Element {
     </>
   );
 }
-
 
 export function ExplorerRoute(): React.JSX.Element {
   const navigate = useNavigate();
@@ -866,27 +930,8 @@ function LiveKaiButton({
   breathMs,
   breathsPerDay,
 }: LiveKaiButtonProps): React.JSX.Element {
-  const [snap, setSnap] = useState<{
-    pulse: number;
-    pulseStr: string;
-    beatStepDMY: BeatStepDMY;
-    beatStepLabel: string;
-    dmyLabel: string;
-    chakraDay: ChakraDay;
-  }>(() => {
-    const m = momentFromUTC(new Date());
-    const pulse = readNum(m, "pulse") ?? 0;
-    const pulseStr = formatPulse(pulse);
-    const bsd = computeBeatStepDMY(m);
-    return {
-      pulse,
-      pulseStr,
-      beatStepDMY: bsd,
-      beatStepLabel: formatBeatStepLabel(bsd),
-      dmyLabel: formatDMYLabel(bsd),
-      chakraDay: m.chakraDay,
-    };
-  });
+  const hydrated = useHydrated();
+  const [snap, setSnap] = useState<LiveKaiSnap>(() => DEFAULT_LIVE_SNAP);
 
   const neonTextStyle = useMemo<CSSProperties>(
     () => ({
@@ -942,14 +987,8 @@ function LiveKaiButton({
       if (!alive) return;
       if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
 
-      const m = momentFromUTC(new Date());
-      const pulse = readNum(m, "pulse") ?? 0;
-      const pulseStr = formatPulse(pulse);
-
-      const bsd = computeBeatStepDMY(m);
-      const beatStepLabel = formatBeatStepLabel(bsd);
-      const dmyLabel = formatDMYLabel(bsd);
-
+      const next = buildLiveKaiSnap(momentFromUTC(new Date()));
+      const { pulseStr, beatStepLabel, dmyLabel } = next;
       setSnap((prev) => {
         if (
           prev.pulseStr === pulseStr &&
@@ -958,14 +997,7 @@ function LiveKaiButton({
         ) {
           return prev;
         }
-        return {
-          pulse,
-          pulseStr,
-          beatStepDMY: bsd,
-          beatStepLabel,
-          dmyLabel,
-          chakraDay: m.chakraDay,
-        };
+        return next;
       });
     };
 
@@ -978,14 +1010,24 @@ function LiveKaiButton({
     };
   }, []);
 
+  // ✅ Hydration-safe numeric formatting: SSR/first pass uses deterministic toFixed.
+  const breathsPerDayLabel = useMemo(() => {
+    if (!hydrated) return breathsPerDay.toFixed(6);
+    try {
+      return breathsPerDay.toLocaleString("en-US", {
+        minimumFractionDigits: 6,
+        maximumFractionDigits: 6,
+      });
+    } catch {
+      return breathsPerDay.toFixed(6);
+    }
+  }, [hydrated, breathsPerDay]);
+
   const liveTitle = useMemo(() => {
     return `LIVE • NOW PULSE ${snap.pulseStr} • ${snap.beatStepLabel} • ${snap.dmyLabel} • Breath ${breathS.toFixed(
       6,
-    )}s (${Math.round(breathMs)}ms) • ${breathsPerDay.toLocaleString("en-US", {
-      minimumFractionDigits: 6,
-      maximumFractionDigits: 6,
-    })}/day • Open Eternal KaiKlok`;
-  }, [snap.pulseStr, snap.beatStepLabel, snap.dmyLabel, breathS, breathMs, breathsPerDay]);
+    )}s (${Math.round(breathMs)}ms) • ${breathsPerDayLabel}/day • Open Eternal KaiKlok`;
+  }, [snap.pulseStr, snap.beatStepLabel, snap.dmyLabel, breathS, breathMs, breathsPerDayLabel]);
 
   const liveAria = useMemo(() => {
     return `LIVE. Kai Pulse now ${snap.pulse}. Beat ${snap.beatStepDMY.beat} step ${snap.beatStepDMY.step}. D ${snap.beatStepDMY.day}. M ${snap.beatStepDMY.month}. Y ${snap.beatStepDMY.year}. Open Eternal KaiKlok.`;
@@ -1038,11 +1080,12 @@ function LiveKaiButton({
 }
 
 /* ──────────────────────────────────────────────────────────────────────────────
-   AppChrome
+   AppChrome (hydration-safe shell)
 ────────────────────────────────────────────────────────────────────────────── */
 export function AppChrome(): React.JSX.Element {
   const location = useLocation();
   const navigate = useNavigate();
+  const hydrated = useHydrated();
 
   useDisableZoom();
   usePerfMode();
@@ -1054,12 +1097,20 @@ export function AppChrome(): React.JSX.Element {
     };
   }, []);
 
-  // Re-kill splash on "/" before paint (guarantee)
+  // Re-kill splash on "/" before paint (guarantee) — safe due to root guard
   useIsoLayoutEffect(() => {
     killSplashOnHome();
   }, [location.pathname]);
 
-  const [appVersion, setAppVersion] = useState<string>(getInitialAppVersion);
+  // ✅ Hydration-safe: always render DEFAULT on SSR/first pass,
+  // then patch from window/event after hydration.
+  const [appVersion, setAppVersion] = useState<string>(DEFAULT_APP_VERSION);
+
+  useIsoLayoutEffect(() => {
+    if (!hydrated) return;
+    const swv = window.kairosSwVersion;
+    if (typeof swv === "string" && swv.length) setAppVersion(swv);
+  }, [hydrated]);
 
   useEffect(() => {
     const onVersion = (event: Event): void => {
@@ -1223,14 +1274,16 @@ export function AppChrome(): React.JSX.Element {
   const BREATH_MS = useMemo(() => BREATH_S * 1000, [BREATH_S]);
   const BREATHS_PER_DAY = useMemo(() => 17_491.270421, []);
 
-  const vvSize = useVisualViewportSize();
+  // ✅ Hydration-safe viewport: force 0x0 until hydrated to match SSR.
+  const vvSizeRaw = useVisualViewportSize();
+  const vvSize = hydrated ? vvSizeRaw : { width: 0, height: 0 };
 
   // Layout signal: “roomy” screens (desktop / tablet / very tall)
   const roomy = useMemo(() => {
     const h = vvSize.height || 0;
     const w = vvSize.width || 0;
     return h >= 820 && w >= 980;
-  }, [vvSize]);
+  }, [vvSize.height, vvSize.width]);
 
   const shellStyle = useMemo<AppShellStyle>(
     () => ({
@@ -1426,13 +1479,13 @@ export function AppChrome(): React.JSX.Element {
     }
   }, []);
 
-  // Nav: don’t stretch on roomy screens (lets panel “own” the extra space visually)
+  // Nav: don’t stretch on roomy screens
   const navInlineStyle = useMemo<CSSProperties | undefined>(() => {
     if (!roomy) return undefined;
     return { alignSelf: "start", height: "auto" };
   }, [roomy]);
 
-  // ✅ NEW: header meta-chip actions (Verifier only)
+  // Header meta-chip actions (Verifier only)
   const isVerifierRoute = location.pathname === "/";
   const openMintPhikey = useCallback((): void => {
     navigate("/mint");
@@ -1572,7 +1625,6 @@ export function AppChrome(): React.JSX.Element {
                   </button>
                 </div>
 
-                {/* Structural fix: prevent SovereignDeclarations from eating extra height */}
                 <div className="nav-writ-slot" data-writ-slim="1">
                   <SovereignDeclarations />
                 </div>
