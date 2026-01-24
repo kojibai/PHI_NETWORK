@@ -1,4 +1,5 @@
 // src/pages/SigilPage/utils.ts
+import JSZip from "jszip";
 import { CHAKRA_THEME } from "../../components/sigil/theme";
 
 /* Base-64 for small buffers */
@@ -14,7 +15,7 @@ export function signal(setToast: (s: string) => void, msg: string) {
 
 /** Bundle JSZip with the SigilPage chunk so offline exports don't need a network fetch. */
 export function loadJSZip() {
-  return import("jszip").then((mod) => mod.default);
+  return Promise.resolve(JSZip);
 }
 
 /* Tiny seeded RNG + deterministic seed */
