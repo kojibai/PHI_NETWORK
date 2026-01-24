@@ -534,14 +534,7 @@ export async function exportZIP(ctx: {
     };
 
     const sealedSvg = embedProofMetadata(svgString, proofBundle);
-    const svgBlob = new Blob(
-      [
-        sealedSvg.startsWith("<?xml")
-          ? sealedSvg
-          : `<?xml version="1.0" encoding="UTF-8"?>\n${sealedSvg}`,
-      ],
-      { type: "image/svg+xml;charset=utf-8" }
-    );
+    const svgBlob = new Blob([sealedSvg], { type: "image/svg+xml;charset=utf-8" });
     const svgAssetHash = await sha256HexCanon(new Uint8Array(await svgBlob.arrayBuffer()));
     const pngBlob = await pngBlobFromSvg(svgBlob, EXPORT_PX_MAX);
     const pngHash = await sha256HexCanon(new Uint8Array(await pngBlob.arrayBuffer()));
