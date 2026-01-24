@@ -1,4 +1,3 @@
-import html2canvas from "html2canvas";
 import { CHAKRA_THEME } from "../../components/sigil/theme";
 import { OG_W, OG_H } from "../../utils/qrExport";
 import { momentBadgeColor, requestIdle, cancelIdle } from "./utils";
@@ -47,6 +46,7 @@ export function runOgImageEffect(params: {
       const subtitle = `Pulse ${pulseStr.toLocaleString()} • Beat ${payload.beat}/36 • Step ${stepIdx + 1}/${stepsNum} • ${chakra}`;
 
 
+      const { default: html2canvas } = await import("html2canvas");
       const stageCanvas = await html2canvas(el as HTMLElement);
 
       const canvas = document.createElement("canvas");

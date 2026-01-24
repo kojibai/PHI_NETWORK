@@ -6,7 +6,6 @@ import "./SendSigilModal.css";
 import type { Glyph } from "../glyph/types";
 import { sendGlyphFromSource } from "../glyph/glyphUtils";
 import { XCircle, SendHorizontal } from "lucide-react";
-import JSZip from "jszip";
 
 /* Hidden renderer to mint fresh art + metadata we can export */
 import KaiSigil, { type KaiSigilHandle } from "./KaiSigil";
@@ -586,6 +585,7 @@ export default function SendSigilModal({
         shareUrl: rotatedUrl,
         meta: verifierMeta,
       };
+      const { default: JSZip } = await import("jszip");
       const zip = new JSZip();
       zip.file(`${base}.svg`, enhancedSvg);
       zip.file(`${base}.png`, pngBlob);

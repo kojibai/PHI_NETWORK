@@ -27,7 +27,7 @@ const IMAGECACHE = `${PREFIX}-images-${VERSION}`;
 // ✅ MUST persist across SW updates
 const ATTACHMENTS_CACHE = "sigil-attachments-v1";
 
-const OFFLINE_URL = "/index.html";
+const OFFLINE_URL = "/";
 const OFFLINE_FALLBACK = "/offline.html";
 
 const MANIFEST_ASSETS = Array.isArray(self.__WB_MANIFEST)
@@ -36,8 +36,7 @@ const MANIFEST_ASSETS = Array.isArray(self.__WB_MANIFEST)
 
 // Minimal shell (we also discover hashed bundles from index.html)
 const CORE_SHELL = [
-  "/",               // iOS needs both "/" and "/index.html"
-  "/index.html",
+  "/",               // canonical shell
   "/?source=pwa",    // if your manifest start_url includes this
   "/manifest.json",
   "/favicon.ico",
@@ -230,7 +229,12 @@ async function updateFromNetwork(req, cacheName) {
 
 async function precacheDiscoveredAssets() {
   try {
-    const res = await fetch(new Request("/index.html", { cache: "reload" }));
+    const res = await fetch(
+      new Request(OFFLINE_URL, {
+        cache: "reload",
+        headers: { Accept: "text/html" },
+      }),
+    );
     const html = await res.text();
     const assetUrls = new Set();
 
@@ -465,6 +469,15 @@ self.addEventListener("fetch", (event) => {
         }
       })(),
     );
+    return;
+  }
+
+  const isVerifierDoc =
+    sameOrigin(req.url) &&
+    (url.pathname === "/verifier.html" || url.pathname === "/verifier.inline.html");
+
+  if (req.mode === "navigate" && isVerifierDoc) {
+    event.respondWith(cacheFirst(req, PRECACHE));
     return;
   }
 

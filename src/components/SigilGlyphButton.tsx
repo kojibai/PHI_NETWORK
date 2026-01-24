@@ -11,9 +11,8 @@
 
 "use client";
 
-import React, { useState, useEffect, useRef, useCallback, useMemo, useId } from "react";
+import React, { Suspense, useState, useEffect, useRef, useCallback, useMemo, useId } from "react";
 import KaiSigil, { type KaiSigilProps, type KaiSigilHandle } from "./KaiSigil";
-import SigilModal from "./SigilModal";
 import "./SigilGlyphButton.css";
 
 import {
@@ -23,6 +22,8 @@ import {
   microPulsesSinceGenesis,
   momentFromUTC,
 } from "../utils/kai_pulse";
+
+const SigilModal = React.lazy(() => import("./SigilModal"));
 
 /* compute the exact render state the modal uses */
 function computeLocalKai(now: Date): {
@@ -161,7 +162,11 @@ const SigilGlyphButton: React.FC<Props> = () => {
         </span>
       </button>
 
-      {open && <SigilModal initialPulse={pulse} onClose={() => setOpen(false)} />}
+      {open && (
+        <Suspense fallback={null}>
+          <SigilModal initialPulse={pulse} onClose={() => setOpen(false)} />
+        </Suspense>
+      )}
     </>
   );
 };
