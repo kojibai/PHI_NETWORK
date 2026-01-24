@@ -427,6 +427,8 @@ export async function exportZIP(ctx: {
     let zkProof = embeddedMeta.zkProof;
     let proofHints = embeddedMeta.proofHints;
     let zkPublicInputs: unknown = embeddedMeta.zkPublicInputs;
+    const allowMissingProof =
+      typeof navigator !== "undefined" && navigator.onLine === false;
 
     if (!zkPoseidonHash && payloadHashHex) {
       const computed = await computeZkPoseidonHash(payloadHashHex);
@@ -456,7 +458,9 @@ export async function exportZIP(ctx: {
       }
 
       if (!hasProof && !secretForProof) {
-        throw new Error("ZK secret missing for proof generation");
+        if (!allowMissingProof) {
+          throw new Error("ZK secret missing for proof generation");
+        }
       }
 
       if (!hasProof && secretForProof) {
@@ -469,11 +473,14 @@ export async function exportZIP(ctx: {
               : undefined,
         });
         if (!generated) {
-          throw new Error("ZK proof generation failed");
+          if (!allowMissingProof) {
+            throw new Error("ZK proof generation failed");
+          }
+        } else {
+          zkProof = generated.proof;
+          proofHints = generated.proofHints;
+          zkPublicInputs = generated.zkPublicInputs;
         }
-        zkProof = generated.proof;
-        proofHints = generated.proofHints;
-        zkPublicInputs = generated.zkPublicInputs;
       }
       if (typeof proofHints !== "object" || proofHints === null) {
         proofHints = buildProofHints(zkPoseidonHash);
@@ -488,7 +495,9 @@ export async function exportZIP(ctx: {
       }
     }
     if (zkPoseidonHash && (!zkProof || typeof zkProof !== "object")) {
-      throw new Error("ZK proof missing");
+      if (!allowMissingProof) {
+        throw new Error("ZK proof missing");
+      }
     }
 
     if (zkPublicInputs) {
