@@ -1,4 +1,5 @@
 // src/components/sigil/theme.ts
+
 export const CHAKRA_THEME = {
   Root: {
     hue: 0,
@@ -30,9 +31,4 @@ export const CHAKRA_THEME = {
   },
 } as const;
 
-
-export const isIOS = () =>
-  /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-  (navigator.platform === "MacIntel" && (navigator.maxTouchPoints ?? 0) > 1);
-
-export default { CHAKRA_THEME, isIOS };
+export default CHAKRA_THEME;

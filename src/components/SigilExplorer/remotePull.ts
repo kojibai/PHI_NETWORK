@@ -17,6 +17,86 @@ type ApiUrlsPageResponse = {
   urls: string[];
 };
 
+function getOriginFallback(): string {
+  if (typeof window !== "undefined" && typeof window.location?.origin === "string") {
+    return window.location.origin;
+  }
+  // Only used in extreme edge cases (e.g., tests); file is "use client" so window should exist.
+  return "http://localhost";
+}
+
+function normalizeBaseToAbsolute(base: string): string {
+  const origin = getOriginFallback();
+  const raw = typeof base === "string" ? base.trim() : "";
+
+  // Empty / whitespace / obviously bad -> fallback to current origin
+  if (!raw || /\s/.test(raw)) return origin;
+
+  // If it already looks like an absolute URL (has a scheme), try to use it.
+  // Examples: https://x.com, http://localhost:3000
+  const hasScheme = /^[a-zA-Z][a-zA-Z0-9+\-.]*:\/\//.test(raw);
+  if (hasScheme) {
+    try {
+      // Validate it
+      // eslint-disable-next-line no-new
+      new URL(raw);
+      return raw;
+    } catch {
+      return origin;
+    }
+  }
+
+  // Protocol-relative: //api.example.com
+  if (raw.startsWith("//")) {
+    const candidate = `https:${raw}`;
+    try {
+      // eslint-disable-next-line no-new
+      new URL(candidate);
+      return candidate;
+    } catch {
+      return origin;
+    }
+  }
+
+  // Looks like a path (/api) or relative (api) -> resolve against current origin
+  if (raw.startsWith("/") || raw.startsWith("./") || raw.startsWith("../")) {
+    try {
+      return new URL(raw, origin).toString();
+    } catch {
+      return origin;
+    }
+  }
+
+  // Looks like a bare host (api.example.com or localhost:8000) -> add a scheme
+  const isLocal =
+    raw.startsWith("localhost") ||
+    raw.startsWith("127.") ||
+    raw.startsWith("0.0.0.0") ||
+    raw.startsWith("[::1]");
+
+  const withScheme = `${isLocal ? "http" : "https"}://${raw}`;
+  try {
+    // eslint-disable-next-line no-new
+    new URL(withScheme);
+    return withScheme;
+  } catch {
+    return origin;
+  }
+}
+
+function buildUrlsPageUrl(base: string, offset: number, limit: number): string {
+  const absBase = normalizeBaseToAbsolute(base);
+
+  // This is the line that was throwing before when `base` was invalid.
+  // Now `absBase` is always a valid absolute URL string.
+  const url = new URL(API_URLS_PATH, absBase);
+
+  url.searchParams.set("offset", String(offset));
+  url.searchParams.set("limit", String(limit));
+
+  return url.toString();
+}
+
 export async function pullAndImportRemoteUrls(
   signal: AbortSignal,
 ): Promise<{ imported: number; remoteSeal?: string; remoteTotal?: number; pulled: boolean }> {
@@ -26,15 +106,12 @@ export async function pullAndImportRemoteUrls(
   let pulled = false;
 
   for (let page = 0; page < URLS_MAX_PAGES_PER_SYNC; page++) {
+    if (signal.aborted) break;
+
     const offset = page * URLS_PAGE_LIMIT;
 
     const r = await apiFetchJsonWithFailover<ApiUrlsPageResponse>(
-      (base) => {
-        const url = new URL(API_URLS_PATH, base);
-        url.searchParams.set("offset", String(offset));
-        url.searchParams.set("limit", String(URLS_PAGE_LIMIT));
-        return url.toString();
-      },
+      (base) => buildUrlsPageUrl(base, offset, URLS_PAGE_LIMIT),
       { method: "GET", signal, cache: "no-store" },
     );
 
@@ -49,7 +126,14 @@ export async function pullAndImportRemoteUrls(
 
     for (const u of urls) {
       if (typeof u !== "string") continue;
-      const abs = canonicalizeUrl(u);
+
+      let abs: string;
+      try {
+        abs = canonicalizeUrl(u);
+      } catch {
+        continue;
+      }
+
       if (memoryRegistry.has(abs)) continue;
 
       const changed = addUrl(abs, {

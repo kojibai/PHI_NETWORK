@@ -1,3 +1,4 @@
+
 // src/components/verifier/VerifierStamper.tsx
 // VerifierStamper.tsx · Divine Sovereign Transfer Gate (mobile-first)
 // v25.1 — NO-ZOOM SEND INPUT (iOS Safari-safe wrapper + hooks)
@@ -332,8 +333,9 @@ const VerifierStamperInner: React.FC = () => {
   const dlgRef = useRef<HTMLDialogElement>(null);
   const noteDlgRef = useRef<HTMLDialogElement>(null);
 
-  const [pulseNow, setPulseNow] = useState<number>(kaiPulseNow());
+  const [pulseNow, setPulseNow] = useState<number>(0);
   useEffect(() => {
+    setPulseNow(kaiPulseNow());
     const id = window.setInterval(() => setPulseNow(kaiPulseNow()), 1000);
     return () => window.clearInterval(id);
   }, []);

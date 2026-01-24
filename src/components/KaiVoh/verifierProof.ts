@@ -70,11 +70,7 @@ export function buildVerifierSlug(pulse: number, kaiSignature: string): string {
   return `${pulse}-${shortSig}`;
 }
 
-export function buildVerifierUrl(
-  pulse: number,
-  kaiSignature: string,
-  verifierBaseUrl?: string,
-): string {
+export function buildVerifierUrl(pulse: number, kaiSignature: string, verifierBaseUrl?: string): string {
   const base = (verifierBaseUrl ?? defaultHostedVerifierBaseUrl()).replace(/\/+$/, "");
   const slug = encodeURIComponent(buildVerifierSlug(pulse, kaiSignature));
   return `${base}/${slug}`;
@@ -183,14 +179,27 @@ export type ProofBundleLike = {
   zkPublicInputs?: unknown;
   authorSig?: AuthorSig | null;
   bundleHash?: string;
+  receiveSig?: unknown;
   v?: string;
   [key: string]: unknown;
 };
 
 type JcsValue = string | number | boolean | null | JcsValue[] | { [k: string]: JcsValue };
 
+/**
+ * Build an unsigned version of the bundle for hashing:
+ * - strips any existing bundleHash / authorSig / receiveSig
+ * - forces authorSig to null to produce a stable canonical hash input
+ */
 export function buildBundleUnsigned(bundle: ProofBundleLike): Record<string, unknown> {
-  const { bundleHash: _bundleHash, authorSig: _authorSig, receiveSig: _receiveSig, ...rest } = bundle;
+  const { ...rest } = bundle;
+
+  // delete keys we must NOT include in the hash input
+  delete (rest as Record<string, unknown>).bundleHash;
+  delete (rest as Record<string, unknown>).authorSig;
+  delete (rest as Record<string, unknown>).receiveSig;
+
+  // force stable unsigned form
   return { ...rest, authorSig: null };
 }
 

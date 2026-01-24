@@ -20,6 +20,11 @@ const makePoint = (i: number, value: number, fx: number): LiveChartPoint => ({
   fx,
 });
 
+function clampPoints(arr: LiveChartPoint[], maxPoints: number): LiveChartPoint[] {
+  if (arr.length <= maxPoints) return arr;
+  return arr.slice(arr.length - maxPoints);
+}
+
 export default function useRollingChartSeries({
   seriesKey,
   sampleMs,
@@ -30,81 +35,91 @@ export default function useRollingChartSeries({
 }: RollingSeriesInput): LiveChartPoint[] {
   const [data, setData] = useState<LiveChartPoint[]>([]);
   const dataRef = useRef<LiveChartPoint[]>([]);
-  const vRef = useRef(valuePhi);
-  const fxRef = useRef(usdPerPhi);
 
-  useEffect(() => {
-    if (Number.isFinite(valuePhi)) vRef.current = valuePhi;
-  }, [valuePhi]);
+  // latest live inputs in refs (do NOT setState from these)
+  const vRef = useRef<number>(0);
+  const fxRef = useRef<number>(0);
 
-  useEffect(() => {
-    if (Number.isFinite(usdPerPhi) && usdPerPhi > 0) fxRef.current = usdPerPhi;
-  }, [usdPerPhi]);
+  // keep refs updated during render (pure assignments are ok)
+  if (Number.isFinite(valuePhi)) vRef.current = valuePhi;
+  if (Number.isFinite(usdPerPhi) && usdPerPhi > 0) fxRef.current = usdPerPhi;
 
-  const snapNow = useCallback(() => {
-    const p = kaiPulseNow();
-    const val = Number.isFinite(vRef.current) ? vRef.current : 0;
-    const fx = Number.isFinite(fxRef.current) && fxRef.current > 0 ? fxRef.current : 0;
+  // make resets/snap-trigger detection without effects that setState
+  const prevSeriesKeyRef = useRef<string>(seriesKey);
+  const prevSnapKeyRef = useRef<number | undefined>(snapKey);
 
-    const prev = dataRef.current;
-    if (!prev.length) {
-      const seed: LiveChartPoint[] = [
-        makePoint(p - 1, val, fx),
-        makePoint(p, val, fx),
-      ];
-      dataRef.current = seed;
-      setData(seed);
-      return;
-    }
+  const pushPoint = useCallback(
+    (pulseIndex: number) => {
+      const val = Number.isFinite(vRef.current) ? vRef.current : 0;
+      const fx = Number.isFinite(fxRef.current) && fxRef.current > 0 ? fxRef.current : 0;
 
-    const last = prev[prev.length - 1];
-    let next: LiveChartPoint[];
+      const prev = dataRef.current;
 
-    if (last?.i === p) {
-      next = [...prev.slice(0, -1), { ...last, value: val, premium: val, fx }];
-    } else if (typeof last?.i === "number" && last.i < p) {
-      next = [...prev, makePoint(p, val, fx)];
-    } else {
-      next = [...prev.slice(0, -1), { ...last, value: val, premium: val, fx }];
-    }
+      let next: LiveChartPoint[];
+      if (!prev.length) {
+        next = clampPoints(
+          [makePoint(pulseIndex - 1, val, fx), makePoint(pulseIndex, val, fx)],
+          maxPoints
+        );
+      } else {
+        const last = prev[prev.length - 1];
 
-    if (next.length > maxPoints) next.splice(0, next.length - maxPoints);
+        if (last?.i === pulseIndex) {
+          next = [...prev.slice(0, -1), { ...last, value: val, premium: val, fx }];
+        } else if (typeof last?.i === "number" && last.i < pulseIndex) {
+          next = clampPoints([...prev, makePoint(pulseIndex, val, fx)], maxPoints);
+        } else {
+          // time went backwards or weirdness: just update last point
+          next = [...prev.slice(0, -1), { ...last, value: val, premium: val, fx }];
+        }
+      }
 
-    dataRef.current = next;
-    setData(next);
-  }, [maxPoints]);
+      dataRef.current = next;
+      setData(next);
+    },
+    [maxPoints]
+  );
 
-  useEffect(() => {
-    dataRef.current = [];
-    setData([]);
-    snapNow();
-  }, [seriesKey, snapNow]);
-
-  useEffect(() => {
-    snapNow();
-  }, [valuePhi, usdPerPhi, snapNow]);
-
-  useEffect(() => {
-    if (typeof snapKey === "number") snapNow();
-  }, [snapKey, snapNow]);
-
+  // external subscription: interval tick drives the series
   useEffect(() => {
     const id = window.setInterval(() => {
       const p = kaiPulseNow();
+
+      // Handle seriesKey change (reset) inside the external callback:
+      // this avoids "setState inside effect body" warnings.
+      if (prevSeriesKeyRef.current !== seriesKey) {
+        prevSeriesKeyRef.current = seriesKey;
+        dataRef.current = [];
+        setData([]);
+      }
+
+      // Handle snapKey edge-trigger inside the external callback as well.
+      if (prevSnapKeyRef.current !== snapKey) {
+        prevSnapKeyRef.current = snapKey;
+        if (typeof snapKey === "number") {
+          pushPoint(p);
+          return;
+        }
+      }
+
       const prev = dataRef.current;
       const last = prev[prev.length - 1];
       if (last?.i === p) return;
 
-      const nextPoint = makePoint(p, vRef.current, fxRef.current);
-      const next = prev.length ? [...prev, nextPoint] : [nextPoint];
-      if (next.length > maxPoints) next.splice(0, next.length - maxPoints);
-
-      dataRef.current = next;
-      setData(next);
-    }, sampleMs);
+      pushPoint(p);
+    }, Math.max(16, sampleMs));
 
     return () => window.clearInterval(id);
-  }, [sampleMs, maxPoints]);
+  }, [sampleMs, seriesKey, snapKey, pushPoint]);
+
+  // Optional: first render seed without a cascading-effect warning.
+  // This is still in an effect, but it's a single "start subscription" sync,
+  // and the state update happens via the same pushPoint path.
+  useEffect(() => {
+    // one-time initial snap
+    pushPoint(kaiPulseNow());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // intentionally once
 
   return data;
 }

@@ -381,5 +381,5 @@ export function applyCanonicalShareUrl(
   }
 
   const xml = new XMLSerializer().serializeToString(svg);
-  return xml.startsWith("<?xml") ? xml : `<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n${xml}`;
+  return xml.startsWith("<?xml") ? xml : `<?xml version="1.0" encoding="UTF-8"?>\n${xml}`;
 }

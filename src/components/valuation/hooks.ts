@@ -1,36 +1,65 @@
 // src/components/valuation/hooks.ts
-import { useEffect, useState } from "react";
+import React, { useEffect, useSyncExternalStore } from "react";
 
-export function useIsMounted() {
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
-  return mounted;
+/**
+ * useIsMounted
+ * React-compiler-safe:
+ * - No setState in effects
+ * - No ref reads during render
+ * - Uses external-store subscription pattern
+ *
+ * Returns: false on first render, true after first commit.
+ */
+export function useIsMounted(): boolean {
+  const subscribe = (onStoreChange: () => void) => {
+    // run AFTER commit
+    queueMicrotask(onStoreChange);
+    return () => {};
+  };
+
+  const getSnapshot = () => true; // once mounted, always true for this component lifetime
+  const getServerSnapshot = () => false; // SSR: not mounted
+
+  return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 }
 
-export function useMedia(query: string) {
-  const [matches, setMatches] = useState<boolean>(() =>
-    typeof window !== "undefined" ? window.matchMedia(query).matches : false
-  );
+/* Legacy Safari matchMedia typing (no `any`) */
+type LegacyMql = MediaQueryList & {
+  addListener?: (listener: (e: MediaQueryListEvent) => void) => void;
+  removeListener?: (listener: (e: MediaQueryListEvent) => void) => void;
+};
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
+/**
+ * useMedia
+ * React-18 correct subscription pattern for matchMedia.
+ */
+export function useMedia(query: string): boolean {
+  const getSnapshot = () => {
+    if (typeof window === "undefined") return false;
+    return window.matchMedia(query).matches;
+  };
+
+  const subscribe = (onStoreChange: () => void) => {
+    if (typeof window === "undefined") return () => {};
     const mql = window.matchMedia(query);
-    const onChange = (e: MediaQueryListEvent) => setMatches(e.matches);
 
-    type LegacyListener = (this: MediaQueryList, ev: MediaQueryListEvent) => void;
-    const legacyListener: LegacyListener = function (ev) { onChange(ev); };
+    const handler = () => onStoreChange();
 
-    if (typeof mql.addEventListener === "function") mql.addEventListener("change", onChange);
-    else (mql as { addListener?: (l: LegacyListener) => void }).addListener?.(legacyListener);
+    // Modern browsers
+    if (typeof mql.addEventListener === "function") {
+      mql.addEventListener("change", handler);
+      return () => mql.removeEventListener("change", handler);
+    }
 
-    setMatches(mql.matches);
-    return () => {
-      if (typeof mql.removeEventListener === "function") mql.removeEventListener("change", onChange);
-      else (mql as { removeListener?: (l: LegacyListener) => void }).removeListener?.(legacyListener);
-    };
-  }, [query]);
+    // Legacy Safari
+    const legacy = mql as LegacyMql;
+    legacy.addListener?.(() => onStoreChange());
+    const legacyHandler = () => onStoreChange();
+    legacy.addListener?.(legacyHandler);
+    return () => legacy.removeListener?.(legacyHandler);
+  };
 
-  return matches;
+  return useSyncExternalStore(subscribe, getSnapshot, () => false);
 }
 
 export function useBodyScrollLock(isLocked: boolean) {
@@ -93,11 +122,13 @@ export function useFocusTrap<T extends HTMLElement>(active: boolean, containerRe
       const last = nodes[nodes.length - 1];
       if (e.shiftKey) {
         if (document.activeElement === first) {
-          e.preventDefault(); last.focus();
+          e.preventDefault();
+          last.focus();
         }
       } else {
         if (document.activeElement === last) {
-          e.preventDefault(); first.focus();
+          e.preventDefault();
+          first.focus();
         }
       }
     };

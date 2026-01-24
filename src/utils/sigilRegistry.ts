@@ -55,7 +55,9 @@ function readList(key: string): string[] {
     if (!raw) return [];
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return (parsed.filter((x) => typeof x === "string") as string[]).map((s) => s.trim()).filter(Boolean);
+    return (parsed.filter((x) => typeof x === "string") as string[])
+      .map((s) => s.trim())
+      .filter(Boolean);
   } catch {
     return [];
   }
@@ -247,16 +249,6 @@ function getBroadcastChannel(): BroadcastChannel | null {
 
 /**
  * Main bridge: call this whenever you mint/exhale a sigil or stream URL.
- *
- * Responsibilities:
- *  1. Normalize to an absolute, canonical URL.
- *  2. Append to canonical localStorage list (kai:sigils:v1).
- *  3. Mirror into legacy/fallback list (sigil:urls).
- *  4. Fire a DOM CustomEvent("sigil:url-registered", { detail: { url } }).
- *  5. Broadcast to other tabs via BroadcastChannel("kai-sigil-registry").
- *  6. Expose itself on window.__SIGIL__.registerSigilUrl for old callers.
- *
- * All steps are best-effort and silently ignored on failure.
  */
 export function registerSigilUrl(url: string): void {
   if (!hasWindow) return;
@@ -266,25 +258,54 @@ export function registerSigilUrl(url: string): void {
   rememberInMemory(abs);
 
   // 1) Upsert into canonical list
-  const changedCanon = upsertUrlList(SIGIL_REGISTRY_LS_KEY, abs).changed;
+  const canonRes = upsertUrlList(SIGIL_REGISTRY_LS_KEY, abs);
+  const changedCanon = canonRes.changed;
 
   // 2) Mirror into fallback list for older code paths
-  const changedFallback = upsertUrlList(SIGIL_REGISTRY_FALLBACK_LS_KEY, abs).changed;
+  const fallbackRes = upsertUrlList(SIGIL_REGISTRY_FALLBACK_LS_KEY, abs);
+  const changedFallback = fallbackRes.changed;
 
-  // 3) DOM event for same-tab listeners
+  // If neither storage list changed, this is a duplicate/no-op.
+  // We still fire the same-tab event (cheap), but we can skip cross-tab broadcast spam.
+  const didChange = changedCanon || changedFallback;
+
+  // 3) DOM event for same-tab listeners (includes change flags)
   try {
-    const evt = new CustomEvent<{ url: string }>("sigil:url-registered", {
-      detail: { url: abs },
+    const evt = new CustomEvent<{
+      url: string;
+      changed: boolean;
+      changedCanon: boolean;
+      changedFallback: boolean;
+      added?: boolean;
+      updated?: boolean;
+    }>("sigil:url-registered", {
+      detail: {
+        url: abs,
+        changed: didChange,
+        changedCanon,
+        changedFallback,
+        added: canonRes.added || fallbackRes.added,
+        updated: canonRes.updated || fallbackRes.updated,
+      },
     });
     window.dispatchEvent(evt);
   } catch {
     /* ignore event errors */
   }
 
-  // 4) BroadcastChannel for cross-tab listeners
+  // 4) BroadcastChannel for cross-tab listeners (only when something actually changed)
   try {
-    const bc = getBroadcastChannel();
-    bc?.postMessage({ type: "sigil:add", url: abs });
+    if (didChange) {
+      const bc = getBroadcastChannel();
+      bc?.postMessage({
+        type: "sigil:add",
+        url: abs,
+        changedCanon,
+        changedFallback,
+        added: canonRes.added || fallbackRes.added,
+        updated: canonRes.updated || fallbackRes.updated,
+      });
+    }
   } catch {
     /* ignore broadcast errors */
   }
@@ -316,19 +337,12 @@ export function registerSigilUrls(urls: string[]): void {
 export function registerSigilUrlForExplorer(url: string): void {
   registerSigilUrl(url);
 }
-
 export function registerSigilUrlsForExplorer(urls: string[]): void {
   registerSigilUrls(urls);
 }
 
 /* ───────── Query helpers: getRegisteredSigilUrls ───────── */
 
-/**
- * Returns the current merged registry:
- *  - Reads both canonical and fallback LS keys
- *  - Normalizes to absolute URLs
- *  - De-dupes preserving insertion order (canonical first, then fallback)
- */
 export function getRegisteredSigilUrls(): string[] {
   if (!hasWindow) return [];
   const primary = readList(SIGIL_REGISTRY_LS_KEY);
@@ -355,16 +369,6 @@ export function getRegisteredSigilUrls(): string[] {
 
 export type SigilRegistrySource = "event" | "storage" | "broadcast";
 
-/**
- * Subscribe to sigil registry updates.
- *
- * Fires handler(url, source) on:
- *  - CustomEvent "sigil:url-registered" (same tab)      => source = "event"
- *  - BroadcastChannel "kai-sigil-registry" messages    => source = "broadcast"
- *  - "storage" events for registry LS keys (other tab) => source = "storage"
- *
- * Returns an unsubscribe function.
- */
 export function subscribeSigilRegistry(
   handler: (url: string, source: SigilRegistrySource) => void,
 ): () => void {
@@ -394,12 +398,7 @@ export function subscribeSigilRegistry(
   // 3) storage events (other tabs mutating LS)
   const onStorage = (ev: StorageEvent) => {
     if (!ev.key) return;
-    if (
-      ev.key !== SIGIL_REGISTRY_LS_KEY &&
-      ev.key !== SIGIL_REGISTRY_FALLBACK_LS_KEY
-    ) {
-      return;
-    }
+    if (ev.key !== SIGIL_REGISTRY_LS_KEY && ev.key !== SIGIL_REGISTRY_FALLBACK_LS_KEY) return;
     if (typeof ev.newValue !== "string") return;
     try {
       const arr = JSON.parse(ev.newValue) as unknown;

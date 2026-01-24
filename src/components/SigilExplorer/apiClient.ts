@@ -14,9 +14,29 @@ const canStorage = hasWindow && typeof window.localStorage !== "undefined";
 
 /* ─────────────────────────────────────────────────────────────────────
  *  LAH-MAH-TOR API (Primary + IKANN Failover, soft-fail backup)
- *  ─────────────────────────────────────────────────────────────────── */
+ *
+ *  IMPORTANT DEV RULE:
+ *  - In local dev (localhost / 127.0.0.1), NEVER use window.location.origin
+ *    as the API base. That points at Vite (5173) and causes 413 for large POSTs.
+ *  - Instead, use a relative base that routes through Vite proxy to the real API.
+ *
+ *  Vite proxy example:
+ *    server.proxy["/sigils"] = { target: "http://localhost:8787", changeOrigin: true }
+ *  Then DEV_API_BASE = "" (or "/" ) will work with makeUrl(base)=> `${base}/sigils/...`
+ *  OR set DEV_API_BASE = "" and keep paths absolute.
+ * ─────────────────────────────────────────────────────────────────── */
 export const LIVE_BASE_URL = "https://m.kai.ac";
 export const LIVE_BACKUP_URL = "https://memory.kaiklok.com";
+
+/**
+ * Dev API base:
+ * Use relative URLs so requests go through Vite's dev server proxy,
+ * not to the Vite server as an API destination.
+ *
+ * With your current config (proxy for "/sigils"), a blank base is best:
+ *   fetch("/sigils/inhale") -> Vite proxies to the real API target.
+ */
+export const DEV_API_BASE = ""; // relative (same-origin), uses Vite proxy for /sigils
 
 function isLocalDevOrigin(origin: string): boolean {
   return origin.startsWith("http://localhost:") || origin.startsWith("http://127.0.0.1:");
@@ -24,9 +44,15 @@ function isLocalDevOrigin(origin: string): boolean {
 
 function selectPrimaryBase(primary: string, backup: string): string {
   if (!hasWindow) return primary;
+
   const origin = window.location.origin;
+
+  // LOCAL DEV: always use relative base (Vite proxy) — never the page origin as an API host.
+  if (isLocalDevOrigin(origin)) return DEV_API_BASE;
+
+  // If you're actually hosted on the API domains, allow same-origin.
   if (origin === primary || origin === backup) return origin;
-  if (isLocalDevOrigin(origin)) return origin;
+
   return primary;
 }
 
@@ -39,9 +65,9 @@ export const API_INHALE_PATH = "/sigils/inhale";
 
 const API_BASE_HINT_LS_KEY = "kai:lahmahtorBase:v1";
 
-/** Backup suppression: if m.kai fails, suppress it for a cooldown window (no issues, no spam). */
+/** Backup suppression: if backup fails, suppress it for a cooldown window (no spam). */
 const API_BACKUP_DEAD_UNTIL_LS_KEY = "kai:lahmahtorBackupDeadUntil:v1";
-const API_BACKUP_COOLDOWN_MS = 2 * 60 * 1000; // 2 minutes (tight, safe)
+const API_BACKUP_COOLDOWN_MS = 2 * 60 * 1000; // 2 minutes
 
 let apiBackupDeadUntil = 0;
 
@@ -86,18 +112,24 @@ function markBackupDead(): void {
   }
 }
 
-/** Sticky base: whichever succeeded last is attempted first. */
+/** Sticky base: whichever succeeded last is attempted first (prod only). */
 let apiBaseHint: string = API_BASE_PRIMARY;
 
 export function loadApiBaseHint(): void {
   if (!canStorage) return;
+
+  // In local dev we only ever use DEV_API_BASE (proxy), so hints are irrelevant.
+  if (hasWindow && isLocalDevOrigin(window.location.origin)) {
+    apiBaseHint = DEV_API_BASE;
+    return;
+  }
+
   const raw = localStorage.getItem(API_BASE_HINT_LS_KEY);
   if (raw === API_BASE_PRIMARY) {
     apiBaseHint = raw;
     return;
   }
   if (raw === API_BASE_FALLBACK) {
-    // if backup is currently suppressed, never load it as the preferred base
     apiBaseHint = isBackupSuppressed() ? API_BASE_PRIMARY : raw;
   }
 }
@@ -112,13 +144,18 @@ function saveApiBaseHint(): void {
 }
 
 function apiBases(): string[] {
+  // LOCAL DEV: single base, always via relative URL + Vite proxy.
+  if (hasWindow && isLocalDevOrigin(window.location.origin)) {
+    return [DEV_API_BASE];
+  }
+
   const wantFallbackFirst = apiBaseHint === API_BASE_FALLBACK && !isBackupSuppressed();
   const list = wantFallbackFirst
     ? [API_BASE_FALLBACK, API_BASE_PRIMARY]
     : [API_BASE_PRIMARY, API_BASE_FALLBACK];
 
   if (!hasWindow) {
-    // SSR: keep both, but still respect suppression in case it was set via storage read before render.
+    // SSR: keep both, but still respect suppression if it was set before render.
     return isBackupSuppressed() ? list.filter((b) => b !== API_BASE_FALLBACK) : list;
   }
 
@@ -127,11 +164,9 @@ function apiBases(): string[] {
   const protocolFiltered = isHttpsPage ? list.filter((b) => b.startsWith("https://")) : list;
 
   const pageOrigin = window.location.origin;
-  if (
-    pageOrigin === LIVE_BASE_URL ||
-    pageOrigin === LIVE_BACKUP_URL ||
-    isLocalDevOrigin(pageOrigin)
-  ) {
+
+  // If app is hosted on the API domains, use same-origin only.
+  if (pageOrigin === LIVE_BASE_URL || pageOrigin === LIVE_BACKUP_URL) {
     return protocolFiltered.filter((b) => b === pageOrigin);
   }
 
@@ -148,6 +183,12 @@ function shouldFailoverStatus(status: number): boolean {
   if (status === 408 || status === 429) return true;
   if (status >= 500) return true;
   return false;
+}
+
+function joinUrl(base: string, path: string): string {
+  // base "" means relative; ensure we don't generate "//sigils/..."
+  if (!base) return path;
+  return `${base}${path}`;
 }
 
 export async function apiFetchWithFailover(
@@ -201,4 +242,17 @@ export async function apiFetchJsonWithFailover<T>(
   } catch {
     return { ok: false, status: 0 };
   }
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+ * Convenience URL builders (optional helpers you can use elsewhere)
+ * ─────────────────────────────────────────────────────────────────── */
+export function urlSeal(base: string): string {
+  return joinUrl(base, API_SEAL_PATH);
+}
+export function urlUrls(base: string): string {
+  return joinUrl(base, API_URLS_PATH);
+}
+export function urlInhale(base: string): string {
+  return joinUrl(base, API_INHALE_PATH);
 }
