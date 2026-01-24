@@ -1,7 +1,7 @@
 // src/pages/SigilPage/exportZip.ts
 "use client";
 
-import { svgBlobForExport, pngBlobFromSvg } from "../../utils/qrExport";
+import { pngBlobFromSvg } from "../../utils/qrExport";
 import { makeProvenanceEntry } from "../../utils/provenance";
 import { retagSvgIdsForStep, ensureCanonicalMetadataFirst } from "./svgOps";
 import { loadJSZip, signal } from "./utils";
@@ -14,40 +14,37 @@ import {
   readIntentionSigil,
 } from "./verifierCanon";
 import type { SigilPayload } from "../../types/sigil";
-import { extractProofBundleMetaFromSvg } from "../../utils/sigilMetadata";
+import { extractEmbeddedMetaFromSvg } from "../../utils/sigilMetadata";
+import { embedProofMetadata } from "../../utils/svgProof";
+import { buildProofHints, generateZkProofFromPoseidonHash } from "../../utils/zkProof";
+import { computeZkPoseidonHash } from "../../utils/kai";
+import {
+  buildBundleUnsigned,
+  buildVerifierUrl,
+  hashBundle,
+  hashProofCapsuleV1,
+  hashSvgText,
+  normalizeChakraDay,
+  PROOF_CANON,
+  PROOF_HASH_ALG,
+  type ProofCapsuleV1,
+} from "../../components/KaiVoh/verifierProof";
+import type { SigilProofHints } from "../../types/sigil";
 
 const EXPORT_PX_MAX = 4096;
 
-const PROOF_META_IDS = new Set(["kai-voh-proof", "kai-proof"]);
-
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
-}
-
-function safeJsonParse(text: string | null | undefined): Record<string, unknown> | null {
-  if (!text) return null;
-  const cleaned = text.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1").trim();
-  if (!cleaned) return null;
-  try {
-    const parsed = JSON.parse(cleaned);
-    return isRecord(parsed) ? parsed : null;
-  } catch {
-    return null;
+const readPublicInput0 = (inputs: unknown): string | null => {
+  if (Array.isArray(inputs) && typeof inputs[0] === "string") {
+    return inputs[0];
   }
-}
-
-function updateProofBundleShareUrl(svgEl: SVGSVGElement, shareUrl: string): void {
-  if (!shareUrl) return;
-  const metas = Array.from(svgEl.querySelectorAll("metadata"));
-  metas.forEach((meta) => {
-    const id = meta.getAttribute("id") || "";
-    if (!PROOF_META_IDS.has(id)) return;
-    const parsed = safeJsonParse(meta.textContent);
-    if (!parsed) return;
-    const next: Record<string, unknown> = { ...parsed, shareUrl };
-    meta.textContent = JSON.stringify(next);
-  });
-}
+  if (inputs && typeof inputs === "object") {
+    const obj = inputs as Record<string, unknown>;
+    if (typeof obj[0] === "string") return obj[0];
+    if (typeof obj.publicInput === "string") return obj.publicInput;
+    if (typeof obj[1] === "string") return obj[1];
+  }
+  return null;
+};
 
 /** Chakra day union required by SigilSharePayload */
 type ChakraDay =
@@ -366,26 +363,178 @@ export async function exportZIP(ctx: {
       console.debug("URL parse failed");
     }
 
-    // Create artifacts
-    updateProofBundleShareUrl(svgEl, fullUrlForManifest);
+    // Create artifacts (mirror SealMoment proof bundle logic, minus KAS authsig)
+    const chakraNormalized = normalizeChakraDay(String(claimedMetaCanon.chakraDay ?? ""));
+    if (!chakraNormalized) throw new Error("Chakra day missing from SVG.");
 
-    const svgBlob = await svgBlobForExport(svgEl, EXPORT_PX_MAX, {
-      metaOverride: metaForSvg, // includes shareUrl/fullUrl
-      addQR: false,
-      addPulseBar: false,
-      title: "Kairos Sigil-Glyph — Sealed KairosMoment",
-      desc: "Deterministic sigil-glyph with sovereign metadata. Exported as archived key.",
-    });
+    const payloadHashHex = canonicalLower;
+    if (!payloadHashHex) throw new Error("Payload hash missing from SVG.");
+
+    const sharePayload: SigilSharePayload = {
+      pulse: claimedMetaCanon.pulse,
+      beat: claimedMetaCanon.beat,
+      stepIndex: sealedStepIndex,
+      chakraDay: chakraNormalized,
+      stepsPerBeat: stepsNum,
+      kaiSignature: claimedMetaCanon.kaiSignature ?? undefined,
+      userPhiKey: claimedMetaCanon.userPhiKey ?? undefined,
+    };
+    const shareUrl = fullUrlForManifest || makeSigilUrl(payloadHashHex, sharePayload);
+    const verifierUrl = buildVerifierUrl(claimedMetaCanon.pulse, claimedMetaCanon.kaiSignature ?? "");
+    const kaiSignature = claimedMetaCanon.kaiSignature ?? "";
+    const phiKey = claimedMetaCanon.userPhiKey ?? "";
+    if (!kaiSignature) throw new Error("Export failed: kaiSignature missing from SVG.");
+    if (!phiKey) throw new Error("Export failed: Φ-Key missing from SVG.");
+
+    const kaiSignatureShort = kaiSignature.slice(0, 10);
+    const proofCapsule: ProofCapsuleV1 = {
+      v: "KPV-1",
+      pulse: claimedMetaCanon.pulse,
+      chakraDay: chakraNormalized,
+      kaiSignature,
+      phiKey,
+      verifierSlug: `${claimedMetaCanon.pulse}-${kaiSignatureShort}`,
+    };
+
+    const capsuleHash = await hashProofCapsuleV1(proofCapsule);
+    const svgClone = svgEl.cloneNode(true) as SVGElement;
+    svgClone.setAttribute("data-pulse", String(claimedMetaCanon.pulse));
+    svgClone.setAttribute("data-beat", String(claimedMetaCanon.beat));
+    svgClone.setAttribute("data-step-index", String(sealedStepIndex));
+    svgClone.setAttribute("data-chakra-day", chakraNormalized);
+    svgClone.setAttribute("data-steps-per-beat", String(stepsNum));
+    svgClone.setAttribute("data-kai-signature", kaiSignature);
+    svgClone.setAttribute("data-phi-key", phiKey);
+    svgClone.setAttribute("data-payload-hash", payloadHashHex);
+
+    const svgString = new XMLSerializer().serializeToString(svgClone);
+    const embeddedMeta = extractEmbeddedMetaFromSvg(svgString);
+    let zkPoseidonHash =
+      typeof embeddedMeta.zkPoseidonHash === "string" &&
+      embeddedMeta.zkPoseidonHash.trim().length > 0
+        ? embeddedMeta.zkPoseidonHash.trim()
+        : undefined;
+    let zkProof = embeddedMeta.zkProof;
+    let proofHints = embeddedMeta.proofHints;
+    let zkPublicInputs: unknown = embeddedMeta.zkPublicInputs;
+
+    if (!zkPoseidonHash && payloadHashHex) {
+      const computed = await computeZkPoseidonHash(payloadHashHex);
+      zkPoseidonHash = computed.hash;
+    }
+
+    if (zkPoseidonHash) {
+      const proofObj =
+        zkProof && typeof zkProof === "object"
+          ? (zkProof as Record<string, unknown>)
+          : null;
+      const hasProof =
+        typeof zkProof === "string"
+          ? zkProof.trim().length > 0
+          : Array.isArray(zkProof)
+            ? zkProof.length > 0
+            : proofObj
+              ? Object.keys(proofObj).length > 0
+              : false;
+
+      let secretForProof: string | undefined;
+      if (payloadHashHex) {
+        const computed = await computeZkPoseidonHash(payloadHashHex);
+        if (computed.hash === zkPoseidonHash) {
+          secretForProof = computed.secret;
+        }
+      }
+
+      if (!hasProof && !secretForProof) {
+        throw new Error("ZK secret missing for proof generation");
+      }
+
+      if (!hasProof && secretForProof) {
+        const generated = await generateZkProofFromPoseidonHash({
+          poseidonHash: zkPoseidonHash,
+          secret: secretForProof,
+          proofHints:
+            typeof proofHints === "object" && proofHints !== null
+              ? (proofHints as SigilProofHints)
+              : undefined,
+        });
+        if (!generated) {
+          throw new Error("ZK proof generation failed");
+        }
+        zkProof = generated.proof;
+        proofHints = generated.proofHints;
+        zkPublicInputs = generated.zkPublicInputs;
+      }
+      if (typeof proofHints !== "object" || proofHints === null) {
+        proofHints = buildProofHints(zkPoseidonHash);
+      } else {
+        proofHints = buildProofHints(zkPoseidonHash, proofHints as SigilProofHints);
+      }
+    }
+    if (zkPoseidonHash && zkPublicInputs) {
+      const publicInput0 = readPublicInput0(zkPublicInputs);
+      if (publicInput0 && publicInput0 !== zkPoseidonHash) {
+        throw new Error("Embedded ZK mismatch");
+      }
+    }
+    if (zkPoseidonHash && (!zkProof || typeof zkProof !== "object")) {
+      throw new Error("ZK proof missing");
+    }
+
+    if (zkPublicInputs) {
+      svgClone.setAttribute("data-zk-public-inputs", JSON.stringify(zkPublicInputs));
+    }
+    if (zkPoseidonHash) {
+      svgClone.setAttribute("data-zk-scheme", "groth16-poseidon");
+      svgClone.setAttribute("data-zk-poseidon-hash", zkPoseidonHash);
+      if (zkProof) {
+        svgClone.setAttribute("data-zk-proof", "present");
+      }
+    }
+
+    if (
+      svgClone.getAttribute("data-pulse") !== String(claimedMetaCanon.pulse) ||
+      svgClone.getAttribute("data-kai-signature") !== kaiSignature ||
+      svgClone.getAttribute("data-phi-key") !== phiKey
+    ) {
+      throw new Error("SVG data attributes do not match proof capsule");
+    }
+
+    const svgHash = await hashSvgText(svgString);
+    const proofBundleBase = {
+      hashAlg: PROOF_HASH_ALG,
+      canon: PROOF_CANON,
+      proofCapsule,
+      capsuleHash,
+      svgHash,
+      shareUrl,
+      verifierUrl,
+      authorSig: null,
+      zkPoseidonHash,
+      zkProof,
+      proofHints,
+      zkPublicInputs,
+    };
+    const bundleUnsigned = buildBundleUnsigned(proofBundleBase);
+    const computedBundleHash = await hashBundle(bundleUnsigned);
+    const proofBundle = {
+      ...proofBundleBase,
+      bundleHash: computedBundleHash,
+      authorSig: null,
+    };
+
+    const sealedSvg = embedProofMetadata(svgString, proofBundle);
+    const svgBlob = new Blob(
+      [
+        sealedSvg.startsWith("<?xml")
+          ? sealedSvg
+          : `<?xml version="1.0" encoding="UTF-8"?>\n${sealedSvg}`,
+      ],
+      { type: "image/svg+xml;charset=utf-8" }
+    );
+    const svgAssetHash = await sha256HexCanon(new Uint8Array(await svgBlob.arrayBuffer()));
     const pngBlob = await pngBlobFromSvg(svgBlob, EXPORT_PX_MAX);
-    const svgHash = await sha256HexCanon(new Uint8Array(await svgBlob.arrayBuffer()));
     const pngHash = await sha256HexCanon(new Uint8Array(await pngBlob.arrayBuffer()));
-
-    const svgText = await svgBlob.text();
-    const proofBundleMeta = extractProofBundleMetaFromSvg(svgText);
-    const proofBundle = proofBundleMeta?.raw ?? null;
-    const proofBundleHash = proofBundle
-      ? await sha256HexCanon(stableStringify(proofBundle))
-      : null;
 
     // Build ZIP (add manifest before generate)
     const JSZip = await loadJSZip();
@@ -421,7 +570,7 @@ export async function exportZIP(ctx: {
       // overlays
       overlays: { qr: false, eternalPulseBar: false },
       assets: {
-        [`${base}.svg`]: svgHash,
+        [`${base}.svg`]: svgAssetHash,
         [`${base}.png`]: pngHash,
       },
       // claim controls
@@ -431,12 +580,8 @@ export async function exportZIP(ctx: {
       fullUrl: fullUrlForManifest,
       p: pValue,
       urlQuery: { p: pValue, t: tValue },
-      proofBundleHash,
+      proofBundleHash: computedBundleHash,
       proofBundle,
-      proofHints: proofBundleMeta?.proofHints ?? null,
-      zkProof: proofBundleMeta?.zkProof ?? null,
-      zkPublicInputs: proofBundleMeta?.zkPublicInputs ?? null,
-      zkPoseidonHash: proofBundleMeta?.zkPoseidonHash ?? null,
     };
     const manifestHash = await sha256HexCanon(stableStringify(manifestPayload));
     const manifest = { ...manifestPayload, manifestHash };
