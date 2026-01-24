@@ -1,7 +1,7 @@
 // src/pages/SigilPage/exportZip.ts
 "use client";
 
-import { svgBlobForExport, pngBlobFromSvg, EXPORT_PX } from "../../utils/qrExport";
+import { svgBlobForExport, pngBlobFromSvg } from "../../utils/qrExport";
 import { makeProvenanceEntry } from "../../utils/provenance";
 import { retagSvgIdsForStep, ensureCanonicalMetadataFirst } from "./svgOps";
 import { loadJSZip, signal } from "./utils";
@@ -14,6 +14,40 @@ import {
   readIntentionSigil,
 } from "./verifierCanon";
 import type { SigilPayload } from "../../types/sigil";
+import { extractProofBundleMetaFromSvg } from "../../utils/sigilMetadata";
+
+const EXPORT_PX_MAX = 4096;
+
+const PROOF_META_IDS = new Set(["kai-voh-proof", "kai-proof"]);
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+function safeJsonParse(text: string | null | undefined): Record<string, unknown> | null {
+  if (!text) return null;
+  const cleaned = text.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1").trim();
+  if (!cleaned) return null;
+  try {
+    const parsed = JSON.parse(cleaned);
+    return isRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function updateProofBundleShareUrl(svgEl: SVGSVGElement, shareUrl: string): void {
+  if (!shareUrl) return;
+  const metas = Array.from(svgEl.querySelectorAll("metadata"));
+  metas.forEach((meta) => {
+    const id = meta.getAttribute("id") || "";
+    if (!PROOF_META_IDS.has(id)) return;
+    const parsed = safeJsonParse(meta.textContent);
+    if (!parsed) return;
+    const next: Record<string, unknown> = { ...parsed, shareUrl };
+    meta.textContent = JSON.stringify(next);
+  });
+}
 
 /** Chakra day union required by SigilSharePayload */
 type ChakraDay =
@@ -333,22 +367,36 @@ export async function exportZIP(ctx: {
     }
 
     // Create artifacts
-    const svgBlob = await svgBlobForExport(svgEl, EXPORT_PX, {
+    updateProofBundleShareUrl(svgEl, fullUrlForManifest);
+
+    const svgBlob = await svgBlobForExport(svgEl, EXPORT_PX_MAX, {
       metaOverride: metaForSvg, // includes shareUrl/fullUrl
       addQR: false,
       addPulseBar: false,
       title: "Kairos Sigil-Glyph — Sealed KairosMoment",
       desc: "Deterministic sigil-glyph with sovereign metadata. Exported as archived key.",
     });
-    const pngBlob = await pngBlobFromSvg(svgBlob, EXPORT_PX);
+    const pngBlob = await pngBlobFromSvg(svgBlob, EXPORT_PX_MAX);
     const svgHash = await sha256HexCanon(new Uint8Array(await svgBlob.arrayBuffer()));
     const pngHash = await sha256HexCanon(new Uint8Array(await pngBlob.arrayBuffer()));
+
+    const svgText = await svgBlob.text();
+    const proofBundleMeta = extractProofBundleMetaFromSvg(svgText);
+    const proofBundle = proofBundleMeta?.raw ?? null;
+    const proofBundleHash = proofBundle
+      ? await sha256HexCanon(stableStringify(proofBundle))
+      : null;
 
     // Build ZIP (add manifest before generate)
     const JSZip = await loadJSZip();
     const zip = new JSZip();
     zip.file(`${base}.svg`, svgBlob);
     zip.file(`${base}.png`, pngBlob);
+    zip.file(`${base}.payload.json`, JSON.stringify(metaForSvg, null, 2));
+    zip.file(`${base}.url.txt`, fullUrlForManifest);
+    if (proofBundle) {
+      zip.file(`${base}.proof_bundle.json`, JSON.stringify(proofBundle, null, 2));
+    }
 
     const manifestPayload = {
       hashAlg: "sha256",
@@ -383,6 +431,12 @@ export async function exportZIP(ctx: {
       fullUrl: fullUrlForManifest,
       p: pValue,
       urlQuery: { p: pValue, t: tValue },
+      proofBundleHash,
+      proofBundle,
+      proofHints: proofBundleMeta?.proofHints ?? null,
+      zkProof: proofBundleMeta?.zkProof ?? null,
+      zkPublicInputs: proofBundleMeta?.zkPublicInputs ?? null,
+      zkPoseidonHash: proofBundleMeta?.zkPoseidonHash ?? null,
     };
     const manifestHash = await sha256HexCanon(stableStringify(manifestPayload));
     const manifest = { ...manifestPayload, manifestHash };
