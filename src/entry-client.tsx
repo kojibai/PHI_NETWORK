@@ -1,5 +1,6 @@
+// src/entry-client.tsx
 import React from "react";
-import ReactDOM from "react-dom/client";
+import { createRoot, hydrateRoot } from "react-dom/client";
 
 // ✅ CSS FIRST (so App.css can be the final authority)
 import "./styles.css";
@@ -13,7 +14,7 @@ import * as snarkjs from "snarkjs";
 import { initReloadDetective } from "./utils/reloadDetective";
 import { initPerfDebug } from "./perf/perfDebug";
 
-// ✅ REPLACE scheduler impl with your utils cadence file
+// ✅ Scheduler cadence utils
 import { startKaiCadence, startKaiFibBackoff } from "./utils/kai_cadence";
 
 const isProduction = import.meta.env.MODE === "production";
@@ -23,6 +24,15 @@ declare global {
     kairosSwVersion?: string;
     kairosApplyUpdate?: () => void;
     snarkjs?: { groth16?: Groth16 };
+
+    /**
+     * Optional SSR marker:
+     * If you actually SSR-render React into #root, set ONE of these in your HTML/template:
+     *   window.__KAI_SSR__ = true
+     *   <html data-kai-ssr="1">
+     *   <div id="root" data-ssr="1">...</div>
+     */
+    __KAI_SSR__?: boolean;
   }
 }
 
@@ -42,10 +52,7 @@ function rewriteLegacyHash(): void {
   qs.delete("add");
   const search = qs.toString();
 
-  const newUrl =
-    `${path}${search ? `?${search}` : ""}` +
-    `${add ? `#add=${add}` : ""}`;
-
+  const newUrl = `${path}${search ? `?${search}` : ""}${add ? `#add=${add}` : ""}`;
   window.history.replaceState(null, "", newUrl);
 }
 
@@ -63,15 +70,40 @@ async function loadSnarkjsGlobal(): Promise<void> {
   try {
     const mod = snarkjs as unknown as { groth16?: Groth16; default?: { groth16?: Groth16 } };
     const groth16 = mod.groth16 ?? mod.default?.groth16;
-    if (groth16) {
-      window.snarkjs = { groth16 };
-    }
+    if (groth16) window.snarkjs = { groth16 };
   } catch (err) {
     console.error("Failed to load snarkjs", err);
   }
 }
 
-const container = document.getElementById("root") as HTMLElement | null;
+/* ─────────────────────────────────────────────────────────────────────
+   Hydration selection (THIS is what fixes your mismatch)
+   - DO NOT hydrate unless you KNOW real SSR markup is present.
+   - If #root contains any placeholder/splash markup (not SSR), we clear it and createRoot().
+────────────────────────────────────────────────────────────────────── */
+function pickRootEl(): HTMLElement | null {
+  return (
+    (document.getElementById("root") as HTMLElement | null) ||
+    (document.getElementById("app") as HTMLElement | null) ||
+    (document.getElementById("__next") as HTMLElement | null)
+  );
+}
+
+function hasMeaningfulMarkup(el: HTMLElement): boolean {
+  // avoids whitespace-only nodes, comments, etc.
+  return el.innerHTML.trim().length > 0;
+}
+
+function hasSsrMarker(el: HTMLElement): boolean {
+  const html = document.documentElement as HTMLElement | null;
+  return Boolean(
+    (window as Window).__KAI_SSR__ === true ||
+      el.dataset.ssr === "1" ||
+      html?.dataset?.kaiSsr === "1",
+  );
+}
+
+const container = pickRootEl();
 
 if (container) {
   const app = (
@@ -81,16 +113,33 @@ if (container) {
       </ErrorBoundary>
     </React.StrictMode>
   );
-  if (container.hasChildNodes()) {
-    ReactDOM.hydrateRoot(container, app);
+
+  const hasMarkup = hasMeaningfulMarkup(container);
+  const ssrMarked = hasSsrMarker(container);
+
+  /**
+   * ✅ Correct behavior:
+   * - If SSR markup is present AND marked → hydrateRoot
+   * - Otherwise → createRoot (no hydration mismatch)
+   *
+   * This eliminates the "server rendered HTML didn't match" spam in dev and non-SSR prod.
+   */
+  if (hasMarkup && ssrMarked) {
+    hydrateRoot(container, app);
   } else {
-    ReactDOM.createRoot(container).render(app);
+    // If markup exists but isn't SSR React output (splash/placeholder), wipe it.
+    if (hasMarkup && !ssrMarked) {
+      container.innerHTML = "";
+    }
+    createRoot(container).render(app);
   }
 }
 
 void loadSnarkjsGlobal();
 
-// ✅ Register Kairos Service Worker with instant-upgrade behavior
+/* ─────────────────────────────────────────────────────────────────────
+   Service worker registration (prod only)
+────────────────────────────────────────────────────────────────────── */
 if ("serviceWorker" in navigator && isProduction) {
   const registerKairosSW = async () => {
     try {
@@ -98,11 +147,12 @@ if ("serviceWorker" in navigator && isProduction) {
 
       // Avoid mid-session reloads: only refresh when safe/idle.
       let pendingReload = false;
+
       const hasActiveKaiVohSession = (): boolean => {
         try {
           return Boolean(
             window.localStorage.getItem("kai.voh.session.v1") ||
-              window.localStorage.getItem("kai.sigilAuth.v1")
+              window.localStorage.getItem("kai.sigilAuth.v1"),
           );
         } catch {
           return false;
@@ -113,7 +163,7 @@ if ("serviceWorker" in navigator && isProduction) {
         return Boolean(
           document.querySelector(".kai-voh-modal-backdrop") ||
             document.querySelector(".kv-post-caption-textarea") ||
-            document.querySelector(".composer-textarea")
+            document.querySelector(".composer-textarea"),
         );
       };
 
@@ -123,16 +173,18 @@ if ("serviceWorker" in navigator && isProduction) {
         window.dispatchEvent(
           new CustomEvent("kairos-sw-update-available", {
             detail: { reason, version: window.kairosSwVersion },
-          })
+          }),
         );
       };
 
       const tryReload = (reason: string): void => {
         if (!pendingReload) return;
+
         if (!isReloadSafe()) {
           markUpdateAvailable(`blocked:${reason}`);
           return;
         }
+
         if (document.visibilityState === "hidden") {
           window.location.reload();
         } else {
@@ -141,6 +193,7 @@ if ("serviceWorker" in navigator && isProduction) {
       };
 
       const onVisChange = () => tryReload("visibilitychange");
+
       navigator.serviceWorker.addEventListener("controllerchange", () => {
         pendingReload = true;
         tryReload("controllerchange");
@@ -152,7 +205,6 @@ if ("serviceWorker" in navigator && isProduction) {
         tryReload("manual");
       };
 
-      // Auto-skip waiting once the new worker finishes installing
       const triggerSkipWaiting = (worker: ServiceWorker | null) => {
         worker?.postMessage({ type: "SKIP_WAITING" });
       };
@@ -181,7 +233,7 @@ if ("serviceWorker" in navigator && isProduction) {
         }
       });
 
-      // ✅ REPLACES the hour interval: Kai beat cadence via utils
+      // ✅ Beat cadence update checks (replaces hourly interval)
       const navAny = navigator as Navigator & {
         connection?: { saveData?: boolean; effectiveType?: string };
       };
