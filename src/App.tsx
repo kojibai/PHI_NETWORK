@@ -342,6 +342,26 @@ function getPortalHost(): HTMLElement {
   }
   return document.body;
 }
+type PortalMountProps = {
+  open: boolean;
+  children: React.ReactNode;
+};
+
+function PortalMount({ open, children }: PortalMountProps): React.JSX.Element | null {
+  const isClient = typeof document !== "undefined";
+
+  const portalHost = useMemo<HTMLElement | null>(() => {
+    if (!isClient) return null;
+    return getPortalHost(); // same host logic as Attestation/Stream/Klock
+  }, [isClient]);
+
+  // Same scroll-lock semantics as other portals (safe even if child also locks)
+  useBodyScrollLock(open && isClient);
+
+  if (!open || !isClient || !portalHost) return null;
+
+  return createPortal(<>{children}</>, portalHost);
+}
 
 /* ──────────────────────────────────────────────────────────────────────────────
    Popovers
@@ -764,15 +784,19 @@ export function SigilMintRoute(): React.JSX.Element {
 
   return (
     <>
-      <Suspense fallback={null}>
-        {open ? <SigilModal initialPulse={initialPulse} onClose={handleClose} /> : null}
-      </Suspense>
+      <PortalMount open={open}>
+        <Suspense fallback={null}>
+          <SigilModal initialPulse={initialPulse} onClose={handleClose} />
+        </Suspense>
+      </PortalMount>
+
       <div className="sr-only" aria-live="polite">
         Sigil mint portal open
       </div>
     </>
   );
 }
+
 
 export function ExplorerRoute(): React.JSX.Element {
   const navigate = useNavigate();

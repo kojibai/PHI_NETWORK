@@ -1438,7 +1438,7 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
       const proofBundle: ProofBundle = {
         ...proofBundleBase,
         bundleHash: computedBundleHash,
-        authorSig,
+        authorSig, 
       };
       if (authorSig?.v === "KAS-1") {
         const authUrl = shareUrl || verifierUrl;

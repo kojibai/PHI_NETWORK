@@ -10,7 +10,7 @@
     "dev:ssr": "NODE_ENV=development node server.mjs",
     "build:clean": "rm -rf dist .vite && pnpm run build:ssr",
     "build": "tsc -b && vite build",
-    "build:ssr": "tsc -b && vite build && vite build --ssr src/entry-server.tsx",
+    "build:ssr": "tsc -b && vite build && vite build --ssr src/entry-server.tsx --outDir dist/server",
     "lint": "eslint .",
     "preview": "NODE_ENV=production node server.mjs",
     "test": "node --test"
@@ -53,6 +53,7 @@
     "@types/qrcode-generator": "^0.0.16",
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.2",
+    "@types/three": "^0.182.0",
     "@vitejs/plugin-react": "^5.1.0",
     "eslint": "^9.39.1",
     "eslint-plugin-react-hooks": "^7.0.1",
