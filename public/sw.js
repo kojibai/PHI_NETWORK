@@ -5,18 +5,27 @@
    - Lazily maps any visited route → shell so it re-opens offline next time
    - Stale-while-revalidate for assets; network-first (timeout) for JSON/API
    - Audio/video range support; fonts cached; CDNs handled
+
+   STABILITY HARDENING (IMPORTANT):
+   - ✅ NO auto skipWaiting() in install (prevents mid-session controller swap)
+   - ✅ /att/* handled in the main fetch listener (no double respondWith)
+   - ✅ attachments cache is whitelisted and never deleted on activate
 */
 
 // Update this version string manually to keep the app + cache versions in sync.
 // The value is forwarded to the UI via the service worker "SW_ACTIVATED" message.
-const APP_VERSION = "41.7.3"; // update on release
+const APP_VERSION = "41.7.4"; // update on release
 const VERSION = new URL(self.location.href).searchParams.get("v") || APP_VERSION; // derived from build
-const PREFIX  = "PHINETWORK";
+const PREFIX = "PHINETWORK";
+
 const PRECACHE = `${PREFIX}-precache-${VERSION}`;
-const RUNTIME  = `${PREFIX}-runtime-${VERSION}`;
+const RUNTIME = `${PREFIX}-runtime-${VERSION}`;
 const ASSETCACHE = `${PREFIX}-assets-${VERSION}`;
-const FONTCACHE  = `${PREFIX}-fonts-${VERSION}`;
+const FONTCACHE = `${PREFIX}-fonts-${VERSION}`;
 const IMAGECACHE = `${PREFIX}-images-${VERSION}`;
+
+// ✅ MUST persist across SW updates
+const ATTACHMENTS_CACHE = "sigil-attachments-v1";
 
 const OFFLINE_URL = "/index.html";
 const OFFLINE_FALLBACK = "/offline.html";
@@ -95,21 +104,33 @@ const CRITICAL_OFFLINE_ASSETS = [
   "/pdf-lib.min.js",
 ];
 
-const PRECACHE_URLS = Array.from(new Set([
-  ...CORE_SHELL,
-  ...ICON_ASSETS,
-  ...MANIFEST_ASSETS.filter((url) => url.includes("icon") || url.endsWith("manifest.json")),
-]));
+const PRECACHE_URLS = Array.from(
+  new Set([
+    ...CORE_SHELL,
+    ...ICON_ASSETS,
+    ...MANIFEST_ASSETS.filter((url) => url.includes("icon") || url.endsWith("manifest.json")),
+  ]),
+);
+
 const IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg", ".avif"];
 const ASSET_EXTENSIONS = [".js", ".mjs", ".cjs", ".css", ".wasm", ".json", ".map"];
 const SEED_SIGILS_INDEX = "/sigils-index.json"; // optional list of popular /s/<hash>?p=... routes
+
 const sameOrigin = (url) => new URL(url, self.location.href).origin === self.location.origin;
 
 const withTimeout = (ms, promise) =>
   new Promise((resolve, reject) => {
     const id = setTimeout(() => reject(new Error("timeout")), ms);
-    promise.then(v => { clearTimeout(id); resolve(v); },
-                 e => { clearTimeout(id); reject(e); });
+    promise.then(
+      (v) => {
+        clearTimeout(id);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(id);
+        reject(e);
+      },
+    );
   });
 
 async function safePut(cacheName, request, response) {
@@ -118,6 +139,7 @@ async function safePut(cacheName, request, response) {
     await cache.put(request, response.clone());
   } catch {}
 }
+
 function normalizeWarmUrl(rawUrl) {
   try {
     const url = new URL(rawUrl, self.location.origin);
@@ -130,7 +152,6 @@ function normalizeWarmUrl(rawUrl) {
 
 function cacheBucketFor(url) {
   const path = url.pathname.toLowerCase();
-
   if (IMAGE_EXTENSIONS.some((ext) => path.endsWith(ext))) return IMAGECACHE;
   if (ASSET_EXTENSIONS.some((ext) => path.endsWith(ext))) return ASSETCACHE;
   if (url.pathname === "/" || !path.split("/").pop()?.includes(".")) return PRECACHE;
@@ -141,9 +162,7 @@ async function warmUrls(urls, { mapShell = false } = {}) {
   const unique = Array.from(new Set(urls || []));
   if (!unique.length) return;
 
-  const shell = mapShell
-    ? await caches.match(OFFLINE_URL, { ignoreSearch: true }).catch(() => null)
-    : null;
+  const shell = mapShell ? await caches.match(OFFLINE_URL, { ignoreSearch: true }).catch(() => null) : null;
 
   await Promise.all(
     unique.map(async (raw) => {
@@ -168,10 +187,14 @@ async function warmUrls(urls, { mapShell = false } = {}) {
 async function staleWhileRevalidate(req, cacheName) {
   const cache = await caches.open(cacheName);
   const cached = await cache.match(req, { ignoreSearch: true });
-  const network = fetch(req).then(async res => {
-    await cache.put(req, res.clone());
-    return res;
-  }).catch(() => null);
+
+  const network = fetch(req)
+    .then(async (res) => {
+      await cache.put(req, res.clone());
+      return res;
+    })
+    .catch(() => null);
+
   return cached || network || new Response("", { status: 504, statusText: "offline" });
 }
 
@@ -192,6 +215,7 @@ async function cacheFirst(req, cacheName) {
     updateFromNetwork(req, cacheName); // background revalidate
     return cached;
   }
+
   const net = await fetch(req).catch(() => null);
   if (net) await safePut(cacheName, req, net);
   return net || new Response("", { status: 504, statusText: "offline" });
@@ -221,7 +245,7 @@ async function precacheDiscoveredAssets() {
 
     if (assetUrls.size) {
       const cache = await caches.open(ASSETCACHE);
-      await cache.addAll([...assetUrls].map(u => new Request(u, { cache: "reload" })));
+      await cache.addAll([...assetUrls].map((u) => new Request(u, { cache: "reload" })));
     }
   } catch {
     // runtime caching will cover assets on first run
@@ -243,13 +267,14 @@ async function seedSigilRoutes(shellResponse) {
     if (!res.ok) return;
     const list = await res.json();
     if (!Array.isArray(list)) return;
+
     const cache = await caches.open(PRECACHE);
     await Promise.all(
       list.map(async (u) => {
         try {
           await cache.put(new Request(u), shellResponse.clone());
         } catch {}
-      })
+      }),
     );
   } catch {
     // optional seeding; safe to skip if file missing
@@ -271,15 +296,19 @@ async function handleRangeRequest(event) {
 
   const buf = await res.arrayBuffer();
   const size = buf.byteLength;
+
   const m = /bytes=(\d*)-(\d*)/.exec(range);
   let start = Number(m?.[1]);
   let end = Number(m?.[2]);
+
   if (isNaN(start)) start = 0;
   if (isNaN(end) || end === 0) end = size - 1;
+
   start = Math.min(start, size - 1);
   end = Math.min(end, size - 1);
 
   const chunk = buf.slice(start, end + 1);
+
   return new Response(chunk, {
     status: 206,
     headers: {
@@ -291,84 +320,102 @@ async function handleRangeRequest(event) {
   });
 }
 
-// --- Lifecycle ---
+/* -------------------------------------------------------------------------- */
+/*                                   Lifecycle                                */
+/* -------------------------------------------------------------------------- */
+
 self.addEventListener("install", (event) => {
-  event.waitUntil((async () => {
-    const cache = await caches.open(PRECACHE);
-    const precacheRequests = PRECACHE_URLS.map((u) => new Request(u, { cache: "reload" }));
+  event.waitUntil(
+    (async () => {
+      const cache = await caches.open(PRECACHE);
+      const precacheRequests = PRECACHE_URLS.map((u) => new Request(u, { cache: "reload" }));
 
-    // Precache the shell & some basic assets, but allow partial success
-    await Promise.allSettled(
-      precacheRequests.map(async (req) => {
+      // Precache the shell & some basic assets, but allow partial success
+      await Promise.allSettled(
+        precacheRequests.map(async (req) => {
+          try {
+            const res = await fetch(req);
+            if (res && (res.ok || res.type === "opaque")) await cache.put(req, res.clone());
+          } catch {}
+        }),
+      );
+
+      // Discover & precache hashed bundles
+      await precacheDiscoveredAssets();
+
+      // Map the shell to known dynamic routes (seed list)
+      let shell = await cache.match(OFFLINE_URL, { ignoreSearch: true });
+      if (!shell) {
         try {
-          const res = await fetch(req);
-          if (res && (res.ok || res.type === "opaque")) await cache.put(req, res.clone());
+          shell = await fetch(OFFLINE_URL);
+          if (shell && (shell.ok || shell.type === "opaque")) {
+            await cache.put(new Request(OFFLINE_URL), shell.clone());
+          }
         } catch {}
-      }),
-    );
+      }
 
-    // Discover & precache hashed bundles
-    await precacheDiscoveredAssets();
+      if (shell) {
+        // Pre-map shell to known shortcuts so they are instant + offline
+        await Promise.all(SHORTCUT_ROUTES.map((route) => mapShellToRoute(route, shell)));
+        // Seed popular /s/... routes if you provide /sigils-index.json
+        await seedSigilRoutes(shell);
+      }
 
-    // Map the shell to known dynamic routes (seed list)
-    // Fetch a fresh shell to map (ensure correct headers)
-    let shell = await cache.match(OFFLINE_URL, { ignoreSearch: true });
-    if (!shell) {
-      try {
-        shell = await fetch(OFFLINE_URL);
-        if (shell && (shell.ok || shell.type === "opaque")) {
-          await cache.put(new Request(OFFLINE_URL), shell.clone());
-        }
-      } catch {}
-    }
-    if (shell) {
-      // Pre-map shell to known shortcuts so they are instant + offline
-      await Promise.all(SHORTCUT_ROUTES.map((route) => mapShellToRoute(route, shell)));
-      // Seed popular /s/... routes if you provide /sigils-index.json
-      await seedSigilRoutes(shell);
-    }
+      // Make sure the offline fallback is cached so navigations stay friendly
+      const offlineCached = await cache.match(OFFLINE_FALLBACK, { ignoreSearch: true });
+      if (!offlineCached) {
+        try {
+          await cache.add(new Request(OFFLINE_FALLBACK, { cache: "reload" }));
+        } catch {}
+      }
+    })(),
+  );
 
-    // Make sure the offline fallback is cached so navigations stay friendly
-    const offlineCached = await cache.match(OFFLINE_FALLBACK, { ignoreSearch: true });
-    if (!offlineCached) {
-      try { await cache.add(new Request(OFFLINE_FALLBACK, { cache: "reload" })); } catch {}
-    }
-  })());
-  self.skipWaiting();
+  // ✅ IMPORTANT: do NOT auto-skipWaiting.
+  // This prevents controller swaps (and any downstream reload logic) while user is typing.
+  // The app may still trigger SKIP_WAITING manually via postMessage if desired.
 });
 
 self.addEventListener("activate", (event) => {
-  event.waitUntil((async () => {
-    const keys = await caches.keys();
-    await Promise.all(keys
-      .filter(k => ![PRECACHE, RUNTIME, ASSETCACHE, FONTCACHE, IMAGECACHE].includes(k))
-      .map(k => caches.delete(k)));
-    if ("navigationPreload" in self.registration) {
-      try { await self.registration.navigationPreload.enable(); } catch {}
-    }
+  event.waitUntil(
+    (async () => {
+      const keys = await caches.keys();
 
-    let claimed = false;
-    try {
-      await warmUrls(CRITICAL_OFFLINE_ASSETS, { mapShell: true });
-    } catch {}
+      // ✅ IMPORTANT: keep attachments cache
+      const keep = new Set([PRECACHE, RUNTIME, ASSETCACHE, FONTCACHE, IMAGECACHE, ATTACHMENTS_CACHE]);
 
-    try {
-      await self.clients.claim();
-      claimed = true;
-    } catch {}
+      await Promise.all(keys.filter((k) => !keep.has(k)).map((k) => caches.delete(k)));
 
-    try {
-      const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-      clients.forEach((client) => client.postMessage({ type: "SW_ACTIVATED", version: VERSION, claimed }));
-    } catch {}
+      if ("navigationPreload" in self.registration) {
+        try {
+          await self.registration.navigationPreload.enable();
+        } catch {}
+      }
 
-    try {
-      console.info("Kai service worker activated", { version: VERSION, claimed });
-    } catch {}
-  })());
+      let claimed = false;
+
+      try {
+        await warmUrls(CRITICAL_OFFLINE_ASSETS, { mapShell: true });
+      } catch {}
+
+      try {
+        await self.clients.claim();
+        claimed = true;
+      } catch {}
+
+      try {
+        const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+        clients.forEach((client) => client.postMessage({ type: "SW_ACTIVATED", version: VERSION, claimed }));
+      } catch {}
+
+      try {
+        console.info("Kai service worker activated", { version: VERSION, claimed });
+      } catch {}
+    })(),
+  );
 });
 
-// Allow app to trigger immediate takeover
+// Allow app to trigger immediate takeover (manual only)
 self.addEventListener("message", (event) => {
   const { data } = event;
   if (data === "SKIP_WAITING" || data?.type === "SKIP_WAITING") self.skipWaiting();
@@ -377,7 +424,10 @@ self.addEventListener("message", (event) => {
   }
 });
 
-// --- Fetch routing ---
+/* -------------------------------------------------------------------------- */
+/*                                   Fetch                                    */
+/* -------------------------------------------------------------------------- */
+
 self.addEventListener("fetch", (event) => {
   const req = event.request;
 
@@ -386,65 +436,90 @@ self.addEventListener("fetch", (event) => {
 
   const url = new URL(req.url);
 
+  // ✅ Cache-only attachments (/att/<sha>) — single respondWith per request
+  if (sameOrigin(req.url) && url.pathname.startsWith("/att/")) {
+    event.respondWith(
+      (async () => {
+        try {
+          const cache = await caches.open(ATTACHMENTS_CACHE);
+          const hit = await cache.match(req, { ignoreSearch: true });
+          return hit || new Response("Not Found", { status: 404 });
+        } catch {
+          return new Response("Not Found", { status: 404 });
+        }
+      })(),
+    );
+    return;
+  }
+
   // Range requests (audio/video scrubbing)
   if (req.headers.has("range")) {
-    event.respondWith((async () => {
-      const ranged = await handleRangeRequest(event);
-      if (ranged) return ranged;
-      try { return await fetch(req); } catch { return new Response("", { status: 504 }); }
-    })());
+    event.respondWith(
+      (async () => {
+        const ranged = await handleRangeRequest(event);
+        if (ranged) return ranged;
+        try {
+          return await fetch(req);
+        } catch {
+          return new Response("", { status: 504 });
+        }
+      })(),
+    );
     return;
   }
 
   // Navigations → serve app shell; also map this exact URL → shell for future offline opens
   if (req.mode === "navigate") {
-    event.respondWith((async () => {
-      // Try navigation preload
-      try {
-        const preload = ("navigationPreload" in self.registration) ? await event.preloadResponse : null;
-        if (preload) {
-          // Update shell cache and map to this route
-          await safePut(PRECACHE, new Request(OFFLINE_URL), preload.clone());
-          await mapShellToRoute(req.url, preload);
-          return preload;
+    event.respondWith(
+      (async () => {
+        // Try navigation preload
+        try {
+          const preload = "navigationPreload" in self.registration ? await event.preloadResponse : null;
+          if (preload) {
+            // Update shell cache and map to this route
+            await safePut(PRECACHE, new Request(OFFLINE_URL), preload.clone());
+            await mapShellToRoute(req.url, preload);
+            return preload;
+          }
+        } catch {}
+
+        // Use cached shell
+        const cachedShell = await caches.match(OFFLINE_URL, { ignoreSearch: true });
+        if (cachedShell) {
+          // Lazy map: store the shell under this exact navigation URL for future cold offline opens
+          event.waitUntil(mapShellToRoute(req.url, cachedShell));
+          // Revalidate the canonical shell in background
+          event.waitUntil(updateFromNetwork(OFFLINE_URL, PRECACHE));
+          return cachedShell;
         }
-      } catch {}
 
-      // Use cached shell
-      const cachedShell = await caches.match(OFFLINE_URL, { ignoreSearch: true });
-      if (cachedShell) {
-        // Lazy map: store the shell under this exact navigation URL for future cold offline opens
-        event.waitUntil(mapShellToRoute(req.url, cachedShell));
-        // Revalidate the canonical shell in background
-        event.waitUntil(updateFromNetwork(OFFLINE_URL, PRECACHE));
-        return cachedShell;
-      }
-
-      // Last resort: network
-      try {
-        const net = await fetch(OFFLINE_URL);
-        await safePut(PRECACHE, new Request(OFFLINE_URL), net.clone());
-        await mapShellToRoute(req.url, net);
-        return net;
-      } catch {
-        const cachedFallback = await caches.match(OFFLINE_FALLBACK, { ignoreSearch: true });
-        if (cachedFallback) return cachedFallback;
-        return new Response(
-          "<!doctype html><meta charset=utf-8><title>Offline</title><h1>Offline</h1><p>Open once online to cache the app shell.</p>",
-          { headers: { "Content-Type": "text/html" }, status: 503 }
-        );
-      }
-    })());
+        // Last resort: network
+        try {
+          const net = await fetch(OFFLINE_URL);
+          await safePut(PRECACHE, new Request(OFFLINE_URL), net.clone());
+          await mapShellToRoute(req.url, net);
+          return net;
+        } catch {
+          const cachedFallback = await caches.match(OFFLINE_FALLBACK, { ignoreSearch: true });
+          if (cachedFallback) return cachedFallback;
+          return new Response(
+            "<!doctype html><meta charset=utf-8><title>Offline</title><h1>Offline</h1><p>Open once online to cache the app shell.</p>",
+            { headers: { "Content-Type": "text/html" }, status: 503 },
+          );
+        }
+      })(),
+    );
     return;
   }
 
   // Static assets → SWR
-  if (sameOrigin(req.url) && (
-      url.pathname.startsWith("/assets/") ||
+  if (
+    sameOrigin(req.url) &&
+    (url.pathname.startsWith("/assets/") ||
       req.destination === "script" ||
       req.destination === "style" ||
-      req.destination === "worker"
-    )) {
+      req.destination === "worker")
+  ) {
     event.respondWith(staleWhileRevalidate(req, ASSETCACHE));
     return;
   }
@@ -468,9 +543,10 @@ self.addEventListener("fetch", (event) => {
   }
 
   // JSON/API GET → network-first with timeout, fallback to cache
-  const expectsJSON = req.headers.get("accept")?.includes("application/json")
-    || url.pathname.startsWith("/api/")
-    || url.pathname.endsWith(".json");
+  const expectsJSON =
+    req.headers.get("accept")?.includes("application/json") ||
+    url.pathname.startsWith("/api/") ||
+    url.pathname.endsWith(".json");
   if (expectsJSON) {
     event.respondWith(networkFirst(req, RUNTIME, 3500));
     return;
@@ -484,17 +560,4 @@ self.addEventListener("fetch", (event) => {
 
   // Cross-origin (CDNs etc.) → SWR
   event.respondWith(staleWhileRevalidate(req, RUNTIME));
-});
-
-self.addEventListener("fetch", (event) => {
-  const url = new URL(event.request.url);
-  if (url.pathname.startsWith("/att/") && event.request.method === "GET") {
-    event.respondWith((async () => {
-      const cache = await caches.open("sigil-attachments-v1");
-      const hit = await cache.match(event.request);
-      if (hit) return hit;
-      // Optional: deny network to keep these cache-only
-      return new Response("Not Found", { status: 404 });
-    })());
-  }
 });

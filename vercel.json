@@ -1,16 +1,16 @@
 {
-  "rewrites": [
-    { "source": "/key/:key*", "destination": "/" },
-    { "source": "/cancel", "destination": "/" },
-    { "source": "/dashboard", "destination": "/" },
-    { "source": "/profile", "destination": "/" },
-    { "source": "/success", "destination": "/" },
-    { "source": "/s/:hash", "destination": "/" },
-    { "source": "/verify/:slug", "destination": "/api/verify?slug=:slug" },
+  "$schema": "https://openapi.vercel.sh/vercel.json",
 
-    { "source": "/api/(.*)", "destination": "/api/$1" },
-    { "source": "/_next/(.*)", "destination": "/_next/$1" },
-    { "source": "/static/(.*)", "destination": "/static/$1" },
+  "functions": {
+    "api/ssr.ts": {
+      "includeFiles": "dist/server/**"
+    }
+  },
+
+  "rewrites": [
+    { "handle": "filesystem" },
+
+    { "source": "/verify/:slug", "destination": "/api/verify?slug=:slug" },
 
     { "source": "/verifier", "destination": "/verifier.html" },
     { "source": "/verifier.html", "destination": "/verifier.html" },
@@ -20,16 +20,32 @@
     { "source": "/sw.js", "destination": "/sw.js" },
     { "source": "/service-worker.js", "destination": "/service-worker.js" },
 
-    { "source": "/(.*)", "destination": "/" }
+    { "source": "/", "destination": "/api/ssr" },
+
+    {
+      "source": "/:path((?!api/).*)",
+      "has": [
+        { "type": "header", "key": "accept", "value": "text/html.*" }
+      ],
+      "destination": "/api/ssr"
+    }
   ],
+
   "headers": [
     {
-      "source": "/(.*)\\.(js|css|png|jpg|svg|ico|woff2?)",
+      "source": "/assets/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+      ]
+    },
+    {
+      "source": "/(.*)\\.(js|css|png|jpg|svg|ico|woff2?|wasm|zkey|r1cs|sym|json)",
       "headers": [
         { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
       ]
     }
   ],
+
   "cleanUrls": true,
   "trailingSlash": false
 }

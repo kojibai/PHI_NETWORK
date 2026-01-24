@@ -3,6 +3,16 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "packageManager": "pnpm@10.9.0",
+
+  "engines": {
+    "node": ">=20.19.0"
+  },
+
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild"]
+  },
+
   "scripts": {
     "dev": "vite",
     "dev:api": "node scripts/dev-api.mjs",
@@ -10,11 +20,13 @@
     "dev:ssr": "NODE_ENV=development node server.mjs",
     "build:clean": "rm -rf dist .vite && pnpm run build:ssr",
     "build": "tsc -b && vite build",
-    "build:ssr": "tsc -b && vite build && vite build --ssr src/entry-server.tsx --outDir dist/server",
+    "build:ssr": "tsc -b && vite build && vite build --ssr src/entry-server.tsx --outDir dist/server && node scripts/ssr-pack.mjs",
     "lint": "eslint .",
     "preview": "NODE_ENV=production node server.mjs",
     "test": "node --test"
   },
+
+  
   "dependencies": {
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.4.0",
@@ -61,7 +73,8 @@
     "globals": "^16.5.0",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.46.3",
-    "vite": "npm:rolldown-vite@7.2.2"
+    "vite": "npm:rolldown-vite@7.2.2",
+    "vite-plugin-vercel": "^9.1.1"
   },
   "overrides": {
     "vite": "npm:rolldown-vite@7.2.2"

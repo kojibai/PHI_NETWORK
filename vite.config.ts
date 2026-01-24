@@ -24,19 +24,25 @@ export default defineConfig(({ isSsrBuild }) => {
     define: {
       "import.meta.env.VITE_APP_VERSION": JSON.stringify(BASE_APP_VERSION),
     },
+
+    // Prevent SSR build from copying /public into dist/server
+    publicDir: ssrBuild ? false : "public",
+
     build: {
-      // ✅ Client build must land in "dist/" for Vercel static hosting.
       outDir: ssrBuild ? "dist/server" : "dist",
-      // ✅ SSR manifest is only useful for the CLIENT build (used by SSR runtime),
-      // so do NOT emit it during server build.
       ssrManifest: !ssrBuild,
+
+      // Helps SSR bundles be compatible with Vercel/Node 20 runtime
+      target: ssrBuild ? "node20" : undefined,
+
       rollupOptions: {
-        // ✅ Client build needs index.html input; server build does not.
         input: ssrBuild ? undefined : "index.html",
       },
     },
+
     ssr: {
-      noExternal: ["react-router-dom"],
+      // This is the important part for your warning
+      noExternal: ["react-router", "react-router-dom"],
     },
   };
 });

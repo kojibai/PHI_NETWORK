@@ -82,10 +82,6 @@ function attachServiceWorkerLogging(): void {
 
   log("serviceWorker controller", navigator.serviceWorker.controller);
 
-  navigator.serviceWorker.addEventListener("controllerchange", () => {
-    log("serviceWorker controllerchange", navigator.serviceWorker.controller);
-  });
-
   void navigator.serviceWorker.ready
     .then((registration) => {
       log("serviceWorker ready", registration);

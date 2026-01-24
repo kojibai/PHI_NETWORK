@@ -217,13 +217,8 @@ if ("serviceWorker" in navigator && isProduction) {
         }
       };
 
-      const onVisChange = () => tryReload("visibilitychange");
-
-      navigator.serviceWorker.addEventListener("controllerchange", () => {
-        pendingReload = true;
-        tryReload("controllerchange");
-        document.addEventListener("visibilitychange", onVisChange, { passive: true, once: true });
-      });
+   
+ 
 
       window.kairosApplyUpdate = () => {
         pendingReload = true;
