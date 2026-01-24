@@ -1,38 +1,35 @@
 {
-  "cleanUrls": true,
-  "trailingSlash": false,
+  "rewrites": [
+    { "source": "/key/:key*", "destination": "/" },
+    { "source": "/cancel", "destination": "/" },
+    { "source": "/dashboard", "destination": "/" },
+    { "source": "/profile", "destination": "/" },
+    { "source": "/success", "destination": "/" },
+    { "source": "/s/:hash", "destination": "/" },
+    { "source": "/verify/:slug", "destination": "/api/verify?slug=:slug" },
 
-  "routes": [
-    { "handle": "filesystem" },
+    { "source": "/api/(.*)", "destination": "/api/$1" },
+    { "source": "/_next/(.*)", "destination": "/_next/$1" },
+    { "source": "/static/(.*)", "destination": "/static/$1" },
 
-    { "src": "^/verify/([^/]+)$", "dest": "/api/verify?slug=$1" },
+    { "source": "/verifier", "destination": "/verifier.html" },
+    { "source": "/verifier.html", "destination": "/verifier.html" },
+    { "source": "/verifier.inline.html", "destination": "/verifier.inline.html" },
+    { "source": "/verifier-core.js", "destination": "/verifier-core.js" },
 
-    { "src": "^/key/(.*)$", "dest": "/" },
-    { "src": "^/cancel$", "dest": "/" },
-    { "src": "^/dashboard$", "dest": "/" },
-    { "src": "^/profile$", "dest": "/" },
-    { "src": "^/success$", "dest": "/" },
-    { "src": "^/s/([^/]+)$", "dest": "/" },
+    { "source": "/sw.js", "destination": "/sw.js" },
+    { "source": "/service-worker.js", "destination": "/service-worker.js" },
 
-    { "src": "^/(.*)$", "dest": "/" }
+    { "source": "/(.*)", "destination": "/" }
   ],
-
   "headers": [
     {
-      "source": "/sw.js",
-      "headers": [
-        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" },
-        { "key": "Pragma", "value": "no-cache" },
-        { "key": "Expires", "value": "0" },
-        { "key": "Service-Worker-Allowed", "value": "/" }
-      ]
-    },
-    {
-      "source": "/assets/(.*)\\.(js|css|png|jpg|jpeg|gif|webp|svg|ico|woff2?)",
+      "source": "/(.*)\\.(js|css|png|jpg|svg|ico|woff2?)",
       "headers": [
         { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
       ]
     }
-  ]
+  ],
+  "cleanUrls": true,
+  "trailingSlash": false
 }
-
