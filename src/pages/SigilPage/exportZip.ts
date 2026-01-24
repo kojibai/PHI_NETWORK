@@ -32,7 +32,53 @@ import {
 } from "../../components/KaiVoh/verifierProof";
 import type { SigilProofHints } from "../../types/sigil";
 
-const EXPORT_PX_MAX = 4096;
+/**
+ * We export at the largest possible px that the *current device* can actually rasterize.
+ * iOS Safari is the most sensitive; we'll try big -> smaller until it succeeds.
+ */
+const EXPORT_PX_CANDIDATES_DESKTOP: readonly number[] = [4096];
+const EXPORT_PX_CANDIDATES_IOS: readonly number[] = [4096, 3072, 2048, 1536, 1024];
+const EXPORT_PX_CANDIDATES_MOBILE_GENERIC: readonly number[] = [4096, 3072, 2048, 1536, 1024];
+
+function isIOS(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent || "";
+  const platform = (navigator as unknown as { platform?: string }).platform || "";
+  const maxTouchPoints = (navigator as unknown as { maxTouchPoints?: number }).maxTouchPoints ?? 0;
+
+  // iPadOS sometimes reports MacIntel but has touch points.
+  const iOSUA = /iPad|iPhone|iPod/i.test(ua) || /iPad|iPhone|iPod/i.test(platform);
+  const iPadOS = platform === "MacIntel" && maxTouchPoints > 1;
+  return iOSUA || iPadOS;
+}
+
+function isLikelyMobile(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent || "";
+  return /Mobi|Android|iPhone|iPad|iPod/i.test(ua);
+}
+
+async function pngBlobFromSvgBestFit(
+  svgBlob: Blob,
+  candidates: readonly number[]
+): Promise<{ pngBlob: Blob; usedPxMax: number }> {
+  let lastErr: unknown = null;
+
+  for (const px of candidates) {
+    try {
+      const pngBlob = await pngBlobFromSvg(svgBlob, px);
+      return { pngBlob, usedPxMax: px };
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+
+  const msg =
+    lastErr instanceof Error
+      ? lastErr.message
+      : "Unknown error while rasterizing PNG";
+  throw new Error(`PNG export failed at all sizes: ${msg}`);
+}
 
 const readPublicInput0 = (inputs: unknown): string | null => {
   if (Array.isArray(inputs) && typeof inputs[0] === "string") {
@@ -321,7 +367,7 @@ export async function exportZIP(ctx: {
       ...claimedMetaCanon,
       stepsPerBeat: stepsNum,
       shareUrl: fullUrlForManifest, // hint for consumers
-      fullUrl: fullUrlForManifest,  // alias
+      fullUrl: fullUrlForManifest, // alias
     };
     putMetadata(svgEl, metaForSvg);
 
@@ -350,8 +396,6 @@ export async function exportZIP(ctx: {
     ensureCanonicalMetadataFirst(svgEl);
 
     // Update ALL URL surfaces inside the SVG to the canonical manifest URL.
-    // NOTE: we do NOT mutate any existing proof bundle metadata; a fresh bundle
-    // is computed below with its own shareUrl + bundleHash for verification.
     updateSvgUrlSurfaces(svgEl, fullUrlForManifest);
 
     // Extract URL bits for the manifest file
@@ -400,8 +444,17 @@ export async function exportZIP(ctx: {
     };
 
     const capsuleHash = await hashProofCapsuleV1(proofCapsule);
+
+    // Choose export candidates based on device. We still TRY 4096 first even on iOS,
+    // but will fall back automatically if the device can't handle it.
+    const pxCandidates: readonly number[] = isIOS()
+      ? EXPORT_PX_CANDIDATES_IOS
+      : isLikelyMobile()
+        ? EXPORT_PX_CANDIDATES_MOBILE_GENERIC
+        : EXPORT_PX_CANDIDATES_DESKTOP;
+
     const svgClone = svgEl.cloneNode(true) as SVGElement;
-    ensureViewBoxOnClone(svgClone as SVGSVGElement, EXPORT_PX_MAX);
+    ensureViewBoxOnClone(svgClone as SVGSVGElement, pxCandidates[0] ?? 4096);
     ensureXmlns(svgClone as SVGSVGElement);
     ensureTitleAndDesc(
       svgClone as SVGSVGElement,
@@ -545,7 +598,10 @@ export async function exportZIP(ctx: {
     const sealedSvg = embedProofMetadata(svgString, proofBundle);
     const svgBlob = new Blob([sealedSvg], { type: "image/svg+xml;charset=utf-8" });
     const svgAssetHash = await sha256HexCanon(new Uint8Array(await svgBlob.arrayBuffer()));
-    const pngBlob = await pngBlobFromSvg(svgBlob, EXPORT_PX_MAX);
+
+    // ✅ PNG export: try biggest -> shrink until iOS can render reliably
+    const { pngBlob, usedPxMax } = await pngBlobFromSvgBestFit(svgBlob, pxCandidates);
+
     const pngHash = await sha256HexCanon(new Uint8Array(await pngBlob.arrayBuffer()));
 
     // Build ZIP (add manifest before generate)
@@ -585,6 +641,8 @@ export async function exportZIP(ctx: {
         [`${base}.svg`]: svgAssetHash,
         [`${base}.png`]: pngHash,
       },
+      // record which export ceiling actually worked (helps audit/debug)
+      pngPxMax: usedPxMax,
       // claim controls
       claimExtendUnit: claimedMetaCanon.claimExtendUnit ?? null,
       claimExtendAmount: claimedMetaCanon.claimExtendAmount ?? null,
