@@ -159,11 +159,36 @@ if ("serviceWorker" in navigator && isProduction) {
         }
       };
 
+      const isInteractiveElement = (el: Element | null): boolean => {
+        if (!el) return false;
+        if (el instanceof HTMLInputElement) return true;
+        if (el instanceof HTMLTextAreaElement) return true;
+        if (el instanceof HTMLSelectElement) return true;
+        if (el instanceof HTMLElement && el.isContentEditable) return true;
+        return false;
+      };
+
+      const hasFocusedKaiVohField = (): boolean => {
+        const active = document.activeElement;
+        if (!active || active === document.body) return false;
+        if (!(active instanceof HTMLElement)) return false;
+        if (!active.closest(".kai-voh-app-shell, .kai-voh-login-shell, .kai-voh-modal-backdrop")) {
+          return false;
+        }
+        return Boolean(
+          isInteractiveElement(active) ||
+            active.closest("input, textarea, select, [contenteditable='true'], [contenteditable='plaintext-only']"),
+        );
+      };
+
       const hasActiveKaiVohUi = (): boolean => {
         return Boolean(
           document.querySelector(".kai-voh-modal-backdrop") ||
+            document.querySelector(".kai-voh-app-shell") ||
+            document.querySelector(".kai-voh-login-shell") ||
             document.querySelector(".kv-post-caption-textarea") ||
-            document.querySelector(".composer-textarea"),
+            document.querySelector(".composer-textarea") ||
+            hasFocusedKaiVohField(),
         );
       };
 
