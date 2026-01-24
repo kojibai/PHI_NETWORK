@@ -14,17 +14,18 @@ import { PerfProfiler } from "../perf/PerfProfiler";
 
 // Standalone pages stay lazy (RouteLoader allowed here)
 const SigilFeedPage = React.lazy(() => import("../pages/SigilFeedPage"));
-const SigilPage = React.lazy(() => import("../pages/SigilPage/SigilPage"));
 const PShort = React.lazy(() => import("../pages/PShort"));
 const VerifyPage = React.lazy(() => import("../pages/VerifyPage"));
 const VerifyEmbedPage = React.lazy(() => import("../pages/VerifyEmbedPage"));
+
+// ✅ SigilPage stays eager so it always opens offline (no missing chunk)
+import SigilPage from "../pages/SigilPage/SigilPage";
 
 // ✅ HOME MUST BE INSTANT → eager import (no Suspense fallback)
 import VerifierStamper from "../components/VerifierStamper/VerifierStamper";
 
 const PREFETCH_LAZY_ROUTES: ReadonlyArray<() => Promise<unknown>> = [
   () => import("../pages/SigilFeedPage"),
-  () => import("../pages/SigilPage/SigilPage"),
   () => import("../pages/PShort"),
   () => import("../pages/VerifyPage"),
   () => import("../pages/VerifyEmbedPage"),
