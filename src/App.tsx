@@ -189,7 +189,6 @@ const SHELL_ROUTES_TO_WARM: readonly string[] = [
 const APP_SHELL_HINTS: readonly string[] = [
   "/", // canonical shell
   "/?source=pwa",
-  "/index.html",
 ];
 
 type NavItem = {

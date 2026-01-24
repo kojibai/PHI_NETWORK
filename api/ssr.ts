@@ -20,6 +20,13 @@ type SsrModule = {
   default?: RenderFn | { render?: RenderFn };
 };
 
+type ManifestEntry = {
+  file?: string;
+  isEntry?: boolean;
+  imports?: string[];
+  src?: string;
+};
+
 function pickRender(mod: unknown): RenderFn | null {
   if (!mod || typeof mod !== "object") return null;
   const m = mod as SsrModule;
@@ -29,6 +36,46 @@ function pickRender(mod: unknown): RenderFn | null {
     (typeof m.default === "function" ? m.default : m.default?.render);
 
   return typeof candidate === "function" ? (candidate as RenderFn) : null;
+}
+
+function toPublicPath(file?: string): string | null {
+  if (!file) return null;
+  return file.startsWith("/") ? file : `/${file}`;
+}
+
+function buildSsrHead(): string {
+  const parts: string[] = [];
+  const manifestPath = path.join(process.cwd(), "dist", "client", ".vite", "manifest.json");
+
+  try {
+    if (fs.existsSync(manifestPath)) {
+      const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8")) as Record<
+        string,
+        ManifestEntry
+      >;
+      const entryKey =
+        Object.keys(manifest).find((key) => manifest[key]?.src?.includes("entry-client")) ??
+        Object.keys(manifest).find((key) => manifest[key]?.isEntry);
+      const entry = entryKey ? manifest[entryKey] : null;
+
+      const preloadFiles = new Set<string>();
+      if (entry?.file) preloadFiles.add(entry.file);
+      entry?.imports?.forEach((imp) => {
+        const file = manifest[imp]?.file ?? imp;
+        if (file) preloadFiles.add(file);
+      });
+
+      preloadFiles.forEach((file) => {
+        const href = toPublicPath(file);
+        if (href) parts.push(`<link rel="modulepreload" href="${href}">`);
+      });
+    }
+  } catch (err) {
+    console.warn("SSR manifest preload failed:", err);
+  }
+
+  parts.push('<link rel="preload" href="/phi.svg" as="image" type="image/svg+xml">');
+  return parts.join("");
 }
 
 function splitTemplate(template: string): { head: string; tail: string } {
@@ -85,7 +132,8 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
 
     const templatePath = path.join(process.cwd(), "dist", "server", "template.html");
     const template = fs.readFileSync(templatePath, "utf8");
-    const { head, tail } = splitTemplate(template);
+    const templateWithHead = template.replace("<!--ssr-head-->", buildSsrHead());
+    const { head, tail } = splitTemplate(templateWithHead);
 
     const entryPath = path.join(process.cwd(), "dist", "server", "entry-server.js");
     const entryUrl = pathToFileURL(entryPath).href;
@@ -105,6 +153,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     res.statusCode = 200;
     res.setHeader("content-type", "text/html; charset=utf-8");
     res.setHeader("cache-control", "no-store");
+    res.setHeader("x-ssr", "1");
 
     let shellFlushed = false;
     let pipeable: PipeableStream | null = null;

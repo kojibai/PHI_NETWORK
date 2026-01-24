@@ -21,7 +21,6 @@ import {
   type FC,
 } from "react";
 import { createPortal } from "react-dom";
-import JSZip from "jszip";
 
 /* Moment row (v22.9 UI) */
 import SigilMomentRow from "./SigilMomentRow";
@@ -1447,6 +1446,7 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
 
       const sealedSvg = embedProofMetadata(svgString, proofBundle);
       const baseName = `☤KAI-Sigil_Glyph_v1-${pulseNum}_${kaiSignatureShort}_Φkey${phiKey}`;
+      const { default: JSZip } = await import("jszip");
       const zip = new JSZip();
       zip.file(`${baseName}.svg`, sealedSvg);
       zip.file(`${baseName}_proof_bundle.json`, JSON.stringify(proofBundle, null, 2));

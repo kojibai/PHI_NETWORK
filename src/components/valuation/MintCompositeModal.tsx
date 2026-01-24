@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import "./MintCompositeModal.css";
-import JSZip from "jszip";
 import { XCircle } from "lucide-react";
 
 import DonorsEditor, { type DonorRow } from "./DonorsEditor";
@@ -557,6 +556,7 @@ export default function MintCompositeModal({
       };
 
       // Bundle ZIP (SVG + PNG + manifest.json + provenance)
+      const { default: JSZip } = await import("jszip");
       const zip = new JSZip();
       zip.file(`${base}.svg`, enhancedSvg);
       zip.file(`${base}.png`, pngBlob);

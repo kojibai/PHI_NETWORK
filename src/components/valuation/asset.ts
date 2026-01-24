@@ -1,5 +1,4 @@
 // src/components/valuation/asset.ts
-import JSZip from "jszip";
 import { COLORS } from "./constants";
 
 export async function sha256HexStable(s: string): Promise<string> {
@@ -163,6 +162,7 @@ export async function exportGlyphZip(params: {
   hash: string;
 }): Promise<{ fileName: string; blob: Blob }> {
   const { svg, png, manifest, hash } = params;
+  const { default: JSZip } = await import("jszip");
   const zip = new JSZip();
   zip.file("glyph.svg", svg);
   zip.file("glyph.png", png);

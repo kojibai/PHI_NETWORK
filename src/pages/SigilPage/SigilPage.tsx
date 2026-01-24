@@ -4,6 +4,8 @@
 
 import type * as React from "react";
 import {
+  Suspense,
+  lazy,
   useState,
   useEffect,
   useMemo,
@@ -12,8 +14,7 @@ import {
   useDeferredValue,
   useLayoutEffect,
 } from "react";
-import {useParams, useLocation, useNavigate } from "react-router-dom";
-import html2canvas from "html2canvas";
+import { useParams, useLocation, useNavigate } from "react-router-dom";
 import { createPortal } from "react-dom";
 /* ——— Core components ——— */
 import KaiSigil from "../../components/KaiSigil";
@@ -25,7 +26,6 @@ import SigilMetaPanel from "../../components/sigil/SigilMetaPanel";
 import SigilCTA from "../../components/sigil/SigilCTA";
 import ProvenanceList from "../../components/sigil/ProvenanceList";
 import SovereignControls from "../../components/sigil/SovereignControls";
-import StargateOverlay from "../../components/sigil/StargateOverlay";
 import OwnershipPanel from "../../components/sigil/OwnershipPanel";
 import UpgradeSigilModal from "../../components/sigil/UpgradeSigilModal";
 import SigilConflictBanner from "../../components/SigilConflictBanner";
@@ -148,6 +148,7 @@ import {
 
 import { enableMobileDismissals } from "../../lib/mobilePopoverFix";
 
+const StargateOverlay = lazy(() => import("../../components/sigil/StargateOverlay"));
 
 /* ——— v48: deterministic debit-cap + atomic send lock ——— */
 const EPS = 1e-9;
@@ -1335,6 +1336,7 @@ useEffect(() => {
   const openStargate = useCallback(async () => {
     const el = frameRef.current;
     if (!el) return;
+    const { default: html2canvas } = await import("html2canvas");
     const canvas = await html2canvas(
       el,
       ({ backgroundColor: null } as unknown) as Parameters<typeof html2canvas>[1]
@@ -3344,12 +3346,14 @@ useEffect(() => {
         </section>
       </div>
 
-      <StargateOverlay
-        open={stargateOpen && !!stargateSrc}
-        src={stargateSrc}
-        onClose={closeStargate}
-        closePress={closeStargatePress}
-      />
+      <Suspense fallback={null}>
+        <StargateOverlay
+          open={stargateOpen && !!stargateSrc}
+          src={stargateSrc}
+          onClose={closeStargate}
+          closePress={closeStargatePress}
+        />
+      </Suspense>
 
       {/* SealMoment modal */}
       <SealMomentModal
