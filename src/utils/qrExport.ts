@@ -277,14 +277,29 @@ export async function pngBlobFromSvg(svgBlob: Blob, px = EXPORT_PX) {
   try {
     const img = new Image();
     img.decoding = "async";
-    img.src = url;
 
     if (typeof img.decode === "function") {
+      img.src = url;
       await img.decode();
     } else {
       await new Promise<void>((res, rej) => {
-        img.onload = () => res();
-        img.onerror = rej;
+        let settled = false;
+        const resolveOnce = () => {
+          if (settled) return;
+          settled = true;
+          res();
+        };
+        const rejectOnce = (err: unknown) => {
+          if (settled) return;
+          settled = true;
+          rej(err);
+        };
+        img.onload = resolveOnce;
+        img.onerror = rejectOnce;
+        img.src = url;
+        if (img.complete) {
+          resolveOnce();
+        }
       });
     }
 
