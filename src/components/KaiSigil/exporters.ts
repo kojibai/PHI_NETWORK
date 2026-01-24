@@ -4,6 +4,19 @@ export function makeExporters(
   svgRef: React.RefObject<SVGSVGElement>,
   size: number | undefined
 ) {
+  const serializeSvg = (el: SVGSVGElement): string => {
+    const clone = el.cloneNode(true) as SVGSVGElement;
+    clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+    clone.setAttribute("xmlns:xlink", "http://www.w3.org/1999/xlink");
+    clone.querySelectorAll<SVGElement>("[href]").forEach((node) => {
+      const href = node.getAttribute("href");
+      if (href && !node.getAttribute("xlink:href")) {
+        node.setAttribute("xlink:href", href);
+      }
+    });
+    return new XMLSerializer().serializeToString(clone);
+  };
+
   const utf8ToBase64 = (s: string): string => {
     if (typeof window === "undefined" || typeof window.btoa !== "function") {
       throw new Error("Base64 encoding unavailable in this environment");
@@ -19,9 +32,7 @@ export function makeExporters(
     toDataURL: () => {
       const el = svgRef.current;
       if (!el) throw new Error("SVG not mounted");
-      return `data:image/svg+xml;base64,${utf8ToBase64(
-        new XMLSerializer().serializeToString(el)
-      )}`;
+      return `data:image/svg+xml;base64,${utf8ToBase64(serializeSvg(el))}`;
     },
     async exportBlob(
       type: "image/svg+xml" | "image/png" = "image/svg+xml",
@@ -29,7 +40,7 @@ export function makeExporters(
     ) {
       const el = svgRef.current;
       if (!el) throw new Error("SVG not mounted");
-      const xml = new XMLSerializer().serializeToString(el);
+      const xml = serializeSvg(el);
       if (type === "image/svg+xml") return new Blob([xml], { type });
       const svgUrl = URL.createObjectURL(new Blob([xml], { type: "image/svg+xml" }));
       try {
@@ -37,7 +48,14 @@ export function makeExporters(
         const sizePx = Math.round((size ?? 240) * scale);
         img.decoding = "async";
         img.src = svgUrl;
-        await img.decode();
+        if ("decode" in img) {
+          await img.decode();
+        } else {
+          await new Promise<void>((resolve, reject) => {
+            img.onload = () => resolve();
+            img.onerror = () => reject(new Error("Image load failed"));
+          });
+        }
         const canvas = document.createElement("canvas");
         canvas.width = sizePx;
         canvas.height = sizePx;
