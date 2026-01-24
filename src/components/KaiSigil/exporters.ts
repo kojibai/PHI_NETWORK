@@ -1,9 +1,32 @@
+import React from "react";
 import { bytesToHex, sha256 } from "./crypto";
 
 export function makeExporters(
   svgRef: React.RefObject<SVGSVGElement>,
   size: number | undefined
 ) {
+  const serializeSvg = (el: SVGSVGElement): string => {
+    const clone = el.cloneNode(true) as SVGSVGElement;
+
+    clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+    clone.setAttribute("xmlns:xlink", "http://www.w3.org/1999/xlink");
+    clone.setAttribute("preserveAspectRatio", "xMidYMid meet");
+
+    // iOS Safari: SVG->Image->Canvas is much more reliable with explicit size
+    const base = size ?? 240;
+    if (!clone.getAttribute("width")) clone.setAttribute("width", String(base));
+    if (!clone.getAttribute("height")) clone.setAttribute("height", String(base));
+
+    clone.querySelectorAll<SVGElement>("[href]").forEach((node) => {
+      const href = node.getAttribute("href");
+      if (href && !node.getAttribute("xlink:href")) {
+        node.setAttribute("xlink:href", href);
+      }
+    });
+
+    return new XMLSerializer().serializeToString(clone);
+  };
+
   const utf8ToBase64 = (s: string): string => {
     if (typeof window === "undefined" || typeof window.btoa !== "function") {
       throw new Error("Base64 encoding unavailable in this environment");
@@ -15,53 +38,101 @@ export function makeExporters(
     return window.btoa(utf8);
   };
 
+  const raf = (): Promise<void> =>
+    new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
   return {
     toDataURL: () => {
       const el = svgRef.current;
       if (!el) throw new Error("SVG not mounted");
-      return `data:image/svg+xml;base64,${utf8ToBase64(
-        new XMLSerializer().serializeToString(el)
-      )}`;
+      return `data:image/svg+xml;base64,${utf8ToBase64(serializeSvg(el))}`;
     },
+
     async exportBlob(
       type: "image/svg+xml" | "image/png" = "image/svg+xml",
       scale = 2
     ) {
       const el = svgRef.current;
       if (!el) throw new Error("SVG not mounted");
-      const xml = new XMLSerializer().serializeToString(el);
+
+      const xml = serializeSvg(el);
       if (type === "image/svg+xml") return new Blob([xml], { type });
-      const svgUrl = URL.createObjectURL(new Blob([xml], { type: "image/svg+xml" }));
+
+      const svgUrl = URL.createObjectURL(
+        new Blob([xml], { type: "image/svg+xml" })
+      );
+
       try {
-        const img = new Image();
-        const sizePx = Math.round((size ?? 240) * scale);
+        const img = new Image(); // keep real DOM type for CanvasImageSource
         img.decoding = "async";
+
+        const waitForLoad = (): Promise<void> =>
+          new Promise<void>((resolve, reject) => {
+            img.addEventListener("load", () => resolve(), { once: true });
+            img.addEventListener(
+              "error",
+              () => reject(new Error("Image load failed")),
+              { once: true }
+            );
+          });
+
         img.src = svgUrl;
-        await img.decode();
+
+        // Always wait for load first (Safari quirks)
+        await waitForLoad();
+
+        // Then try decode if present (type-level optional via cast, no 'any')
+        const maybeDecode = (img as unknown as { decode?: () => Promise<void> })
+          .decode;
+        if (typeof maybeDecode === "function") {
+          try {
+            await maybeDecode.call(img);
+          } catch {
+            // ignore decode failures; load already succeeded
+          }
+        }
+
+        // iOS: give the rasterizer a frame before drawImage
+        await raf();
+
+        const sizePx = Math.round((size ?? 240) * scale);
         const canvas = document.createElement("canvas");
         canvas.width = sizePx;
         canvas.height = sizePx;
+
         const ctx = canvas.getContext("2d");
         if (!ctx) throw new Error("Canvas 2D context not available");
+
         ctx.drawImage(img, 0, 0, sizePx, sizePx);
+
         const blob: Blob = await new Promise<Blob>((res, rej) => {
-          canvas.toBlob((b) => (b ? res(b) : rej(new Error("Canvas toBlob failed"))), "image/png");
+          canvas.toBlob(
+            (b: Blob | null) =>
+              b ? res(b) : rej(new Error("Canvas toBlob failed")),
+            "image/png"
+          );
         });
+
         return blob;
       } finally {
         URL.revokeObjectURL(svgUrl);
       }
     },
+
     async verifySvgHash(expected: string) {
       const el = svgRef.current;
       if (!el) throw new Error("SVG not mounted");
+
       const clone = el.cloneNode(true) as SVGSVGElement;
       clone.removeAttribute("data-svg-hash");
       clone.removeAttribute("data-svg-valid");
+
       const xml = new XMLSerializer().serializeToString(clone);
       const calc = bytesToHex(await sha256(xml));
-      if (calc !== expected.toLowerCase())
+
+      if (calc !== expected.toLowerCase()) {
         throw new Error(`SVG HASH MISMATCH (${calc} != ${expected})`);
+      }
       return calc;
     },
   };

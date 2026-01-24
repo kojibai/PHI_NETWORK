@@ -179,12 +179,35 @@ export async function centrePixelSignature(url: string, pulseForSeal: number) {
 /* embed updated <metadata> JSON into SVG and return data: URL */
 const MAIN_METADATA_REGEX = /<metadata\b(?![^>]*\bid=["']kai-voh-proof["'])[^>]*>[\s\S]*?<\/metadata>/i;
 
+function normalizeSvgText(svgText: string): string {
+  try {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(svgText, "image/svg+xml");
+    const svg = doc.documentElement;
+    svg.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+    svg.setAttribute("xmlns:xlink", "http://www.w3.org/1999/xlink");
+    svg.querySelectorAll<SVGElement>("[href]").forEach((node) => {
+      const href = node.getAttribute("href");
+      if (href && !node.getAttribute("xlink:href")) {
+        node.setAttribute("xlink:href", href);
+      }
+    });
+    return new XMLSerializer().serializeToString(svg);
+  } catch {
+    return svgText;
+  }
+}
+
 export function embedMetadataText(svgText: string, meta: SigilMetadata): string {
   const json = JSON.stringify(meta, null, 2);
   if (MAIN_METADATA_REGEX.test(svgText)) {
-    return svgText.replace(MAIN_METADATA_REGEX, `<metadata>${json}</metadata>`);
+    return normalizeSvgText(
+      svgText.replace(MAIN_METADATA_REGEX, `<metadata>${json}</metadata>`)
+    );
   }
-  return svgText.replace(/<svg([^>]*)>/i, `<svg$1><metadata>${json}</metadata>`);
+  return normalizeSvgText(
+    svgText.replace(/<svg([^>]*)>/i, `<svg$1><metadata>${json}</metadata>`)
+  );
 }
 
 export async function embedMetadata(svgURL: string, meta: SigilMetadata) {
@@ -201,11 +224,15 @@ export async function pngBlobFromSvgDataUrl(
   px = 1024
 ): Promise<Blob> {
   const img = new Image();
+  img.decoding = "async";
   await new Promise<void>((res, rej) => {
     img.onload = () => res();
     img.onerror = rej;
     img.src = svgDataUrl;
   });
+  if ("decode" in img) {
+    await img.decode();
+  }
   const canvas = document.createElement("canvas");
   canvas.width = px;
   canvas.height = px;
