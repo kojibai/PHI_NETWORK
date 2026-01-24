@@ -1,11 +1,11 @@
 {
   "rewrites": [
-    { "source": "/key/:key*", "destination": "/" },
-    { "source": "/cancel", "destination": "/" },
-    { "source": "/dashboard", "destination": "/" },
-    { "source": "/profile", "destination": "/" },
-    { "source": "/success", "destination": "/" },
-    { "source": "/s/:hash", "destination": "/" },
+    { "source": "/key/:key*", "destination": "/index.html" },
+    { "source": "/cancel", "destination": "/index.html" },
+    { "source": "/dashboard", "destination": "/index.html" },
+    { "source": "/profile", "destination": "/index.html" },
+    { "source": "/success", "destination": "/index.html" },
+    { "source": "/s/:hash", "destination": "/index.html" },
     { "source": "/verify/:slug", "destination": "/api/verify?slug=:slug" },
 
     { "source": "/api/(.*)", "destination": "/api/$1" },
@@ -20,7 +20,7 @@
     { "source": "/sw.js", "destination": "/sw.js" },
     { "source": "/service-worker.js", "destination": "/service-worker.js" },
 
-    { "source": "/(.*)", "destination": "/" }
+    { "source": "/(.*)", "destination": "/index.html" }
   ],
   "headers": [
     {
