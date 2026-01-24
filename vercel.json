@@ -1,26 +1,16 @@
 {
-  "$schema": "https://openapi.vercel.sh/vercel.json",
-
-  "functions": {
-    "api/ssr.ts": {
-      "includeFiles": "dist/server/**"
-    }
-  },
-
   "rewrites": [
-    { "source": "/klok", "destination": "/klok.html" },
-    { "source": "/klok.html", "destination": "/klok.html" },
-    { "source": "/klok-core.js", "destination": "/klok-core.js" },
-
-    { "source": "/sigil/new", "destination": "/sigil/new.html" },
-    { "source": "/sigil/new.html", "destination": "/sigil/new.html" },
-    { "source": "/sigil-core.js", "destination": "/sigil-core.js" },
-
-    { "source": "/pulse", "destination": "/pulse.html" },
-    { "source": "/pulse.html", "destination": "/pulse.html" },
-    { "source": "/pulse-core.js", "destination": "/pulse-core.js" },
-
+    { "source": "/key/:key*", "destination": "/" },
+    { "source": "/cancel", "destination": "/" },
+    { "source": "/dashboard", "destination": "/" },
+    { "source": "/profile", "destination": "/" },
+    { "source": "/success", "destination": "/" },
+    { "source": "/s/:hash", "destination": "/" },
     { "source": "/verify/:slug", "destination": "/api/verify?slug=:slug" },
+
+    { "source": "/api/(.*)", "destination": "/api/$1" },
+    { "source": "/_next/(.*)", "destination": "/_next/$1" },
+    { "source": "/static/(.*)", "destination": "/static/$1" },
 
     { "source": "/verifier", "destination": "/verifier.html" },
     { "source": "/verifier.html", "destination": "/verifier.html" },
@@ -30,25 +20,16 @@
     { "source": "/sw.js", "destination": "/sw.js" },
     { "source": "/service-worker.js", "destination": "/service-worker.js" },
 
-    { "source": "/", "destination": "/api/ssr" },
-    {
-      "source": "/:path((?!api/).*)",
-      "has": [{ "type": "header", "key": "accept", "value": "text/html.*" }],
-      "destination": "/api/ssr"
-    }
+    { "source": "/(.*)", "destination": "/" }
   ],
-
   "headers": [
     {
-      "source": "/assets/(.*)",
-      "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }]
-    },
-    {
-      "source": "/(.*)\\.(js|css|png|jpg|svg|ico|woff2?|wasm|zkey|r1cs|sym|json|html)",
-      "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }]
+      "source": "/(.*)\\.(js|css|png|jpg|svg|ico|woff2?)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+      ]
     }
   ],
-
   "cleanUrls": true,
   "trailingSlash": false
 }
