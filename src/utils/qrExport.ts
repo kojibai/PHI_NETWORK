@@ -262,23 +262,42 @@ export async function svgBlobForExport(
   return new Blob([finalXml], { type: "image/svg+xml;charset=utf-8" });
 }
 
+function getSafePngPx(requestedPx: number): number {
+  if (typeof window === "undefined") return requestedPx;
+  const maxScreen = Math.max(window.screen.width, window.screen.height);
+  if (!Number.isFinite(maxScreen)) return requestedPx;
+  if (maxScreen <= 1024) {
+    return Math.min(requestedPx, 2048);
+  }
+  return requestedPx;
+}
+
 export async function pngBlobFromSvg(svgBlob: Blob, px = EXPORT_PX) {
   const url = URL.createObjectURL(svgBlob);
   try {
     const img = new Image();
-    await new Promise<void>((res, rej) => {
-      img.onload = () => res();
-      img.onerror = rej;
-      img.src = url;
-    });
+    img.decoding = "async";
+    img.src = url;
 
+    if (typeof img.decode === "function") {
+      await img.decode();
+    } else {
+      await new Promise<void>((res, rej) => {
+        img.onload = () => res();
+        img.onerror = rej;
+      });
+    }
+
+    const targetPx = getSafePngPx(px);
     const canvas = document.createElement("canvas");
-    canvas.width = px;
-    canvas.height = px;
+    canvas.width = targetPx;
+    canvas.height = targetPx;
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("Canvas unsupported");
 
-    ctx.drawImage(img, 0, 0, px, px);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(img, 0, 0, targetPx, targetPx);
 
     return await new Promise<Blob>((resolve, reject) =>
       canvas.toBlob(
