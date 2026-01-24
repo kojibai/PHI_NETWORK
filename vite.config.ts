@@ -9,7 +9,13 @@ export default defineConfig(({ isSsrBuild }) => {
   return {
     plugins: [react()],
     resolve: {
-      dedupe: ["react", "react-dom", "react/jsx-runtime"],
+      dedupe: [
+        "react",
+        "react-dom",
+        "react/jsx-runtime",
+        "react-router",
+        "react-router-dom",
+      ],
     },
     server: {
       proxy: {
@@ -25,23 +31,18 @@ export default defineConfig(({ isSsrBuild }) => {
       "import.meta.env.VITE_APP_VERSION": JSON.stringify(BASE_APP_VERSION),
     },
 
-    // Prevent SSR build from copying /public into dist/server
     publicDir: ssrBuild ? false : "public",
 
     build: {
       outDir: ssrBuild ? "dist/server" : "dist",
       ssrManifest: !ssrBuild,
-
-      // Helps SSR bundles be compatible with Vercel/Node 20 runtime
       target: ssrBuild ? "node20" : undefined,
-
       rollupOptions: {
         input: ssrBuild ? undefined : "index.html",
       },
     },
 
     ssr: {
-      // This is the important part for your warning
       noExternal: ["react-router", "react-router-dom"],
     },
   };

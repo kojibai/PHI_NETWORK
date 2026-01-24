@@ -7,7 +7,8 @@ import React, {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-import { matchPath, useLocation, useNavigationType } from "react-router-dom";
+import { matchPath, useLocation, useNavigationType } from "react-router";
+
 
 type SplashPhase = "show" | "fade" | "hidden";
 
