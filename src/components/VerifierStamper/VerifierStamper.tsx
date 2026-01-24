@@ -332,8 +332,9 @@ const VerifierStamperInner: React.FC = () => {
   const dlgRef = useRef<HTMLDialogElement>(null);
   const noteDlgRef = useRef<HTMLDialogElement>(null);
 
-  const [pulseNow, setPulseNow] = useState<number>(kaiPulseNow());
+  const [pulseNow, setPulseNow] = useState<number>(0);
   useEffect(() => {
+    setPulseNow(kaiPulseNow());
     const id = window.setInterval(() => setPulseNow(kaiPulseNow()), 1000);
     return () => window.clearInterval(id);
   }, []);
