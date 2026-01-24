@@ -18,6 +18,7 @@ import { extractEmbeddedMetaFromSvg } from "../../utils/sigilMetadata";
 import { embedProofMetadata } from "../../utils/svgProof";
 import { buildProofHints, generateZkProofFromPoseidonHash } from "../../utils/zkProof";
 import { computeZkPoseidonHash } from "../../utils/kai";
+import { ensureTitleAndDesc, ensureViewBoxOnClone, ensureXmlns } from "../../utils/svgMeta";
 import {
   buildBundleUnsigned,
   buildVerifierUrl,
@@ -398,6 +399,13 @@ export async function exportZIP(ctx: {
 
     const capsuleHash = await hashProofCapsuleV1(proofCapsule);
     const svgClone = svgEl.cloneNode(true) as SVGElement;
+    ensureViewBoxOnClone(svgClone as SVGSVGElement, EXPORT_PX_MAX);
+    ensureXmlns(svgClone as SVGSVGElement);
+    ensureTitleAndDesc(
+      svgClone as SVGSVGElement,
+      "Kairos Sigil-Glyph — Sealed KairosMoment",
+      "Deterministic sigil-glyph with sovereign metadata. Exported as archived key."
+    );
     svgClone.setAttribute("data-pulse", String(claimedMetaCanon.pulse));
     svgClone.setAttribute("data-beat", String(claimedMetaCanon.beat));
     svgClone.setAttribute("data-step-index", String(sealedStepIndex));
