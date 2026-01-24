@@ -1,9 +1,10 @@
+// vite.config.ts
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { BASE_APP_VERSION } from "./src/version";
 
 export default defineConfig(({ isSsrBuild }) => {
-  const ssrBuild = isSsrBuild === true; // important: may be undefined :contentReference[oaicite:1]{index=1}
+  const ssrBuild = isSsrBuild === true;
 
   return {
     plugins: [react()],
@@ -24,9 +25,13 @@ export default defineConfig(({ isSsrBuild }) => {
       "import.meta.env.VITE_APP_VERSION": JSON.stringify(BASE_APP_VERSION),
     },
     build: {
+      // ✅ Client build must land in "dist/" for Vercel static hosting.
+      outDir: ssrBuild ? "dist/server" : "dist",
+      // ✅ SSR manifest is only useful for the CLIENT build (used by SSR runtime),
+      // so do NOT emit it during server build.
       ssrManifest: !ssrBuild,
-      outDir: ssrBuild ? "dist/server" : "dist/client",
       rollupOptions: {
+        // ✅ Client build needs index.html input; server build does not.
         input: ssrBuild ? undefined : "index.html",
       },
     },
