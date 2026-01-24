@@ -1,6 +1,6 @@
 import React from "react";
 import { renderToPipeableStream } from "react-dom/server";
-import { StaticRouter } from "react-router-dom/server";
+import { StaticRouter } from "react-router";
 import { AppRoutes } from "./router/AppRouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 
