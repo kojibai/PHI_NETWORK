@@ -116,8 +116,11 @@
       }
     </script>
 
+    <!-- SSR Head -->
+    <!--ssr-head-->
+
     <!-- Vite Entry -->
-    <script type="module" src="/src/main.tsx"></script>
+    <script type="module" src="/src/entry-client.tsx"></script>
   </head>
 
   <body
@@ -135,6 +138,6 @@
     "
   >
     <noscript>Phi Network requires JavaScript enabled to run.</noscript>
-    <div id="root"></div>
+    <div id="root"><!--ssr-outlet--></div>
   </body>
 </html>

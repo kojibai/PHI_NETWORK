@@ -3,7 +3,7 @@ import react from "@vitejs/plugin-react";
 import { BASE_APP_VERSION } from "./src/version";
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ ssrBuild }) => ({
   plugins: [react()],
   resolve: {
     dedupe: ["react", "react-dom", "react/jsx-runtime"],
@@ -21,4 +21,14 @@ export default defineConfig({
   define: {
     "import.meta.env.VITE_APP_VERSION": JSON.stringify(BASE_APP_VERSION),
   },
-});
+  build: {
+    ssrManifest: !ssrBuild,
+    outDir: ssrBuild ? "dist/server" : "dist/client",
+    rollupOptions: {
+      input: ssrBuild ? undefined : "index.html",
+    },
+  },
+  ssr: {
+    noExternal: ["react-router-dom"],
+  },
+}));

@@ -1777,10 +1777,24 @@ export default function VerifyPage(): ReactElement {
           spellCheck={false}
         />
         <div className="vmodal-actions">
-          <button type="button" className="vcta" onClick={() => void runVerify()} disabled={busy} title={busy ? "Verifying…" : "Verify"}>
+          <button
+            type="button"
+            className="vcta"
+            data-perf-action="verify"
+            onClick={() => void runVerify()}
+            disabled={busy}
+            title={busy ? "Verifying…" : "Verify"}
+          >
             ⟡ {busy ? "VERIFYING" : "VERIFY"}
           </button>
-          <button type="button" className="vcta vcta--ghost" onClick={() => void remember(svgText, "SVG")} disabled={!svgText.trim()} title="💠 Remember">
+          <button
+            type="button"
+            className="vcta vcta--ghost"
+            data-perf-action="remember-svg"
+            onClick={() => void remember(svgText, "SVG")}
+            disabled={!svgText.trim()}
+            title="💠 Remember"
+          >
             💠 REMEMBER
           </button>
         </div>
@@ -1789,10 +1803,23 @@ export default function VerifyPage(): ReactElement {
       <Modal open={openAuditJson} title="Audit JSON" subtitle="Canonical audit payload (vesselHash + sigilHash → bundleHash)." onClose={() => setOpenAuditJson(false)}>
         <textarea className="vta vta--readonly" readOnly value={auditBundleText || "—"} />
         <div className="vmodal-actions">
-          <button type="button" className="vcta" onClick={() => void remember(auditBundleText, "Audit JSON")} disabled={!auditBundleText} title="💠 Remember">
+          <button
+            type="button"
+            className="vcta"
+            data-perf-action="remember-audit"
+            onClick={() => void remember(auditBundleText, "Audit JSON")}
+            disabled={!auditBundleText}
+            title="💠 Remember"
+          >
             💠 REMEMBER
           </button>
-          <button type="button" className="vcta vcta--ghost" onClick={() => setOpenAuditJson(false)} title="Close">
+          <button
+            type="button"
+            className="vcta vcta--ghost"
+            data-perf-action="close-audit"
+            onClick={() => setOpenAuditJson(false)}
+            title="Close"
+          >
             CLOSE
           </button>
         </div>
@@ -1801,10 +1828,23 @@ export default function VerifyPage(): ReactElement {
       <Modal open={openZkProof} title="ZK Proof" subtitle="Full embedded Groth16 proof payload." onClose={() => setOpenZkProof(false)}>
         <textarea className="vta vta--readonly" readOnly value={embeddedZkProof || "—"} />
         <div className="vmodal-actions">
-          <button type="button" className="vcta" onClick={() => void remember(embeddedZkProof, "ZK proof")} disabled={!embeddedZkProof} title="💠 Remember">
+          <button
+            type="button"
+            className="vcta"
+            data-perf-action="remember-zk-proof"
+            onClick={() => void remember(embeddedZkProof, "ZK proof")}
+            disabled={!embeddedZkProof}
+            title="💠 Remember"
+          >
             💠 REMEMBER
           </button>
-          <button type="button" className="vcta vcta--ghost" onClick={() => setOpenZkProof(false)} title="Close">
+          <button
+            type="button"
+            className="vcta vcta--ghost"
+            data-perf-action="close-zk-proof"
+            onClick={() => setOpenZkProof(false)}
+            title="Close"
+          >
             CLOSE
           </button>
         </div>
@@ -1813,10 +1853,23 @@ export default function VerifyPage(): ReactElement {
       <Modal open={openZkInputs} title="ZK Public Inputs" subtitle="Full embedded public inputs payload." onClose={() => setOpenZkInputs(false)}>
         <textarea className="vta vta--readonly" readOnly value={embeddedZkPublicInputs || "—"} />
         <div className="vmodal-actions">
-          <button type="button" className="vcta" onClick={() => void remember(embeddedZkPublicInputs, "Public inputs")} disabled={!embeddedZkPublicInputs} title="💠 Remember">
+          <button
+            type="button"
+            className="vcta"
+            data-perf-action="remember-zk-inputs"
+            onClick={() => void remember(embeddedZkPublicInputs, "Public inputs")}
+            disabled={!embeddedZkPublicInputs}
+            title="💠 Remember"
+          >
             💠 REMEMBER
           </button>
-          <button type="button" className="vcta vcta--ghost" onClick={() => setOpenZkInputs(false)} title="Close">
+          <button
+            type="button"
+            className="vcta vcta--ghost"
+            data-perf-action="close-zk-inputs"
+            onClick={() => setOpenZkInputs(false)}
+            title="Close"
+          >
             CLOSE
           </button>
         </div>
@@ -1825,10 +1878,23 @@ export default function VerifyPage(): ReactElement {
       <Modal open={openZkHints} title="Proof Hints" subtitle="Explorer/API hints embedded in the bundle." onClose={() => setOpenZkHints(false)}>
         <textarea className="vta vta--readonly" readOnly value={embeddedProofHints || "—"} />
         <div className="vmodal-actions">
-          <button type="button" className="vcta" onClick={() => void remember(embeddedProofHints, "Proof hints")} disabled={!embeddedProofHints} title="💠 Remember">
+          <button
+            type="button"
+            className="vcta"
+            data-perf-action="remember-proof-hints"
+            onClick={() => void remember(embeddedProofHints, "Proof hints")}
+            disabled={!embeddedProofHints}
+            title="💠 Remember"
+          >
             💠 REMEMBER
           </button>
-          <button type="button" className="vcta vcta--ghost" onClick={() => setOpenZkHints(false)} title="Close">
+          <button
+            type="button"
+            className="vcta vcta--ghost"
+            data-perf-action="close-proof-hints"
+            onClick={() => setOpenZkHints(false)}
+            title="Close"
+          >
             CLOSE
           </button>
         </div>

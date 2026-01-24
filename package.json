@@ -7,9 +7,11 @@
     "dev": "vite",
     "dev:api": "node scripts/dev-api.mjs",
     "dev:full": "node scripts/dev-api.mjs & vite",
+    "dev:ssr": "NODE_ENV=development node server.mjs",
     "build": "tsc -b && vite build",
+    "build:ssr": "tsc -b && vite build && vite build --ssr src/entry-server.tsx",
     "lint": "eslint .",
-    "preview": "vite preview",
+    "preview": "NODE_ENV=production node server.mjs",
     "test": "node --test"
   },
   "dependencies": {
