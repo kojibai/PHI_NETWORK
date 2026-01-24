@@ -39,10 +39,11 @@ const getPerfFlag = (): boolean => {
 
 const patchLocation = (key: "assign" | "replace" | "reload") => {
   const original = window.location[key].bind(window.location) as (...args: unknown[]) => void;
-  window.location[key] = ((...args: unknown[]) => {
+  const locationAny = window.location as unknown as Record<string, (...args: unknown[]) => void>;
+  locationAny[key] = (...args: unknown[]) => {
     log(`location.${key}`, ...args);
     return original(...args);
-  }) as Location[typeof key];
+  };
 };
 
 const patchHistory = (key: "pushState" | "replaceState") => {
