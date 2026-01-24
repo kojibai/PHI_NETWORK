@@ -20,6 +20,7 @@ import KaiVohBoundary from "./KaiVohBoundary";
 import { SigilAuthProvider } from "./SigilAuthProvider";
 import { useSigilAuth } from "./useSigilAuth";
 import { clearSessionStorage } from "../session/sessionStorage";
+import { isReloadDebugEnabled } from "../../utils/reloadDetective";
 
 /** Lazy chunks */
 const KaiVohApp = lazy(() => import("./KaiVohApp"));
@@ -174,6 +175,16 @@ export default function KaiVohModal({ open, onClose }: KaiVohModalProps) {
 
   const [view, setView] = useState<ViewMode>("voh");
   const [realmsMounted, setRealmsMounted] = useState(false);
+
+  useEffect(() => {
+    if (!isReloadDebugEnabled()) return;
+    // eslint-disable-next-line no-console
+    console.log("[Reload Detective] KaiVohModal mount");
+    return () => {
+      // eslint-disable-next-line no-console
+      console.log("[Reload Detective] KaiVohModal unmount");
+    };
+  }, []);
 
   const switchTo = useCallback(
     (next: ViewMode): void => {

@@ -10,6 +10,7 @@ import { APP_VERSION, SW_VERSION_EVENT } from "./version";
 import ErrorBoundary from "./components/ErrorBoundary";
 import type { Groth16 } from "./components/VerifierStamper/zk";
 import * as snarkjs from "snarkjs";
+import { initReloadDetective } from "./utils/reloadDetective";
 
 // ✅ REPLACE scheduler impl with your utils cadence file
 import { startKaiCadence, startKaiFibBackoff } from "./utils/kai_cadence";
@@ -19,6 +20,7 @@ const isProduction = import.meta.env.MODE === "production";
 declare global {
   interface Window {
     kairosSwVersion?: string;
+    kairosApplyUpdate?: () => void;
   }
 }
 
@@ -48,6 +50,8 @@ function rewriteLegacyHash(): void {
 if (isProduction) {
   window.addEventListener("DOMContentLoaded", rewriteLegacyHash, { once: true });
 }
+
+initReloadDetective();
 
 async function loadSnarkjsGlobal(): Promise<void> {
   if (typeof window === "undefined") return;
@@ -80,20 +84,61 @@ if ("serviceWorker" in navigator && isProduction) {
     try {
       const reg = await navigator.serviceWorker.register(`/sw.js?v=${APP_VERSION}`, { scope: "/" });
 
-      // Avoid mid-session reloads: refresh on next background/idle moment.
+      // Avoid mid-session reloads: only refresh when safe/idle.
       let pendingReload = false;
-      const tryReload = () => {
-        if (!pendingReload) return;
-        if (document.visibilityState === "hidden") {
-          window.location.reload();
+      const hasActiveKaiVohSession = (): boolean => {
+        try {
+          return Boolean(
+            window.localStorage.getItem("kai.voh.session.v1") ||
+              window.localStorage.getItem("kai.sigilAuth.v1")
+          );
+        } catch {
+          return false;
         }
       };
-      const onVisChange = () => tryReload();
+
+      const hasActiveKaiVohUi = (): boolean => {
+        return Boolean(
+          document.querySelector(".kai-voh-modal-backdrop") ||
+            document.querySelector(".kv-post-caption-textarea") ||
+            document.querySelector(".composer-textarea")
+        );
+      };
+
+      const isReloadSafe = (): boolean => !hasActiveKaiVohSession() && !hasActiveKaiVohUi();
+
+      const markUpdateAvailable = (reason: string): void => {
+        window.dispatchEvent(
+          new CustomEvent("kairos-sw-update-available", {
+            detail: { reason, version: window.kairosSwVersion },
+          })
+        );
+      };
+
+      const tryReload = (reason: string): void => {
+        if (!pendingReload) return;
+        if (!isReloadSafe()) {
+          markUpdateAvailable(`blocked:${reason}`);
+          return;
+        }
+        if (document.visibilityState === "hidden") {
+          window.location.reload();
+        } else {
+          markUpdateAvailable(`deferred:${reason}`);
+        }
+      };
+
+      const onVisChange = () => tryReload("visibilitychange");
       navigator.serviceWorker.addEventListener("controllerchange", () => {
         pendingReload = true;
-        tryReload();
+        tryReload("controllerchange");
         document.addEventListener("visibilitychange", onVisChange, { passive: true, once: true });
       });
+
+      window.kairosApplyUpdate = () => {
+        pendingReload = true;
+        tryReload("manual");
+      };
 
       // Auto-skip waiting once the new worker finishes installing
       const triggerSkipWaiting = (worker: ServiceWorker | null) => {
