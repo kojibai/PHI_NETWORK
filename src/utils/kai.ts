@@ -62,10 +62,6 @@ const poseidonHashHex = async (inputs: readonly bigint[]): Promise<string> => {
   return blake3HashHex(joined);
 };
 
-const poseidonHashBigInt = async (inputs: readonly bigint[]): Promise<bigint> => {
-  const hex = await poseidonHashHex(inputs);
-  return BigInt(`0x${hex}`);
-};
 
 ////////////////////////////////////////////////////////////////////////////////
 // ░░  PUBLIC API  ░░
