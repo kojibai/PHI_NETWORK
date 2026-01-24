@@ -3,7 +3,7 @@
 
 /// <reference types="react" />
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { GlyphData } from "./GlyphUtils";
 import { useKaiPulse } from "./KaiPulseEngine";
 import { drawSigilGlyph } from "./SigilAvatar";
@@ -23,31 +23,30 @@ const ASPECT = BASE_W / BASE_H;
 const PLAYER_RADIUS = 28;
 const ORB_RADIUS = 10;
 
-const MOVE_SPEED = 360;           // px / second
-const SEND_FPS = 10;              // network send throttle
+const MOVE_SPEED = 360; // px / second
+const SEND_FPS = 10; // network send throttle
 
 // Breath timing
-const BREATH_MS = 5236;           // golden breath (Kai)
-const PERFECT_WINDOW = 0.08;      // ±8% around mid-breath counts as "Perfect Breath"
+const BREATH_MS = 5236; // golden breath (Kai)
+const PERFECT_WINDOW = 0.08; // ±8% around mid-breath counts as "Perfect Breath"
 
 // Flow gameplay (breath-paced, not gravity)
-const MAX_ORBS = 22;              // on-screen cap (mobile tuned)
-const BASE_VY = 90;               // px/s at breath average for basic
-const GOLD_VY = 80;               // px/s at breath average for gold
-const PULSE_SPAWN = 2;            // orbs spawned each pulse
-const GOLD_EVERY = 4;             // every Nth pulse includes a gold orb
-const STREAK_SPEED_BONUS = 10;    // extra vy per streak step (small)
+const MAX_ORBS = 22; // on-screen cap (mobile tuned)
+const BASE_VY = 90; // px/s at breath average for basic
+const GOLD_VY = 80; // px/s at breath average for gold
+const PULSE_SPAWN = 2; // orbs spawned each pulse
+const GOLD_EVERY = 4; // every Nth pulse includes a gold orb
+const STREAK_SPEED_BONUS = 10; // extra vy per streak step (small)
 
 // Meta systems
 const MAX_LIVES = 3;
-const MISS_PENALTY = 1;           // lose Φ on miss (soft)
-const GOLD_REWARD = 3;            // Φ for catching gold
-const BASIC_REWARD = 1;           // Φ for catching basic
-const PERFECT_BONUS = 1;          // +Φ when caught near mid-breath
+const MISS_PENALTY = 1; // lose Φ on miss (soft)
+const GOLD_REWARD = 3; // Φ for catching gold
+const BASIC_REWARD = 1; // Φ for catching basic
+const PERFECT_BONUS = 1; // +Φ when caught near mid-breath
 
 /* Utility */
-const clamp = (v: number, min: number, max: number): number =>
-  v < min ? min : v > max ? max : v;
+const clamp = (v: number, min: number, max: number): number => (v < min ? min : v > max ? max : v);
 
 /* Local orb type (breath-paced falling) */
 type OrbKind = "basic" | "gold";
@@ -56,9 +55,9 @@ type Orb = {
   x: number;
   y: number;
   vx: number;
-  baseVy: number;    // baseline speed; breath modulates actual vy
+  baseVy: number; // baseline speed; breath modulates actual vy
   kind: OrbKind;
-  bornAt: number;    // ms
+  bornAt: number; // ms
 };
 
 /* ----------------------------- Component ----------------------------- */
@@ -76,7 +75,9 @@ const RealmView: React.FC<Props> = ({ glyphData, onExit }) => {
   // responsive size (CSS pixels)
   const [size, setSize] = useState<{ w: number; h: number }>({ w: BASE_W, h: BASE_H });
   const sizeRef = useRef(size);
-  useEffect(() => { sizeRef.current = size; }, [size]);
+  useEffect(() => {
+    sizeRef.current = size;
+  }, [size]);
 
   // HUD/game state
   const [collected, setCollected] = useState<number>(0); // banked Φ (score)
@@ -88,12 +89,19 @@ const RealmView: React.FC<Props> = ({ glyphData, onExit }) => {
   const [gameOver, setGameOver] = useState<boolean>(false);
 
   // Breath timing anchor
-  const lastPulseAtRef = useRef<number>(performance.now()); // ms since last onPulse()
+  // IMPORTANT: do NOT call performance.now() during render/initializers (impure).
+  const lastPulseAtRef = useRef<number>(0); // ms timestamp of last pulse
+  useEffect(() => {
+    // safe: effect runs after render
+    lastPulseAtRef.current = performance.now();
+  }, []);
 
   // Networking (keep refs stable to avoid render loops)
   const { sendState, remoteStates } = useGameSession();
   const remoteStatesRef = useRef<RemotePlayerState[]>([]);
-  useEffect(() => { remoteStatesRef.current = remoteStates ?? []; }, [remoteStates]);
+  useEffect(() => {
+    remoteStatesRef.current = remoteStates ?? [];
+  }, [remoteStates]);
 
   // Game refs (no re-render on every frame)
   const playerXRef = useRef<number>(BASE_W / 2);
@@ -107,6 +115,17 @@ const RealmView: React.FC<Props> = ({ glyphData, onExit }) => {
 
   // Catch feedback (canvas-drawn, no re-render)
   const catchFlashRef = useRef<{ t: number; x: number; kind: "perfect" | "good" } | null>(null);
+
+  /* ----------------------------- Helpers ----------------------------- */
+
+  // Define BEFORE any effects that reference it (avoids TDZ + keeps deps clean)
+  const hardReset = useCallback((): void => {
+    orbsRef.current = [];
+    setLives(MAX_LIVES);
+    setStreak(0);
+    setBestStreak((b) => b); // keep best
+    setGameOver(false);
+  }, []);
 
   /* --------------------------- Responsive canvas --------------------------- */
   useEffect(() => {
@@ -161,7 +180,7 @@ const RealmView: React.FC<Props> = ({ glyphData, onExit }) => {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
     };
-  }, [gameOver]);
+  }, [gameOver, hardReset]);
 
   // Pointer / touch control (tap/drag anywhere to steer)
   useEffect(() => {
@@ -175,9 +194,16 @@ const RealmView: React.FC<Props> = ({ glyphData, onExit }) => {
     };
 
     let dragging = false;
-    const onPointerDown = (e: PointerEvent) => { dragging = true; playerXRef.current = toLocalX(e.clientX); };
-    const onPointerMove = (e: PointerEvent) => { if (dragging) playerXRef.current = toLocalX(e.clientX); };
-    const onPointerUp = () => { dragging = false; };
+    const onPointerDown = (e: PointerEvent) => {
+      dragging = true;
+      playerXRef.current = toLocalX(e.clientX);
+    };
+    const onPointerMove = (e: PointerEvent) => {
+      if (dragging) playerXRef.current = toLocalX(e.clientX);
+    };
+    const onPointerUp = () => {
+      dragging = false;
+    };
 
     canvas.addEventListener("pointerdown", onPointerDown);
     canvas.addEventListener("pointermove", onPointerMove);
@@ -202,7 +228,7 @@ const RealmView: React.FC<Props> = ({ glyphData, onExit }) => {
   const breathSpeedFactor = (phase01: number): number => {
     const s = Math.sin(Math.PI * phase01); // 0..1..0
     // map to ~[0.65, 1.35] so it never "stops" and never races too hard.
-    return 0.65 + 0.70 * (s * s);
+    return 0.65 + 0.7 * (s * s);
   };
 
   /* ------------------------- Spawning (breath-paced) ------------------------- */
@@ -224,7 +250,7 @@ const RealmView: React.FC<Props> = ({ glyphData, onExit }) => {
   useKaiPulse({
     onPulse: (pulseIndex: number) => {
       setCurrentPulse(pulseIndex);
-      lastPulseAtRef.current = performance.now();
+      lastPulseAtRef.current = performance.now(); // safe: callback, not render
       pulseCountRef.current += 1;
 
       // Breath-paced batch spawns
@@ -290,18 +316,10 @@ const RealmView: React.FC<Props> = ({ glyphData, onExit }) => {
         const movingRight = Boolean(k["ArrowRight"] || k["d"] || k["D"]);
 
         if (movingLeft) {
-          playerXRef.current = clamp(
-            playerXRef.current - MOVE_SPEED * dt,
-            PLAYER_RADIUS,
-            w - PLAYER_RADIUS
-          );
+          playerXRef.current = clamp(playerXRef.current - MOVE_SPEED * dt, PLAYER_RADIUS, w - PLAYER_RADIUS);
         }
         if (movingRight) {
-          playerXRef.current = clamp(
-            playerXRef.current + MOVE_SPEED * dt,
-            PLAYER_RADIUS,
-            w - PLAYER_RADIUS
-          );
+          playerXRef.current = clamp(playerXRef.current + MOVE_SPEED * dt, PLAYER_RADIUS, w - PLAYER_RADIUS);
         }
 
         // UPDATE ORBS (breath-paced vertical speed)
@@ -326,16 +344,23 @@ const RealmView: React.FC<Props> = ({ glyphData, onExit }) => {
           o.y += vy * dt;
 
           // clamp x bounds with soft bounce
-          if (o.x < ORB_RADIUS) { o.x = ORB_RADIUS; o.vx = Math.abs(o.vx) * 0.9; }
-          if (o.x > w - ORB_RADIUS) { o.x = w - ORB_RADIUS; o.vx = -Math.abs(o.vx) * 0.9; }
+          if (o.x < ORB_RADIUS) {
+            o.x = ORB_RADIUS;
+            o.vx = Math.abs(o.vx) * 0.9;
+          }
+          if (o.x > w - ORB_RADIUS) {
+            o.x = w - ORB_RADIUS;
+            o.vx = -Math.abs(o.vx) * 0.9;
+          }
 
           // catch?
           const dx = o.x - px;
           const dy = o.y - playerY;
           const dist = Math.hypot(dx, dy);
           const catchRadius = PLAYER_RADIUS + ORB_RADIUS;
+
           if (dist < catchRadius) {
-            const baseGain = (o.kind === "gold" ? GOLD_REWARD : BASIC_REWARD);
+            const baseGain = o.kind === "gold" ? GOLD_REWARD : BASIC_REWARD;
             gained += baseGain;
 
             // Perfect Breath bonus near phase 0.5
@@ -351,7 +376,7 @@ const RealmView: React.FC<Props> = ({ glyphData, onExit }) => {
 
           // missed?
           if (o.y > h + ORB_RADIUS) {
-            missed += 1; // fell past player
+            missed += 1;
             continue;
           }
 
@@ -407,17 +432,7 @@ const RealmView: React.FC<Props> = ({ glyphData, onExit }) => {
       rafIdRef.current = null;
       lastTsRef.current = null;
     };
-  }, [glyphData, paused, gameOver, size.w, size.h]);
-
-  /* ----------------------------- Helpers ----------------------------- */
-
-  const hardReset = (): void => {
-    orbsRef.current = [];
-    setLives(MAX_LIVES);
-    setStreak(0);
-    setBestStreak((b) => b); // keep best
-    setGameOver(false);
-  };
+  }, [glyphData, paused, gameOver, size.w, size.h, currentPulse, streak, sendState]);
 
   /* ----------------------------- View ----------------------------- */
 
@@ -457,22 +472,13 @@ const RealmView: React.FC<Props> = ({ glyphData, onExit }) => {
           <span className="hud-chip__value">{hud.chakraDay}</span>
         </div>
 
-        <button
-          className="hud-button"
-          onClick={() => setPaused((p) => !p)}
-          aria-pressed={paused}
-          title="Pause (P)"
-        >
+        <button className="hud-button" onClick={() => setPaused((p) => !p)} aria-pressed={paused} title="Pause (P)">
           {paused ? "Resume" : "Pause"}
         </button>
       </div>
 
       <div className="realm-canvas-wrap">
-        <canvas
-          ref={canvasRef}
-          className="realm-canvas"
-          aria-label="Kai Realms Canvas"
-        />
+        <canvas ref={canvasRef} className="realm-canvas" aria-label="Kai Realms Canvas" />
         {(paused || gameOver) && (
           <div className="realm-pause-overlay" aria-hidden>
             <div className="pause-card">
@@ -483,7 +489,9 @@ const RealmView: React.FC<Props> = ({ glyphData, onExit }) => {
                     Best Streak: <strong>{bestStreak}</strong> — Press <kbd>R</kbd> to Restart
                   </>
                 ) : (
-                  <>Press <kbd>P</kbd> or click Resume</>
+                  <>
+                    Press <kbd>P</kbd> or click Resume
+                  </>
                 )}
               </div>
               {gameOver && (
@@ -497,10 +505,7 @@ const RealmView: React.FC<Props> = ({ glyphData, onExit }) => {
       </div>
 
       {/* Pass banked Φ into Forge/Maze module */}
-      <KaiKasino
-        currentPhi={collected}
-        onPhiChange={(newVal: number) => setCollected(newVal)}
-      />
+      <KaiKasino currentPhi={collected} onPhiChange={(newVal: number) => setCollected(newVal)} />
 
       <button className="exit-button" onClick={onExit}>
         Exit Realm
@@ -559,13 +564,7 @@ function drawScene(
   // remotes (ghosts)
   for (let i = 0; i < remotes.length; i++) {
     const r = remotes[i];
-    drawSigilGlyph(
-      ctx,
-      r.glyph,
-      clamp(r.x, PLAYER_RADIUS, w - PLAYER_RADIUS),
-      playerY,
-      PLAYER_RADIUS
-    );
+    drawSigilGlyph(ctx, r.glyph, clamp(r.x, PLAYER_RADIUS, w - PLAYER_RADIUS), playerY, PLAYER_RADIUS);
   }
 
   // catch flash

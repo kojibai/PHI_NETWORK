@@ -1,5 +1,3 @@
-import React from "react";
-
 type PerfLog = {
   label: string;
   start: number;
@@ -17,7 +15,7 @@ const now = () => (typeof performance === "undefined" ? Date.now() : performance
 
 export const isPerfEnabled = (): boolean => perfEnabled;
 
-const log = (...args: unknown[]) => {
+export const logPerf = (...args: unknown[]) => {
   if (!perfEnabled) return;
   // eslint-disable-next-line no-console
   console.log("[perf]", ...args);
@@ -41,7 +39,7 @@ const patchLocation = (key: "assign" | "replace" | "reload") => {
   const original = window.location[key].bind(window.location) as (...args: unknown[]) => void;
   const locationAny = window.location as unknown as Record<string, (...args: unknown[]) => void>;
   locationAny[key] = (...args: unknown[]) => {
-    log(`location.${key}`, ...args);
+    logPerf(`location.${key}`, ...args);
     return original(...args);
   };
 };
@@ -49,7 +47,7 @@ const patchLocation = (key: "assign" | "replace" | "reload") => {
 const patchHistory = (key: "pushState" | "replaceState") => {
   const original = window.history[key].bind(window.history);
   window.history[key] = ((...args: Parameters<History["pushState"]>) => {
-    log(`history.${key}`, ...args);
+    logPerf(`history.${key}`, ...args);
     return original(...args);
   }) as History["pushState"];
 };
@@ -58,7 +56,7 @@ const addNavListener = (event: string) => {
   window.addEventListener(
     event as keyof WindowEventMap,
     (evt) => {
-      log(event, {
+      logPerf(event, {
         type: evt.type,
         time: now(),
         state: (evt as PageTransitionEvent).persisted,
@@ -74,12 +72,12 @@ const observeLongTasks = () => {
   try {
     const observer = new PerformanceObserver((list) => {
       list.getEntries().forEach((entry) => {
-        log("longtask", { duration: entry.duration, startTime: entry.startTime });
+        logPerf("longtask", { duration: entry.duration, startTime: entry.startTime });
       });
     });
     observer.observe({ type: "longtask", buffered: true });
   } catch (err) {
-    log("longtask observer failed", err);
+    logPerf("longtask observer failed", err);
   }
 };
 
@@ -100,7 +98,7 @@ export const markInteraction = (label: string, phase: "start" | "state" | "end" 
     if (!entry) return;
     requestAnimationFrame(() => {
       const paint = now();
-      log("interaction", {
+      logPerf("interaction", {
         label,
         start: entry.start,
         state: entry.state ?? null,
@@ -143,7 +141,7 @@ const installGlobalFormGuard = () => {
     "submit",
     (event) => {
       const form = event.target as HTMLFormElement | null;
-      log("form submit", {
+    logPerf("form submit", {
         action: form?.action,
         method: form?.method,
         id: form?.id,
@@ -156,45 +154,20 @@ const installGlobalFormGuard = () => {
 const observeServiceWorker = () => {
   if (!("serviceWorker" in navigator)) return;
   navigator.serviceWorker.addEventListener("controllerchange", () => {
-    log("sw controllerchange");
+    logPerf("sw controllerchange");
   });
   navigator.serviceWorker.addEventListener("message", (event) => {
-    log("sw message", safeStringify(event.data));
+    logPerf("sw message", safeStringify(event.data));
   });
   navigator.serviceWorker.getRegistration().then((reg) => {
     if (!reg) return;
     reg.addEventListener("updatefound", () => {
-      log("sw updatefound");
+      logPerf("sw updatefound");
     });
     reg.installing?.addEventListener("statechange", () => {
-      log("sw statechange", reg.installing?.state);
+      logPerf("sw statechange", reg.installing?.state);
     });
   });
-};
-
-export const PerfProfiler = ({
-  id,
-  children,
-}: {
-  id: string;
-  children: React.ReactNode;
-}): React.JSX.Element => {
-  if (!perfEnabled) return <>{children}</>;
-  return (
-    <React.Profiler
-      id={id}
-      onRender={(profilerId, phase, actualDuration, baseDuration) => {
-        log("react-profiler", {
-          id: profilerId,
-          phase,
-          actualDuration,
-          baseDuration,
-        });
-      }}
-    >
-      {children}
-    </React.Profiler>
-  );
 };
 
 export const initPerfDebug = () => {
@@ -205,7 +178,7 @@ export const initPerfDebug = () => {
   const navEntries = performance.getEntriesByType("navigation");
   navEntries.forEach((entry) => {
     const nav = entry as PerformanceNavigationTiming;
-    log("navigation", {
+    logPerf("navigation", {
       type: nav.type,
       domContentLoaded: nav.domContentLoadedEventEnd,
       loadEventEnd: nav.loadEventEnd,
@@ -232,5 +205,5 @@ export const initPerfDebug = () => {
   installInteractionDebug();
 
   (window as PerfWindow).markInteraction = markInteraction;
-  log("perf debug enabled");
+  logPerf("perf debug enabled");
 };

@@ -4,7 +4,7 @@
 
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useKaiPulse } from "./KaiPulseEngine";
 import { KaiMaze } from "./KaiMaze";
 import "./styles/pulse-forge.css";
@@ -20,13 +20,13 @@ const BREATH_MS = 5236;
 /** Economy */
 const ATTEMPT_COST = 3;
 const BASE_REWARD = ATTEMPT_COST * (3 - 1); // +6 Φ baseline on success
-const CRIT_MULTIPLIER = 2;                   // crit pays 2× reward
-const STREAK_BONUS_PER = 0.15;               // +15% per streak step
+const CRIT_MULTIPLIER = 2; // crit pays 2× reward
+const STREAK_BONUS_PER = 0.15; // +15% per streak step
 
 /** Dial visuals */
-const DIAL_SIZE = 220;                        // px
-const TARGET_ARC_BASE_DEG = 60;              // base width
-const TARGET_ARC_EVEN_BONUS = 20;            // more generous on even pulses
+const DIAL_SIZE = 220; // px
+const TARGET_ARC_BASE_DEG = 60; // base width
+const TARGET_ARC_EVEN_BONUS = 20; // more generous on even pulses
 
 /** Deterministic PRNG seeded by pulseIndex (keeps target stable during a pulse) */
 function seededRandom01(seed: number): number {
@@ -41,26 +41,44 @@ function angularDistanceDeg(a: number, b: number): number {
   return d;
 }
 
+function safeNow(): number {
+  // Avoid touching performance in render; this is only called in effects/callbacks.
+  if (typeof performance !== "undefined" && typeof performance.now === "function") {
+    return performance.now();
+  }
+  return Date.now();
+}
+
 const PulseForge: React.FC<Props> = ({ currentPhi, onPhiChange }) => {
   const [mode, setMode] = useState<"forge" | "maze">("forge");
 
   const [lastPulse, setLastPulse] = useState<number | null>(null);
-  const [lastPulseAt, setLastPulseAt] = useState<number>(performance.now());
+
+  // Timestamp of the last pulse, stored as a ref (no render-time impurity, no rerender needed).
+  const lastPulseAtRef = useRef<number>(0);
+
   const [angle, setAngle] = useState<number>(0); // marker live angle [0,360)
   const [isLocking, setIsLocking] = useState<boolean>(false);
-  const [result, setResult] = useState<null | { kind: "hit" | "crit" | "miss"; delta: number }>(null);
+  const [result, setResult] = useState<null | { kind: "hit" | "crit" | "miss"; delta: number }>(
+    null
+  );
   const [streak, setStreak] = useState<number>(0);
+
+  // Initialize the ref after mount so the dial starts stable even before first pulse event.
+  useEffect(() => {
+    lastPulseAtRef.current = safeNow();
+  }, []);
 
   // pulse listener
   useKaiPulse({
     onPulse: (pulseIndex: number) => {
       setLastPulse(pulseIndex);
-      setLastPulseAt(performance.now());
+      lastPulseAtRef.current = safeNow();
       setResult((r) => (r ? { ...r, delta: r.delta } : r));
     },
   });
 
-  // marker angle (raf loop; derives from lastPulseAt)
+  // marker angle (raf loop; derives from lastPulseAtRef)
   useEffect(() => {
     if (mode !== "forge") return; // pause dial animation while in maze
     let rafId = 0;
@@ -68,8 +86,9 @@ const PulseForge: React.FC<Props> = ({ currentPhi, onPhiChange }) => {
 
     const tick = () => {
       if (!mounted) return;
-      const now = performance.now();
-      const t = Math.max(0, now - lastPulseAt);
+      const now = safeNow();
+      const base = lastPulseAtRef.current || now;
+      const t = Math.max(0, now - base);
       const phase = (t % BREATH_MS) / BREATH_MS; // 0..1
       setAngle((phase * 360) % 360);
       rafId = requestAnimationFrame(tick);
@@ -80,7 +99,7 @@ const PulseForge: React.FC<Props> = ({ currentPhi, onPhiChange }) => {
       mounted = false;
       cancelAnimationFrame(rafId);
     };
-  }, [lastPulseAt, mode]);
+  }, [mode]);
 
   // target arc center & width are stable per pulse
   const target = useMemo(() => {
@@ -269,11 +288,7 @@ const PulseForge: React.FC<Props> = ({ currentPhi, onPhiChange }) => {
           )}
         </>
       ) : (
-        <KaiMaze
-          currentPhi={currentPhi}
-          onPhiChange={onPhiChange}
-          onExit={() => setMode("forge")}
-        />
+        <KaiMaze currentPhi={currentPhi} onPhiChange={onPhiChange} onExit={() => setMode("forge")} />
       )}
     </div>
   );

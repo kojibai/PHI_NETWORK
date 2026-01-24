@@ -62,7 +62,10 @@ function withTimeout<T>(fn: (signal: AbortSignal) => Promise<T>, ms = 15000): Pr
   return fn(ctl.signal).finally(() => clearTimeout(t));
 }
 
-async function createPaymentIntent(apiBase: string, amountUsd: number): Promise<{ clientSecret: string; intentId: string }> {
+async function createPaymentIntent(
+  apiBase: string,
+  amountUsd: number
+): Promise<{ clientSecret: string; intentId: string }> {
   return withTimeout(async (signal) => {
     const res = await fetch(`${apiBase}/api/payments/intent`, {
       method: "POST",
@@ -138,7 +141,7 @@ const InlineCardCheckout: React.FC<{
     <div className="hp-popover" role="dialog" aria-label="Inline sovereign checkout" data-intent-id={intentId}>
       <div className="hp-pop-head">
         <div className="hp-pop-title">
-          Seal {" "}
+          Seal{" "}
           {amountUsd.toLocaleString(undefined, {
             style: "currency",
             currency: "USD",
@@ -191,12 +194,14 @@ export default function HomePriceChartCard({
   useEffect(() => {
     onExpandChangeRef.current?.(false);
   }, []);
-  useEffect(() => {
-    setStripePromise(null);
+
+  // Stripe promise is DERIVED from stripePk (no state, no effect, no cascading renders)
+  const stripePromise = useMemo(() => {
+    const pk = (stripePk || "").trim();
+    return pk ? loadStripe(pk) : null;
   }, [stripePk]);
 
-  // Stripe
-  const [stripePromise, setStripePromise] = useState<ReturnType<typeof loadStripe> | null>(null);
+  // Checkout UI state
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [intentId, setIntentId] = useState<string | null>(null);
   const [elementsKey, setElementsKey] = useState(0);
@@ -268,9 +273,14 @@ export default function HomePriceChartCard({
   /* ---------- Checkout ---------- */
   const openInlineCheckout = useCallback(async () => {
     setErrorMsg("");
+
     if (!stripePromise) {
-      setStripePromise(loadStripe(stripePk));
+      const err = new Error("Stripe is not configured (missing publishable key).");
+      setErrorMsg(err.message);
+      onError?.(err);
+      return;
     }
+
     try {
       const amt = Number.isFinite(sample) ? Math.max(1, Math.round(sample)) : ctaAmountUsd;
       const { clientSecret: secret, intentId: id } = await createPaymentIntent(apiBase, amt);
@@ -283,7 +293,7 @@ export default function HomePriceChartCard({
       setErrorMsg(msg);
       onError?.(err);
     }
-  }, [sample, ctaAmountUsd, apiBase, onError, stripePk, stripePromise]);
+  }, [stripePromise, sample, ctaAmountUsd, apiBase, onError]);
 
   const closeInlineCheckout = useCallback(() => {
     setClientSecret(null);
@@ -335,7 +345,6 @@ export default function HomePriceChartCard({
         }}
       >
         <div className="hp-left">
-          {/* ✅ Sleek Atlantean Title */}
           <span className="hp-title" aria-label={title}>
             <span className="hp-titleText">{title}</span>
           </span>
@@ -423,7 +432,7 @@ export default function HomePriceChartCard({
 
         {clientSecret && intentId && stripePromise && (
           <Elements
-            key={elementsKey}
+            key={`${elementsKey}:${stripePk}`}
             stripe={stripePromise}
             options={{
               clientSecret,
