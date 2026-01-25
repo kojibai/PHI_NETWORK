@@ -304,6 +304,14 @@ function bundleHashFromAuthorSig(authorSig: KASAuthorSig): string | null {
   }
 }
 
+async function verifyAuthorSigWithFallback(authorSig: KASAuthorSig, bundleHashes: string[]): Promise<boolean> {
+  for (const bundleHash of bundleHashes) {
+    if (!bundleHash) continue;
+    if (await verifyBundleAuthorSig(bundleHash, authorSig)) return true;
+  }
+  return false;
+}
+
 function isSvgFile(file: File): boolean {
   const name = (file.name || "").toLowerCase();
   const type = (file.type || "").toLowerCase();
@@ -1085,21 +1093,11 @@ export default function VerifyPage(): ReactElement {
 
       if (authorSigNext) {
         if (isKASAuthorSig(authorSigNext)) {
-          // ✅ Verify KAS against the artifact's recomputed unsigned bundle hash
-          authorSigOk = await verifyBundleAuthorSig(bundleHashNext, authorSigNext);
-          if (!authorSigOk) {
-            const legacySeed = { ...bundleSeed } as Record<string, unknown>;
-            delete legacySeed.bundleRoot;
-            delete legacySeed.transport;
-            delete legacySeed.verificationCache;
-            delete legacySeed.zkMeta;
-            delete legacySeed.verifiedAtPulse;
-            delete legacySeed.verifier;
-            delete legacySeed.verificationVersion;
-            const legacyUnsigned = buildBundleUnsigned(legacySeed);
-            const legacyHash = await hashBundle(legacyUnsigned);
-            authorSigOk = await verifyBundleAuthorSig(legacyHash, authorSigNext);
-          }
+          const authorSigBundleHash = bundleHashFromAuthorSig(authorSigNext);
+          const candidateHashes = Array.from(
+            new Set([authorSigBundleHash, bundleHashNext, rootHash, legacyHash].filter(Boolean))
+          ) as string[];
+          authorSigOk = await verifyAuthorSigWithFallback(authorSigNext, candidateHashes);
         } else {
           authorSigOk = false;
         }
@@ -1263,7 +1261,8 @@ export default function VerifyPage(): ReactElement {
         return;
       }
       const authorBundleHash = bundleHashFromAuthorSig(authorSigNext);
-      const ok = await verifyBundleAuthorSig(authorBundleHash ?? bundleHash, authorSigNext);
+      const candidateHashes = Array.from(new Set([authorBundleHash, bundleHash].filter(Boolean))) as string[];
+      const ok = await verifyAuthorSigWithFallback(authorSigNext, candidateHashes);
       if (active) setAuthorSigVerified(ok);
     })();
 
@@ -1612,6 +1611,7 @@ body: [
       verifiedAtPulse: embeddedProof?.transport?.verifiedAtPulse ?? stewardVerifiedPulse ?? undefined,
       proofHints: embeddedProof?.transport?.proofHints ?? embeddedProof?.proofHints ?? zkMeta?.proofHints ?? undefined,
     };
+    const zkVerified = zkMeta?.zkPoseidonHash && typeof zkVerify === "boolean" ? zkVerify : undefined;
     const normalized = normalizeBundle({
       hashAlg: PROOF_HASH_ALG,
       canon: PROOF_CANON,
@@ -1640,7 +1640,8 @@ body: [
       transport,
     });
 
-    return JSON.stringify(normalized, null, 2);
+    const withZkVerified = typeof zkVerified === "boolean" ? { ...normalized, zkVerified } : normalized;
+    return JSON.stringify(withZkVerified, null, 2);
   }, [
     proofCapsule,
     capsuleHash,
@@ -1684,6 +1685,9 @@ body: [
       extended.zkPoseidonHash = zkMeta.zkPoseidonHash;
       extended.verificationCache = { zkVerifiedCached: Boolean(zkVerify) };
       extended.zkScheme = "groth16-poseidon";
+      if (typeof zkVerify === "boolean") {
+        extended.zkVerified = zkVerify;
+      }
     }
 
     return jcsCanonicalize(extended as Parameters<typeof jcsCanonicalize>[0]);
