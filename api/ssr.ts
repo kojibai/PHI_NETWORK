@@ -13,7 +13,11 @@ type SsrRenderOptions = {
   onError: (error: unknown) => void;
 };
 
-type RenderFn = (url: string, options: SsrRenderOptions) => PipeableStream;
+type RenderFn = (
+  url: string,
+  snapshot: unknown | null,
+  options: SsrRenderOptions
+) => PipeableStream;
 
 type SsrModule = {
   render?: RenderFn;
