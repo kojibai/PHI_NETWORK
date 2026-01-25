@@ -33,6 +33,7 @@ interface Props {
   /** Full child-transfer URL (includes amount & nonce in its payload). */
   url: string;
   hash: string;
+  shareText?: string;
   onClose: () => void;
   /** Preserved for backward compat; unused now. */
   onDownloadZip: () =>
@@ -70,7 +71,7 @@ function registerLocally(url: string) {
 }
 
 const SealMomentModal: FC<Props> = (props) => {
-  const { open, url, hash, onClose } = props; // keep props shape; don't use onDownloadZip
+  const { open, url, hash, shareText, onClose } = props; // keep props shape; don't use onDownloadZip
 
   /* refs & state (Hooks must be unconditionally called) */
   const dlgRef = useRef<HTMLDialogElement | null>(null);
@@ -211,14 +212,17 @@ const SealMomentModal: FC<Props> = (props) => {
     try {
       if (canShare && typeof navigator !== "undefined") {
         const nav = navigator as Navigator & { share?: (data: ShareData) => Promise<void> };
+        const shareMessage = shareText?.trim() || "Sealed Kairos Moment";
         await nav.share?.({
           title: "Kairos Sigil-Glyph",
-          text: "Sealed Kairos Moment",
+          text: shareMessage,
           url,
         });
         announce("Share sheet opened");
       } else {
-        await copy(url, "Link");
+        const shareMessage = shareText?.trim();
+        const copyPayload = shareMessage ? `${shareMessage}\n${url}` : url;
+        await copy(copyPayload, "Link");
       }
     } catch {
       /* user canceled; ignore */

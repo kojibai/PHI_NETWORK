@@ -174,6 +174,7 @@ async function createServer() {
     }
 
     const record = og.getCapsuleByHash(capsuleHash);
+    const isNotFound = !record;
     if (!verifiedAtPulseRaw) {
       if (record) {
         const redirectUrl = `${OG_PATH_PREFIX}${encodeURIComponent(record.capsuleHash)}/${encodeURIComponent(
@@ -215,15 +216,21 @@ async function createServer() {
       res.statusCode = 304;
       res.setHeader("ETag", `"${cached.etag}"`);
       res.setHeader("Cache-Control", OG_CACHE_CONTROL);
+      if (isNotFound) {
+        res.setHeader("X-OG-Not-Found", "1");
+      }
       res.end();
       return true;
     }
 
-    res.statusCode = 200;
+    res.statusCode = isNotFound ? 404 : 200;
     res.setHeader("Content-Type", "image/png");
     res.setHeader("Content-Length", cached.pngBuffer.length);
     res.setHeader("ETag", `"${cached.etag}"`);
     res.setHeader("Cache-Control", OG_CACHE_CONTROL);
+    if (isNotFound) {
+      res.setHeader("X-OG-Not-Found", "1");
+    }
     res.end(cached.pngBuffer);
     return true;
   };
