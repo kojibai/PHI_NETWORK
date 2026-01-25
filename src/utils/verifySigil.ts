@@ -32,6 +32,7 @@ export type VerifyResult =
       embedded: EmbeddedMeta;
       derivedPhiKey: string;
       checks: VerifyChecks;
+      verifiedAtPulse: number | null;
     };
 
 export function parseSlug(rawSlug: string): SlugInfo {
@@ -51,7 +52,7 @@ function firstN(s: string, n: number): string {
   return s.slice(0, n);
 }
 
-export async function verifySigilSvg(slug: SlugInfo, svgText: string): Promise<VerifyResult> {
+export async function verifySigilSvg(slug: SlugInfo, svgText: string, verifiedAtPulse: number): Promise<VerifyResult> {
   try {
     const embedded = extractEmbeddedMetaFromSvg(svgText);
     const sig = (embedded.kaiSignature ?? "").trim();
@@ -118,6 +119,7 @@ export async function verifySigilSvg(slug: SlugInfo, svgText: string): Promise<V
       },
       derivedPhiKey,
       checks,
+      verifiedAtPulse,
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Verification failed.";

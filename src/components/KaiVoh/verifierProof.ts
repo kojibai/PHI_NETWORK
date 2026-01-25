@@ -21,6 +21,9 @@ import type { AuthorSig } from "../../utils/authorSig";
 export const PROOF_HASH_ALG = "sha256" as const;
 export const PROOF_CANON = "JCS" as const;
 export const PROOF_METADATA_ID = "kai-voh-proof" as const;
+export const VERIFICATION_BUNDLE_VERSION = "KVB-1.1" as const;
+
+export type VerificationSource = "local" | "pbi";
 
 /* -------------------------------------------------------------------------- */
 /*                                 Base URL                                   */
@@ -173,6 +176,9 @@ export type ProofBundleLike = {
   svgHash?: string;
   shareUrl?: string;
   verifierUrl?: string;
+  verifier?: VerificationSource;
+  verificationVersion?: string;
+  verifiedAtPulse?: number;
   zkPoseidonHash?: string;
   zkProof?: unknown;
   proofHints?: unknown;

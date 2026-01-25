@@ -130,8 +130,10 @@ async function createServer() {
     }
     if (!record) return "";
 
-    const ogImageUrl = `${origin}/og/v/verified/${encodeURIComponent(record.capsuleHash)}.png`;
-    const title = `VERIFIED • Pulse ${record.pulse} • ΦKey ${shortPhiKey(record.phikey)}`;
+    const ogImageUrl = `${origin}/og/v/verified/${encodeURIComponent(record.capsuleHash)}/${encodeURIComponent(
+      String(record.verifiedAtPulse),
+    )}.png`;
+    const title = `VERIFIED • Steward @ Pulse ${record.verifiedAtPulse} • ΦKey ${shortPhiKey(record.phikey)}`;
     const description = `KAS ${record.kasOk ? "✓" : "×"} • G16 ${record.g16Ok ? "✓" : "×"} • Proof of Breath™`;
 
     return [
@@ -157,9 +159,10 @@ async function createServer() {
 
     if (!pathname.startsWith(OG_PATH_PREFIX)) return false;
     const suffix = pathname.slice(OG_PATH_PREFIX.length);
-    const capsuleHash = suffix.endsWith(".png") ? suffix.slice(0, -4) : suffix;
+    const cleaned = suffix.endsWith(".png") ? suffix.slice(0, -4) : suffix;
+    const [capsuleHash, verifiedAtPulseRaw, extra] = cleaned.split("/");
 
-    if (!capsuleHash) {
+    if (!capsuleHash || extra) {
       res.statusCode = 400;
       res.end("Bad Request");
       return true;
@@ -170,13 +173,41 @@ async function createServer() {
       ogCache = new og.OgLruTtlCache({ maxEntries: OG_CACHE_MAX_ENTRIES, ttlMs: OG_CACHE_TTL_MS });
     }
 
-    let cached = ogCache.get(capsuleHash);
+    const record = og.getCapsuleByHash(capsuleHash);
+    if (!verifiedAtPulseRaw) {
+      if (record) {
+        const redirectUrl = `${OG_PATH_PREFIX}${encodeURIComponent(record.capsuleHash)}/${encodeURIComponent(
+          String(record.verifiedAtPulse),
+        )}.png`;
+        res.statusCode = 302;
+        res.setHeader("Location", redirectUrl);
+        res.setHeader("Cache-Control", OG_CACHE_CONTROL);
+        res.end();
+        return true;
+      }
+    }
+
+    if (record && verifiedAtPulseRaw) {
+      const requestedPulse = Number(verifiedAtPulseRaw);
+      if (!Number.isFinite(requestedPulse) || requestedPulse !== record.verifiedAtPulse) {
+        const redirectUrl = `${OG_PATH_PREFIX}${encodeURIComponent(record.capsuleHash)}/${encodeURIComponent(
+          String(record.verifiedAtPulse),
+        )}.png`;
+        res.statusCode = 302;
+        res.setHeader("Location", redirectUrl);
+        res.setHeader("Cache-Control", OG_CACHE_CONTROL);
+        res.end();
+        return true;
+      }
+    }
+
+    const cacheKey = record ? `${capsuleHash}:${record.verifiedAtPulse}` : `notfound:${capsuleHash}`;
+    let cached = ogCache.get(cacheKey);
     if (!cached) {
-      const record = og.getCapsuleByHash(capsuleHash);
       const pngBuffer = record ? og.renderVerifiedOgPng(record) : og.renderNotFoundOgPng(capsuleHash);
       const etag = createHash("sha256").update(pngBuffer).digest("hex");
       cached = { pngBuffer, etag };
-      ogCache.set(capsuleHash, cached);
+      ogCache.set(cacheKey, cached);
     }
 
     const ifNoneMatch = req.headers["if-none-match"];

@@ -19,6 +19,8 @@ import {
   normalizeChakraDay,
   PROOF_CANON,
   PROOF_HASH_ALG,
+  VERIFICATION_BUNDLE_VERSION,
+  type VerificationSource,
   type ProofCapsuleV1,
 } from "../components/KaiVoh/verifierProof";
 import { extractProofBundleMetaFromSvg, type ProofBundleMeta } from "../utils/sigilMetadata";
@@ -168,11 +170,14 @@ type SharedReceipt = {
   bundleHash?: string;
   verifierUrl?: string;
   shareUrl?: string;
+  verifier?: VerificationSource;
+  verificationVersion?: string;
   authorSig?: ProofBundleMeta["authorSig"];
   zkPoseidonHash?: string;
   zkProof?: ProofBundleMeta["zkProof"];
   proofHints?: ProofBundleMeta["proofHints"];
   zkPublicInputs?: ProofBundleMeta["zkPublicInputs"];
+  verifiedAtPulse?: number;
 };
 
 function parseProofCapsule(raw: unknown): ProofCapsuleV1 | null {
@@ -190,18 +195,27 @@ function buildSharedReceiptFromObject(raw: unknown): SharedReceipt | null {
   if (!isRecord(raw)) return null;
   const proofCapsule = parseProofCapsule(raw.proofCapsule);
   if (!proofCapsule) return null;
+  const verifiedAtPulse =
+    typeof raw.verifiedAtPulse === "number" && Number.isFinite(raw.verifiedAtPulse)
+      ? raw.verifiedAtPulse
+      : typeof raw.verifiedAtPulse === "string" && Number.isFinite(Number(raw.verifiedAtPulse))
+        ? Number(raw.verifiedAtPulse)
+        : undefined;
   return {
     proofCapsule,
     capsuleHash: typeof raw.capsuleHash === "string" ? raw.capsuleHash : undefined,
     svgHash: typeof raw.svgHash === "string" ? raw.svgHash : undefined,
     bundleHash: typeof raw.bundleHash === "string" ? raw.bundleHash : undefined,
     verifierUrl: typeof raw.verifierUrl === "string" ? raw.verifierUrl : undefined,
+    verifier: raw.verifier === "local" || raw.verifier === "pbi" ? (raw.verifier as VerificationSource) : undefined,
+    verificationVersion: typeof raw.verificationVersion === "string" ? raw.verificationVersion : undefined,
     shareUrl: typeof raw.shareUrl === "string" ? raw.shareUrl : undefined,
     authorSig: raw.authorSig as ProofBundleMeta["authorSig"],
     zkPoseidonHash: typeof raw.zkPoseidonHash === "string" ? raw.zkPoseidonHash : undefined,
     zkProof: "zkProof" in raw ? raw.zkProof : undefined,
     proofHints: "proofHints" in raw ? raw.proofHints : undefined,
     zkPublicInputs: "zkPublicInputs" in raw ? raw.zkPublicInputs : undefined,
+    verifiedAtPulse,
   };
 }
 
@@ -909,7 +923,8 @@ export default function VerifyPage(): ReactElement {
     }
     setBusy(true);
     try {
-      const next = await verifySigilSvg(slug, raw);
+      const verifiedAtPulse = currentPulse ?? getKaiPulseEternalInt(new Date());
+      const next = await verifySigilSvg(slug, raw, verifiedAtPulse);
       setResult(next);
       if (next.status === "ok") {
         setIdentityAttested("missing");
@@ -920,7 +935,7 @@ export default function VerifyPage(): ReactElement {
     } finally {
       setBusy(false);
     }
-  }, [slug, svgText]);
+  }, [currentPulse, slug, svgText]);
 
   // Proof bundle construction (logic unchanged)
   React.useEffect(() => {
@@ -950,6 +965,9 @@ export default function VerifyPage(): ReactElement {
           bundleHash: sharedReceipt.bundleHash,
           shareUrl: sharedReceipt.shareUrl,
           verifierUrl: sharedReceipt.verifierUrl,
+          verifier: sharedReceipt.verifier,
+          verificationVersion: sharedReceipt.verificationVersion,
+          verifiedAtPulse: sharedReceipt.verifiedAtPulse,
           authorSig: sharedReceipt.authorSig,
           zkPoseidonHash: sharedReceipt.zkPoseidonHash,
           zkProof: sharedReceipt.zkProof,
@@ -972,10 +990,23 @@ export default function VerifyPage(): ReactElement {
       const embedded = extractProofBundleMetaFromSvg(svgText);
       const capsule = embedded?.proofCapsule ?? fallbackCapsule;
       const capsuleHashNext = await hashProofCapsuleV1(capsule);
+      const verificationSource: VerificationSource = "local";
+      const verifiedAtPulse =
+        typeof result.verifiedAtPulse === "number" && Number.isFinite(result.verifiedAtPulse)
+          ? result.verifiedAtPulse
+          : undefined;
 
       const bundleSeed =
         embedded?.raw && typeof embedded.raw === "object" && embedded.raw !== null
-          ? { ...(embedded.raw as Record<string, unknown>), svgHash: svgHashNext, capsuleHash: capsuleHashNext, proofCapsule: capsule }
+          ? {
+              ...(embedded.raw as Record<string, unknown>),
+              svgHash: svgHashNext,
+              capsuleHash: capsuleHashNext,
+              proofCapsule: capsule,
+              verifier: verificationSource,
+              verificationVersion: VERIFICATION_BUNDLE_VERSION,
+              verifiedAtPulse,
+            }
           : {
               hashAlg: embedded?.hashAlg ?? PROOF_HASH_ALG,
               canon: embedded?.canon ?? PROOF_CANON,
@@ -984,6 +1015,9 @@ export default function VerifyPage(): ReactElement {
               svgHash: svgHashNext,
               shareUrl: embedded?.shareUrl,
               verifierUrl: embedded?.verifierUrl,
+              verifier: verificationSource,
+              verificationVersion: VERIFICATION_BUNDLE_VERSION,
+              verifiedAtPulse,
               zkPoseidonHash: embedded?.zkPoseidonHash,
               zkProof: embedded?.zkProof,
               proofHints: embedded?.proofHints,
@@ -994,17 +1028,26 @@ export default function VerifyPage(): ReactElement {
       const bundleUnsigned = buildBundleUnsigned(bundleSeed);
       const bundleHashNext = await hashBundle(bundleUnsigned);
 
-const authorSigNext = embedded?.authorSig;
-let authorSigOk: boolean | null = null;
+      const authorSigNext = embedded?.authorSig;
+      let authorSigOk: boolean | null = null;
 
-if (authorSigNext) {
-  if (isKASAuthorSig(authorSigNext)) {
-    // ✅ Verify KAS against the artifact's recomputed unsigned bundle hash
-    authorSigOk = await verifyBundleAuthorSig(bundleHashNext, authorSigNext);
-  } else {
-    authorSigOk = false;
-  }
-}
+      if (authorSigNext) {
+        if (isKASAuthorSig(authorSigNext)) {
+          // ✅ Verify KAS against the artifact's recomputed unsigned bundle hash
+          authorSigOk = await verifyBundleAuthorSig(bundleHashNext, authorSigNext);
+          if (!authorSigOk) {
+            const legacySeed = { ...bundleSeed };
+            delete (legacySeed as Record<string, unknown>).verifiedAtPulse;
+            delete (legacySeed as Record<string, unknown>).verifier;
+            delete (legacySeed as Record<string, unknown>).verificationVersion;
+            const legacyUnsigned = buildBundleUnsigned(legacySeed);
+            const legacyHash = await hashBundle(legacyUnsigned);
+            authorSigOk = await verifyBundleAuthorSig(legacyHash, authorSigNext);
+          }
+        } else {
+          authorSigOk = false;
+        }
+      }
 
       if (!active) return;
       setProofCapsule(capsule);
@@ -1032,6 +1075,9 @@ if (authorSigNext) {
       bundleHash: sharedReceipt.bundleHash,
       shareUrl: sharedReceipt.shareUrl,
       verifierUrl: sharedReceipt.verifierUrl,
+      verifier: sharedReceipt.verifier,
+      verificationVersion: sharedReceipt.verificationVersion,
+      verifiedAtPulse: sharedReceipt.verifiedAtPulse,
       authorSig: sharedReceipt.authorSig,
       zkPoseidonHash: sharedReceipt.zkPoseidonHash,
       zkProof: sharedReceipt.zkProof,
@@ -1045,6 +1091,7 @@ if (authorSigNext) {
       const slugShortSigMatches =
         slug.shortSig == null ? null : slug.shortSig === capsule.kaiSignature.slice(0, slug.shortSig.length);
       const derivedPhiKeyMatchesEmbedded = capsule.phiKey ? derivedPhiKey === capsule.phiKey : null;
+      const verifiedAtPulse = sharedReceipt.verifiedAtPulse ?? null;
 
       if (!active) return;
       const checks = {
@@ -1081,6 +1128,7 @@ if (authorSigNext) {
               embedded: baseEmbedded,
               derivedPhiKey,
               checks,
+              verifiedAtPulse,
             },
       );
       setEmbeddedProof(embed);
@@ -1311,18 +1359,24 @@ if (authorSigNext) {
     return zkVerify ? "valid" : "invalid";
   }, [busy, zkMeta?.zkPoseidonHash, zkVerify]);
 
+  const stewardVerifiedPulse = useMemo(() => {
+    if (result.status === "ok") return result.verifiedAtPulse;
+    return sharedReceipt?.verifiedAtPulse ?? null;
+  }, [result, sharedReceipt?.verifiedAtPulse]);
+
   const verifiedCardData = useMemo<VerifiedCardData | null>(() => {
-    if (result.status !== "ok" || !proofCapsule || !capsuleHash) return null;
+    if (result.status !== "ok" || !proofCapsule || !capsuleHash || stewardVerifiedPulse == null) return null;
     return {
       capsuleHash,
       pulse: proofCapsule.pulse,
+      verifiedAtPulse: stewardVerifiedPulse,
       phikey: proofCapsule.phiKey,
       kasOk: sealKAS === "valid",
       g16Ok: sealZK === "valid",
       verifierSlug: proofCapsule.verifierSlug,
       sigilSvg: svgText.trim() ? svgText : undefined,
     };
-  }, [capsuleHash, proofCapsule, result.status, sealKAS, sealZK, svgText]);
+  }, [capsuleHash, proofCapsule, result.status, sealKAS, sealZK, stewardVerifiedPulse, svgText]);
 
   const onDownloadVerifiedCard = useCallback(async () => {
     if (!verifiedCardData) return;
@@ -1411,29 +1465,6 @@ body: [
   const receiveNonce = useMemo(() => (receiveSig ? receiveSig.nonce : ""), [receiveSig]);
   const receiveBundleHash = useMemo(() => (receiveSig?.binds.bundleHash ? receiveSig.binds.bundleHash : bundleHash || ""), [receiveSig, bundleHash]);
 
-  const auditBundleText = useMemo(() => {
-    if (!proofCapsule) return "";
-    return JSON.stringify(
-      {
-        hashAlg: PROOF_HASH_ALG,
-        canon: PROOF_CANON,
-        proofCapsule,
-        capsuleHash,
-        svgHash,
-        bundleHash,
-        shareUrl: embeddedProof?.shareUrl ?? null,
-        verifierUrl: proofVerifierUrl,
-        authorSig: embeddedProof?.authorSig ?? null,
-        zkPoseidonHash: zkMeta?.zkPoseidonHash ?? null,
-        zkProof: zkMeta?.zkProof ?? null,
-        proofHints: zkMeta?.proofHints ?? null,
-        zkPublicInputs: zkMeta?.zkPublicInputs ?? null,
-      },
-      null,
-      2,
-    );
-  }, [proofCapsule, capsuleHash, svgHash, bundleHash, embeddedProof, proofVerifierUrl, zkMeta]);
-
   const svgPreview = useMemo(() => {
     const raw = svgText.trim();
     if (!raw) return "";
@@ -1451,6 +1482,48 @@ body: [
   const shareKas = sealKAS === "valid" ? "✅" : "❌";
   const shareG16 = sealZK === "valid" ? "✅" : "❌";
 
+  const stewardPulseLabel =
+    stewardVerifiedPulse == null ? "Verified pulse unavailable (legacy bundle)" : `Steward Verified @ Pulse ${stewardVerifiedPulse}`;
+  const verificationSource: VerificationSource = sharedReceipt?.verifier ?? "local";
+  const verificationVersion = sharedReceipt?.verificationVersion ?? VERIFICATION_BUNDLE_VERSION;
+
+  const auditBundleText = useMemo(() => {
+    if (!proofCapsule) return "";
+    return JSON.stringify(
+      {
+        hashAlg: PROOF_HASH_ALG,
+        canon: PROOF_CANON,
+        proofCapsule,
+        capsuleHash,
+        svgHash,
+        bundleHash,
+        shareUrl: embeddedProof?.shareUrl ?? null,
+        verifierUrl: proofVerifierUrl,
+        verifier: embeddedProof?.verifier ?? verificationSource,
+        verificationVersion: embeddedProof?.verificationVersion ?? verificationVersion,
+        verifiedAtPulse: stewardVerifiedPulse ?? null,
+        authorSig: embeddedProof?.authorSig ?? null,
+        zkPoseidonHash: zkMeta?.zkPoseidonHash ?? null,
+        zkProof: zkMeta?.zkProof ?? null,
+        proofHints: zkMeta?.proofHints ?? null,
+        zkPublicInputs: zkMeta?.zkPublicInputs ?? null,
+      },
+      null,
+      2,
+    );
+  }, [
+    proofCapsule,
+    capsuleHash,
+    svgHash,
+    bundleHash,
+    embeddedProof,
+    proofVerifierUrl,
+    stewardVerifiedPulse,
+    verificationSource,
+    verificationVersion,
+    zkMeta,
+  ]);
+
   const receiptJson = useMemo(() => {
     if (!proofCapsule) return "";
     const receipt = {
@@ -1462,6 +1535,11 @@ body: [
     } as const;
 
     const extended: Record<string, unknown> = { ...receipt };
+    extended.verifier = verificationSource;
+    extended.verificationVersion = verificationVersion;
+    if (typeof stewardVerifiedPulse === "number" && Number.isFinite(stewardVerifiedPulse)) {
+      extended.verifiedAtPulse = stewardVerifiedPulse;
+    }
     if (svgHash) extended.svgHash = svgHash;
     if (bundleHash) extended.bundleHash = bundleHash;
     if (embeddedProof?.shareUrl) extended.shareUrl = embeddedProof.shareUrl;
@@ -1476,7 +1554,20 @@ body: [
     }
 
     return jcsCanonicalize(extended as Parameters<typeof jcsCanonicalize>[0]);
-  }, [bundleHash, capsuleHash, currentVerifyUrl, embeddedProof?.shareUrl, proofCapsule, proofVerifierUrl, svgHash, zkMeta?.zkPoseidonHash, zkVerify]);
+  }, [
+    bundleHash,
+    capsuleHash,
+    currentVerifyUrl,
+    embeddedProof?.shareUrl,
+    proofCapsule,
+    proofVerifierUrl,
+    stewardVerifiedPulse,
+    verificationSource,
+    verificationVersion,
+    svgHash,
+    zkMeta?.zkPoseidonHash,
+    zkVerify,
+  ]);
 
   const shareReceiptUrl = useMemo(() => {
     if (!receiptJson) return "";
@@ -1880,6 +1971,18 @@ body: [
                       {proofVerifierUrl ? ellipsizeMiddle(proofVerifierUrl, 22, 16) : "—"}
                     </code>
                     <IconBtn icon="💠" title="Remember verifier URL" ariaLabel="Remember verifier URL" onClick={() => void remember(proofVerifierUrl, "Verifier URL")} disabled={!proofVerifierUrl} />
+                  </div>
+
+                  <div className="vrow">
+                    <span className="vk">steward pulse</span>
+                    <code className="vv mono">{stewardPulseLabel}</code>
+                    <IconBtn
+                      icon="💠"
+                      title="Remember steward verification pulse"
+                      ariaLabel="Remember steward verification pulse"
+                      onClick={() => void remember(String(stewardVerifiedPulse ?? ""), "Steward verification pulse")}
+                      disabled={stewardVerifiedPulse == null}
+                    />
                   </div>
 
                   <div className="vrow">
