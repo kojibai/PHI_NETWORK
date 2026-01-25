@@ -1,5 +1,6 @@
 import { derivePhiKeyFromSig } from "../components/VerifierStamper/sigilUtils";
 import { extractEmbeddedMetaFromSvg, type EmbeddedMeta } from "./sigilMetadata";
+import { assertReceiptHashMatch } from "./verificationReceipt";
 
 export type SlugInfo = {
   raw: string;
@@ -55,9 +56,12 @@ function firstN(s: string, n: number): string {
   return s.slice(0, n);
 }
 
-export async function verifySigilSvg(slug: SlugInfo, svgText: string, verifiedAtPulse: number): Promise<VerifyResult> {
+export async function verifySigilSvg(slug: SlugInfo, svgText: string, verifiedAtPulse?: number): Promise<VerifyResult> {
   try {
     const embedded = extractEmbeddedMetaFromSvg(svgText);
+    if (embedded.receiptHash) {
+      await assertReceiptHashMatch(embedded.receipt, embedded.receiptHash);
+    }
     const sig = (embedded.kaiSignature ?? "").trim();
     if (!sig) {
       return {
@@ -122,7 +126,8 @@ export async function verifySigilSvg(slug: SlugInfo, svgText: string, verifiedAt
       },
       derivedPhiKey,
       checks,
-      verifiedAtPulse,
+      verifiedAtPulse:
+        typeof verifiedAtPulse === "number" && Number.isFinite(verifiedAtPulse) ? verifiedAtPulse : null,
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Verification failed.";

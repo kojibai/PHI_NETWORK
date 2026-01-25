@@ -834,7 +834,7 @@ function KaiVohFlow(): ReactElement {
                 circuitId: "sigil_proof",
               }
             : undefined;
-          const normalizedZk = normalizeProofBundleZkCurves({ zkProof, zkMeta });
+          const normalizedZk = normalizeProofBundleZkCurves({ zkProof, zkMeta, proofHints });
           zkProof = normalizedZk.zkProof;
           const zkMetaNormalized = normalizedZk.zkMeta;
           const proofBundleBase = {

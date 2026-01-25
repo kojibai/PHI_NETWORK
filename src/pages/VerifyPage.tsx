@@ -37,7 +37,7 @@ import { extractProofBundleMetaFromSvg, type ProofBundleMeta } from "../utils/si
 import { derivePhiKeyFromSig } from "../components/VerifierStamper/sigilUtils";
 import { tryVerifyGroth16 } from "../components/VerifierStamper/zk";
 import { isKASAuthorSig, type KASAuthorSig } from "../utils/authorSig";
-import { isWebAuthnAvailable, verifyBundleAuthorSig } from "../utils/webauthnKAS";
+import { isWebAuthnAvailable, signBundleHash, verifyBundleAuthorSig } from "../utils/webauthnKAS";
 import {
   buildKasChallenge,
   getWebAuthnAssertionJson,
@@ -56,6 +56,22 @@ import { jcsCanonicalize } from "../utils/jcs";
 import { svgCanonicalForHash } from "../utils/svgProof";
 import useRollingChartSeries from "../components/VerifierStamper/hooks/useRollingChartSeries";
 import { BREATH_MS } from "../components/valuation/constants";
+import {
+  assertReceiptHashMatch,
+  buildVerificationReceipt,
+  hashVerificationReceipt,
+  verificationSigFromKas,
+  verifyVerificationSig,
+  type VerificationReceipt,
+  type VerificationSig,
+} from "../utils/verificationReceipt";
+import {
+  buildVerificationCacheKey,
+  buildVerificationCacheRecord,
+  readVerificationCache,
+  type VerificationCache,
+  writeVerificationCache,
+} from "../utils/verificationCache";
 
 /* ────────────────────────────────────────────────────────────────
    Utilities
@@ -183,6 +199,10 @@ type SharedReceipt = {
   shareUrl?: string;
   verifier?: VerificationSource;
   verificationVersion?: string;
+  cacheKey?: string;
+  receipt?: VerificationReceipt;
+  receiptHash?: string;
+  verificationSig?: VerificationSig;
   authorSig?: ProofBundleMeta["authorSig"];
   bindings?: ProofBundleMeta["bindings"];
   zkStatement?: ProofBundleMeta["zkStatement"];
@@ -227,6 +247,10 @@ function buildSharedReceiptFromObject(raw: unknown): SharedReceipt | null {
     verifier: raw.verifier === "local" || raw.verifier === "pbi" ? (raw.verifier as VerificationSource) : undefined,
     verificationVersion: typeof raw.verificationVersion === "string" ? raw.verificationVersion : undefined,
     shareUrl: typeof raw.shareUrl === "string" ? raw.shareUrl : undefined,
+    cacheKey: typeof raw.cacheKey === "string" ? raw.cacheKey : undefined,
+    receipt: isRecord(raw.receipt) ? (raw.receipt as VerificationReceipt) : undefined,
+    receiptHash: typeof raw.receiptHash === "string" ? raw.receiptHash : undefined,
+    verificationSig: isRecord(raw.verificationSig) ? (raw.verificationSig as VerificationSig) : undefined,
     authorSig: raw.authorSig as ProofBundleMeta["authorSig"],
     bindings: isRecord(raw.bindings) ? (raw.bindings as ProofBundleMeta["bindings"]) : undefined,
     zkStatement: isRecord(raw.zkStatement) ? (raw.zkStatement as ProofBundleMeta["zkStatement"]) : undefined,
@@ -611,6 +635,13 @@ export default function VerifyPage(): ReactElement {
 
   const [zkVerify, setZkVerify] = useState<boolean | null>(null);
   const [zkVkey, setZkVkey] = useState<unknown>(null);
+  const [zkVerifiedCached, setZkVerifiedCached] = useState<boolean>(false);
+  const [verificationCacheEntry, setVerificationCacheEntry] = useState<VerificationCache | null>(null);
+  const [cacheKey, setCacheKey] = useState<string>("");
+  const [verificationSig, setVerificationSig] = useState<VerificationSig | null>(null);
+  const [verificationSigVerified, setVerificationSigVerified] = useState<boolean | null>(null);
+  const [verificationSigBusy, setVerificationSigBusy] = useState<boolean>(false);
+  const [receiptHash, setReceiptHash] = useState<string>("");
 
   const [receiveSig, setReceiveSig] = useState<ReceiveSig | null>(null);
 
@@ -952,11 +983,24 @@ export default function VerifyPage(): ReactElement {
     }
     const receipt = parseSharedReceiptFromText(raw);
     if (receipt) {
-      setSharedReceipt(receipt);
-      setSvgText("");
-      setResult({ status: "idle" });
-      setNotice("Receipt loaded.");
-      return;
+      try {
+if (receipt.receiptHash) {
+  if (!receipt.receipt) {
+    throw new Error("verification receipt mismatch");
+  }
+  await assertReceiptHashMatch(receipt.receipt, receipt.receiptHash);
+}
+
+        setSharedReceipt(receipt);
+        setSvgText("");
+        setResult({ status: "idle" });
+        setNotice("Receipt loaded.");
+        return;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "verification receipt mismatch";
+        setResult({ status: "error", message: msg, slug });
+        return;
+      }
     }
     setBusy(true);
     try {
@@ -987,6 +1031,10 @@ export default function VerifyPage(): ReactElement {
         setBundleHash("");
         setEmbeddedProof(null);
         setAuthorSigVerified(null);
+        setVerificationCacheEntry(null);
+        setZkVerifiedCached(false);
+        setVerificationSig(null);
+        setReceiptHash("");
         setNotice("");
         return;
       }
@@ -1005,6 +1053,10 @@ export default function VerifyPage(): ReactElement {
           verifierUrl: sharedReceipt.verifierUrl,
           verifier: sharedReceipt.verifier,
           verificationVersion: sharedReceipt.verificationVersion,
+          cacheKey: sharedReceipt.cacheKey,
+          receipt: sharedReceipt.receipt,
+          receiptHash: sharedReceipt.receiptHash,
+          verificationSig: sharedReceipt.verificationSig,
           verifiedAtPulse: sharedReceipt.verifiedAtPulse,
           authorSig: sharedReceipt.authorSig,
           zkPoseidonHash: sharedReceipt.zkPoseidonHash,
@@ -1083,6 +1135,10 @@ export default function VerifyPage(): ReactElement {
       delete legacySeed.bundleRoot;
       delete legacySeed.transport;
       delete legacySeed.verificationCache;
+      delete legacySeed.cacheKey;
+      delete legacySeed.receipt;
+      delete legacySeed.receiptHash;
+      delete legacySeed.verificationSig;
       delete legacySeed.zkMeta;
       const bundleUnsigned = buildBundleUnsigned(legacySeed);
       const legacyHash = await hashBundle(bundleUnsigned);
@@ -1136,6 +1192,10 @@ export default function VerifyPage(): ReactElement {
       verifierUrl: sharedReceipt.verifierUrl,
       verifier: sharedReceipt.verifier,
       verificationVersion: sharedReceipt.verificationVersion,
+      cacheKey: sharedReceipt.cacheKey,
+      receipt: sharedReceipt.receipt,
+      receiptHash: sharedReceipt.receiptHash,
+      verificationSig: sharedReceipt.verificationSig,
       verifiedAtPulse: sharedReceipt.verifiedAtPulse,
       authorSig: sharedReceipt.authorSig,
       bindings: sharedReceipt.bindings,
@@ -1207,6 +1267,35 @@ export default function VerifyPage(): ReactElement {
       active = false;
     };
   }, [sharedReceipt, slug, svgText]);
+React.useEffect(() => {
+  let active = true;
+
+  const rh = sharedReceipt?.receiptHash;
+  if (typeof rh !== "string" || rh.trim().length === 0) return;
+
+  (async () => {
+    try {
+      if (!sharedReceipt?.receipt) {
+        throw new Error("verification receipt mismatch");
+      }
+      await assertReceiptHashMatch(sharedReceipt.receipt, rh);
+    } catch (err) {
+      if (!active) return;
+      const msg = err instanceof Error ? err.message : "verification receipt mismatch";
+      setResult({ status: "error", message: msg, slug });
+      setSharedReceipt(null);
+    }
+  })();
+
+  return () => {
+    active = false;
+  };
+}, [sharedReceipt, slug]);
+
+  React.useEffect(() => {
+    const nextSig = embeddedProof?.verificationSig ?? sharedReceipt?.verificationSig ?? null;
+    setVerificationSig(nextSig);
+  }, [embeddedProof?.verificationSig, sharedReceipt?.verificationSig, bundleHash]);
 
   React.useEffect(() => {
     if (result.status !== "ok" || !bundleHash) {
@@ -1275,6 +1364,21 @@ export default function VerifyPage(): ReactElement {
   }, [authorSigVerified, bundleHash, embeddedProof?.authorSig]);
 
   React.useEffect(() => {
+    let active = true;
+    if (!receiptHash || !verificationSig) {
+      setVerificationSigVerified(null);
+      return;
+    }
+    (async () => {
+      const ok = await verifyVerificationSig(receiptHash, verificationSig);
+      if (active) setVerificationSigVerified(ok);
+    })();
+    return () => {
+      active = false;
+    };
+  }, [receiptHash, verificationSig]);
+
+  React.useEffect(() => {
     if (!svgText.trim()) {
       setIdentityAttested("missing");
       setIdentityScanRequested(false);
@@ -1296,15 +1400,49 @@ export default function VerifyPage(): ReactElement {
     setArtifactAttested(svgBytesHash === expectedSvgHash);
   }, [embeddedProof?.svgHash, sharedReceipt?.svgHash, svgBytesHash, svgText]);
 
+  const stewardVerifiedPulse = useMemo(() => {
+    if (result.status === "ok") return result.verifiedAtPulse;
+    return sharedReceipt?.verifiedAtPulse ?? null;
+  }, [result, sharedReceipt?.verifiedAtPulse]);
+
+  const verificationSource: VerificationSource = sharedReceipt?.verifier ?? "local";
+  const verificationVersion = sharedReceipt?.verificationVersion ?? VERIFICATION_BUNDLE_VERSION;
+  const cacheVerificationVersion = sharedReceipt?.verificationVersion ?? embeddedProof?.verificationVersion;
+
   // Groth16 verify (logic unchanged)
   React.useEffect(() => {
     let active = true;
 
     (async () => {
       if (!zkMeta?.zkProof || !zkMeta?.zkPublicInputs) {
-        if (active) setZkVerify(null);
+        if (active) {
+          setZkVerify(null);
+          setZkVerifiedCached(false);
+          setVerificationCacheEntry(null);
+        }
         return;
       }
+const cacheBundleHash = bundleHash;
+const cachePoseidonHash =
+  typeof zkMeta?.zkPoseidonHash === "string" && zkMeta.zkPoseidonHash.trim().length > 0
+    ? zkMeta.zkPoseidonHash
+    : undefined;
+
+if (typeof cacheBundleHash === "string" && cacheBundleHash.trim().length > 0 && cachePoseidonHash) {
+  const cached = await readVerificationCache({
+    bundleHash: cacheBundleHash,
+    zkPoseidonHash: cachePoseidonHash,
+    verificationVersion: cacheVerificationVersion,
+  });
+
+  if (cached && active) {
+    setZkVerify(true);
+    setZkVerifiedCached(true);
+    setVerificationCacheEntry({ ...cached, zkVerifiedCached: true });
+    return;
+  }
+}
+
 
       if (!zkVkey) {
         try {
@@ -1325,11 +1463,17 @@ export default function VerifyPage(): ReactElement {
           const vkeyCanonical = jcsCanonicalize(zkVkey as Parameters<typeof jcsCanonicalize>[0]);
           const vkeyHash = await sha256Hex(vkeyCanonical);
           if (vkeyHash !== expectedVkHash) {
-            if (active) setZkVerify(false);
+            if (active) {
+              setZkVerify(false);
+              setZkVerifiedCached(false);
+            }
             return;
           }
         } catch {
-          if (active) setZkVerify(false);
+          if (active) {
+            setZkVerify(false);
+            setZkVerifiedCached(false);
+          }
           return;
         }
       }
@@ -1351,7 +1495,10 @@ export default function VerifyPage(): ReactElement {
           zkPoseidonHash: zkMeta?.zkPoseidonHash,
         });
       } catch {
-        if (active) setZkVerify(false);
+        if (active) {
+          setZkVerify(false);
+          setZkVerifiedCached(false);
+        }
         return;
       }
 
@@ -1364,12 +1511,39 @@ export default function VerifyPage(): ReactElement {
 
       if (!active) return;
       setZkVerify(verified);
+      setZkVerifiedCached(false);
+if (verified && typeof cacheBundleHash === "string" && cacheBundleHash.trim().length > 0 && cachePoseidonHash) {
+  const entry = await buildVerificationCacheRecord({
+    bundleHash: cacheBundleHash,
+    zkPoseidonHash: cachePoseidonHash,
+    verificationVersion: cacheVerificationVersion,
+    verifiedAtPulse: stewardVerifiedPulse ?? undefined,
+    verifier: verificationSource,
+    createdAtMs: Date.now(),
+    expiresAtPulse: null,
+  });
+
+  await writeVerificationCache(entry);
+  if (active) setVerificationCacheEntry(entry);
+} else {
+  setVerificationCacheEntry(null);
+}
+
     })();
 
     return () => {
       active = false;
     };
-  }, [zkMeta, zkVkey]);
+  }, [
+    bundleHash,
+    cacheVerificationVersion,
+    embeddedProof?.bundleRoot?.zkMeta,
+    embeddedProof?.zkMeta,
+    verificationSource,
+    stewardVerifiedPulse,
+    zkMeta,
+    zkVkey,
+  ]);
 
   const attemptIdentityScan = useCallback(
     async (authorSig: KASAuthorSig, bundleHashValue: string): Promise<void> => {
@@ -1413,6 +1587,16 @@ export default function VerifyPage(): ReactElement {
     },
     [identityScanBusy]
   );
+  const verificationReceipt = useMemo<VerificationReceipt | null>(() => {
+    if (!bundleHash || !zkMeta?.zkPoseidonHash || stewardVerifiedPulse == null) return null;
+    return buildVerificationReceipt({
+      bundleHash,
+      zkPoseidonHash: zkMeta.zkPoseidonHash,
+      verifiedAtPulse: stewardVerifiedPulse,
+      verifier: verificationSource,
+      verificationVersion,
+    });
+  }, [bundleHash, stewardVerifiedPulse, verificationSource, verificationVersion, zkMeta?.zkPoseidonHash]);
 
   React.useEffect(() => {
     if (!identityScanRequested) return;
@@ -1457,11 +1641,6 @@ export default function VerifyPage(): ReactElement {
     return zkVerify ? "valid" : "invalid";
   }, [busy, zkMeta?.zkPoseidonHash, zkVerify]);
 
-  const stewardVerifiedPulse = useMemo(() => {
-    if (result.status === "ok") return result.verifiedAtPulse;
-    return sharedReceipt?.verifiedAtPulse ?? null;
-  }, [result, sharedReceipt?.verifiedAtPulse]);
-
   const proofVerifierUrl = useMemo(
     () => (proofCapsule ? buildVerifierUrl(proofCapsule.pulse, proofCapsule.kaiSignature, undefined, stewardVerifiedPulse ?? undefined) : ""),
     [proofCapsule, stewardVerifiedPulse],
@@ -1487,6 +1666,9 @@ export default function VerifyPage(): ReactElement {
 
   const verifiedCardData = useMemo<VerifiedCardData | null>(() => {
     if (result.status !== "ok" || !proofCapsule || !capsuleHash || stewardVerifiedPulse == null) return null;
+    const receiptValue = verificationReceipt ?? embeddedProof?.receipt ?? sharedReceipt?.receipt;
+    const receiptHashValue = receiptHash || embeddedProof?.receiptHash || sharedReceipt?.receiptHash;
+    const verificationSigValue = verificationSig ?? embeddedProof?.verificationSig ?? sharedReceipt?.verificationSig;
     return {
       capsuleHash,
       pulse: proofCapsule.pulse,
@@ -1495,14 +1677,65 @@ export default function VerifyPage(): ReactElement {
       kasOk: sealKAS === "valid",
       g16Ok: sealZK === "valid",
       verifierSlug: proofCapsule.verifierSlug,
+      verifier: verificationSource,
+      verificationVersion,
+      bundleHash: bundleHash || undefined,
+      zkPoseidonHash: zkMeta?.zkPoseidonHash ?? undefined,
+      receipt: receiptValue ?? undefined,
+      receiptHash: receiptHashValue || undefined,
+      verificationSig: verificationSigValue ?? undefined,
       sigilSvg: svgText.trim() ? svgText : undefined,
     };
-  }, [capsuleHash, proofCapsule, result.status, sealKAS, sealZK, stewardVerifiedPulse, svgText]);
+  }, [
+    bundleHash,
+    capsuleHash,
+    embeddedProof?.receipt,
+    embeddedProof?.receiptHash,
+    embeddedProof?.verificationSig,
+    proofCapsule,
+    receiptHash,
+    result.status,
+    sealKAS,
+    sealZK,
+    sharedReceipt?.receipt,
+    sharedReceipt?.receiptHash,
+    sharedReceipt?.verificationSig,
+    stewardVerifiedPulse,
+    svgText,
+    verificationReceipt,
+    verificationSig,
+    verificationSource,
+    verificationVersion,
+    zkMeta?.zkPoseidonHash,
+  ]);
 
   const onDownloadVerifiedCard = useCallback(async () => {
     if (!verifiedCardData) return;
     await downloadVerifiedCardPng(verifiedCardData);
   }, [verifiedCardData]);
+
+  const onSignVerification = useCallback(async () => {
+    if (!proofCapsule || !receiptHash) return;
+    if (verificationSigBusy) return;
+    if (!isWebAuthnAvailable()) {
+      setNotice("WebAuthn is not available in this browser. Please verify on a device with passkeys enabled.");
+      return;
+    }
+    setVerificationSigBusy(true);
+    try {
+      const kasSig = await signBundleHash(proofCapsule.phiKey, receiptHash);
+      const nextSig = verificationSigFromKas(kasSig);
+      const ok = await verifyVerificationSig(receiptHash, nextSig);
+      setVerificationSig(nextSig);
+      setVerificationSigVerified(ok);
+      setNotice(ok ? "Verification receipt signed." : "Verification receipt signature failed.");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Verification receipt signature failed.";
+      setNotice(msg);
+    } finally {
+      setVerificationSigBusy(false);
+    }
+  }, [proofCapsule, receiptHash, verificationSigBusy]);
 
   const sealStateLabel = useCallback((state: SealState): string => {
     switch (state) {
@@ -1602,11 +1835,55 @@ body: [
   const sharePhiShort = verifierPhi && verifierPhi !== "—" ? ellipsizeMiddle(verifierPhi, 12, 10) : "—";
   const shareKas = sealKAS === "valid" ? "✅" : "❌";
   const shareG16 = sealZK === "valid" ? "✅" : "❌";
+  const verificationSigLabel =
+    verificationSigVerified === true ? "Verification signed" : verificationSigVerified === false ? "Verification signature invalid" : "Sign Verification";
+  const canSignVerification = Boolean(receiptHash && proofCapsule);
 
   const stewardPulseLabel =
     stewardVerifiedPulse == null ? "Verified pulse unavailable (legacy bundle)" : `Steward Verified @ Pulse ${stewardVerifiedPulse}`;
-  const verificationSource: VerificationSource = sharedReceipt?.verifier ?? "local";
-  const verificationVersion = sharedReceipt?.verificationVersion ?? VERIFICATION_BUNDLE_VERSION;
+
+
+  React.useEffect(() => {
+    let active = true;
+    if (!verificationReceipt) {
+      setReceiptHash("");
+      return;
+    }
+    (async () => {
+      const hash = await hashVerificationReceipt(verificationReceipt);
+      if (active) setReceiptHash(hash);
+    })();
+    return () => {
+      active = false;
+    };
+  }, [verificationReceipt]);
+
+React.useEffect(() => {
+  let active = true;
+
+  const poseidon =
+    typeof zkMeta?.zkPoseidonHash === "string" && zkMeta.zkPoseidonHash.trim().length > 0
+      ? zkMeta.zkPoseidonHash
+      : undefined;
+
+  if (!bundleHash || !poseidon) {
+    setCacheKey("");
+    return;
+  }
+
+  (async () => {
+    const key = await buildVerificationCacheKey({
+      bundleHash,
+      zkPoseidonHash: poseidon,
+      verificationVersion: cacheVerificationVersion,
+    });
+    if (active) setCacheKey(key);
+  })();
+
+  return () => {
+    active = false;
+  };
+}, [bundleHash, cacheVerificationVersion, zkMeta?.zkPoseidonHash]);
 
   const auditBundleText = useMemo(() => {
     if (!proofCapsule) return "";
@@ -1618,6 +1895,17 @@ body: [
       proofHints: embeddedProof?.transport?.proofHints ?? embeddedProof?.proofHints ?? zkMeta?.proofHints ?? undefined,
     };
     const zkVerified = zkMeta?.zkPoseidonHash && typeof zkVerify === "boolean" ? zkVerify : undefined;
+    const receiptValue = verificationReceipt ?? embeddedProof?.receipt ?? sharedReceipt?.receipt;
+    const receiptHashValue = receiptHash || embeddedProof?.receiptHash || sharedReceipt?.receiptHash;
+    const verificationSigValue = verificationSig ?? embeddedProof?.verificationSig ?? sharedReceipt?.verificationSig;
+    const cacheKeyValue =
+      verificationCacheEntry?.cacheKey ?? (cacheKey || embeddedProof?.cacheKey || sharedReceipt?.cacheKey);
+    const verificationCacheValue = verificationCacheEntry
+      ? {
+          ...verificationCacheEntry,
+          ...(zkVerifiedCached ? { zkVerifiedCached: true } : {}),
+        }
+      : embeddedProof?.verificationCache ?? sharedReceipt?.verificationCache;
     const normalized = normalizeBundle({
       hashAlg: PROOF_HASH_ALG,
       canon: PROOF_CANON,
@@ -1642,8 +1930,11 @@ body: [
       zkProof: zkMeta?.zkProof ?? undefined,
       zkPublicInputs: zkMeta?.zkPublicInputs ?? undefined,
       zkMeta: embeddedProof?.zkMeta,
-      verificationCache: embeddedProof?.verificationCache ??
-        (zkVerify == null ? undefined : { zkVerifiedCached: Boolean(zkVerify) }),
+      verificationCache: verificationCacheValue,
+      cacheKey: cacheKeyValue,
+      receipt: receiptValue ?? undefined,
+      receiptHash: receiptHashValue || undefined,
+      verificationSig: verificationSigValue ?? undefined,
       transport,
     });
 
@@ -1661,6 +1952,16 @@ body: [
     zkMeta,
     zkVerify,
     bundleRoot,
+    cacheKey,
+    receiptHash,
+    sharedReceipt?.cacheKey,
+    sharedReceipt?.receipt,
+    sharedReceipt?.receiptHash,
+    sharedReceipt?.verificationSig,
+    verificationCacheEntry,
+    verificationReceipt,
+    verificationSig,
+    zkVerifiedCached,
   ]);
 
   const receiptJson = useMemo(() => {
@@ -1674,6 +1975,17 @@ body: [
     } as const;
 
     const extended: Record<string, unknown> = { ...receipt };
+    const receiptValue = verificationReceipt ?? embeddedProof?.receipt ?? sharedReceipt?.receipt;
+    const receiptHashValue = receiptHash || embeddedProof?.receiptHash || sharedReceipt?.receiptHash;
+    const verificationSigValue = verificationSig ?? embeddedProof?.verificationSig ?? sharedReceipt?.verificationSig;
+    const cacheKeyValue =
+      verificationCacheEntry?.cacheKey ?? (cacheKey || embeddedProof?.cacheKey || sharedReceipt?.cacheKey);
+    const verificationCacheValue = verificationCacheEntry
+      ? {
+          ...verificationCacheEntry,
+          ...(zkVerifiedCached ? { zkVerifiedCached: true } : {}),
+        }
+      : embeddedProof?.verificationCache ?? sharedReceipt?.verificationCache;
     extended.verifier = verificationSource;
     extended.verificationVersion = verificationVersion;
     if (typeof stewardVerifiedPulse === "number" && Number.isFinite(stewardVerifiedPulse)) {
@@ -1690,12 +2002,18 @@ body: [
     if (embeddedProof?.zkPublicInputs) extended.zkPublicInputs = embeddedProof.zkPublicInputs;
     if (zkMeta?.zkPoseidonHash) {
       extended.zkPoseidonHash = zkMeta.zkPoseidonHash;
-      extended.verificationCache = { zkVerifiedCached: Boolean(zkVerify) };
       extended.zkScheme = "groth16-poseidon";
       if (typeof zkVerify === "boolean") {
         extended.zkVerified = zkVerify;
       }
     }
+    if (verificationCacheValue) {
+      extended.verificationCache = verificationCacheValue;
+    }
+    if (cacheKeyValue) extended.cacheKey = cacheKeyValue;
+    if (receiptValue) extended.receipt = receiptValue;
+    if (receiptHashValue) extended.receiptHash = receiptHashValue;
+    if (verificationSigValue) extended.verificationSig = verificationSigValue;
 
     return jcsCanonicalize(extended as Parameters<typeof jcsCanonicalize>[0]);
   }, [
@@ -1717,6 +2035,16 @@ body: [
     svgHash,
     zkMeta?.zkPoseidonHash,
     zkVerify,
+    cacheKey,
+    receiptHash,
+    sharedReceipt?.cacheKey,
+    sharedReceipt?.receipt,
+    sharedReceipt?.receiptHash,
+    sharedReceipt?.verificationSig,
+    verificationCacheEntry,
+    verificationReceipt,
+    verificationSig,
+    zkVerifiedCached,
   ]);
 
   const shareReceiptUrl = useMemo(() => {
@@ -1856,6 +2184,16 @@ body: [
                 </button>
                 <button type="button" className="vbtn vbtn--ghost" onClick={() => void onCopyReceipt()}>
                   💠
+                </button>
+                <button
+                  type="button"
+                  className="vbtn vbtn--ghost"
+                  onClick={() => void onSignVerification()}
+                  title={verificationSigLabel}
+                  aria-label={verificationSigLabel}
+                  disabled={!canSignVerification || verificationSigBusy}
+                >
+                  ✍
                 </button>
               </div>
             </div>

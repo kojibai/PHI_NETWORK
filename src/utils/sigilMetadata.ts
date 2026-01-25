@@ -5,13 +5,14 @@ import type {
   ProofBundleBindings,
   ProofBundleTransport,
   ProofCapsuleV1,
-  VerificationCache,
   VerificationSource,
   ZkMeta,
   ZkStatement,
 } from "../components/KaiVoh/verifierProof";
 import type { AuthorSig } from "./authorSig";
 import { parseAuthorSig } from "./authorSig";
+import type { VerificationCache } from "./verificationCache";
+import type { VerificationReceipt, VerificationSig } from "./verificationReceipt";
 
 export type EmbeddedMeta = {
   pulse?: number;
@@ -40,6 +41,10 @@ export type EmbeddedMeta = {
   bundleRoot?: BundleRoot;
   zkMeta?: ZkMeta;
   verificationCache?: VerificationCache;
+  cacheKey?: string;
+  receipt?: VerificationReceipt;
+  receiptHash?: string;
+  verificationSig?: VerificationSig;
   transport?: ProofBundleTransport;
   authorSig?: AuthorSig | null;
   zkPoseidonHash?: string;
@@ -227,6 +232,30 @@ function toEmbeddedMetaFromUnknown(raw: unknown): EmbeddedMeta {
   const verificationCache = isRecord(raw.verificationCache)
     ? (raw.verificationCache as VerificationCache)
     : undefined;
+  const cacheKey =
+    typeof raw.cacheKey === "string"
+      ? raw.cacheKey
+      : typeof decodedPayload?.cacheKey === "string"
+        ? decodedPayload.cacheKey
+        : undefined;
+  const receipt =
+    isRecord(raw.receipt)
+      ? (raw.receipt as VerificationReceipt)
+      : decodedPayload && isRecord(decodedPayload.receipt)
+        ? (decodedPayload.receipt as VerificationReceipt)
+        : undefined;
+  const receiptHash =
+    typeof raw.receiptHash === "string"
+      ? raw.receiptHash
+      : typeof decodedPayload?.receiptHash === "string"
+        ? decodedPayload.receiptHash
+        : undefined;
+  const verificationSig =
+    isRecord(raw.verificationSig)
+      ? (raw.verificationSig as VerificationSig)
+      : decodedPayload && isRecord(decodedPayload.verificationSig)
+        ? (decodedPayload.verificationSig as VerificationSig)
+        : undefined;
   const transport = isRecord(raw.transport) ? (raw.transport as ProofBundleTransport) : undefined;
   const authorSig = parseAuthorSig(raw.authorSig);
 
@@ -257,6 +286,10 @@ function toEmbeddedMetaFromUnknown(raw: unknown): EmbeddedMeta {
     bundleRoot,
     zkMeta,
     verificationCache,
+    cacheKey,
+    receipt,
+    receiptHash,
+    verificationSig,
     transport,
     authorSig,
     zkPoseidonHash,
@@ -387,6 +420,10 @@ function findProofBundleInText(text: string): ProofBundleMeta | null {
         bundleRoot: meta.bundleRoot,
         zkMeta: meta.zkMeta,
         verificationCache: meta.verificationCache,
+        cacheKey: meta.cacheKey,
+        receipt: meta.receipt,
+        receiptHash: meta.receiptHash,
+        verificationSig: meta.verificationSig,
         transport: meta.transport,
         raw: parsed,
       };
@@ -423,6 +460,10 @@ function findProofBundleInText(text: string): ProofBundleMeta | null {
         bundleRoot: meta.bundleRoot,
         zkMeta: meta.zkMeta,
         verificationCache: meta.verificationCache,
+        cacheKey: meta.cacheKey,
+        receipt: meta.receipt,
+        receiptHash: meta.receiptHash,
+        verificationSig: meta.verificationSig,
         transport: meta.transport,
         raw: blobParsed,
       };
@@ -535,6 +576,10 @@ export type ProofBundleMeta = {
   bundleRoot?: BundleRoot;
   zkMeta?: ZkMeta;
   verificationCache?: VerificationCache;
+  cacheKey?: string;
+  receipt?: VerificationReceipt;
+  receiptHash?: string;
+  verificationSig?: VerificationSig;
   transport?: ProofBundleTransport;
   proofCapsule?: ProofCapsuleV1;
   capsuleHash?: string;
@@ -572,6 +617,10 @@ export function extractProofBundleMetaFromSvg(svgText: string): ProofBundleMeta 
           bundleRoot: meta.bundleRoot,
           zkMeta: meta.zkMeta,
           verificationCache: meta.verificationCache,
+          cacheKey: meta.cacheKey,
+          receipt: meta.receipt,
+          receiptHash: meta.receiptHash,
+          verificationSig: meta.verificationSig,
           transport: meta.transport,
           proofCapsule: meta.proofCapsule,
           capsuleHash: meta.capsuleHash,
@@ -611,6 +660,10 @@ export function extractProofBundleMetaFromSvg(svgText: string): ProofBundleMeta 
           bundleRoot: meta.bundleRoot,
           zkMeta: meta.zkMeta,
           verificationCache: meta.verificationCache,
+          cacheKey: meta.cacheKey,
+          receipt: meta.receipt,
+          receiptHash: meta.receiptHash,
+          verificationSig: meta.verificationSig,
           transport: meta.transport,
           proofCapsule: meta.proofCapsule,
           capsuleHash: meta.capsuleHash,

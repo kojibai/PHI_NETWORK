@@ -321,12 +321,11 @@ test("proof bundle enforces zk public input contract and verifier rejects violat
 });
 
 test("verification enforces curve rules with proof points", () => {
-  assert.throws(
-    () =>
-      assertZkCurveConsistency({
-        zkProof: { pi_a: ["1", "2", "3"], pi_b: ["1", "2", "3"], pi_c: ["1", "2", "3"] },
-      }),
-    { message: "missing zkProof.curve" }
+  assert.doesNotThrow(() =>
+    assertZkCurveConsistency({
+      zkProof: { pi_a: ["1", "2", "3"], pi_b: ["1", "2", "3"], pi_c: ["1", "2", "3"] },
+      zkMeta: { protocol: "groth16", scheme: "groth16-poseidon", circuitId: "sigil_proof" },
+    })
   );
 
   assert.throws(
@@ -337,4 +336,29 @@ test("verification enforces curve rules with proof points", () => {
       }),
     { message: "zk curve mismatch (meta vs proof)" }
   );
+});
+
+test("proof bundle backfills inferred curve for groth16 sigil proofs", () => {
+  const zkProof = {
+    pi_a: ["1", "2", "3"],
+    pi_b: ["1", "2", "3"],
+    pi_c: ["1", "2", "3"],
+  };
+  const zkMeta = {
+    protocol: "groth16",
+    scheme: "groth16-poseidon",
+    circuitId: "sigil_proof",
+  };
+  const normalized = normalizeProofBundleZkCurves({ zkProof, zkMeta });
+  assert.equal(normalized.zkProof?.curve, "bn128");
+  assert.equal(normalized.zkMeta?.curve, "bn128");
+
+  const bundleRoot = buildBundleRoot({
+    hashAlg: PROOF_HASH_ALG,
+    canon: PROOF_CANON,
+    zkProof: normalized.zkProof,
+    zkMeta: normalized.zkMeta,
+  });
+  assert.equal(bundleRoot.zkProof?.curve, "bn128");
+  assert.equal(bundleRoot.zkMeta?.curve, "bn128");
 });
