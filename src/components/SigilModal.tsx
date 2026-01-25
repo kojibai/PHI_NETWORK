@@ -42,18 +42,22 @@ import { buildProofHints, generateZkProofFromPoseidonHash } from "../utils/zkPro
 import { computeZkPoseidonHash } from "../utils/kai";
 import JSZip from "jszip";
 import {
-  buildBundleUnsigned,
+  buildBundleRoot,
   buildVerifierUrl,
-  hashBundle,
+  computeBundleHash,
   hashProofCapsuleV1,
   hashSvgText,
   normalizeChakraDay,
   PROOF_CANON,
   PROOF_BINDINGS,
   PROOF_HASH_ALG,
+  ZK_PUBLIC_INPUTS_CONTRACT,
   ZK_STATEMENT_BINDING,
   ZK_STATEMENT_DOMAIN,
+  type BundleRoot,
+  type ProofBundleTransport,
   type ProofCapsuleV1,
+  type ZkMeta,
 } from "./KaiVoh/verifierProof";
 import type { AuthorSig } from "../utils/authorSig";
 import { ensurePasskey, signBundleHash } from "../utils/webauthnKAS";
@@ -1120,18 +1124,22 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
     zkStatement?: {
       publicInputOf: typeof ZK_STATEMENT_BINDING;
       domainTag: string;
+      publicInputsContract?: typeof ZK_PUBLIC_INPUTS_CONTRACT;
     };
+    bundleRoot?: BundleRoot;
+    transport?: ProofBundleTransport;
     proofCapsule: ProofCapsuleV1;
     capsuleHash: string;
     svgHash: string;
     bundleHash: string;
-    shareUrl: string;
-    verifierUrl: string;
+    shareUrl?: string;
+    verifierUrl?: string;
     authorSig: AuthorSig | null;
     zkPoseidonHash?: string;
     zkProof?: unknown;
     proofHints?: unknown;
     zkPublicInputs?: unknown;
+    zkMeta?: ZkMeta;
   };
 
   const makeSharePayload = (
@@ -1429,29 +1437,41 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
       }
 
       const svgHash = await hashSvgText(svgString);
+      const zkStatement = zkPoseidonHash
+        ? {
+            publicInputOf: ZK_STATEMENT_BINDING,
+            domainTag: ZK_STATEMENT_DOMAIN,
+            publicInputsContract: ZK_PUBLIC_INPUTS_CONTRACT,
+          }
+        : undefined;
+      const zkMeta = zkPoseidonHash
+        ? {
+            protocol: "groth16",
+            curve: "BLS12-381",
+            scheme: "groth16-poseidon",
+            circuitId: "sigil_proof",
+          }
+        : undefined;
       const proofBundleBase = {
         hashAlg: PROOF_HASH_ALG,
         canon: PROOF_CANON,
         bindings: PROOF_BINDINGS,
-        zkStatement: zkPoseidonHash
-          ? {
-              publicInputOf: ZK_STATEMENT_BINDING,
-              domainTag: ZK_STATEMENT_DOMAIN,
-            }
-          : undefined,
+        zkStatement,
         proofCapsule,
         capsuleHash,
         svgHash,
-        shareUrl,
-        verifierUrl,
-        authorSig: null as AuthorSig | null,
         zkPoseidonHash,
         zkProof,
-        proofHints,
         zkPublicInputs,
+        zkMeta,
       };
-      const bundleUnsigned = buildBundleUnsigned(proofBundleBase);
-      const computedBundleHash = await hashBundle(bundleUnsigned);
+      const transport = {
+        shareUrl,
+        verifierUrl,
+        proofHints,
+      };
+      const bundleRoot = buildBundleRoot(proofBundleBase);
+      const computedBundleHash = await computeBundleHash(bundleRoot);
       let authorSig: AuthorSig | null = null;
       try {
         await ensurePasskey(phiKey);
@@ -1464,8 +1484,11 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
       }
       const proofBundle: ProofBundle = {
         ...proofBundleBase,
+        bundleRoot,
         bundleHash: computedBundleHash,
         authorSig,
+        transport,
+        proofHints,
       };
       if (authorSig?.v === "KAS-1") {
         const authUrl = shareUrl || verifierUrl;

@@ -14,28 +14,52 @@
 
 import type { ChakraDay } from "../../utils/kai_pulse";
 import { jcsCanonicalize } from "../../utils/jcs";
-import { sha256Hex } from "../../utils/sha256";
+import { base64UrlEncode, hexToBytes, sha256Hex } from "../../utils/sha256";
 import { svgCanonicalForHash } from "../../utils/svgProof";
 import type { AuthorSig } from "../../utils/authorSig";
 
 export const PROOF_HASH_ALG = "sha256" as const;
 export const PROOF_CANON = "JCS" as const;
 export const PROOF_METADATA_ID = "kai-voh-proof" as const;
-export const VERIFICATION_BUNDLE_VERSION = "KVB-1.1" as const;
+export const VERIFICATION_BUNDLE_VERSION = "KVB-1.2" as const;
 export const PROOF_BINDINGS = {
   capsuleHashOf: "JCS(proofCapsule)",
-  bundleHashOf: "JCS(bundleWithoutBundleHash)",
-  authorChallengeOf: "bundleHash (hex bytes, KAS-1)",
+  bundleHashOf: "sha256(JCS(bundleRoot))",
+  authorChallengeOf: "base64url(bytes(bundleHash))",
 } as const;
 export const ZK_STATEMENT_BINDING = "Poseidon(capsuleHash|svgHash|domainTag)" as const;
 export const ZK_STATEMENT_DOMAIN = "kairos.sigil.zk.v1" as const;
+export const ZK_PUBLIC_INPUTS_CONTRACT = {
+  arity: 2,
+  invariant: "publicInputs[0] == publicInputs[1]",
+  meaning: "Both entries equal H where H = Poseidon(capsuleHash|svgHash|domainTag)",
+} as const;
 
 export type VerificationSource = "local" | "pbi";
 export type ProofBundleBindings = typeof PROOF_BINDINGS;
+export type ZkPublicInputsContract = typeof ZK_PUBLIC_INPUTS_CONTRACT;
 export type ZkStatement = {
   publicInputOf: typeof ZK_STATEMENT_BINDING;
   domainTag: string;
+  publicInputsContract?: ZkPublicInputsContract;
 };
+export type ZkMeta = Readonly<{
+  protocol?: string;
+  curve?: string;
+  scheme?: string;
+  circuitId?: string;
+  vkHash?: string;
+}>;
+export type VerificationCache = Readonly<{
+  zkVerifiedCached?: boolean;
+}>;
+export type ProofBundleTransport = Readonly<{
+  shareUrl?: string;
+  verifierUrl?: string;
+  verifiedAtPulse?: number;
+  verifier?: VerificationSource;
+  proofHints?: unknown;
+}>;
 
 /* -------------------------------------------------------------------------- */
 /*                                 Base URL                                   */
@@ -200,14 +224,87 @@ export type ProofBundleLike = {
   zkProof?: unknown;
   proofHints?: unknown;
   zkPublicInputs?: unknown;
+  zkMeta?: ZkMeta;
+  verificationCache?: VerificationCache;
+  transport?: ProofBundleTransport;
+  bundleRoot?: BundleRoot;
   authorSig?: AuthorSig | null;
   bundleHash?: string;
+  zkVerified?: boolean;
   receiveSig?: unknown;
   v?: string;
   [key: string]: unknown;
 };
 
 type JcsValue = string | number | boolean | null | JcsValue[] | { [k: string]: JcsValue };
+
+export type BundleRoot = Readonly<{
+  v?: string;
+  hashAlg?: string;
+  canon?: string;
+  bindings?: ProofBundleBindings;
+  zkStatement?: ZkStatement;
+  proofCapsule?: ProofCapsuleV1;
+  capsuleHash?: string;
+  svgHash?: string;
+  zkPoseidonHash?: string;
+  zkProof?: unknown;
+  zkPublicInputs?: unknown;
+  zkMeta?: ZkMeta;
+}>;
+
+export type NormalizedBundle = Readonly<{
+  proofCapsule?: ProofCapsuleV1;
+  capsuleHash?: string;
+  svgHash?: string;
+  bundleRoot?: BundleRoot;
+  bundleHash?: string;
+  authorSig?: AuthorSig | null;
+  zkProof?: unknown;
+  zkPublicInputs?: unknown;
+  bindings?: ProofBundleBindings;
+  zkStatement?: ZkStatement;
+  zkMeta?: ZkMeta;
+  verificationCache?: VerificationCache;
+  transport?: ProofBundleTransport;
+  zkPoseidonHash?: string;
+}>;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function dropUndefined<T extends Record<string, unknown>>(value: T): T {
+  const entries = Object.entries(value).filter((entry) => entry[1] !== undefined);
+  return Object.fromEntries(entries) as T;
+}
+
+function withZkPublicInputsContract(statement: ZkStatement): ZkStatement {
+  if (statement.publicInputsContract) return statement;
+  return { ...statement, publicInputsContract: ZK_PUBLIC_INPUTS_CONTRACT };
+}
+
+function normalizeBundleRoot(root: Record<string, unknown>): BundleRoot {
+  const bindings = isRecord(root.bindings) ? (root.bindings as ProofBundleBindings) : undefined;
+  const zkStatement = isRecord(root.zkStatement)
+    ? withZkPublicInputsContract(root.zkStatement as ZkStatement)
+    : undefined;
+  const zkMeta = isRecord(root.zkMeta) ? (root.zkMeta as ZkMeta) : undefined;
+  return dropUndefined({
+    v: typeof root.v === "string" ? root.v : undefined,
+    hashAlg: typeof root.hashAlg === "string" ? root.hashAlg : undefined,
+    canon: typeof root.canon === "string" ? root.canon : undefined,
+    bindings,
+    zkStatement,
+    proofCapsule: isRecord(root.proofCapsule) ? (root.proofCapsule as ProofCapsuleV1) : undefined,
+    capsuleHash: typeof root.capsuleHash === "string" ? root.capsuleHash : undefined,
+    svgHash: typeof root.svgHash === "string" ? root.svgHash : undefined,
+    zkPoseidonHash: typeof root.zkPoseidonHash === "string" ? root.zkPoseidonHash : undefined,
+    zkProof: "zkProof" in root ? root.zkProof : undefined,
+    zkPublicInputs: "zkPublicInputs" in root ? root.zkPublicInputs : undefined,
+    zkMeta,
+  });
+}
 
 /**
  * Build an unsigned version of the bundle for hashing:
@@ -228,6 +325,103 @@ export function buildBundleUnsigned(bundle: ProofBundleLike): Record<string, unk
 
 export async function hashBundle(bundleUnsigned: Record<string, unknown>): Promise<string> {
   return await sha256Hex(jcsCanonicalize(bundleUnsigned as JcsValue));
+}
+
+export function buildBundleRoot(bundle: ProofBundleLike): BundleRoot {
+  const bindings = bundle.bindings ?? PROOF_BINDINGS;
+  const hashAlg = typeof bundle.hashAlg === "string" ? bundle.hashAlg : PROOF_HASH_ALG;
+  const canon = typeof bundle.canon === "string" ? bundle.canon : PROOF_CANON;
+  const zkStatementBase =
+    bundle.zkStatement ??
+    (bundle.zkPoseidonHash
+      ? {
+          publicInputOf: ZK_STATEMENT_BINDING,
+          domainTag: ZK_STATEMENT_DOMAIN,
+        }
+      : undefined);
+  const zkStatement = zkStatementBase ? withZkPublicInputsContract(zkStatementBase) : undefined;
+  return dropUndefined({
+    v: typeof bundle.v === "string" ? bundle.v : undefined,
+    hashAlg,
+    canon,
+    bindings,
+    zkStatement,
+    proofCapsule: bundle.proofCapsule,
+    capsuleHash: bundle.capsuleHash,
+    svgHash: bundle.svgHash,
+    zkPoseidonHash: bundle.zkPoseidonHash,
+    zkProof: bundle.zkProof,
+    zkPublicInputs: bundle.zkPublicInputs,
+    zkMeta: bundle.zkMeta,
+  });
+}
+
+export async function computeBundleHash(bundleRoot: BundleRoot): Promise<string> {
+  return await sha256Hex(jcsCanonicalize(bundleRoot as JcsValue));
+}
+
+export function challengeFromBundleHash(bundleHash: string): string {
+  return base64UrlEncode(hexToBytes(bundleHash));
+}
+
+export function normalizeBundle(bundle: ProofBundleLike): NormalizedBundle {
+  const bundleRoot = isRecord(bundle.bundleRoot)
+    ? normalizeBundleRoot(bundle.bundleRoot)
+    : buildBundleRoot(bundle);
+  const bindings = bundleRoot.bindings ?? bundle.bindings ?? PROOF_BINDINGS;
+  const zkStatement = bundleRoot.zkStatement ?? bundle.zkStatement;
+  const transportBase = isRecord(bundle.transport) ? bundle.transport : {};
+  const transport = dropUndefined({
+    shareUrl:
+      typeof bundle.shareUrl === "string"
+        ? bundle.shareUrl
+        : typeof transportBase.shareUrl === "string"
+          ? transportBase.shareUrl
+          : undefined,
+    verifierUrl:
+      typeof bundle.verifierUrl === "string"
+        ? bundle.verifierUrl
+        : typeof transportBase.verifierUrl === "string"
+          ? transportBase.verifierUrl
+          : undefined,
+    verifiedAtPulse:
+      typeof bundle.verifiedAtPulse === "number" && Number.isFinite(bundle.verifiedAtPulse)
+        ? bundle.verifiedAtPulse
+        : typeof transportBase.verifiedAtPulse === "number" && Number.isFinite(transportBase.verifiedAtPulse)
+          ? transportBase.verifiedAtPulse
+          : undefined,
+    verifier:
+      bundle.verifier ?? (transportBase.verifier as VerificationSource | undefined),
+    proofHints:
+      "proofHints" in bundle ? bundle.proofHints : transportBase.proofHints,
+  });
+  const verificationCacheBase = isRecord(bundle.verificationCache) ? bundle.verificationCache : {};
+  const zkVerifiedCached =
+    typeof bundle.zkVerified === "boolean"
+      ? bundle.zkVerified
+      : typeof verificationCacheBase.zkVerifiedCached === "boolean"
+        ? verificationCacheBase.zkVerifiedCached
+        : undefined;
+  const verificationCache = dropUndefined({
+    zkVerifiedCached,
+  });
+
+  return {
+    proofCapsule: bundleRoot.proofCapsule ?? bundle.proofCapsule,
+    capsuleHash: bundleRoot.capsuleHash ?? bundle.capsuleHash,
+    svgHash: bundleRoot.svgHash ?? bundle.svgHash,
+    bundleRoot,
+    bundleHash: typeof bundle.bundleHash === "string" ? bundle.bundleHash : undefined,
+    authorSig: bundle.authorSig ?? null,
+    zkProof: bundleRoot.zkProof ?? bundle.zkProof,
+    zkPublicInputs: bundleRoot.zkPublicInputs ?? bundle.zkPublicInputs,
+    bindings,
+    zkStatement,
+    zkMeta: bundleRoot.zkMeta ?? bundle.zkMeta,
+    verificationCache: Object.keys(verificationCache).length ? verificationCache : undefined,
+    transport: Object.keys(transport).length ? transport : undefined,
+    zkPoseidonHash: bundleRoot.zkPoseidonHash ?? bundle.zkPoseidonHash,
+  };
 }
 
 /** Convenience short display for hashes. */
