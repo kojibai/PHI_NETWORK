@@ -107,7 +107,13 @@ import { computeZkPoseidonHash } from "../../utils/kai";
 import { generateZkProofFromPoseidonHash } from "../../utils/zkProof";
 import type { SigilProofHints } from "../../types/sigil";
 import type { SigilSharePayloadLoose } from "../SigilExplorer/types";
-import { apiFetchWithFailover, API_URLS_PATH, loadApiBackupDeadUntil, loadApiBaseHint } from "../SigilExplorer/apiClient";
+import {
+  apiFetchWithFailover,
+  API_URLS_PATH,
+  loadApiBackupDeadUntil,
+  loadApiBaseHint,
+  urlUrls,
+} from "../SigilExplorer/apiClient";
 import { extractPayloadFromUrl } from "../SigilExplorer/url";
 import { enqueueInhaleKrystal, flushInhaleQueue } from "../SigilExplorer/inhaleQueue";
 import { memoryRegistry, isOnline } from "../SigilExplorer/registryStore";
@@ -827,10 +833,10 @@ const VerifierStamperInner: React.FC = () => {
         const offset = page * RECEIVE_REMOTE_LIMIT;
         const res = await apiFetchWithFailover(
           (base) => {
-            const url = new URL(API_URLS_PATH, base);
-            url.searchParams.set("offset", String(offset));
-            url.searchParams.set("limit", String(RECEIVE_REMOTE_LIMIT));
-            return url.toString();
+            const params = new URLSearchParams();
+            params.set("offset", String(offset));
+            params.set("limit", String(RECEIVE_REMOTE_LIMIT));
+            return `${urlUrls(base)}?${params.toString()}`;
           },
           { method: "GET", cache: "no-store" }
         );
