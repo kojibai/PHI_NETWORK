@@ -1255,26 +1255,6 @@ const VerifierStamperInner: React.FC = () => {
         autoReceiveRef.current = null;
       }
 
-      if (bundleHash) {
-        const receiveBundleHash = readReceiveBundleHashFromBundle(proofBundleMeta?.raw);
-        if (receiveBundleHash) {
-          const stored = window.localStorage.getItem(`received:${receiveBundleHash}`);
-          if (stored) {
-            try {
-              const parsed = JSON.parse(stored) as unknown;
-              if (!alive) return;
-              if (isReceiveSig(parsed)) {
-                setReceiveSig(parsed);
-                setReceiveStatus("already");
-                return;
-              }
-            } catch {
-              if (!alive) return;
-            }
-          }
-        }
-      }
-
       if (!alive) return;
       setReceiveSig(null);
       setReceiveStatus(bundleHash ? "new" : "idle");
@@ -1282,7 +1262,7 @@ const VerifierStamperInner: React.FC = () => {
     return () => {
       alive = false;
     };
-  }, [bundleHash, proofBundleMeta?.raw, meta, hasReceiveLock]);
+  }, [bundleHash]);
 
   useEffect(() => {
     if (!bundleHash || unlockState.isUnlocked || !unlockState.isRequired) return;
