@@ -241,6 +241,25 @@ html.verify-shell, body.verify-shell{
   font-size: 0.68rem;
   color: var(--inkDim);
 }
+.vseal-value-btn{
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.vseal-value-btn:focus-visible{
+  outline: 2px solid rgba(55,255,228,0.7);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+.vseal-value-btn:hover{
+  color: rgba(255,255,255,0.95);
+}
 .seal{
   display: inline-flex;
   align-items: center;
@@ -284,6 +303,20 @@ html.verify-shell, body.verify-shell{
   padding: 8px 10px;
   box-shadow: 0 0 0 1px rgba(255,255,255,0.03) inset;
   min-width: 0;
+}
+.mini--button{
+  text-align: left;
+  width: 100%;
+  cursor: pointer;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.mini--button:hover{
+  border-color: rgba(55,255,228,0.28);
+  box-shadow: 0 0 0 1px rgba(55,255,228,0.18) inset;
+}
+.mini--button:focus-visible{
+  outline: 2px solid rgba(55,255,228,0.7);
+  outline-offset: 2px;
 }
 .mini-k{
   color: var(--inkFaint);
@@ -778,6 +811,52 @@ html.verify-shell, body.verify-shell{
 }
 @media (max-width: 430px){
   .vverify-txt{ display:none; }
+}
+
+/* Live chart popover */
+.chart-popover-backdrop{
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  background: rgba(0,0,0,0.64);
+  display: grid;
+  place-items: center;
+  padding:
+    calc(var(--pad) + var(--safeTop))
+    calc(var(--pad) + var(--safeRight))
+    calc(var(--pad) + var(--safeBot))
+    calc(var(--pad) + var(--safeLeft));
+}
+
+.chart-popover{
+  width: min(940px, 100%);
+  max-height: min(84dvh, 720px);
+  border-radius: var(--br2);
+  border: 1px solid rgba(255,255,255,0.14);
+  background: linear-gradient(180deg, rgba(8,16,22,0.96), rgba(5,10,14,0.96));
+  box-shadow: 0 26px 80px rgba(0,0,0,0.55);
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: auto 1fr;
+}
+
+.chart-popover-head{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(255,255,255,0.10);
+  background: rgba(0,0,0,0.22);
+}
+
+.chart-popover-title{
+  font-weight: 1000;
+  letter-spacing: 0.02em;
+}
+
+.chart-popover-body{
+  padding: 12px 14px;
 }
 
 /* Modal (unchanged) */
