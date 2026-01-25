@@ -4,7 +4,7 @@
    - Renders as <dialog> in a portal to document.body
    - Uses showModal()/close(), blocks page scroll & focus
    - Keeps existing Explorer auto-register + share/copy UX
-   - Download Bundle button removed (prop preserved; no API break)
+   - Restores Download Bundle action for proof bundle export
 ────────────────────────────────────────────────────────────────── */
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import type { FC, MouseEventHandler } from "react";
@@ -70,7 +70,7 @@ function registerLocally(url: string) {
 }
 
 const SealMomentModal: FC<Props> = (props) => {
-  const { open, url, hash, onClose } = props; // keep props shape; don't use onDownloadZip
+  const { open, url, hash, onClose, onDownloadZip } = props;
 
   /* refs & state (Hooks must be unconditionally called) */
   const dlgRef = useRef<HTMLDialogElement | null>(null);
@@ -78,6 +78,7 @@ const SealMomentModal: FC<Props> = (props) => {
   const firstFocusRef = useRef<HTMLButtonElement | null>(null);
   const previouslyFocusedRef = useRef<HTMLElement | null>(null);
   const [toast, setToast] = useState<string>("");
+  const [isDownloading, setIsDownloading] = useState<boolean>(false);
 
   /* ── ensure each minted URL is registered once ───────── */
   const lastRegisteredRef = useRef<string | null>(null);
@@ -225,6 +226,24 @@ const SealMomentModal: FC<Props> = (props) => {
     }
   };
 
+  const downloadBundle = async () => {
+    if (isDownloading) return;
+    setIsDownloading(true);
+    try {
+      const result = await onDownloadZip();
+      if (typeof result === "string" && result.trim().length > 0) {
+        announce(result);
+      } else {
+        announce("Proof bundle download started");
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      announce(`Download failed: ${msg}`);
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
   const shortHash = useMemo(() => (hash ? hash.slice(0, 16) : "—"), [hash]);
 
   /* SAFE handlers (no capture-phase swallowing) */
@@ -346,6 +365,15 @@ const SealMomentModal: FC<Props> = (props) => {
 
             {/* CTAs */}
             <div className="cta-row">
+              <button
+                className="primary cta"
+                onClick={downloadBundle}
+                type="button"
+                disabled={isDownloading}
+              >
+                <DownloadGlyph />
+                <span>{isDownloading ? "Preparing Bundle..." : "Download Proof Bundle"}</span>
+              </button>
               <button className="secondary cta" onClick={share} type="button">
                 <ShareGlyph />
                 <span>{canShare ? "Share" : "Remember Link"}</span>
@@ -380,6 +408,19 @@ const ShareGlyph = () => (
   <svg viewBox="0 0 24 24" aria-hidden className="ico">
     <path d="M15 8a3 3 0 100-6 3 3 0 000 6zM6 14a3 3 0 100-6 3 3 0 000 6zm9 12a3 3 0 100-6 3 3 0 000 6z" fill="currentColor" />
     <path d="M8.6 9.7l6.8-3.4M8.6 12.3l6.8 3.4" stroke="currentColor" strokeWidth="2" fill="none" />
+  </svg>
+);
+
+const DownloadGlyph = () => (
+  <svg viewBox="0 0 24 24" aria-hidden className="ico">
+    <path
+      d="M12 3v10m0 0l-4-4m4 4l4-4M5 17h14"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      fill="none"
+    />
   </svg>
 );
 

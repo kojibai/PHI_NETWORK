@@ -343,8 +343,8 @@ function parseProofBundleFromObject(raw: unknown): CanonicalProofBundle | null {
   const zkProofHash = readZkProofHash(raw) ?? null;
   const zkBlock = isRecord(raw.zk) ? raw.zk : null;
   const scheme =
-    typeof zkBlock?.scheme === "string" ? zkBlock.scheme : "groth16-poseidon";
-  const curve = typeof zkBlock?.curve === "string" ? zkBlock.curve : "bn128";
+    zkBlock?.scheme === "groth16-poseidon" ? "groth16-poseidon" : "groth16-poseidon";
+  const curve = zkBlock?.curve === "bn128" ? "bn128" : "bn128";
   return {
     hashAlg: typeof raw.hashAlg === "string" ? (raw.hashAlg as CanonicalProofBundle["hashAlg"]) : "sha256",
     canon: typeof raw.canon === "string" ? (raw.canon as CanonicalProofBundle["canon"]) : "JCS",

@@ -42,6 +42,7 @@ import { computeZkPoseidonHash } from "../utils/kai";
 import { pngBlobFromSvg } from "../utils/qrExport";
 import JSZip from "jszip";
 import {
+  buildVerifierSlug,
   buildVerifierUrl,
   normalizeChakraDay,
   type ProofCapsuleV1,
@@ -1279,7 +1280,7 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
         chakraDay: chakraNormalized,
         kaiSignature,
         phiKey,
-        verifierSlug: `${pulseNum}-${kaiSignatureShort}`,
+        verifierSlug: buildVerifierSlug(pulseNum, kaiSignature),
       };
 
       const svgString = buildCanonicalSigilSvg({
