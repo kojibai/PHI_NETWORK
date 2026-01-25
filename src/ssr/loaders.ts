@@ -35,69 +35,6 @@ const SSR_ROUTE_CONFIG: RouteObject[] = [
   { path: "keystream", id: "explorer" },
 ];
 
-const loaderRegistry: Record<string, RouteLoader> = {
-  stream: streamSeedLoader,
-  "stream-token": streamSeedLoader,
-  "stream-canonical": streamSeedLoader,
-  feed: streamSeedLoader,
-  "feed-token": streamSeedLoader,
-  "p-short": streamSeedLoader,
-  "p-short-child": streamSeedLoader,
-  token: streamSeedLoader,
-  "p-legacy": streamSeedLoader,
-  sigil: sigilPayloadLoader,
-  explorer: explorerUrlsLoader,
-};
-
-export function matchRouteLoaders(url: URL): RouteLoader[] {
-  const matches = matchRoutes(SSR_ROUTE_CONFIG, url.pathname) ?? [];
-  const out: RouteLoader[] = [];
-  for (const match of matches) {
-    const id = match.route.id;
-    if (typeof id !== "string") continue;
-    const loader = loaderRegistry[id];
-    if (!loader) continue;
-    out.push(loader);
-  }
-  return out;
-}
-
-type CachedLoaderValue = { value: JsonValue; ttlMs: number };
-
-export async function buildSnapshotEntries(
-  url: URL,
-  dataCache: LruTtlCache<string, CachedLoaderValue>,
-): Promise<Record<string, SnapshotEntry>> {
-  const entries: Record<string, SnapshotEntry> = {};
-  const loaders = matchRouteLoaders(url);
-  if (loaders.length === 0) return entries;
-
-  const now = Date.now();
-  const ctx = { url };
-
-  for (const loader of loaders) {
-    const key = loader.key(url);
-    if (!key) continue;
-
-    const cached = dataCache.getEntry(key);
-    if (cached) {
-      const remaining = cached.expiresAtMs > 0 ? Math.max(0, cached.expiresAtMs - now) : cached.value.ttlMs;
-      entries[key] = {
-        value: cached.value.value,
-        ttlMs: remaining,
-      };
-      continue;
-    }
-
-    const result = await loader.load(ctx, key);
-    if (!result) continue;
-    dataCache.set(key, { value: result.value, ttlMs: result.ttlMs }, result.ttlMs);
-    entries[key] = { value: result.value, ttlMs: result.ttlMs };
-  }
-
-  return entries;
-}
-
 const streamSeedLoader: RouteLoader = {
   key: () => cacheKeyForRequest("GET", "/links.json"),
   load: async (): Promise<LoaderResult | null> => {
@@ -180,3 +117,66 @@ const sigilPayloadLoader: RouteLoader = {
     };
   },
 };
+
+const loaderRegistry: Record<string, RouteLoader> = {
+  stream: streamSeedLoader,
+  "stream-token": streamSeedLoader,
+  "stream-canonical": streamSeedLoader,
+  feed: streamSeedLoader,
+  "feed-token": streamSeedLoader,
+  "p-short": streamSeedLoader,
+  "p-short-child": streamSeedLoader,
+  token: streamSeedLoader,
+  "p-legacy": streamSeedLoader,
+  sigil: sigilPayloadLoader,
+  explorer: explorerUrlsLoader,
+};
+
+export function matchRouteLoaders(url: URL): RouteLoader[] {
+  const matches = matchRoutes(SSR_ROUTE_CONFIG, url.pathname) ?? [];
+  const out: RouteLoader[] = [];
+  for (const match of matches) {
+    const id = match.route.id;
+    if (typeof id !== "string") continue;
+    const loader = loaderRegistry[id];
+    if (!loader) continue;
+    out.push(loader);
+  }
+  return out;
+}
+
+type CachedLoaderValue = { value: JsonValue; ttlMs: number };
+
+export async function buildSnapshotEntries(
+  url: URL,
+  dataCache: LruTtlCache<string, CachedLoaderValue>,
+): Promise<Record<string, SnapshotEntry>> {
+  const entries: Record<string, SnapshotEntry> = {};
+  const loaders = matchRouteLoaders(url);
+  if (loaders.length === 0) return entries;
+
+  const now = Date.now();
+  const ctx = { url };
+
+  for (const loader of loaders) {
+    const key = loader.key(url);
+    if (!key) continue;
+
+    const cached = dataCache.getEntry(key);
+    if (cached) {
+      const remaining = cached.expiresAtMs > 0 ? Math.max(0, cached.expiresAtMs - now) : cached.value.ttlMs;
+      entries[key] = {
+        value: cached.value.value,
+        ttlMs: remaining,
+      };
+      continue;
+    }
+
+    const result = await loader.load(ctx, key);
+    if (!result) continue;
+    dataCache.set(key, { value: result.value, ttlMs: result.ttlMs }, result.ttlMs);
+    entries[key] = { value: result.value, ttlMs: result.ttlMs };
+  }
+
+  return entries;
+}
