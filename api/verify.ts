@@ -143,27 +143,32 @@ function buildFallbackHtml(meta: string): string {
 async function readIndexHtml(origin: string): Promise<string> {
   const root = process.cwd();
   const distPath = path.join(root, "dist", "index.html");
+  const ssrTemplatePath = path.join(root, "dist", "server", "template.html");
   const fallbackPath = path.join(root, "index.html");
 
   try {
     return await fs.readFile(distPath, "utf8");
   } catch {
     try {
-      return await fs.readFile(fallbackPath, "utf8");
+      return await fs.readFile(ssrTemplatePath, "utf8");
     } catch {
       try {
-        const res = await fetch(`${origin}/index.html`);
-        if (res.ok) return await res.text();
+        return await fs.readFile(fallbackPath, "utf8");
       } catch {
-        // ignore
+        try {
+          const res = await fetch(`${origin}/index.html`);
+          if (res.ok) return await res.text();
+        } catch {
+          // ignore
+        }
+        try {
+          const res = await fetch(`${origin}/`);
+          if (res.ok) return await res.text();
+        } catch {
+          // ignore
+        }
+        return "";
       }
-      try {
-        const res = await fetch(`${origin}/`);
-        if (res.ok) return await res.text();
-      } catch {
-        // ignore
-      }
-      return "";
     }
   }
 }
