@@ -5,6 +5,7 @@ import { API_URLS_PATH, LIVE_BASE_URL, LIVE_BACKUP_URL } from "../components/Sig
 import { LruTtlCache, cacheKeyForRequest } from "./cache";
 import type { JsonValue, SnapshotEntry } from "./snapshotTypes";
 import { decodePayloadFromQuery } from "../utils/payload";
+import { toJsonValue } from "./safeJson";
 
 export type LoaderResult = {
   key: string;
@@ -156,6 +157,6 @@ async function loadSigilPayload(ctx: { url: URL }): Promise<LoaderResult | null>
   return {
     key,
     ttlMs: 60_000,
-    value: payload as JsonValue,
+    value: toJsonValue(payload),
   };
 }

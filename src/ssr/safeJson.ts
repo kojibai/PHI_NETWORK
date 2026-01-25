@@ -5,13 +5,12 @@ type StableJson = JsonValue;
 function toStableJson(value: unknown): StableJson {
   if (value === null) return null;
   if (Array.isArray(value)) return value.map((item) => toStableJson(item)) as StableJson;
-  const valueType = typeof value;
-  if (valueType === "string" || valueType === "number" || valueType === "boolean") {
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
     return value as StableJson;
   }
-  if (valueType === "bigint") return value.toString();
-  if (valueType === "undefined" || valueType === "function" || valueType === "symbol") return null;
-  if (valueType === "object") {
+  if (typeof value === "bigint") return String(value);
+  if (typeof value === "undefined" || typeof value === "function" || typeof value === "symbol") return null;
+  if (typeof value === "object") {
     const record = value as Record<string, unknown>;
     const keys = Object.keys(record).sort();
     const out: Record<string, StableJson> = {};
@@ -23,6 +22,10 @@ function toStableJson(value: unknown): StableJson {
     return out;
   }
   return null;
+}
+
+export function toJsonValue(value: unknown): JsonValue {
+  return toStableJson(value);
 }
 
 export function stableJsonStringify(value: unknown): string {
