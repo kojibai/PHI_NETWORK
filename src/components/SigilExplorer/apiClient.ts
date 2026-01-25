@@ -1,6 +1,9 @@
 // src/components/SigilExplorer/apiClient.ts
 "use client";
 
+import { cacheKeyForRequest } from "../../ssr/cache";
+import { getSeeded } from "../../ssr/snapshotClient";
+
 export type ApiSealResponse = {
   seal: string;
   pulse?: number;
@@ -233,6 +236,14 @@ export async function apiFetchJsonWithFailover<T>(
   makeUrl: (base: string) => string,
   init?: RequestInit,
 ): Promise<{ ok: true; value: T; status: number } | { ok: false; status: number }> {
+  const method = init?.method ?? "GET";
+  const keyUrl = makeUrl(apiBases()[0] ?? "");
+  const seedKey = cacheKeyForRequest(method, keyUrl);
+  const seeded = getSeeded<T>(seedKey);
+  if (seeded !== undefined) {
+    return { ok: true, value: seeded, status: 200 };
+  }
+
   const res = await apiFetchWithFailover(makeUrl, init);
   if (!res) return { ok: false, status: 0 };
   if (!res.ok) return { ok: false, status: res.status };
