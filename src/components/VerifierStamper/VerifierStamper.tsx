@@ -470,6 +470,10 @@ const VerifierStamperInner: React.FC = () => {
       delete legacySeed.bundleRoot;
       delete legacySeed.transport;
       delete legacySeed.verificationCache;
+      delete legacySeed.cacheKey;
+      delete legacySeed.receipt;
+      delete legacySeed.receiptHash;
+      delete legacySeed.verificationSig;
       delete legacySeed.zkMeta;
       const legacyUnsigned = buildBundleUnsigned(legacySeed);
       const legacyHash = await hashBundle(legacyUnsigned);
@@ -2173,6 +2177,10 @@ const VerifierStamperInner: React.FC = () => {
         delete legacySeed.bundleRoot;
         delete legacySeed.transport;
         delete legacySeed.verificationCache;
+        delete legacySeed.cacheKey;
+        delete legacySeed.receipt;
+        delete legacySeed.receiptHash;
+        delete legacySeed.verificationSig;
         delete legacySeed.zkMeta;
         const legacyUnsigned = buildBundleUnsigned(legacySeed);
         const legacyHash = await hashBundle(legacyUnsigned);
@@ -2453,6 +2461,10 @@ const VerifierStamperInner: React.FC = () => {
     delete legacySeed.bundleRoot;
     delete legacySeed.transport;
     delete legacySeed.verificationCache;
+    delete legacySeed.cacheKey;
+    delete legacySeed.receipt;
+    delete legacySeed.receiptHash;
+    delete legacySeed.verificationSig;
     delete legacySeed.zkMeta;
     const legacyUnsigned = buildBundleUnsigned(legacySeed);
     const legacyHash = await hashBundle(legacyUnsigned);
