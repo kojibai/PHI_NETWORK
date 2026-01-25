@@ -112,10 +112,30 @@ export function buildVerifierSlug(pulse: number, kaiSignature: string, verifiedA
   return `${pulse}-${shortSig}`;
 }
 
+function hasVerifierSlug(candidate: string): boolean {
+  const trimmed = candidate.trim();
+  if (!trimmed) return false;
+  try {
+    const parsed = new URL(trimmed, "http://localhost");
+    const pathname = parsed.pathname.replace(/\/+$/, "");
+    return /\/verify\/[^/]+$/.test(pathname);
+  } catch {
+    return /\/verify\/[^/?#]+/.test(trimmed);
+  }
+}
+
 export function buildVerifierUrl(pulse: number, kaiSignature: string, verifierBaseUrl?: string, verifiedAtPulse?: number): string {
-  const base = (verifierBaseUrl ?? defaultHostedVerifierBaseUrl()).replace(/\/+$/, "");
   const slug = encodeURIComponent(buildVerifierSlug(pulse, kaiSignature, verifiedAtPulse));
-  return `${base}/${slug}`;
+  const baseRaw = verifierBaseUrl ?? defaultHostedVerifierBaseUrl();
+  const base = String(baseRaw ?? "").trim();
+  const cleaned = base.replace(/\/+$/, "");
+
+  if (cleaned && hasVerifierSlug(cleaned)) {
+    return cleaned;
+  }
+
+  const fallback = cleaned || defaultHostedVerifierBaseUrl().replace(/\/+$/, "");
+  return `${fallback}/${slug}`;
 }
 
 /* -------------------------------------------------------------------------- */

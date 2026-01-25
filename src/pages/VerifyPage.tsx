@@ -1457,9 +1457,16 @@ export default function VerifyPage(): ReactElement {
     return sharedReceipt?.verifiedAtPulse ?? null;
   }, [result, sharedReceipt?.verifiedAtPulse]);
 
+  const verifierUrlCandidate =
+    embeddedProof?.transport?.verifierUrl ?? embeddedProof?.verifierUrl ?? sharedReceipt?.verifierUrl;
+
   const proofVerifierUrl = useMemo(
-    () => (proofCapsule ? buildVerifierUrl(proofCapsule.pulse, proofCapsule.kaiSignature, undefined, stewardVerifiedPulse ?? undefined) : ""),
-    [proofCapsule, stewardVerifiedPulse],
+    () => {
+      if (!proofCapsule) return "";
+      const base = typeof verifierUrlCandidate === "string" ? verifierUrlCandidate : undefined;
+      return buildVerifierUrl(proofCapsule.pulse, proofCapsule.kaiSignature, base, stewardVerifiedPulse ?? undefined);
+    },
+    [proofCapsule, stewardVerifiedPulse, verifierUrlCandidate],
   );
 
   const proofBindings = useMemo(() => embeddedProof?.bindings ?? PROOF_BINDINGS, [embeddedProof?.bindings]);
@@ -1606,7 +1613,7 @@ body: [
     if (!proofCapsule) return "";
     const transport = {
       shareUrl: embeddedProof?.transport?.shareUrl ?? embeddedProof?.shareUrl,
-      verifierUrl: embeddedProof?.transport?.verifierUrl ?? proofVerifierUrl,
+      verifierUrl: proofVerifierUrl,
       verifier: embeddedProof?.transport?.verifier ?? embeddedProof?.verifier ?? verificationSource,
       verifiedAtPulse: embeddedProof?.transport?.verifiedAtPulse ?? stewardVerifiedPulse ?? undefined,
       proofHints: embeddedProof?.transport?.proofHints ?? embeddedProof?.proofHints ?? zkMeta?.proofHints ?? undefined,
