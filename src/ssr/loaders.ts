@@ -13,7 +13,10 @@ export type LoaderResult = {
   value: JsonValue;
 };
 
-export type RouteLoader = (ctx: { url: URL }) => Promise<LoaderResult | null>;
+export type RouteLoader = {
+  key: (url: URL) => string | null;
+  load: (ctx: { url: URL }, key: string) => Promise<LoaderResult | null>;
+};
 
 const SSR_ROUTE_CONFIG: RouteObject[] = [
   { path: "s", id: "sigil" },
@@ -33,17 +36,17 @@ const SSR_ROUTE_CONFIG: RouteObject[] = [
 ];
 
 const loaderRegistry: Record<string, RouteLoader> = {
-  stream: loadStreamSeed,
-  "stream-token": loadStreamSeed,
-  "stream-canonical": loadStreamSeed,
-  feed: loadStreamSeed,
-  "feed-token": loadStreamSeed,
-  "p-short": loadStreamSeed,
-  "p-short-child": loadStreamSeed,
-  token: loadStreamSeed,
-  "p-legacy": loadStreamSeed,
-  sigil: loadSigilPayload,
-  explorer: loadExplorerUrls,
+  stream: streamSeedLoader,
+  "stream-token": streamSeedLoader,
+  "stream-canonical": streamSeedLoader,
+  feed: streamSeedLoader,
+  "feed-token": streamSeedLoader,
+  "p-short": streamSeedLoader,
+  "p-short-child": streamSeedLoader,
+  token: streamSeedLoader,
+  "p-legacy": streamSeedLoader,
+  sigil: sigilPayloadLoader,
+  explorer: explorerUrlsLoader,
 };
 
 export function matchRouteLoaders(url: URL): RouteLoader[] {
@@ -73,90 +76,107 @@ export async function buildSnapshotEntries(
   const ctx = { url };
 
   for (const loader of loaders) {
-    const result = await loader(ctx);
-    if (!result) continue;
+    const key = loader.key(url);
+    if (!key) continue;
 
-    const cached = dataCache.getEntry(result.key);
+    const cached = dataCache.getEntry(key);
     if (cached) {
       const remaining = cached.expiresAtMs > 0 ? Math.max(0, cached.expiresAtMs - now) : cached.value.ttlMs;
-      entries[result.key] = {
+      entries[key] = {
         value: cached.value.value,
         ttlMs: remaining,
       };
       continue;
     }
 
-    dataCache.set(result.key, { value: result.value, ttlMs: result.ttlMs }, result.ttlMs);
-    entries[result.key] = { value: result.value, ttlMs: result.ttlMs };
+    const result = await loader.load(ctx, key);
+    if (!result) continue;
+    dataCache.set(key, { value: result.value, ttlMs: result.ttlMs }, result.ttlMs);
+    entries[key] = { value: result.value, ttlMs: result.ttlMs };
   }
 
   return entries;
 }
 
-async function loadStreamSeed(): Promise<LoaderResult | null> {
-  const key = cacheKeyForRequest("GET", "/links.json");
-  const filePath = path.resolve(process.cwd(), "public", "links.json");
+const streamSeedLoader: RouteLoader = {
+  key: () => cacheKeyForRequest("GET", "/links.json"),
+  load: async (): Promise<LoaderResult | null> => {
+    const key = cacheKeyForRequest("GET", "/links.json");
+    const filePath = path.resolve(process.cwd(), "public", "links.json");
 
-  try {
-    const raw = await fs.readFile(filePath, "utf8");
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) return null;
+    try {
+      const raw = await fs.readFile(filePath, "utf8");
+      const parsed = JSON.parse(raw) as unknown;
+      if (!Array.isArray(parsed)) return null;
 
-    const entries: { url: string }[] = [];
-    for (const row of parsed) {
-      if (row && typeof row === "object" && typeof (row as { url?: unknown }).url === "string") {
-        const url = (row as { url: string }).url.trim();
-        if (url) entries.push({ url });
+      const entries: { url: string }[] = [];
+      for (const row of parsed) {
+        if (row && typeof row === "object" && typeof (row as { url?: unknown }).url === "string") {
+          const url = (row as { url: string }).url.trim();
+          if (url) entries.push({ url });
+        }
       }
-    }
 
+      return {
+        key,
+        ttlMs: 60_000,
+        value: entries as JsonValue,
+      };
+    } catch {
+      return null;
+    }
+  },
+};
+
+const explorerUrlsLoader: RouteLoader = {
+  key: () => {
+    const url = new URL(API_URLS_PATH, LIVE_BASE_URL);
+    url.searchParams.set("offset", "0");
+    url.searchParams.set("limit", "5000");
+    return cacheKeyForRequest("GET", url.toString());
+  },
+  load: async (): Promise<LoaderResult | null> => {
+    const url = new URL(API_URLS_PATH, LIVE_BASE_URL);
+    url.searchParams.set("offset", "0");
+    url.searchParams.set("limit", "5000");
+
+    const key = cacheKeyForRequest("GET", url.toString());
+
+    try {
+      const res = await fetch(url.toString(), { method: "GET" });
+      if (!res.ok) {
+        const fallbackUrl = new URL(API_URLS_PATH, LIVE_BACKUP_URL);
+        fallbackUrl.searchParams.set("offset", "0");
+        fallbackUrl.searchParams.set("limit", "5000");
+
+        const backupRes = await fetch(fallbackUrl.toString(), { method: "GET" });
+        if (!backupRes.ok) return null;
+        const backupData = (await backupRes.json()) as JsonValue;
+        return { key, ttlMs: 30_000, value: backupData };
+      }
+
+      const data = (await res.json()) as JsonValue;
+      return { key, ttlMs: 30_000, value: data };
+    } catch {
+      return null;
+    }
+  },
+};
+
+const sigilPayloadLoader: RouteLoader = {
+  key: (url: URL) => {
+    const payload = decodePayloadFromQuery(url.search);
+    if (!payload) return null;
+    const hash = url.pathname.startsWith("/s/") ? url.pathname.split("/")[2] : "query";
+    return `sigil:${hash || "query"}`;
+  },
+  load: async (ctx: { url: URL }, key: string): Promise<LoaderResult | null> => {
+    const payload = decodePayloadFromQuery(ctx.url.search);
+    if (!payload) return null;
     return {
       key,
       ttlMs: 60_000,
-      value: entries as JsonValue,
+      value: toJsonValue(payload),
     };
-  } catch {
-    return null;
-  }
-}
-
-async function loadExplorerUrls(): Promise<LoaderResult | null> {
-  const url = new URL(API_URLS_PATH, LIVE_BASE_URL);
-  url.searchParams.set("offset", "0");
-  url.searchParams.set("limit", "5000");
-
-  const key = cacheKeyForRequest("GET", url.toString());
-
-  try {
-    const res = await fetch(url.toString(), { method: "GET" });
-    if (!res.ok) {
-      const fallbackUrl = new URL(API_URLS_PATH, LIVE_BACKUP_URL);
-      fallbackUrl.searchParams.set("offset", "0");
-      fallbackUrl.searchParams.set("limit", "5000");
-
-      const backupRes = await fetch(fallbackUrl.toString(), { method: "GET" });
-      if (!backupRes.ok) return null;
-      const backupData = (await backupRes.json()) as JsonValue;
-      return { key, ttlMs: 30_000, value: backupData };
-    }
-
-    const data = (await res.json()) as JsonValue;
-    return { key, ttlMs: 30_000, value: data };
-  } catch {
-    return null;
-  }
-}
-
-async function loadSigilPayload(ctx: { url: URL }): Promise<LoaderResult | null> {
-  const payload = decodePayloadFromQuery(ctx.url.search);
-  if (!payload) return null;
-
-  const hash = ctx.url.pathname.startsWith("/s/") ? ctx.url.pathname.split("/")[2] : "query";
-  const key = `sigil:${hash || "query"}`;
-
-  return {
-    key,
-    ttlMs: 60_000,
-    value: toJsonValue(payload),
-  };
-}
+  },
+};
