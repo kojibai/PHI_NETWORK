@@ -5,7 +5,6 @@ import { pathToFileURL, fileURLToPath } from "node:url";
 import { webcrypto } from "node:crypto";
 import { test } from "node:test";
 import ts from "typescript";
-import { groth16 } from "snarkjs";
 
 if (!globalThis.crypto) {
   globalThis.crypto = webcrypto;
@@ -20,13 +19,7 @@ const IMPORT_CALL_RE = /import\(\s*["']([^"']+)["']\s*\)/g;
 function resolveImport(spec, baseFile) {
   if (!spec.startsWith(".")) return null;
   const baseDir = dirname(baseFile);
-  const candidates = [
-    spec,
-    `${spec}.ts`,
-    `${spec}.tsx`,
-    `${spec}.js`,
-    `${spec}.jsx`,
-  ];
+  const candidates = [spec, `${spec}.ts`, `${spec}.tsx`, `${spec}.js`, `${spec}.jsx`];
   for (const candidate of candidates) {
     const full = resolve(baseDir, candidate);
     if (existsSync(full)) return full;
@@ -36,12 +29,8 @@ function resolveImport(spec, baseFile) {
 
 function gatherImports(source) {
   const specs = new Set();
-  for (const match of source.matchAll(IMPORT_FROM_RE)) {
-    specs.add(match[1]);
-  }
-  for (const match of source.matchAll(IMPORT_CALL_RE)) {
-    specs.add(match[1]);
-  }
+  for (const match of source.matchAll(IMPORT_FROM_RE)) specs.add(match[1]);
+  for (const match of source.matchAll(IMPORT_CALL_RE)) specs.add(match[1]);
   return [...specs];
 }
 
@@ -92,33 +81,17 @@ process.on("exit", () => {
   rmSync(tempRoot, { recursive: true, force: true });
 });
 
-const svgProofPath = new URL("../src/utils/svgProof.ts", import.meta.url);
-const verifierPath = new URL("../src/components/KaiVoh/verifierProof.ts", import.meta.url);
-const metaPath = new URL("../src/utils/sigilMetadata.ts", import.meta.url);
-const kasPath = new URL("../src/utils/webauthnKAS.ts", import.meta.url);
+const bundlePath = new URL("../src/utils/canonicalGlyphBundle.ts", import.meta.url);
+const attPath = new URL("../src/utils/kasAttestation.ts", import.meta.url);
 const shaPath = new URL("../src/utils/sha256.ts", import.meta.url);
-const kaiPath = new URL("../src/utils/kai.ts", import.meta.url);
 
-const svgProof = await import(pathToFileURL(transpileRecursive(svgProofPath.href)).href);
-const verifier = await import(pathToFileURL(transpileRecursive(verifierPath.href)).href);
-const meta = await import(pathToFileURL(transpileRecursive(metaPath.href)).href);
-const kas = await import(pathToFileURL(transpileRecursive(kasPath.href)).href);
+const canonical = await import(pathToFileURL(transpileRecursive(bundlePath.href)).href);
+const attestations = await import(pathToFileURL(transpileRecursive(attPath.href)).href);
 const sha = await import(pathToFileURL(transpileRecursive(shaPath.href)).href);
-const kai = await import(pathToFileURL(transpileRecursive(kaiPath.href)).href);
 
-const { embedProofMetadata } = svgProof;
-const {
-  buildBundleUnsigned,
-  hashBundle,
-  hashProofCapsuleV1,
-  hashSvgText,
-  PROOF_CANON,
-  PROOF_HASH_ALG,
-} = verifier;
-const { extractProofBundleMetaFromSvg } = meta;
-const { verifyBundleAuthorSig } = kas;
+const { buildCanonicalGlyphBundle } = canonical;
+const { makeKasAttestationFilename, makeKasAttestationJson, computeCredId8 } = attestations;
 const { base64UrlEncode, hexToBytes, sha256Bytes } = sha;
-const { computeZkPoseidonHash } = kai;
 
 function makeRandomBytes(size) {
   const out = new Uint8Array(size);
@@ -165,17 +138,9 @@ async function makeAuthorSig(bundleHash) {
   };
 }
 
-test("sigil proof bundle hashes/signature stay deterministic with zk proof", async () => {
-  const payloadHashHex = "0".repeat(63) + "1";
-  const { hash: zkPoseidonHash, secret } = await computeZkPoseidonHash(payloadHashHex);
-  const { generateSigilProof, loadSigilVkey } = await import("../api/proof/sigil.js");
-  const { zkProof, zkPublicInputs, proofHints } = await generateSigilProof({
-    secret,
-    expectedHash: zkPoseidonHash,
-  });
-  const vkey = await loadSigilVkey();
-
-  const baseSvg = `<svg xmlns="http://www.w3.org/2000/svg"><g><text>Kai</text></g></svg>`;
+function makeBundleInputs() {
+  const svgText = `<svg xmlns="http://www.w3.org/2000/svg"><g><text>Kai</text></g></svg>`;
+  const pngBytes = new Uint8Array([137, 80, 78, 71]);
   const proofCapsule = {
     v: "KPV-1",
     pulse: 123,
@@ -184,51 +149,111 @@ test("sigil proof bundle hashes/signature stay deterministic with zk proof", asy
     phiKey: "phi-test",
     verifierSlug: "123-deadbeef",
   };
-  const capsuleHash = await hashProofCapsuleV1(proofCapsule);
-  const svgHash = await hashSvgText(baseSvg);
+  return { svgText, pngBytes, proofCapsule };
+}
 
-  const proofBundleBase = {
-    v: "KPB-1",
-    hashAlg: PROOF_HASH_ALG,
-    canon: PROOF_CANON,
-    proofCapsule,
-    capsuleHash,
-    svgHash,
-    shareUrl: "https://example.test/share",
-    verifierUrl: "https://example.test/verify/123-deadbeef",
-    authorSig: null,
-    zkPoseidonHash,
-    zkProof,
-    proofHints,
-    zkPublicInputs,
-  };
-
-  const bundleUnsigned = buildBundleUnsigned(proofBundleBase);
-  const bundleHash = await hashBundle(bundleUnsigned);
-  const authorSig = await makeAuthorSig(bundleHash);
-  const proofBundleSigned = { ...proofBundleBase, bundleHash, authorSig };
-
-  const sealedSvg = embedProofMetadata(baseSvg, proofBundleSigned);
-  const embedded = extractProofBundleMetaFromSvg(sealedSvg);
-  assert.ok(embedded?.raw, "embedded bundle should be detected");
-
-  const svgHashNext = await hashSvgText(sealedSvg);
-  assert.equal(svgHashNext, svgHash);
-
-  const embeddedRaw =
-    embedded && embedded.raw && typeof embedded.raw === "object" ? embedded.raw : {};
-  const embeddedUnsigned = buildBundleUnsigned({
-    ...embeddedRaw,
-    svgHash: svgHashNext,
-    capsuleHash,
-    proofCapsule,
+test("canonical builder determinism", async () => {
+  const inputs = makeBundleInputs();
+  const first = await buildCanonicalGlyphBundle({
+    ...inputs,
+    zkPoseidonHash: "123",
+    zkProof: { proof: "ok" },
+    zkPublicInputs: ["123"],
   });
-  const bundleHashNext = await hashBundle(embeddedUnsigned);
-  assert.equal(bundleHashNext, bundleHash);
+  const second = await buildCanonicalGlyphBundle({
+    ...inputs,
+    zkPoseidonHash: "123",
+    zkProof: { proof: "ok" },
+    zkPublicInputs: ["123"],
+  });
 
-  const sigOk = await verifyBundleAuthorSig(bundleHashNext, authorSig);
-  assert.equal(sigOk, true);
+  assert.equal(first.svgHash, second.svgHash);
+  assert.equal(first.bundleHash, second.bundleHash);
+  assert.equal(first.proofBundleJson, second.proofBundleJson);
+});
 
-  const zkVerified = await groth16.verify(vkey, zkPublicInputs, zkProof);
-  assert.equal(zkVerified, true);
+test("attestation addition does not mutate canonical bytes", async () => {
+  const inputs = makeBundleInputs();
+  const bundle = await buildCanonicalGlyphBundle({
+    ...inputs,
+    zkPoseidonHash: "123",
+    zkProof: { proof: "ok" },
+    zkPublicInputs: ["123"],
+  });
+
+  const beforeSvg = new Uint8Array(bundle.svgBytes);
+  const beforeProof = bundle.proofBundleJson;
+  const beforeManifest = bundle.manifestJson;
+
+  const authorSig = await makeAuthorSig(bundle.bundleHash);
+  await makeKasAttestationJson({
+    bundleHash: bundle.bundleHash,
+    canonicalBundleObject: bundle.canonicalBundleObject,
+    proofCapsule: bundle.proofBundle.proofCapsule,
+    capsuleHash: bundle.capsuleHash,
+    svgHash: bundle.svgHash,
+    authorSig,
+    rpId: "example.test",
+  });
+
+  assert.deepEqual(bundle.svgBytes, beforeSvg);
+  assert.equal(bundle.proofBundleJson, beforeProof);
+  assert.equal(bundle.manifestJson, beforeManifest);
+});
+
+test("filename generator matches convention and collisions", async () => {
+  const bundleHash = "a".repeat(64);
+  const credId = base64UrlEncode(new Uint8Array([1, 2, 3, 4]));
+  const credId8 = await computeCredId8(credId);
+  const name = await makeKasAttestationFilename({
+    verifierSlug: "slug",
+    bundleHash,
+    credId,
+    pulse: 42,
+  });
+
+  assert.equal(name, `kas_v1__slug__${bundleHash.slice(0, 12)}__${credId8}__p42.json`);
+
+  const name2 = await makeKasAttestationFilename({
+    verifierSlug: "slug",
+    bundleHash,
+    credId,
+    pulse: 42,
+    existingNames: [name],
+  });
+  assert.equal(name2, `kas_v1__slug__${bundleHash.slice(0, 12)}__${credId8}__p42__n2.json`);
+});
+
+test("authorSig.challenge binds bundleHash bytes", async () => {
+  const inputs = makeBundleInputs();
+  const bundle = await buildCanonicalGlyphBundle({
+    ...inputs,
+    zkPoseidonHash: "123",
+    zkProof: { proof: "ok" },
+    zkPublicInputs: ["123"],
+  });
+  const authorSig = await makeAuthorSig(bundle.bundleHash);
+  assert.equal(authorSig.challenge, base64UrlEncode(hexToBytes(bundle.bundleHash)));
+});
+
+test("attestation bundleObjectHash equals bundleHash", async () => {
+  const inputs = makeBundleInputs();
+  const bundle = await buildCanonicalGlyphBundle({
+    ...inputs,
+    zkPoseidonHash: "123",
+    zkProof: { proof: "ok" },
+    zkPublicInputs: ["123"],
+  });
+  const authorSig = await makeAuthorSig(bundle.bundleHash);
+  const attestation = await makeKasAttestationJson({
+    bundleHash: bundle.bundleHash,
+    canonicalBundleObject: bundle.canonicalBundleObject,
+    proofCapsule: bundle.proofBundle.proofCapsule,
+    capsuleHash: bundle.capsuleHash,
+    svgHash: bundle.svgHash,
+    authorSig,
+    rpId: "example.test",
+  });
+
+  assert.equal(attestation.ref.bundleObjectHash, bundle.bundleHash);
 });

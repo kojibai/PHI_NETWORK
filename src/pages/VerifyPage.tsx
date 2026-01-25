@@ -11,8 +11,6 @@ import { currency as fmtPhi, usd as fmtUsd } from "../components/valuation/displ
 import {
   buildVerifierSlug,
   buildVerifierUrl,
-  buildBundleUnsigned,
-  hashBundle,
   hashProofCapsuleV1,
   hashSvgText,
   normalizeChakraDay,
@@ -39,6 +37,12 @@ import { useValuation } from "./SigilPage/useValuation";
 import type { SigilMetadataLite } from "../utils/valuation";
 import { jcsCanonicalize } from "../utils/jcs";
 import { svgCanonicalForHash } from "../utils/svgProof";
+import {
+  buildCanonicalBundleObject,
+  hashCanonicalBundleObject,
+  type CanonicalProofBundle,
+} from "../utils/canonicalGlyphBundle";
+import { type KasAttestation } from "../utils/kasAttestation";
 
 /* ────────────────────────────────────────────────────────────────
    Utilities
@@ -245,6 +249,15 @@ async function readFileText(file: File): Promise<string> {
   });
 }
 
+async function readFileArrayBuffer(file: File): Promise<ArrayBuffer> {
+  return await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Failed to read file."));
+    reader.onload = () => resolve(reader.result as ArrayBuffer);
+    reader.readAsArrayBuffer(file);
+  });
+}
+
 function ellipsizeMiddle(s: string, head = 18, tail = 14): string {
   const t = (s || "").trim();
   if (!t) return "—";
@@ -269,7 +282,91 @@ function bundleHashFromAuthorSig(authorSig: KASAuthorSig): string | null {
 function isSvgFile(file: File): boolean {
   const name = (file.name || "").toLowerCase();
   const type = (file.type || "").toLowerCase();
-  return name.endsWith(".svg") || type === "image/svg+xml";
+  return name.endsWith(".svg") || type.includes("svg");
+}
+
+function isZipFile(file: File): boolean {
+  const name = (file.name || "").toLowerCase();
+  const type = (file.type || "").toLowerCase();
+  return name.endsWith(".zip") || type.includes("zip");
+}
+
+type ZipBundle = {
+  svgText: string;
+  proofBundle: CanonicalProofBundle | null;
+  attestations: KasAttestation[];
+};
+
+function parseProofBundleFromObject(raw: unknown): CanonicalProofBundle | null {
+  if (!isRecord(raw)) return null;
+  const proofCapsule = parseProofCapsule(raw.proofCapsule);
+  if (!proofCapsule) return null;
+  if (typeof raw.capsuleHash !== "string") return null;
+  if (typeof raw.svgHash !== "string") return null;
+  if (typeof raw.bundleHash !== "string") return null;
+  return {
+    hashAlg: typeof raw.hashAlg === "string" ? (raw.hashAlg as CanonicalProofBundle["hashAlg"]) : "sha256",
+    canon: typeof raw.canon === "string" ? (raw.canon as CanonicalProofBundle["canon"]) : "JCS",
+    proofCapsule,
+    capsuleHash: raw.capsuleHash,
+    svgHash: raw.svgHash,
+    zkPoseidonHash: typeof raw.zkPoseidonHash === "string" ? raw.zkPoseidonHash : null,
+    zkProof: "zkProof" in raw ? raw.zkProof : null,
+    zkPublicInputs: "zkPublicInputs" in raw ? raw.zkPublicInputs : null,
+    bundleHash: raw.bundleHash,
+  };
+}
+
+function isKasAttestation(value: unknown): value is KasAttestation {
+  if (!isRecord(value)) return false;
+  if (value.v !== "KAS-ATT-1" || value.kind !== "presence.attestation") return false;
+  const ref = value.ref;
+  const meta = value.meta;
+  if (!isRecord(ref) || !isRecord(meta)) return false;
+  if (typeof ref.bundleHash !== "string") return false;
+  if (typeof ref.bundleObjectHash !== "string") return false;
+  if (typeof ref.capsuleHash !== "string") return false;
+  if (typeof ref.svgHash !== "string") return false;
+  if (typeof ref.verifierSlug !== "string") return false;
+  if (typeof ref.pulse !== "number") return false;
+  if (typeof ref.chakraDay !== "string") return false;
+  if (typeof ref.phiKey !== "string") return false;
+  if (typeof ref.kaiSignature !== "string") return false;
+  if (!isKASAuthorSig(value.authorSig)) return false;
+  if (typeof meta.origin !== "string") return false;
+  if (typeof meta.rpId !== "string") return false;
+  if (typeof meta.createdAtPulse !== "number") return false;
+  return true;
+}
+
+async function readZipBundle(file: File): Promise<ZipBundle> {
+  const { default: JSZip } = await import("jszip");
+  const buffer = await readFileArrayBuffer(file);
+  const zip = await JSZip.loadAsync(buffer);
+  const files = Object.values(zip.files).filter((entry) => !entry.dir);
+  const svgEntry = files.find((entry) => entry.name.toLowerCase().endsWith(".svg"));
+  if (!svgEntry) throw new Error("No SVG found in ZIP.");
+
+  const svgText = await svgEntry.async("text");
+  const proofEntry =
+    zip.file("proofBundle.json") ??
+    files.find((entry) => entry.name.toLowerCase().endsWith("proofbundle.json")) ??
+    files.find((entry) => entry.name.toLowerCase().endsWith("_proof_bundle.json"));
+  const proofBundle = proofEntry ? parseProofBundleFromObject(JSON.parse(await proofEntry.async("text"))) : null;
+
+  const attestations: KasAttestation[] = [];
+  for (const entry of files) {
+    if (!entry.name.startsWith("attestations/")) continue;
+    if (!/kas_v1__.*\\.json$/i.test(entry.name)) continue;
+    try {
+      const parsed = JSON.parse(await entry.async("text"));
+      if (isKasAttestation(parsed)) attestations.push(parsed);
+    } catch {
+      // ignore invalid attestation entries
+    }
+  }
+
+  return { svgText, proofBundle, attestations };
 }
 
 async function copyTextToClipboard(text: string): Promise<boolean> {
@@ -485,6 +582,9 @@ export default function VerifyPage(): ReactElement {
   const [svgBytesHash, setSvgBytesHash] = useState<string>("");
 
   const [embeddedProof, setEmbeddedProof] = useState<ProofBundleMeta | null>(null);
+  const [zipProofBundle, setZipProofBundle] = useState<CanonicalProofBundle | null>(null);
+  const [zipAttestations, setZipAttestations] = useState<KasAttestation[]>([]);
+  const [presenceSignedCount, setPresenceSignedCount] = useState<number>(0);
   const [notice, setNotice] = useState<string>("");
 
   const [authorSigVerified, setAuthorSigVerified] = useState<boolean | null>(null);
@@ -716,12 +816,29 @@ export default function VerifyPage(): ReactElement {
 
   const onPickFile = useCallback(
     async (file: File): Promise<void> => {
+      if (isZipFile(file)) {
+        try {
+          const bundle = await readZipBundle(file);
+          setSvgText(bundle.svgText);
+          setZipProofBundle(bundle.proofBundle);
+          setZipAttestations(bundle.attestations);
+          setSharedReceipt(null);
+          setResult({ status: "idle" });
+          setNotice("ZIP bundle loaded.");
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : "Failed to read ZIP.";
+          setResult({ status: "error", message: msg, slug });
+        }
+        return;
+      }
       if (!isSvgFile(file)) {
-        setResult({ status: "error", message: "Upload a sealed .svg (embedded <metadata> JSON).", slug });
+        setResult({ status: "error", message: "Upload a sealed .svg or canonical .zip bundle.", slug });
         return;
       }
       const text = await readFileText(file);
       setSvgText(text);
+      setZipProofBundle(null);
+      setZipAttestations([]);
       setResult({ status: "idle" });
       setNotice("");
     },
@@ -732,12 +849,13 @@ export default function VerifyPage(): ReactElement {
     (files: FileList | null | undefined): void => {
       if (!files || files.length === 0) return;
       const arr = Array.from(files);
+      const zip = arr.find(isZipFile);
       const svg = arr.find(isSvgFile);
-      if (!svg) {
-        setResult({ status: "error", message: "Drop/select a sealed .svg file.", slug });
+      if (!zip && !svg) {
+        setResult({ status: "error", message: "Drop/select a sealed .svg or canonical .zip bundle.", slug });
         return;
       }
-      void onPickFile(svg);
+      void onPickFile(zip ?? svg!);
     },
     [onPickFile, slug],
   );
@@ -749,13 +867,16 @@ export default function VerifyPage(): ReactElement {
       return;
     }
     const receipt = parseSharedReceiptFromText(raw);
-    if (receipt) {
-      setSharedReceipt(receipt);
-      setSvgText("");
-      setResult({ status: "idle" });
-      setNotice("Receipt loaded.");
-      return;
-    }
+      if (receipt) {
+        setSharedReceipt(receipt);
+        setSvgText("");
+        setZipProofBundle(null);
+        setZipAttestations([]);
+        setPresenceSignedCount(0);
+        setResult({ status: "idle" });
+        setNotice("Receipt loaded.");
+        return;
+      }
     setBusy(true);
     try {
       const next = await verifySigilSvg(slug, raw);
@@ -771,7 +892,7 @@ export default function VerifyPage(): ReactElement {
     }
   }, [slug, svgText]);
 
-  // Proof bundle construction (logic unchanged)
+  // Proof bundle construction (canonical bundle hash + attestations)
   React.useEffect(() => {
     let active = true;
 
@@ -783,6 +904,7 @@ export default function VerifyPage(): ReactElement {
         setBundleHash("");
         setEmbeddedProof(null);
         setAuthorSigVerified(null);
+        setPresenceSignedCount(0);
         setNotice("");
         return;
       }
@@ -806,6 +928,7 @@ export default function VerifyPage(): ReactElement {
           zkPublicInputs: sharedReceipt.zkPublicInputs,
         });
         setAuthorSigVerified(null);
+        setPresenceSignedCount(0);
         return;
       }
 
@@ -819,29 +942,46 @@ export default function VerifyPage(): ReactElement {
 
       const svgHashNext = await hashSvgText(svgText);
       const embedded = extractProofBundleMetaFromSvg(svgText);
-      const capsule = embedded?.proofCapsule ?? fallbackCapsule;
+      const proofBundleSource = zipProofBundle ?? (embedded?.raw && isRecord(embedded.raw) ? embedded.raw : null);
+      const proofCapsuleFromSource =
+        proofBundleSource && isRecord(proofBundleSource) ? parseProofCapsule(proofBundleSource.proofCapsule) : null;
+      const capsule = proofCapsuleFromSource ?? embedded?.proofCapsule ?? fallbackCapsule;
       const capsuleHashNext = await hashProofCapsuleV1(capsule);
 
-      const bundleSeed =
-        embedded?.raw && typeof embedded.raw === "object" && embedded.raw !== null
-          ? { ...(embedded.raw as Record<string, unknown>), svgHash: svgHashNext, capsuleHash: capsuleHashNext, proofCapsule: capsule }
-          : {
-              hashAlg: embedded?.hashAlg ?? PROOF_HASH_ALG,
-              canon: embedded?.canon ?? PROOF_CANON,
-              proofCapsule: capsule,
-              capsuleHash: capsuleHashNext,
-              svgHash: svgHashNext,
-              shareUrl: embedded?.shareUrl,
-              verifierUrl: embedded?.verifierUrl,
-              zkPoseidonHash: embedded?.zkPoseidonHash,
-              zkProof: embedded?.zkProof,
-              proofHints: embedded?.proofHints,
-              zkPublicInputs: embedded?.zkPublicInputs,
-              authorSig: embedded?.authorSig ?? null,
-            };
+      const zkPoseidonHash =
+        proofBundleSource && typeof proofBundleSource.zkPoseidonHash === "string"
+          ? proofBundleSource.zkPoseidonHash
+          : embedded?.zkPoseidonHash;
+      const zkProof =
+        proofBundleSource && "zkProof" in proofBundleSource ? proofBundleSource.zkProof : embedded?.zkProof ?? null;
+      const zkPublicInputs =
+        proofBundleSource && "zkPublicInputs" in proofBundleSource
+          ? proofBundleSource.zkPublicInputs
+          : embedded?.zkPublicInputs ?? null;
 
-      const bundleUnsigned = buildBundleUnsigned(bundleSeed);
-      const bundleHashNext = await hashBundle(bundleUnsigned);
+      const canonicalBundleObject = buildCanonicalBundleObject({
+        proofCapsule: capsule,
+        capsuleHash: capsuleHashNext,
+        svgHash: svgHashNext,
+        zkPoseidonHash: zkPoseidonHash ?? null,
+        zkProof,
+        zkPublicInputs,
+      });
+      const { hash: bundleHashNext } = await hashCanonicalBundleObject(canonicalBundleObject);
+      const proofBundleSvgHash =
+        proofBundleSource && typeof proofBundleSource.svgHash === "string" ? proofBundleSource.svgHash : null;
+      const proofBundleCapsuleHash =
+        proofBundleSource && typeof proofBundleSource.capsuleHash === "string" ? proofBundleSource.capsuleHash : null;
+      const proofBundleBundleHash =
+        proofBundleSource && typeof proofBundleSource.bundleHash === "string" ? proofBundleSource.bundleHash : null;
+
+      if (proofBundleSvgHash && proofBundleSvgHash !== svgHashNext) {
+        setNotice("SVG hash mismatch.");
+      } else if (proofBundleCapsuleHash && proofBundleCapsuleHash !== capsuleHashNext) {
+        setNotice("Capsule hash mismatch.");
+      } else if (proofBundleBundleHash && proofBundleBundleHash !== bundleHashNext) {
+        setNotice("Bundle hash mismatch.");
+      }
 
       const authorSigNext = embedded?.authorSig;
       let authorSigOk: boolean | null = null;
@@ -854,6 +994,29 @@ export default function VerifyPage(): ReactElement {
         }
       }
 
+      let presenceCount = 0;
+      if (zipAttestations.length > 0) {
+        const checks = await Promise.all(
+          zipAttestations.map(async (att) => {
+            if (att.ref.bundleHash !== bundleHashNext) return false;
+            if (att.ref.bundleObjectHash !== bundleHashNext) return false;
+            if (att.ref.capsuleHash !== capsuleHashNext) return false;
+            if (att.ref.svgHash !== svgHashNext) return false;
+            if (att.ref.verifierSlug !== capsule.verifierSlug) return false;
+            if (att.ref.pulse !== capsule.pulse) return false;
+            if (att.ref.chakraDay !== capsule.chakraDay) return false;
+            if (att.ref.phiKey !== capsule.phiKey) return false;
+            if (att.ref.kaiSignature !== capsule.kaiSignature) return false;
+            if (att.meta.createdAtPulse !== capsule.pulse) return false;
+            return verifyBundleAuthorSig(bundleHashNext, att.authorSig, {
+              expectedOrigin: att.meta.origin,
+              expectedRpId: att.meta.rpId,
+            });
+          })
+        );
+        presenceCount = checks.filter(Boolean).length;
+      }
+
       if (!active) return;
       setProofCapsule(capsule);
       setSvgHash(svgHashNext);
@@ -861,13 +1024,14 @@ export default function VerifyPage(): ReactElement {
       setBundleHash(bundleHashNext);
       setEmbeddedProof(embedded);
       setAuthorSigVerified(authorSigOk);
+      setPresenceSignedCount(presenceCount);
     };
 
     void buildProof();
     return () => {
       active = false;
     };
-  }, [result, sharedReceipt, slug.raw, svgText]);
+  }, [result, sharedReceipt, slug.raw, svgText, zipProofBundle, zipAttestations]);
 
   React.useEffect(() => {
     let active = true;
@@ -1021,14 +1185,14 @@ export default function VerifyPage(): ReactElement {
       setArtifactAttested("missing");
       return;
     }
-    const expectedSvgHash = sharedReceipt?.svgHash ?? embeddedProof?.svgHash ?? "";
+    const expectedSvgHash = zipProofBundle?.svgHash ?? sharedReceipt?.svgHash ?? embeddedProof?.svgHash ?? "";
     if (!expectedSvgHash) {
       setArtifactAttested("missing");
       return;
     }
     if (!svgBytesHash) return;
     setArtifactAttested(svgBytesHash === expectedSvgHash);
-  }, [embeddedProof?.svgHash, sharedReceipt?.svgHash, svgBytesHash, svgText]);
+  }, [embeddedProof?.svgHash, sharedReceipt?.svgHash, svgBytesHash, svgText, zipProofBundle?.svgHash]);
 
   // Groth16 verify (logic unchanged)
   React.useEffect(() => {
@@ -1152,6 +1316,12 @@ export default function VerifyPage(): ReactElement {
     return authorSigVerified ? "valid" : "invalid";
   }, [busy, embeddedProof?.authorSig, authorSigVerified]);
 
+  const sealPresence: SealState = useMemo(() => {
+    if (busy) return "busy";
+    if (zipAttestations.length === 0) return "off";
+    return presenceSignedCount > 0 ? "valid" : "invalid";
+  }, [busy, presenceSignedCount, zipAttestations.length]);
+
   const sealZK: SealState = useMemo(() => {
     if (busy) return "busy";
     if (!zkMeta?.zkPoseidonHash) return "off";
@@ -1160,7 +1330,10 @@ export default function VerifyPage(): ReactElement {
   }, [busy, zkMeta?.zkPoseidonHash, zkVerify]);
 
   const hasSvgBytes = Boolean(svgText.trim());
-  const expectedSvgHash = sharedReceipt?.svgHash ?? embeddedProof?.svgHash ?? "";
+  const expectedSvgHash = zipProofBundle?.svgHash ?? sharedReceipt?.svgHash ?? embeddedProof?.svgHash ?? "";
+  const proofBundleSvgHash = zipProofBundle?.svgHash ?? embeddedProof?.svgHash ?? "";
+  const proofBundleCapsuleHash = zipProofBundle?.capsuleHash ?? embeddedProof?.capsuleHash ?? "";
+  const proofBundleBundleHash = zipProofBundle?.bundleHash ?? embeddedProof?.bundleHash ?? "";
   const hasKasIdentity = Boolean(embeddedProof?.authorSig && isKASAuthorSig(embeddedProof.authorSig));
   const identityStatusLabel =
     !hasSvgBytes || !hasKasIdentity
@@ -1189,26 +1362,16 @@ export default function VerifyPage(): ReactElement {
 
   const auditBundleText = useMemo(() => {
     if (!proofCapsule) return "";
-    return JSON.stringify(
-      {
-        hashAlg: PROOF_HASH_ALG,
-        canon: PROOF_CANON,
-        proofCapsule,
-        capsuleHash,
-        svgHash,
-        bundleHash,
-        shareUrl: embeddedProof?.shareUrl ?? null,
-        verifierUrl: proofVerifierUrl,
-        authorSig: embeddedProof?.authorSig ?? null,
-        zkPoseidonHash: zkMeta?.zkPoseidonHash ?? null,
-        zkProof: zkMeta?.zkProof ?? null,
-        proofHints: zkMeta?.proofHints ?? null,
-        zkPublicInputs: zkMeta?.zkPublicInputs ?? null,
-      },
-      null,
-      2,
-    );
-  }, [proofCapsule, capsuleHash, svgHash, bundleHash, embeddedProof, proofVerifierUrl, zkMeta]);
+    const canonicalBundleObject = buildCanonicalBundleObject({
+      proofCapsule,
+      capsuleHash,
+      svgHash,
+      zkPoseidonHash: zkMeta?.zkPoseidonHash ?? null,
+      zkProof: zkMeta?.zkProof ?? null,
+      zkPublicInputs: zkMeta?.zkPublicInputs ?? null,
+    });
+    return JSON.stringify({ ...canonicalBundleObject, bundleHash }, null, 2);
+  }, [proofCapsule, capsuleHash, svgHash, bundleHash, zkMeta]);
 
   const svgPreview = useMemo(() => {
     const raw = svgText.trim();
@@ -1240,11 +1403,8 @@ export default function VerifyPage(): ReactElement {
     const extended: Record<string, unknown> = { ...receipt };
     if (svgHash) extended.svgHash = svgHash;
     if (bundleHash) extended.bundleHash = bundleHash;
-    if (embeddedProof?.shareUrl) extended.shareUrl = embeddedProof.shareUrl;
-    if (embeddedProof?.authorSig) extended.authorSig = embeddedProof.authorSig;
-    if (embeddedProof?.zkProof) extended.zkProof = embeddedProof.zkProof;
-    if (embeddedProof?.proofHints) extended.proofHints = embeddedProof.proofHints;
-    if (embeddedProof?.zkPublicInputs) extended.zkPublicInputs = embeddedProof.zkPublicInputs;
+    if (zkMeta?.zkProof) extended.zkProof = zkMeta.zkProof;
+    if (zkMeta?.zkPublicInputs) extended.zkPublicInputs = zkMeta.zkPublicInputs;
     if (zkMeta?.zkPoseidonHash) {
       extended.zkPoseidonHash = zkMeta.zkPoseidonHash;
       extended.zkVerified = Boolean(zkVerify);
@@ -1252,7 +1412,7 @@ export default function VerifyPage(): ReactElement {
     }
 
     return jcsCanonicalize(extended as Parameters<typeof jcsCanonicalize>[0]);
-  }, [bundleHash, capsuleHash, currentVerifyUrl, embeddedProof?.shareUrl, proofCapsule, proofVerifierUrl, svgHash, zkMeta?.zkPoseidonHash, zkVerify]);
+  }, [bundleHash, capsuleHash, currentVerifyUrl, proofCapsule, proofVerifierUrl, svgHash, zkMeta?.zkPoseidonHash, zkMeta?.zkProof, zkMeta?.zkPublicInputs, zkVerify]);
 
   const shareReceiptUrl = useMemo(() => {
     if (!receiptJson) return "";
@@ -1346,6 +1506,11 @@ export default function VerifyPage(): ReactElement {
 
           <div className="vseals" aria-label="Sovereign seals">
             <SealPill label="KAS" state={sealKAS} detail={embeddedProof?.authorSig ? "Author seal (WebAuthn KAS)" : "No author seal present"} />
+            <SealPill
+              label="Presence"
+              state={sealPresence}
+              detail={`Presence Signed: ${presenceSignedCount}`}
+            />
             <SealPill label="G16" state={sealZK} detail={zkMeta?.zkPoseidonHash ? "Groth16 + Poseidon rail" : "No ZK rail present"} />
             {result.status === "ok" && displayPhi != null ? (
               <LiveValuePill
@@ -1397,7 +1562,7 @@ export default function VerifyPage(): ReactElement {
                     ref={fileRef}
                     className="vfile"
                     type="file"
-                    accept=".svg,image/svg+xml"
+                    accept=".svg,image/svg+xml,.zip,application/zip"
                     onChange={(e) => {
                       handleFiles(e.currentTarget.files);
                       e.currentTarget.value = "";
@@ -1410,8 +1575,8 @@ export default function VerifyPage(): ReactElement {
                       <button
                         type="button"
                         className="vdrop"
-                        aria-label="Inhale sealed ΦKey (SVG)"
-                        title="Inhale sealed ΦKey (.svg)"
+                        aria-label="Inhale sealed ΦKey (SVG or ZIP)"
+                        title="Inhale sealed ΦKey (.svg or .zip)"
                         onClick={() => fileRef.current?.click()}
                       >
                         <span className="vdrop-ic" aria-hidden="true">
@@ -1434,6 +1599,9 @@ export default function VerifyPage(): ReactElement {
                           ariaLabel="Clear"
                           onClick={() => {
                             setSvgText("");
+                            setZipProofBundle(null);
+                            setZipAttestations([]);
+                            setPresenceSignedCount(0);
                             setSharedReceipt(null);
                             setResult({ status: "idle" });
                             setNotice("");
@@ -1447,7 +1615,7 @@ export default function VerifyPage(): ReactElement {
               </div>
                       <div className="vmini-grid vmini-grid--2" aria-label="Quick readout">
                         <MiniField label="Inhaled" value={svgText.trim() ? "true" : "false"} />
-                        <MiniField label="Attestation" value={embeddedProof ? "present" : "—"} />
+                        <MiniField label="Proof bundle" value={zipProofBundle || embeddedProof ? "present" : "—"} />
                       </div>
                     </div>
 
@@ -1586,6 +1754,11 @@ export default function VerifyPage(): ReactElement {
                   </code>
                   <IconBtn icon="💠" title="Remember bundle hash" ariaLabel="Remember bundle hash" onClick={() => void remember(bundleHash, "Bundle hash")} disabled={!bundleHash} />
                 </div>
+                <div className="vrow">
+                  <span className="vk">Presence Signed</span>
+                  <code className="vv mono">{zipAttestations.length ? `${presenceSignedCount}/${zipAttestations.length}` : "—"}</code>
+                  <span />
+                </div>
               </div>
 
 
@@ -1695,19 +1868,23 @@ export default function VerifyPage(): ReactElement {
             <div className="vcard" data-panel="audit">
               <div className="vcard-head">
                 <div className="vcard-title">Audit</div>
-                <div className="vcard-sub">Attestation bundle parity + author seal validity.</div>
+                <div className="vcard-sub">Proof bundle parity + presence signature validity.</div>
               </div>
 
               <div className="vcard-body vfit">
                 <div className="vmini-grid vmini-grid--6" aria-label="Audit checks">
-                  <MiniField label="Attestation bundle" value={embeddedProof ? "present" : "—"} />
+                  <MiniField label="Proof bundle" value={zipProofBundle || embeddedProof ? "present" : "—"} />
+                  <MiniField
+                    label="Presence Signed"
+                    value={zipAttestations.length ? `${presenceSignedCount}/${zipAttestations.length}` : "—"}
+                  />
                   <MiniField label="Author signature" value={embeddedProof?.authorSig ? "present" : "—"} />
                   <MiniField label="Author verified" value={authorSigVerified === null ? "n/a" : authorSigVerified ? "true" : "false"} />
                   <MiniField label="Receive signature" value={receiveSig ? "present" : "—"} />
                   <MiniField label="Receive verified" value={receiveSigVerified === null ? "n/a" : receiveSigVerified ? "true" : "false"} />
-                  <MiniField label="sigilHash parity" value={embeddedProof?.svgHash ? String(embeddedProof.svgHash === svgHash) : "n/a"} />
-                  <MiniField label="vesselHash parity" value={embeddedProof?.capsuleHash ? String(embeddedProof.capsuleHash === capsuleHash) : "n/a"} />
-                  <MiniField label="bundleHash parity" value={embeddedProof?.bundleHash ? String(embeddedProof.bundleHash === bundleHash) : "n/a"} />
+                  <MiniField label="sigilHash parity" value={proofBundleSvgHash ? String(proofBundleSvgHash === svgHash) : "n/a"} />
+                  <MiniField label="vesselHash parity" value={proofBundleCapsuleHash ? String(proofBundleCapsuleHash === capsuleHash) : "n/a"} />
+                  <MiniField label="bundleHash parity" value={proofBundleBundleHash ? String(proofBundleBundleHash === bundleHash) : "n/a"} />
                 </div>
 
                 <div className="vmini-grid vmini-grid--3" aria-label="Receive signature status">
@@ -1733,6 +1910,7 @@ export default function VerifyPage(): ReactElement {
                   <div className="vfoot-left">
                     <div className="vseals" aria-label="Seal summary">
                       <SealPill label="KAS" state={sealKAS} />
+                      <SealPill label="Presence" state={sealPresence} />
                       <SealPill label="G16" state={sealZK} />
                     </div>
                   </div>

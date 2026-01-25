@@ -1591,54 +1591,63 @@ current.searchParams.forEach((v, k) => {
     ]
   );
 
-  /* Claim ZIP Exporter (module) */
-  const claimPress = useFastPress<HTMLButtonElement>(async () => {
-    if (exporting) return;
-    const svgEl = frameRef.current?.querySelector("svg") as SVGSVGElement | null;
-    const pExtras = (payload ?? {}) as Partial<{
-      claimExtendUnit?: SigilPayload["claimExtendUnit"] | null;
-      claimExtendAmount?: number | null;
-    }>;
-    const unitForExport = isExpiryUnit(pExtras.claimExtendUnit) ? pExtras.claimExtendUnit : undefined;
-    const amountForExport =
-      typeof pExtras.claimExtendAmount === "number" ? pExtras.claimExtendAmount : null;
+  const exportBundle = useCallback(
+    async (withAttestation: boolean) => {
+      if (exporting) return;
+      const svgEl = frameRef.current?.querySelector("svg") as SVGSVGElement | null;
 
-    await exportZIP({
-      expired: !!expired,
+      await exportZIP({
+        expired: !!expired,
+        exporting,
+        setExporting,
+        svgEl,
+        payload: payload
+          ? {
+              pulse: payload.pulse,
+              beat: payload.beat,
+              chakraDay: payload.chakraDay ?? null,
+              stepsPerBeat: payload.stepsPerBeat ?? undefined,
+              stepIndex: payload.stepIndex ?? null,
+              exportedAtPulse: payload.exportedAtPulse ?? null,
+              canonicalHash: payload.canonicalHash ?? null,
+              userPhiKey: payload.userPhiKey ?? null,
+              kaiSignature: payload.kaiSignature ?? null,
+              transferNonce: payload.transferNonce ?? null,
+              expiresAtPulse: payload.expiresAtPulse ?? null,
+              claimExtendUnit: payload.claimExtendUnit ?? null,
+              claimExtendAmount: payload.claimExtendAmount ?? null,
+              attachment: payload.attachment ?? null,
+              provenance: (payload.provenance as ProvenanceEntry[] | null) ?? null,
+            }
+          : null,
+        isFutureSealed,
+        linkStatus,
+        setToast: (m: string) => signal(setToast, m),
+        localHash,
+        routeHash,
+        stepIndexFromPulse,
+        STEPS_PER_BEAT,
+        withAttestation,
+      });
+    },
+    [
       exporting,
-      setExporting,
-      svgEl,
-      payload: payload
-        ? {
-            pulse: payload.pulse,
-            beat: payload.beat,
-            chakraDay: payload.chakraDay ?? null,
-            stepsPerBeat: payload.stepsPerBeat ?? undefined,
-            stepIndex: payload.stepIndex ?? null,
-            exportedAtPulse: payload.exportedAtPulse ?? null,
-            canonicalHash: payload.canonicalHash ?? null,
-            userPhiKey: payload.userPhiKey ?? null,
-            kaiSignature: payload.kaiSignature ?? null,
-            transferNonce: payload.transferNonce ?? null,
-            expiresAtPulse: payload.expiresAtPulse ?? null,
-            claimExtendUnit: unitForExport,
-            claimExtendAmount: amountForExport,
-            attachment: payload.attachment ?? null,
-            provenance: (payload.provenance as ProvenanceEntry[] | null) ?? null,
-          }
-        : null,
+      expired,
       isFutureSealed,
       linkStatus,
-      setToast: (m: string) => signal(setToast, m),
-      expiryUnit,
-      expiryAmount,
       localHash,
+      payload,
       routeHash,
-      transferToken: transferToken ?? null,
-      getKaiPulseEternalInt,
+      setExporting,
+      setToast,
       stepIndexFromPulse,
       STEPS_PER_BEAT,
-    });
+    ]
+  );
+
+  /* Claim ZIP Exporter (module) */
+  const claimPress = useFastPress<HTMLButtonElement>(async () => {
+    await exportBundle(false);
   });
 const onReady = useCallback(
   (hOrInfo: { hash?: string } | string | null | undefined) => {
@@ -3362,7 +3371,7 @@ useEffect(() => {
         hash={sealHash}
         onClose={onSealModalClose}
         onDownloadZip={() => {
-          claimPress.onClick?.(new MouseEvent("click") as unknown as React.MouseEvent<HTMLButtonElement>);
+          void exportBundle(true);
         }}
       />
 

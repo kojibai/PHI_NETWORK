@@ -336,7 +336,11 @@ export async function signBundleHash(phiKey: string, bundleHash: string): Promis
   }
 }
 
-export async function verifyBundleAuthorSig(bundleHash: string, authorSig: KASAuthorSig): Promise<boolean> {
+export async function verifyBundleAuthorSig(
+  bundleHash: string,
+  authorSig: KASAuthorSig,
+  opts?: { expectedOrigin?: string; expectedRpId?: string }
+): Promise<boolean> {
   try {
     // 1) Challenge must match bundleHash bytes (deterministic)
     const expectedChallenge = hexToBytes(bundleHash);
@@ -349,12 +353,21 @@ export async function verifyBundleAuthorSig(bundleHash: string, authorSig: KASAu
 
     const parsed = JSON.parse(clientDataText) as unknown;
     if (!parsed || typeof parsed !== "object") return false;
-    const obj = parsed as { challenge?: unknown };
+    const obj = parsed as { challenge?: unknown; origin?: unknown };
     if (typeof obj.challenge !== "string") return false;
     if (obj.challenge !== expectedChallengeB64) return false;
+    if (opts?.expectedOrigin && obj.origin !== opts.expectedOrigin) return false;
 
     // 3) Signed payload per WebAuthn: authenticatorData || SHA256(clientDataJSON)
     const authenticatorData = base64UrlDecode(authorSig.authenticatorData);
+    if (opts?.expectedRpId) {
+      const rpIdHash = authenticatorData.slice(0, 32);
+      const expectedHash = await sha256Bytes(new TextEncoder().encode(opts.expectedRpId));
+      if (rpIdHash.length !== expectedHash.length) return false;
+      for (let i = 0; i < rpIdHash.length; i += 1) {
+        if (rpIdHash[i] !== expectedHash[i]) return false;
+      }
+    }
     const clientDataHash = await sha256Bytes(clientDataBytes);
     const signedPayload = concatBytes(authenticatorData, clientDataHash);
 
