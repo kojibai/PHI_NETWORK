@@ -989,7 +989,6 @@ export default function VerifyPage(): ReactElement {
       const embedded = extractProofBundleMetaFromSvg(svgText);
       const capsule = embedded?.proofCapsule ?? fallbackCapsule;
       const capsuleHashNext = await hashProofCapsuleV1(capsule);
-      const verificationSource: VerificationSource = "local";
       const embeddedVerifiedAtPulse =
         typeof embedded?.verifiedAtPulse === "number" && Number.isFinite(embedded.verifiedAtPulse)
           ? embedded.verifiedAtPulse
@@ -1002,6 +1001,9 @@ export default function VerifyPage(): ReactElement {
             ? result.verifiedAtPulse
             : undefined);
 
+      const verifierValue = embedded?.verifier;
+      const verificationVersionValue = embedded?.verificationVersion;
+
       const bundleSeed =
         embedded?.raw && typeof embedded.raw === "object" && embedded.raw !== null
           ? {
@@ -1009,8 +1011,8 @@ export default function VerifyPage(): ReactElement {
               svgHash: svgHashNext,
               capsuleHash: capsuleHashNext,
               proofCapsule: capsule,
-              verifier: verificationSource,
-              verificationVersion: VERIFICATION_BUNDLE_VERSION,
+              ...(verifierValue ? { verifier: verifierValue } : {}),
+              ...(verificationVersionValue ? { verificationVersion: verificationVersionValue } : {}),
               ...(verifiedAtPulse != null ? { verifiedAtPulse } : {}),
             }
           : {
@@ -1021,8 +1023,8 @@ export default function VerifyPage(): ReactElement {
               svgHash: svgHashNext,
               shareUrl: embedded?.shareUrl,
               verifierUrl: embedded?.verifierUrl,
-              verifier: verificationSource,
-              verificationVersion: VERIFICATION_BUNDLE_VERSION,
+              ...(verifierValue ? { verifier: verifierValue } : {}),
+              ...(verificationVersionValue ? { verificationVersion: verificationVersionValue } : {}),
               ...(verifiedAtPulse != null ? { verifiedAtPulse } : {}),
               zkPoseidonHash: embedded?.zkPoseidonHash,
               zkProof: embedded?.zkProof,
