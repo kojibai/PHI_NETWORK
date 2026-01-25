@@ -6,6 +6,11 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { SsrSnapshotProvider } from "./ssr/SsrSnapshotContext";
 import type { SsrSnapshot } from "./ssr/snapshotTypes";
 
+export { renderVerifiedOgPng } from "./og/renderVerifiedOg";
+export { renderNotFoundOgPng } from "./og/renderNotFoundOg";
+export { OgLruTtlCache } from "./og/cache";
+export { getCapsuleByHash, getCapsuleByVerifierSlug, getCapsuleByCanonicalHash } from "./og/capsuleStore";
+
 export type SsrRenderOptions = {
   onShellReady: () => void;
   onAllReady: () => void;

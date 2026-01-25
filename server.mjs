@@ -69,11 +69,149 @@ async function createServer() {
   }
 
   let dataCache = null;
+  let ogCache = null;
+  let ogModulePromise = null;
+
+  const loadOgModule = async () => {
+    if (ogModulePromise) return ogModulePromise;
+    ogModulePromise = isProd
+      ? import(resolvePath("dist/server/entry-server.js"))
+      : vite.ssrLoadModule("/src/og/serverExports.ts");
+    return ogModulePromise;
+  };
+
+  const escapeHtml = (value) =>
+    String(value)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#39;");
+
+  const shortPhiKey = (value) => {
+    const trimmed = String(value || "").trim();
+    if (trimmed.length <= 16) return trimmed || "—";
+    return `${trimmed.slice(0, 8)}…${trimmed.slice(-6)}`;
+  };
+
+  const buildVerifiedOgHead = async (requestUrl, origin) => {
+    try {
+      const pathname = requestUrl.pathname || "/";
+      const parts = pathname.split("/").filter(Boolean);
+      let capsuleData = null;
+
+      if (parts[0] === "s" && parts[1]) {
+        const canonicalHash = decodeURIComponent(parts[1]);
+        const ogModule = await loadOgModule();
+        if (ogModule.getCapsuleByCanonicalHash) {
+          capsuleData = await ogModule.getCapsuleByCanonicalHash(canonicalHash);
+        }
+      } else if (parts[0] === "verify" && parts[1]) {
+        const verifierSlug = decodeURIComponent(parts[1]);
+        const ogModule = await loadOgModule();
+        if (ogModule.getCapsuleByVerifierSlug) {
+          capsuleData = await ogModule.getCapsuleByVerifierSlug(verifierSlug);
+        }
+      }
+
+      if (!capsuleData) return "";
+
+      const capsuleHash = capsuleData.capsuleHash;
+      const ogImageUrl = `${origin}/og/v/verified/${encodeURIComponent(capsuleHash)}.png`;
+      const title = `VERIFIED • Pulse ${capsuleData.pulse} • ΦKey ${shortPhiKey(capsuleData.phikey)}`;
+      const description = `Pulse ${capsuleData.pulse} • KAS ✓ • G16 ✓ • Proof of Breath™`;
+
+      return [
+        `<meta property="og:image" content="${escapeHtml(ogImageUrl)}" />`,
+        `<meta name="twitter:image" content="${escapeHtml(ogImageUrl)}" />`,
+        `<meta property="og:title" content="${escapeHtml(title)}" />`,
+        `<meta property="og:description" content="${escapeHtml(description)}" />`,
+        `<meta property="og:type" content="website" />`,
+      ].join("");
+    } catch (error) {
+      console.error("Failed to build OG head", error);
+      return "";
+    }
+  };
 
   const server = createHttpServer((req, res) => {
     if (!req.url) {
       res.statusCode = 400;
       res.end("Bad Request");
+      return;
+    }
+
+    const url = new URL(req.url, "http://localhost");
+    if (url.pathname.startsWith("/og/v/verified/")) {
+      const handleOg = async () => {
+        const ogModule = await loadOgModule();
+        const cacheClass = ogModule.OgLruTtlCache;
+        if (!ogCache) {
+          ogCache = new cacheClass({ maxEntries: 512, defaultTtlMs: 10 * 60 * 1000 });
+        }
+
+        const pathPart = url.pathname.replace("/og/v/verified/", "");
+        const rawHash = pathPart.endsWith(".png") ? pathPart.slice(0, -4) : pathPart;
+        const capsuleHash = decodeURIComponent(rawHash || "");
+        const cacheKey = capsuleHash || "not-found";
+        const cached = ogCache.get(cacheKey);
+
+        if (cached) {
+          const ifNoneMatch = req.headers["if-none-match"];
+          if (ifNoneMatch && ifNoneMatch.replace(/\"/g, "") === cached.etag) {
+            res.statusCode = 304;
+            res.setHeader("ETag", `"${cached.etag}"`);
+            res.setHeader("Cache-Control", "public, max-age=0, s-maxage=31536000, immutable");
+            res.end();
+            return;
+          }
+
+          res.statusCode = 200;
+          res.setHeader("Content-Type", "image/png");
+          res.setHeader("Content-Length", String(cached.buffer.length));
+          res.setHeader("ETag", `"${cached.etag}"`);
+          res.setHeader("Cache-Control", "public, max-age=0, s-maxage=31536000, immutable");
+          res.end(cached.buffer);
+          return;
+        }
+
+        let pngBuffer;
+        let ogData = null;
+        if (capsuleHash) {
+          ogData = await ogModule.getCapsuleByHash(capsuleHash);
+        }
+
+        if (ogData) {
+          pngBuffer = ogModule.renderVerifiedOgPng(ogData);
+        } else {
+          pngBuffer = ogModule.renderNotFoundOgPng(capsuleHash || "unknown");
+        }
+
+        const etag = createHash("sha256").update(pngBuffer).digest("hex");
+        ogCache.set(cacheKey, { buffer: pngBuffer, etag });
+
+        const ifNoneMatch = req.headers["if-none-match"];
+        if (ifNoneMatch && ifNoneMatch.replace(/\"/g, "") === etag) {
+          res.statusCode = 304;
+          res.setHeader("ETag", `"${etag}"`);
+          res.setHeader("Cache-Control", "public, max-age=0, s-maxage=31536000, immutable");
+          res.end();
+          return;
+        }
+
+        res.statusCode = 200;
+        res.setHeader("Content-Type", "image/png");
+        res.setHeader("Content-Length", String(pngBuffer.length));
+        res.setHeader("ETag", `"${etag}"`);
+        res.setHeader("Cache-Control", "public, max-age=0, s-maxage=31536000, immutable");
+        res.end(pngBuffer);
+      };
+
+      handleOg().catch((error) => {
+        console.error(error);
+        res.statusCode = 500;
+        res.end("Internal Server Error");
+      });
       return;
     }
 
@@ -135,7 +273,8 @@ async function createServer() {
         snapshot,
       )}</script>`;
       const snapshotEtag = `<script>window.__SSR_SNAPSHOT_ETAG__=${safeJsonStringify(etag)};window.__KAI_SSR__=true;</script>`;
-      const ssrHead = `<script>window.__INITIAL_DATA__=${safeJsonStringify(initialData)};</script>${snapshotScript}${snapshotEtag}`;
+      const ogHead = await buildVerifiedOgHead(requestUrl, origin);
+      const ssrHead = `${ogHead}<script>window.__INITIAL_DATA__=${safeJsonStringify(initialData)};</script>${snapshotScript}${snapshotEtag}`;
       const htmlHead = head.replace("<!--ssr-head-->", ssrHead).replace("<div id=\"root\">", "<div id=\"root\" data-ssr=\"1\">");
 
       let didError = false;
