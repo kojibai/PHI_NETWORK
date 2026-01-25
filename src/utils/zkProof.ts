@@ -32,72 +32,46 @@ export async function generateZkProofFromPoseidonHash(params: {
   const secret = params.secret?.trim();
   if (!poseidonHash || !secret) return null;
 
-  const buildResult = (
-    proof: unknown,
-    zkPublicInputs: string[],
-    extraHints?: SigilProofHints
-  ) => ({
-    proof,
-    proofHints: buildProofHints(poseidonHash, {
-      ...(params.proofHints ?? {}),
-      ...(extraHints ?? {}),
-    }),
-    zkPublicInputs,
-  });
-
-  const tryLocal = async () => {
-    const { generateSigilProof } = await import("../../zk/prove");
-    const res = await generateSigilProof({ secret, expectedHash: poseidonHash });
-    return buildResult(res.proof, res.publicSignals.map((entry) => String(entry)));
-  };
-
   try {
-    const isOffline = typeof navigator !== "undefined" && navigator.onLine === false;
-    if (isOffline) {
-      return await tryLocal();
+    if (typeof fetch !== "function") return null;
+    const res = await fetch("/api/proof/sigil", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        secret,
+        expectedHash: poseidonHash,
+      }),
+    });
+    if (!res.ok) {
+      throw new Error("ZK proof API failed");
+    }
+    const payload = (await res.json()) as {
+      zkProof?: unknown;
+      zkPublicInputs?: string[];
+      proofHints?: SigilProofHints;
+    };
+    if (!payload || !isNonEmptyObject(payload)) return null;
+    const zkProof = payload.zkProof;
+    if (!isNonEmptyObject(zkProof)) {
+      throw new Error("ZK proof missing");
+    }
+    const zkPublicInputs = Array.isArray(payload.zkPublicInputs)
+      ? payload.zkPublicInputs.map((entry) => String(entry))
+      : [];
+    if (!zkPublicInputs.length) {
+      throw new Error("ZK public input missing");
+    }
+    if (zkPublicInputs[0] !== poseidonHash) {
+      throw new Error("ZK public input mismatch");
     }
 
-    if (typeof fetch === "function") {
-      const res = await fetch("/api/proof/sigil", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          secret,
-          expectedHash: poseidonHash,
-        }),
-      });
-      if (!res.ok) {
-        throw new Error("ZK proof API failed");
-      }
-      const payload = (await res.json()) as {
-        zkProof?: unknown;
-        zkPublicInputs?: string[];
-        proofHints?: SigilProofHints;
-      };
-      if (!payload || !isNonEmptyObject(payload)) return null;
-      const zkProof = payload.zkProof;
-      if (!isNonEmptyObject(zkProof)) {
-        throw new Error("ZK proof missing");
-      }
-      const zkPublicInputs = Array.isArray(payload.zkPublicInputs)
-        ? payload.zkPublicInputs.map((entry) => String(entry))
-        : [];
-      if (!zkPublicInputs.length) {
-        throw new Error("ZK public input missing");
-      }
-      if (zkPublicInputs[0] !== poseidonHash) {
-        throw new Error("ZK public input mismatch");
-      }
+    const proofHints = buildProofHints(poseidonHash, {
+      ...(params.proofHints ?? {}),
+      ...(payload.proofHints ?? {}),
+    });
 
-      return buildResult(zkProof ?? null, zkPublicInputs, payload.proofHints);
-    }
-
-    return await tryLocal();
+    return { proof: zkProof ?? null, proofHints, zkPublicInputs };
   } catch {
-    try {
-      return await tryLocal();
-    } catch {
-      return null;
-    }
+    return null;
   }
 }
