@@ -843,16 +843,17 @@ export default function VerifyPage(): ReactElement {
       const bundleUnsigned = buildBundleUnsigned(bundleSeed);
       const bundleHashNext = await hashBundle(bundleUnsigned);
 
-      const authorSigNext = embedded?.authorSig;
-      let authorSigOk: boolean | null = null;
-      if (authorSigNext) {
-        if (isKASAuthorSig(authorSigNext)) {
-          const authorBundleHash = bundleHashFromAuthorSig(authorSigNext);
-          authorSigOk = await verifyBundleAuthorSig(authorBundleHash ?? bundleHashNext, authorSigNext);
-        } else {
-          authorSigOk = false;
-        }
-      }
+const authorSigNext = embedded?.authorSig;
+let authorSigOk: boolean | null = null;
+
+if (authorSigNext) {
+  if (isKASAuthorSig(authorSigNext)) {
+    // ✅ Verify KAS against the artifact's recomputed unsigned bundle hash
+    authorSigOk = await verifyBundleAuthorSig(bundleHashNext, authorSigNext);
+  } else {
+    authorSigOk = false;
+  }
+}
 
       if (!active) return;
       setProofCapsule(capsule);
