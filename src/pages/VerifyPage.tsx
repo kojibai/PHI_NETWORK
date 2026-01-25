@@ -1926,8 +1926,9 @@ if (verified && typeof cacheBundleHash === "string" && cacheBundleHash.trim().le
           if (active) setAuthorSigVerified(false);
           return;
         }
-        const originBundleHash = effectiveOriginBundleHash ?? bundleHashFromAuthorSig(originSig);
-        const candidateHashes = Array.from(new Set([originBundleHash, bundleHash].filter(Boolean))) as string[];
+        const derivedHash = bundleHashFromAuthorSig(originSig);
+        const originBundleHash = effectiveOriginBundleHash ?? (derivedHash && derivedHash === bundleHash ? derivedHash : null);
+        const candidateHashes = originBundleHash ? [originBundleHash] : [];
         if (!candidateHashes.length) {
           if (active) setAuthorSigVerified(false);
           return;
