@@ -18,8 +18,9 @@ export type WebAuthnAssertionJSON = {
 export type ReceiveSig = {
   v: "KRS-1";
   alg: "webauthn-es256";
-  nonce: string;
+  nonce?: string;
   binds: { bundleHash: string };
+  createdAtPulse: number;
   credId: string;
   pubKeyJwk: { kty: "EC"; crv: "P-256"; x: string; y: string; ext?: boolean };
   assertion: WebAuthnAssertionJSON;
@@ -71,9 +72,11 @@ export function isReceiveSig(value: unknown): value is ReceiveSig {
   return (
     value.v === "KRS-1" &&
     value.alg === "webauthn-es256" &&
-    typeof value.nonce === "string" &&
+    (typeof value.nonce === "string" || typeof value.nonce === "undefined") &&
     isRecord(value.binds) &&
     typeof value.binds.bundleHash === "string" &&
+    typeof value.createdAtPulse === "number" &&
+    Number.isFinite(value.createdAtPulse) &&
     typeof value.credId === "string" &&
     isP256Jwk(value.pubKeyJwk) &&
     isRecord(value.assertion)

@@ -17,6 +17,8 @@ import { jcsCanonicalize } from "../../utils/jcs";
 import { base64UrlEncode, hexToBytes, sha256Hex } from "../../utils/sha256";
 import { svgCanonicalForHash } from "../../utils/svgProof";
 import type { AuthorSig } from "../../utils/authorSig";
+import type { ReceiveSig } from "../../utils/webauthnReceive";
+import type { OwnerKeyDerivation } from "../../utils/ownerPhiKey";
 import type { VerificationCache } from "../../utils/verificationCache";
 import type { VerificationReceipt, VerificationSig } from "../../utils/verificationReceipt";
 import { VERIFICATION_BUNDLE_VERSION } from "../../utils/verificationVersion";
@@ -258,6 +260,14 @@ export async function hashSvgText(svgText: string): Promise<string> {
 }
 
 export type ProofBundleLike = {
+  mode?: "origin" | "receive";
+  originBundleHash?: string;
+  receiveBundleHash?: string;
+  originAuthorSig?: AuthorSig | null;
+  receiveSig?: ReceiveSig | null;
+  receivePulse?: number;
+  ownerPhiKey?: string;
+  ownerKeyDerivation?: OwnerKeyDerivation;
   hashAlg?: string;
   canon?: string;
   bindings?: ProofBundleBindings;
@@ -286,7 +296,6 @@ export type ProofBundleLike = {
   authorSig?: AuthorSig | null;
   bundleHash?: string;
   zkVerified?: boolean;
-  receiveSig?: unknown;
   v?: string;
   [key: string]: unknown;
 };
@@ -309,6 +318,14 @@ export type BundleRoot = Readonly<{
 }>;
 
 export type NormalizedBundle = Readonly<{
+  mode?: "origin" | "receive";
+  originBundleHash?: string;
+  receiveBundleHash?: string;
+  originAuthorSig?: AuthorSig | null;
+  receiveSig?: ReceiveSig | null;
+  receivePulse?: number;
+  ownerPhiKey?: string;
+  ownerKeyDerivation?: OwnerKeyDerivation;
   proofCapsule?: ProofCapsuleV1;
   capsuleHash?: string;
   svgHash?: string;
@@ -551,7 +568,7 @@ function normalizeBundleRoot(root: Record<string, unknown>): BundleRoot {
 
 /**
  * Build an unsigned version of the bundle for hashing:
- * - strips any existing bundleHash / authorSig / receiveSig
+ * - strips any existing bundleHash / authorSig / receiveSig / receiveBundleHash / ownerPhiKey / ownerKeyDerivation
  * - forces authorSig to null to produce a stable canonical hash input
  */
 export function buildBundleUnsigned(bundle: ProofBundleLike): Record<string, unknown> {
@@ -561,6 +578,9 @@ export function buildBundleUnsigned(bundle: ProofBundleLike): Record<string, unk
   delete (rest as Record<string, unknown>).bundleHash;
   delete (rest as Record<string, unknown>).authorSig;
   delete (rest as Record<string, unknown>).receiveSig;
+  delete (rest as Record<string, unknown>).receiveBundleHash;
+  delete (rest as Record<string, unknown>).ownerPhiKey;
+  delete (rest as Record<string, unknown>).ownerKeyDerivation;
 
   // force stable unsigned form
   return { ...rest, authorSig: null };
@@ -709,6 +729,15 @@ export function normalizeBundle(bundle: ProofBundleLike): NormalizedBundle {
     Object.keys(verificationCacheObj).length > 0 ? (verificationCacheObj as unknown as VerificationCache) : undefined;
 
   return {
+    mode: bundle.mode === "receive" || bundle.mode === "origin" ? bundle.mode : undefined,
+    originBundleHash: typeof bundle.originBundleHash === "string" ? bundle.originBundleHash : undefined,
+    receiveBundleHash: typeof bundle.receiveBundleHash === "string" ? bundle.receiveBundleHash : undefined,
+    originAuthorSig: bundle.originAuthorSig ?? null,
+    receiveSig: bundle.receiveSig ?? null,
+    receivePulse:
+      typeof bundle.receivePulse === "number" && Number.isFinite(bundle.receivePulse) ? bundle.receivePulse : undefined,
+    ownerPhiKey: typeof bundle.ownerPhiKey === "string" ? bundle.ownerPhiKey : undefined,
+    ownerKeyDerivation: bundle.ownerKeyDerivation,
     proofCapsule: bundleRoot.proofCapsule ?? bundle.proofCapsule,
     capsuleHash: bundleRoot.capsuleHash ?? bundle.capsuleHash,
     svgHash: bundleRoot.svgHash ?? bundle.svgHash,
