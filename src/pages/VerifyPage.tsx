@@ -855,7 +855,10 @@ export default function VerifyPage(): ReactElement {
   const embeddedZkPublicInputs = useMemo(() => (zkMeta?.zkPublicInputs ? formatProofValue(zkMeta.zkPublicInputs) : ""), [zkMeta]);
   const embeddedProofHints = useMemo(() => (zkMeta?.proofHints ? formatProofValue(zkMeta.proofHints) : ""), [zkMeta]);
 
-  const proofVerifierUrl = useMemo(() => (proofCapsule ? buildVerifierUrl(proofCapsule.pulse, proofCapsule.kaiSignature) : ""), [proofCapsule]);
+  const proofVerifierUrl = useMemo(
+    () => (proofCapsule ? buildVerifierUrl(proofCapsule.pulse, proofCapsule.kaiSignature, undefined, stewardVerifiedPulse ?? undefined) : ""),
+    [proofCapsule, stewardVerifiedPulse],
+  );
   const currentVerifyUrl = useMemo(() => {
     if (typeof window === "undefined") return "";
     return window.location.href;

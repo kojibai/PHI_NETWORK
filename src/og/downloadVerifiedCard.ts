@@ -14,7 +14,8 @@ export async function downloadVerifiedCardPng(data: VerifiedCardData): Promise<v
 
   try {
     const res = await fetch(ogUrl, { method: "GET" });
-    if (res.ok) {
+    const contentType = res.headers.get("content-type") || "";
+    if (res.ok && contentType.toLowerCase().startsWith("image/png")) {
       const blob = await res.blob();
       downloadBlob(blob, filename);
       return;

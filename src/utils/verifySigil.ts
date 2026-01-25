@@ -5,6 +5,7 @@ export type SlugInfo = {
   raw: string;
   pulse: number | null;
   shortSig: string | null;
+  verifiedAtPulse: number | null;
 };
 
 export type VerifyChecks = {
@@ -37,14 +38,16 @@ export type VerifyResult =
 
 export function parseSlug(rawSlug: string): SlugInfo {
   const raw = decodeURIComponent(rawSlug || "").trim();
-  const m = raw.match(/^(\d+)-([A-Za-z0-9]+)$/);
-  if (!m) return { raw, pulse: null, shortSig: null };
+  const m = raw.match(/^(\d+)-([A-Za-z0-9]+)(?:-(\d+))?$/);
+  if (!m) return { raw, pulse: null, shortSig: null, verifiedAtPulse: null };
 
   const pulseNum = Number(m[1]);
   const pulse = Number.isFinite(pulseNum) && pulseNum > 0 ? pulseNum : null;
   const shortSig = m[2] ? String(m[2]) : null;
+  const verifiedAtPulseNum = m[3] ? Number(m[3]) : null;
+  const verifiedAtPulse = Number.isFinite(verifiedAtPulseNum) && verifiedAtPulseNum > 0 ? verifiedAtPulseNum : null;
 
-  return { raw, pulse, shortSig };
+  return { raw, pulse, shortSig, verifiedAtPulse };
 }
 
 function firstN(s: string, n: number): string {
