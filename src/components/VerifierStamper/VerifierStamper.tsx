@@ -448,9 +448,6 @@ const VerifierStamperInner: React.FC = () => {
       }
 
       if (!bundleSeed) return null;
-      if (proofMetaValue?.bundleRoot) {
-        return computeBundleHash(proofMetaValue.bundleRoot);
-      }
       const bundleRoot = buildBundleRoot(bundleSeed);
       const rootHash = await computeBundleHash(bundleRoot);
       const legacySeed = { ...bundleSeed } as Record<string, unknown>;
@@ -719,7 +716,7 @@ const VerifierStamperInner: React.FC = () => {
         (await sha256Hex(`${m.pulse}|${m.beat}|${m.stepIndex}|${m.chakraDay}`)).toLowerCase();
 
       if (await isPersistedChild(m)) {
-        const childCanon = (m.canonicalHash as string).toLowerCase();
+        const childCanon = ((m.canonicalHash as string | undefined) ?? parentCanonical).toLowerCase();
         const used = !!(m as SigilMetadataWithOptionals).sendLock?.used;
         const lastClosed = !!(m.transfers ?? []).slice(-1)[0]?.receiverSignature;
         return { canonical: childCanon, context: used || lastClosed ? "parent" : "derivative" };
@@ -2432,6 +2429,17 @@ const VerifierStamperInner: React.FC = () => {
       };
     } else {
       nextBundle = { svgHash, capsuleHash, ...(receiveSigLocal ? { receiveSig: receiveSigLocal } : {}) };
+    }
+
+    const zkProofCurve = (() => {
+      const proof = (nextBundle as Record<string, unknown>).zkProof;
+      if (isRecord(proof) && typeof proof.curve === "string") return proof.curve;
+      return null;
+    })();
+    if (zkProofCurve) {
+      const existingMeta = (nextBundle as Record<string, unknown>).zkMeta;
+      const nextMeta = isRecord(existingMeta) ? { ...existingMeta, curve: zkProofCurve } : { curve: zkProofCurve };
+      (nextBundle as Record<string, unknown>).zkMeta = nextMeta;
     }
 
     const bundleRoot = buildBundleRoot(nextBundle);

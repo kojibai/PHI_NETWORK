@@ -43,6 +43,7 @@ import VerifierFrame from "./VerifierFrame";
 import {
   buildVerifierSlug,
   buildVerifierUrl,
+  defaultHostedVerifierBaseUrl,
   buildBundleRoot,
   computeBundleHash,
   hashProofCapsuleV1,
@@ -847,7 +848,7 @@ function KaiVohFlow(): ReactElement {
           };
           const transport = {
             shareUrl,
-            verifierUrl,
+            verifierBaseUrl: defaultHostedVerifierBaseUrl(),
             proofHints,
           };
           const bundleRoot = buildBundleRoot(proofBundleBase);

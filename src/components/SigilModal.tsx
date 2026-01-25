@@ -43,6 +43,7 @@ import { computeZkPoseidonHash } from "../utils/kai";
 import JSZip from "jszip";
 import {
   buildBundleRoot,
+  defaultHostedVerifierBaseUrl,
   buildVerifierUrl,
   computeBundleHash,
   hashProofCapsuleV1,
@@ -1467,7 +1468,7 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
       };
       const transport = {
         shareUrl,
-        verifierUrl,
+        verifierBaseUrl: defaultHostedVerifierBaseUrl(),
         proofHints,
       };
       const bundleRoot = buildBundleRoot(proofBundleBase);

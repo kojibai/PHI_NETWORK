@@ -55,7 +55,8 @@ export type VerificationCache = Readonly<{
 }>;
 export type ProofBundleTransport = Readonly<{
   shareUrl?: string;
-  verifierUrl?: string;
+  verifierBaseUrl?: string;
+  verifierUrl?: string; // legacy: retained for backwards compatibility
   verifiedAtPulse?: number;
   verifier?: VerificationSource;
   proofHints?: unknown;
@@ -378,9 +379,9 @@ export function normalizeBundle(bundle: ProofBundleLike): NormalizedBundle {
         : typeof transportBase.shareUrl === "string"
           ? transportBase.shareUrl
           : undefined,
-    verifierUrl:
-      typeof bundle.verifierUrl === "string"
-        ? bundle.verifierUrl
+    verifierBaseUrl:
+      typeof transportBase.verifierBaseUrl === "string"
+        ? transportBase.verifierBaseUrl
         : typeof transportBase.verifierUrl === "string"
           ? transportBase.verifierUrl
           : undefined,

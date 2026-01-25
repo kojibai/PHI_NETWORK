@@ -10,6 +10,7 @@ import type {
   ZkMeta,
   ZkStatement,
 } from "../components/KaiVoh/verifierProof";
+import { buildVerifierUrl } from "../components/KaiVoh/verifierProof";
 import type { AuthorSig } from "./authorSig";
 import { parseAuthorSig } from "./authorSig";
 
@@ -148,13 +149,6 @@ function toEmbeddedMetaFromUnknown(raw: unknown): EmbeddedMeta {
       : capsulePhiKey ??
         userPhiKey;
 
-  const verifierUrl =
-    typeof raw.verifierUrl === "string"
-      ? raw.verifierUrl
-      : typeof transportRaw?.verifierUrl === "string"
-        ? transportRaw.verifierUrl
-        : undefined;
-
   const verifier =
     typeof raw.verifier === "string" && (raw.verifier === "local" || raw.verifier === "pbi")
       ? (raw.verifier as VerificationSource)
@@ -175,6 +169,20 @@ function toEmbeddedMetaFromUnknown(raw: unknown): EmbeddedMeta {
       ? verifiedAtPulseRaw
       : typeof verifiedAtPulseRaw === "string" && Number.isFinite(Number(verifiedAtPulseRaw))
         ? Number(verifiedAtPulseRaw)
+        : undefined;
+
+  const verifierBaseUrl =
+    typeof transportRaw?.verifierBaseUrl === "string"
+      ? transportRaw.verifierBaseUrl
+      : typeof transportRaw?.verifierUrl === "string"
+        ? transportRaw.verifierUrl
+        : undefined;
+
+  const verifierUrl =
+    typeof raw.verifierUrl === "string"
+      ? raw.verifierUrl
+      : verifierBaseUrl && typeof pulse === "number" && Number.isFinite(pulse) && typeof kaiSignature === "string"
+        ? buildVerifierUrl(pulse, kaiSignature, verifierBaseUrl, verifiedAtPulse)
         : undefined;
 
   const proofCapsule =

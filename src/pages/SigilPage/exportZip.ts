@@ -22,6 +22,7 @@ import { ensureTitleAndDesc, ensureViewBoxOnClone, ensureXmlns } from "../../uti
 import {
   buildBundleRoot,
   buildVerifierUrl,
+  defaultHostedVerifierBaseUrl,
   computeBundleHash,
   hashProofCapsuleV1,
   hashSvgText,
@@ -620,7 +621,7 @@ export async function exportZIP(ctx: {
 
     const transport = {
       shareUrl,
-      verifierUrl,
+      verifierBaseUrl: defaultHostedVerifierBaseUrl(),
       proofHints,
     };
     const bundleRoot = buildBundleRoot(proofBundleBase);
