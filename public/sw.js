@@ -14,7 +14,7 @@
 
 // Update this version string manually to keep the app + cache versions in sync.
 // The value is forwarded to the UI via the service worker "SW_ACTIVATED" message.
-const APP_VERSION = "41.8.8"; // update on release
+const APP_VERSION = "41.8.9"; // update on release
 const VERSION = new URL(self.location.href).searchParams.get("v") || APP_VERSION; // derived from build
 const PREFIX = "PHINETWORK";
 
