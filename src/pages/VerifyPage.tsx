@@ -1011,7 +1011,7 @@ export default function VerifyPage(): ReactElement {
               proofCapsule: capsule,
               verifier: verificationSource,
               verificationVersion: VERIFICATION_BUNDLE_VERSION,
-              verifiedAtPulse,
+              ...(verifiedAtPulse != null ? { verifiedAtPulse } : {}),
             }
           : {
               hashAlg: embedded?.hashAlg ?? PROOF_HASH_ALG,
@@ -1023,7 +1023,7 @@ export default function VerifyPage(): ReactElement {
               verifierUrl: embedded?.verifierUrl,
               verifier: verificationSource,
               verificationVersion: VERIFICATION_BUNDLE_VERSION,
-              verifiedAtPulse,
+              ...(verifiedAtPulse != null ? { verifiedAtPulse } : {}),
               zkPoseidonHash: embedded?.zkPoseidonHash,
               zkProof: embedded?.zkProof,
               proofHints: embedded?.proofHints,

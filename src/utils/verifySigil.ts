@@ -44,7 +44,7 @@ export function parseSlug(rawSlug: string): SlugInfo {
   const pulseNum = Number(m[1]);
   const pulse = Number.isFinite(pulseNum) && pulseNum > 0 ? pulseNum : null;
   const shortSig = m[2] ? String(m[2]) : null;
-  const verifiedAtPulseNum = m[3] ? Number(m[3]) : null;
+  const verifiedAtPulseNum = m[3] ? Number(m[3]) : Number.NaN;
   const verifiedAtPulse = Number.isFinite(verifiedAtPulseNum) && verifiedAtPulseNum > 0 ? verifiedAtPulseNum : null;
 
   return { raw, pulse, shortSig, verifiedAtPulse };

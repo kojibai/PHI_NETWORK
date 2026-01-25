@@ -3,13 +3,13 @@ import type { VerifiedCardData } from "./types";
 import { buildVerifiedCardSvg } from "./buildVerifiedCardSvg";
 import { svgToPngBlob } from "./svgToPng";
 
-function fileNameForCapsule(hash: string): string {
+function fileNameForCapsule(hash: string, verifiedAtPulse: number): string {
   const safe = hash.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 16) || "verified";
-  return `verified-${safe}.png`;
+  return `verified-${safe}-${verifiedAtPulse}.png`;
 }
 
 export async function downloadVerifiedCardPng(data: VerifiedCardData): Promise<void> {
-  const filename = fileNameForCapsule(data.capsuleHash);
+  const filename = fileNameForCapsule(data.capsuleHash, data.verifiedAtPulse);
   const ogUrl = `/og/v/verified/${encodeURIComponent(data.capsuleHash)}/${encodeURIComponent(String(data.verifiedAtPulse))}.png`;
 
   try {
