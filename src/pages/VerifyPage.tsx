@@ -10,6 +10,8 @@ import { DEFAULT_ISSUANCE_POLICY, quotePhiForUsd } from "../utils/phi-issuance";
 import { currency as fmtPhi, usd as fmtUsd } from "../components/valuation/display";
 import LiveChart from "../components/valuation/chart/LiveChart";
 import {
+  assertZkCurveConsistency,
+  assertZkPublicInputsContract,
   buildVerifierSlug,
   buildVerifierUrl,
   buildBundleRoot,
@@ -26,6 +28,7 @@ import {
   ZK_PUBLIC_INPUTS_CONTRACT,
   VERIFICATION_BUNDLE_VERSION,
   ZK_STATEMENT_BINDING,
+  ZK_STATEMENT_ENCODING,
   ZK_STATEMENT_DOMAIN,
   type VerificationSource,
   type ProofCapsuleV1,
@@ -1338,14 +1341,16 @@ export default function VerifyPage(): ReactElement {
         : parsedInputs && typeof parsedInputs === "object"
           ? Object.values(parsedInputs as Record<string, unknown>).map((entry) => String(entry))
           : [String(parsedInputs)];
-      const contract = embeddedProof?.zkStatement?.publicInputsContract ?? ZK_PUBLIC_INPUTS_CONTRACT;
-      const arityOk = inputsArray.length === contract.arity;
-      const invariantOk = arityOk && inputsArray[0] === inputsArray[1];
-      if (!arityOk || !invariantOk) {
-        if (active) setZkVerify(false);
-        return;
-      }
-      if (zkMeta?.zkPoseidonHash && inputsArray[0] !== zkMeta.zkPoseidonHash) {
+      try {
+        assertZkCurveConsistency({
+          zkProof: parsedProof,
+          zkMeta: embeddedProof?.zkMeta ?? embeddedProof?.bundleRoot?.zkMeta,
+        });
+        assertZkPublicInputsContract({
+          zkPublicInputs: inputsArray,
+          zkPoseidonHash: zkMeta?.zkPoseidonHash,
+        });
+      } catch {
         if (active) setZkVerify(false);
         return;
       }
@@ -1470,6 +1475,7 @@ export default function VerifyPage(): ReactElement {
         publicInputOf: ZK_STATEMENT_BINDING,
         domainTag: ZK_STATEMENT_DOMAIN,
         publicInputsContract: ZK_PUBLIC_INPUTS_CONTRACT,
+        encoding: ZK_STATEMENT_ENCODING,
       };
     }
     return null;
@@ -1623,6 +1629,7 @@ body: [
               publicInputOf: ZK_STATEMENT_BINDING,
               domainTag: ZK_STATEMENT_DOMAIN,
               publicInputsContract: ZK_PUBLIC_INPUTS_CONTRACT,
+              encoding: ZK_STATEMENT_ENCODING,
             }
           : undefined),
       bundleRoot: bundleRoot ?? embeddedProof?.bundleRoot,

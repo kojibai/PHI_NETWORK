@@ -108,8 +108,11 @@ const kai = await import(pathToFileURL(transpileRecursive(kaiPath.href)).href);
 
 const { embedProofMetadata } = svgProof;
 const {
+  assertZkCurveConsistency,
+  assertZkPublicInputsContract,
   buildBundleRoot,
   buildBundleUnsigned,
+  buildZkPublicInputs,
   hashBundle,
   hashProofCapsuleV1,
   hashSvgText,
@@ -203,7 +206,7 @@ test("sigil proof bundle hashes/signature stay deterministic with zk proof", asy
     zkPoseidonHash,
     zkProof,
     proofHints,
-    zkPublicInputs,
+    zkPublicInputs: buildZkPublicInputs(zkPoseidonHash),
   };
 
   const bundleUnsigned = buildBundleUnsigned(proofBundleBase);
@@ -263,8 +266,75 @@ test("proof bundle normalizes zk curve metadata", () => {
   assert.equal(proofBundle.bundleRoot?.zkMeta?.curve, "bn128");
   assert.equal(proofBundle.bundleRoot?.zkProof?.curve, "bn128");
   assert.deepEqual(proofBundle.zkMeta?.warnings, [
-    "curve_mismatch_corrected: meta=BLS12-381 proof=bn128",
+    "curve_mismatch_corrected meta=BLS12-381 proof=bn128",
   ]);
 
   assert.equal(ZK_PUBLIC_INPUTS_CONTRACT.invariant, "publicInputs[0] == publicInputs[1]");
+});
+
+test("proof bundle preserves meta curve when proof curve is blank", () => {
+  const zkProof = {
+    curve: "   ",
+    pi_a: ["1", "2", "3"],
+  };
+  const zkMeta = {
+    protocol: "groth16",
+    curve: "bn128",
+    scheme: "groth16-poseidon",
+    circuitId: "sigil_proof",
+  };
+  const normalized = normalizeProofBundleZkCurves({ zkProof, zkMeta });
+  assert.equal(normalized.zkMeta?.curve, "bn128");
+  assert.equal(normalized.zkProof?.curve, undefined);
+
+  const proofBundleBase = {
+    hashAlg: PROOF_HASH_ALG,
+    canon: PROOF_CANON,
+    zkProof: normalized.zkProof,
+    zkMeta: normalized.zkMeta,
+  };
+  const bundleRoot = buildBundleRoot(proofBundleBase);
+  assert.equal(bundleRoot.zkMeta?.curve, "bn128");
+});
+
+test("proof bundle enforces zk public input contract and verifier rejects violations", () => {
+  const poseidonHash = "0x1234";
+  const bundleRoot = buildBundleRoot({
+    hashAlg: PROOF_HASH_ALG,
+    canon: PROOF_CANON,
+    zkPoseidonHash: poseidonHash,
+  });
+  assert.deepEqual(bundleRoot.zkPublicInputs, [poseidonHash, poseidonHash]);
+
+  assert.throws(
+    () => assertZkPublicInputsContract({ zkPublicInputs: ["1"], zkPoseidonHash: poseidonHash }),
+    { message: "zk public inputs contract violated" }
+  );
+  assert.throws(
+    () => assertZkPublicInputsContract({ zkPublicInputs: ["1", "2"], zkPoseidonHash: poseidonHash }),
+    { message: "zk public inputs contract violated" }
+  );
+  assert.throws(
+    () => assertZkPublicInputsContract({ zkPublicInputs: ["2", "2"], zkPoseidonHash: poseidonHash }),
+    { message: "zk public inputs contract violated" }
+  );
+});
+
+test("verification enforces curve rules with proof points", () => {
+  assert.throws(
+    () =>
+      assertZkCurveConsistency({
+        zkProof: { pi_a: ["1", "2", "3"], pi_b: ["1", "2", "3"], pi_c: ["1", "2", "3"] },
+      }),
+    { message: "missing zkProof.curve" }
+  );
+
+  assert.throws(
+    () =>
+      assertZkCurveConsistency({
+        zkProof: { curve: "bn128", pi_a: ["1", "2", "3"] },
+        zkMeta: { curve: "BLS12-381" },
+      }),
+    { message: "zk curve mismatch (meta vs proof)" }
+  );
 });

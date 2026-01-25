@@ -44,6 +44,7 @@ import {
   buildVerifierSlug,
   buildVerifierUrl,
   buildBundleRoot,
+  buildZkPublicInputs,
   computeBundleHash,
   hashProofCapsuleV1,
   hashSvgText,
@@ -54,6 +55,7 @@ import {
   PROOF_HASH_ALG,
   ZK_PUBLIC_INPUTS_CONTRACT,
   ZK_STATEMENT_BINDING,
+  ZK_STATEMENT_ENCODING,
   ZK_STATEMENT_DOMAIN,
   type ProofCapsuleV1,
 } from "./verifierProof";
@@ -822,6 +824,7 @@ function KaiVohFlow(): ReactElement {
                 publicInputOf: ZK_STATEMENT_BINDING,
                 domainTag: ZK_STATEMENT_DOMAIN,
                 publicInputsContract: ZK_PUBLIC_INPUTS_CONTRACT,
+                encoding: ZK_STATEMENT_ENCODING,
               }
             : undefined;
           const zkMeta = zkPoseidonHash
@@ -845,7 +848,7 @@ function KaiVohFlow(): ReactElement {
             svgHash,
             zkPoseidonHash,
             zkProof,
-            zkPublicInputs,
+            zkPublicInputs: zkPoseidonHash ? buildZkPublicInputs(zkPoseidonHash) : zkPublicInputs,
             zkMeta: zkMetaNormalized,
           };
           const transport = {
