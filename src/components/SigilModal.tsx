@@ -47,6 +47,7 @@ import {
   computeBundleHash,
   hashProofCapsuleV1,
   hashSvgText,
+  normalizeProofBundleZkCurves,
   normalizeChakraDay,
   PROOF_CANON,
   PROOF_BINDINGS,
@@ -1447,11 +1448,13 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
       const zkMeta = zkPoseidonHash
         ? {
             protocol: "groth16",
-            curve: "BLS12-381",
             scheme: "groth16-poseidon",
             circuitId: "sigil_proof",
           }
         : undefined;
+      const normalizedZk = normalizeProofBundleZkCurves({ zkProof, zkMeta });
+      zkProof = normalizedZk.zkProof;
+      const zkMetaNormalized = normalizedZk.zkMeta;
       const proofBundleBase = {
         hashAlg: PROOF_HASH_ALG,
         canon: PROOF_CANON,
@@ -1463,7 +1466,7 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
         zkPoseidonHash,
         zkProof,
         zkPublicInputs,
-        zkMeta,
+        zkMeta: zkMetaNormalized,
       };
       const transport = {
         shareUrl,

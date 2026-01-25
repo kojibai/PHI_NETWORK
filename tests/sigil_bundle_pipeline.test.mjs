@@ -108,12 +108,15 @@ const kai = await import(pathToFileURL(transpileRecursive(kaiPath.href)).href);
 
 const { embedProofMetadata } = svgProof;
 const {
+  buildBundleRoot,
   buildBundleUnsigned,
   hashBundle,
   hashProofCapsuleV1,
   hashSvgText,
+  normalizeProofBundleZkCurves,
   PROOF_CANON,
   PROOF_HASH_ALG,
+  ZK_PUBLIC_INPUTS_CONTRACT,
 } = verifier;
 const { extractProofBundleMetaFromSvg } = meta;
 const { verifyBundleAuthorSig } = kas;
@@ -231,4 +234,37 @@ test("sigil proof bundle hashes/signature stay deterministic with zk proof", asy
 
   const zkVerified = await groth16.verify(vkey, zkPublicInputs, zkProof);
   assert.equal(zkVerified, true);
+});
+
+test("proof bundle normalizes zk curve metadata", () => {
+  const zkProof = {
+    curve: "bn128",
+    pi_a: ["1", "2", "3"],
+  };
+  const zkMeta = {
+    protocol: "groth16",
+    curve: "BLS12-381",
+    scheme: "groth16-poseidon",
+    circuitId: "sigil_proof",
+  };
+
+  const normalized = normalizeProofBundleZkCurves({ zkProof, zkMeta });
+  const proofBundleBase = {
+    hashAlg: PROOF_HASH_ALG,
+    canon: PROOF_CANON,
+    zkProof: normalized.zkProof,
+    zkMeta: normalized.zkMeta,
+  };
+  const bundleRoot = buildBundleRoot(proofBundleBase);
+  const proofBundle = { ...proofBundleBase, bundleRoot };
+
+  assert.equal(proofBundle.zkMeta?.curve, "bn128");
+  assert.equal(proofBundle.zkProof?.curve, "bn128");
+  assert.equal(proofBundle.bundleRoot?.zkMeta?.curve, "bn128");
+  assert.equal(proofBundle.bundleRoot?.zkProof?.curve, "bn128");
+  assert.deepEqual(proofBundle.zkMeta?.warnings, [
+    "curve_mismatch_corrected: meta=BLS12-381 proof=bn128",
+  ]);
+
+  assert.equal(ZK_PUBLIC_INPUTS_CONTRACT.invariant, "publicInputs[0] == publicInputs[1]");
 });
