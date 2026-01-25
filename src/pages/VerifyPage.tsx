@@ -81,6 +81,7 @@ import {
   buildValuationSnapshotKey,
   createValuationSnapshot,
   getOrCreateValuationSnapshot,
+  type ValuationSnapshotInput,
   type ValuationSnapshotState,
 } from "../utils/valuationSnapshot";
 
@@ -1479,13 +1480,14 @@ React.useEffect(() => {
     if (result.status !== "ok" || stewardVerifiedPulse == null) return null;
     if (displayPhi == null || !Number.isFinite(displayPhi)) return null;
     const usdPerPhiValue = Number.isFinite(usdPerPhi) && usdPerPhi > 0 ? usdPerPhi : null;
+    const mode: ValuationSnapshotInput["mode"] = isReceiveGlyph ? "receive" : "origin";
     return {
       verifiedAtPulse: stewardVerifiedPulse,
       phiValue: displayPhi,
       usdPerPhi: usdPerPhiValue,
       source: displaySource ?? "unknown",
-      mode: isReceiveGlyph ? "receive" : "origin",
-    };
+      mode,
+    } satisfies ValuationSnapshotInput;
   }, [displayPhi, displaySource, isReceiveGlyph, result.status, stewardVerifiedPulse, usdPerPhi]);
 
   React.useEffect(() => {
@@ -1920,11 +1922,17 @@ if (verified && typeof cacheBundleHash === "string" && cacheBundleHash.trim().le
 
     (async () => {
       if (originSig) {
-        if (!effectiveOriginBundleHash || !isKASAuthorSig(originSig)) {
+        if (!isKASAuthorSig(originSig)) {
           if (active) setAuthorSigVerified(false);
           return;
         }
-        const ok = await verifyBundleAuthorSig(effectiveOriginBundleHash, originSig);
+        const originBundleHash = effectiveOriginBundleHash ?? bundleHashFromAuthorSig(originSig);
+        const candidateHashes = Array.from(new Set([originBundleHash, bundleHash].filter(Boolean))) as string[];
+        if (!candidateHashes.length) {
+          if (active) setAuthorSigVerified(false);
+          return;
+        }
+        const ok = await verifyAuthorSigWithFallback(originSig, candidateHashes);
         if (active) setAuthorSigVerified(ok);
         return;
       }
