@@ -35,26 +35,23 @@ import {
 } from "../utils/sigilUrl";
 import "./SigilModal.css";
 import { downloadBlob } from "../lib/download";
-import { embedProofMetadata } from "../utils/svgProof";
 import { extractEmbeddedMetaFromSvg } from "../utils/sigilMetadata";
 import { registerSigilAuth } from "../utils/sigilRegistry";
 import { buildProofHints, generateZkProofFromPoseidonHash } from "../utils/zkProof";
 import { computeZkPoseidonHash } from "../utils/kai";
+import { pngBlobFromSvg } from "../utils/qrExport";
 import JSZip from "jszip";
 import {
-  buildBundleUnsigned,
   buildVerifierUrl,
-  hashBundle,
-  hashProofCapsuleV1,
-  hashSvgText,
   normalizeChakraDay,
-  PROOF_CANON,
-  PROOF_HASH_ALG,
   type ProofCapsuleV1,
 } from "./KaiVoh/verifierProof";
-import type { AuthorSig } from "../utils/authorSig";
-import { ensurePasskey, signBundleHash } from "../utils/webauthnKAS";
+import { signBundleHash } from "../utils/webauthnKAS";
+import type { KASAuthorSig } from "../utils/authorSig";
 import type { SigilProofHints } from "../types/sigil";
+import { buildCanonicalGlyphBundle } from "../utils/canonicalGlyphBundle";
+import { buildCanonicalSigilSvg, CANONICAL_PNG_PX } from "../utils/canonicalSigilSvg";
+import { makeKasAttestationFilename, makeKasAttestationJson } from "../utils/kasAttestation";
 
 /* ✅ SINGLE SOURCE OF TRUTH: src/utils/kai_pulse.ts */
 import {
@@ -1110,22 +1107,6 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
     pulseExact: string; // bigint exact
   };
 
-  type ProofBundle = {
-    hashAlg: "sha256";
-    canon: "JCS";
-    proofCapsule: ProofCapsuleV1;
-    capsuleHash: string;
-    svgHash: string;
-    bundleHash: string;
-    shareUrl: string;
-    verifierUrl: string;
-    authorSig: AuthorSig | null;
-    zkPoseidonHash?: string;
-    zkProof?: unknown;
-    proofHints?: unknown;
-    zkPublicInputs?: unknown;
-  };
-
   const makeSharePayload = (
     canonicalHash: string,
     pulseSnapshot: bigint,
@@ -1292,7 +1273,6 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
 
       const shareUrl = makeSigilUrl(payloadHashHex, sharePayload);
       const verifierUrl = buildVerifierUrl(pulseNum, kaiSignature);
-      const kaiSignatureShort = kaiSignature.slice(0, 10);
       const proofCapsule: ProofCapsuleV1 = {
         v: "KPV-1",
         pulse: pulseNum,
@@ -1302,18 +1282,17 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
         verifierSlug: `${pulseNum}-${kaiSignatureShort}`,
       };
 
-      const capsuleHash = await hashProofCapsuleV1(proofCapsule);
-      const svgClone = svgEl.cloneNode(true) as SVGElement;
-      svgClone.setAttribute("data-pulse", String(pulseNum));
-      svgClone.setAttribute("data-beat", String(beatNum));
-      svgClone.setAttribute("data-step-index", String(stepNum));
-      svgClone.setAttribute("data-chakra-day", chakraNormalized);
-      svgClone.setAttribute("data-steps-per-beat", String(stepsPerBeat));
-      svgClone.setAttribute("data-kai-signature", kaiSignature);
-      svgClone.setAttribute("data-phi-key", phiKey);
-      svgClone.setAttribute("data-payload-hash", payloadHashHex);
-
-      const svgString = new XMLSerializer().serializeToString(svgClone);
+      const svgString = buildCanonicalSigilSvg({
+        svgEl,
+        pulse: pulseNum,
+        beat: beatNum,
+        stepIndex: stepNum,
+        stepsPerBeat,
+        chakraDay: chakraNormalized,
+        kaiSignature,
+        phiKey,
+        payloadHash: payloadHashHex,
+      });
       const embeddedMeta = extractEmbeddedMetaFromSvg(svgString);
       let zkPoseidonHash =
         typeof embeddedMeta.zkPoseidonHash === "string" &&
@@ -1391,68 +1370,61 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
       if (zkPoseidonHash && (!zkProof || typeof zkProof !== "object")) {
         throw new Error("ZK proof missing");
       }
-      if (zkPublicInputs) {
-        svgClone.setAttribute("data-zk-public-inputs", JSON.stringify(zkPublicInputs));
-      }
-      if (zkPoseidonHash) {
-        svgClone.setAttribute("data-zk-scheme", "groth16-poseidon");
-        svgClone.setAttribute("data-zk-poseidon-hash", zkPoseidonHash);
-        if (zkProof) {
-          svgClone.setAttribute("data-zk-proof", "present");
-        }
-      }
-      if (
-        svgClone.getAttribute("data-pulse") !== String(pulseNum) ||
-        svgClone.getAttribute("data-kai-signature") !== kaiSignature ||
-        svgClone.getAttribute("data-phi-key") !== phiKey
-      ) {
-        throw new Error("SVG data attributes do not match proof capsule");
-      }
+      const svgBlob = new Blob([svgString], { type: "image/svg+xml;charset=utf-8" });
+      const pngBlob = await pngBlobFromSvg(svgBlob, CANONICAL_PNG_PX);
+      const pngBytes = new Uint8Array(await pngBlob.arrayBuffer());
 
-      const svgHash = await hashSvgText(svgString);
-      const proofBundleBase = {
-        hashAlg: PROOF_HASH_ALG,
-        canon: PROOF_CANON,
+      const bundle = await buildCanonicalGlyphBundle({
+        svgText: svgString,
+        pngBytes,
         proofCapsule,
-        capsuleHash,
-        svgHash,
-        shareUrl,
-        verifierUrl,
-        authorSig: null as AuthorSig | null,
         zkPoseidonHash,
         zkProof,
-        proofHints,
         zkPublicInputs,
-      };
-      const bundleUnsigned = buildBundleUnsigned(proofBundleBase);
-      const computedBundleHash = await hashBundle(bundleUnsigned);
-      let authorSig: AuthorSig | null = null;
+      });
+
+      let authorSig: KASAuthorSig;
       try {
-        await ensurePasskey(phiKey);
-        authorSig = await signBundleHash(phiKey, computedBundleHash);
+        authorSig = await signBundleHash(phiKey, bundle.bundleHash);
       } catch (err) {
         const reason = err instanceof Error ? err.message : String(err);
         throw new Error(
           `KAS signature failed. Please complete Face ID/Touch ID and ensure this PWA opens on the same hostname you registered. Details: ${reason}`
         );
       }
-      const proofBundle: ProofBundle = {
-        ...proofBundleBase,
-        bundleHash: computedBundleHash,
-        authorSig, 
-      };
       if (authorSig?.v === "KAS-1") {
         const authUrl = shareUrl || verifierUrl;
         if (authUrl) registerSigilAuth(authUrl, authorSig);
       }
 
-      const sealedSvg = embedProofMetadata(svgString, proofBundle);
-      const baseName = `☤KAI-Sigil_Glyph_v1-${pulseNum}_${kaiSignatureShort}_Φkey${phiKey}`;
+      const rpId = typeof window !== "undefined" ? window.location.hostname : "";
+      if (!rpId) throw new Error("RP ID is required for attestation.");
+      const attestation = await makeKasAttestationJson({
+        bundleHash: bundle.bundleHash,
+        canonicalBundleObject: bundle.canonicalBundleObject,
+        proofCapsule,
+        capsuleHash: bundle.capsuleHash,
+        svgHash: bundle.svgHash,
+        authorSig,
+        rpId,
+      });
+
       const zip = new JSZip();
-      zip.file(`${baseName}.svg`, sealedSvg);
-      zip.file(`${baseName}_proof_bundle.json`, JSON.stringify(proofBundle, null, 2));
+      zip.file(`${bundle.baseName}.png`, bundle.pngBytes);
+      zip.file(`${bundle.baseName}.svg`, bundle.svgBytes);
+      zip.file("manifest.json", bundle.manifestJson);
+      zip.file("proofBundle.json", bundle.proofBundleJson);
+
+      const attestationName = await makeKasAttestationFilename({
+        verifierSlug: proofCapsule.verifierSlug,
+        bundleHash: bundle.bundleHash,
+        credId: authorSig.credId,
+        pulse: proofCapsule.pulse,
+      });
+      zip.file(`attestations/${attestationName}`, JSON.stringify(attestation, null, 2));
+
       const zipBlob = await zip.generateAsync({ type: "blob" });
-      downloadBlob(zipBlob, `${baseName}_proof_bundle.zip`);
+      downloadBlob(zipBlob, `${bundle.baseName}.zip`);
 
       return null;
     } catch (err) {

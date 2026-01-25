@@ -2,7 +2,6 @@
 "use client";
 
 import { pngBlobFromSvg } from "../../utils/qrExport";
-import { retagSvgIdsForStep, ensureCanonicalMetadataFirst } from "./svgOps";
 import { loadJSZip, signal } from "./utils";
 import {
   sha256HexCanon,
@@ -13,13 +12,11 @@ import {
 import { extractEmbeddedMetaFromSvg } from "../../utils/sigilMetadata";
 import { generateZkProofFromPoseidonHash } from "../../utils/zkProof";
 import { computeZkPoseidonHash } from "../../utils/kai";
-import { ensureTitleAndDesc, ensureViewBoxOnClone, ensureXmlns } from "../../utils/svgMeta";
 import { normalizeChakraDay, type ProofCapsuleV1 } from "../../components/KaiVoh/verifierProof";
 import { buildCanonicalGlyphBundle } from "../../utils/canonicalGlyphBundle";
 import { makeKasAttestationFilename, makeKasAttestationJson } from "../../utils/kasAttestation";
 import { signBundleHash } from "../../utils/webauthnKAS";
-
-const CANONICAL_PNG_PX = 2048;
+import { buildCanonicalSigilSvg, CANONICAL_PNG_PX } from "../../utils/canonicalSigilSvg";
 
 const readPublicInput0 = (inputs: unknown): string | null => {
   if (Array.isArray(inputs) && typeof inputs[0] === "string") {
@@ -159,28 +156,17 @@ export async function exportZIP(ctx: {
       verifierSlug: `${payload.pulse}-${kaiSignature.slice(0, 10)}`,
     };
 
-    const svgClone = svgEl.cloneNode(true) as SVGElement;
-    ensureViewBoxOnClone(svgClone as SVGSVGElement, CANONICAL_PNG_PX);
-    ensureXmlns(svgClone as SVGSVGElement);
-    ensureTitleAndDesc(
-      svgClone as SVGSVGElement,
-      "Kairos Sigil-Glyph — Sealed KairosMoment",
-      "Deterministic sigil-glyph with sovereign metadata. Canonical export."
-    );
-
-    svgClone.setAttribute("data-pulse", String(payload.pulse));
-    svgClone.setAttribute("data-beat", String(payload.beat));
-    svgClone.setAttribute("data-step-index", String(sealedStepIndex));
-    svgClone.setAttribute("data-chakra-day", chakraNormalized);
-    svgClone.setAttribute("data-steps-per-beat", String(stepsNum));
-    svgClone.setAttribute("data-kai-signature", kaiSignature);
-    svgClone.setAttribute("data-phi-key", phiKey);
-    svgClone.setAttribute("data-payload-hash", payloadHashHex);
-
-    retagSvgIdsForStep(svgClone as SVGSVGElement, payload.pulse, payload.beat, sealedStepIndex);
-    ensureCanonicalMetadataFirst(svgClone as SVGSVGElement);
-
-    const svgString = new XMLSerializer().serializeToString(svgClone);
+    const svgString = buildCanonicalSigilSvg({
+      svgEl,
+      pulse: payload.pulse,
+      beat: payload.beat,
+      stepIndex: sealedStepIndex,
+      stepsPerBeat: stepsNum,
+      chakraDay: chakraNormalized,
+      kaiSignature,
+      phiKey,
+      payloadHash: payloadHashHex,
+    });
 
     const embeddedMeta = extractEmbeddedMetaFromSvg(svgString);
     let zkPoseidonHash =
@@ -241,14 +227,6 @@ export async function exportZIP(ctx: {
     }
     if (zkPoseidonHash && (!zkProof || typeof zkProof !== "object")) {
       if (!allowMissingProof) throw new Error("ZK proof missing");
-    }
-
-    if (
-      svgClone.getAttribute("data-pulse") !== String(payload.pulse) ||
-      svgClone.getAttribute("data-kai-signature") !== kaiSignature ||
-      svgClone.getAttribute("data-phi-key") !== phiKey
-    ) {
-      throw new Error("SVG data attributes do not match proof capsule");
     }
 
     const svgBlob = new Blob([svgString], { type: "image/svg+xml;charset=utf-8" });

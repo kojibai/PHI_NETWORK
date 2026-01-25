@@ -101,11 +101,12 @@ import { DEFAULT_ISSUANCE_POLICY, quotePhiForUsd } from "../../utils/phi-issuanc
 import { BREATH_MS } from "../valuation/constants";
 import { recordSend, getSpentScaledFor, markConfirmedByLeaf } from "../../utils/sendLedger";
 import { recordSigilTransferMovement } from "../../utils/sigilTransferRegistry";
-import { buildBundleUnsigned, buildVerifierSlug, hashBundle, hashProofCapsuleV1, hashSvgText, normalizeChakraDay, PROOF_CANON, PROOF_HASH_ALG } from "../KaiVoh/verifierProof";
+import { buildVerifierSlug, hashProofCapsuleV1, hashSvgText, normalizeChakraDay, PROOF_CANON, PROOF_HASH_ALG, type ProofCapsuleV1 } from "../KaiVoh/verifierProof";
 import { isKASAuthorSig } from "../../utils/authorSig";
 import { computeZkPoseidonHash } from "../../utils/kai";
 import { generateZkProofFromPoseidonHash } from "../../utils/zkProof";
 import type { SigilProofHints } from "../../types/sigil";
+import { buildCanonicalBundleObject, hashCanonicalBundleObject } from "../../utils/canonicalGlyphBundle";
 import type { SigilSharePayloadLoose } from "../SigilExplorer/types";
 import { apiFetchWithFailover, API_URLS_PATH, loadApiBackupDeadUntil, loadApiBaseHint } from "../SigilExplorer/apiClient";
 import { extractPayloadFromUrl } from "../SigilExplorer/url";
@@ -410,9 +411,21 @@ const VerifierStamperInner: React.FC = () => {
       const svgHash = await hashSvgText(svgText);
       const proofCapsule = proofMetaValue?.proofCapsule;
       const capsuleHash = proofMetaValue?.capsuleHash ?? (proofCapsule ? await hashProofCapsuleV1(proofCapsule) : null);
-      let bundleSeed: Record<string, unknown> | null = null;
-      if (proofMetaValue?.raw && isRecord(proofMetaValue.raw)) {
-        bundleSeed = { ...(proofMetaValue.raw as Record<string, unknown>), svgHash, capsuleHash, proofCapsule: proofCapsule ?? undefined };
+      let bundleSeed: {
+        proofCapsule: ProofCapsuleV1;
+        capsuleHash: string;
+        svgHash: string;
+        zkPoseidonHash?: string | null;
+        zkPublicInputs?: unknown | null;
+      } | null = null;
+      if (proofMetaValue?.raw && isRecord(proofMetaValue.raw) && proofCapsule && capsuleHash) {
+        bundleSeed = {
+          proofCapsule,
+          capsuleHash,
+          svgHash,
+          zkPoseidonHash: proofMetaValue.zkPoseidonHash ?? null,
+          zkPublicInputs: proofMetaValue.zkPublicInputs ?? null,
+        };
       } else if (metaValue.kaiSignature && typeof metaValue.pulse === "number") {
         const chakraDay = normalizeChakraDay(metaValue.chakraDay ?? "") ?? "Crown";
         const verifierSlug = buildVerifierSlug(metaValue.pulse, metaValue.kaiSignature);
@@ -427,24 +440,24 @@ const VerifierStamperInner: React.FC = () => {
         };
         const capsuleHashNext = capsuleHash ?? (await hashProofCapsuleV1(fallbackCapsule));
         bundleSeed = {
-          hashAlg: proofMetaValue?.hashAlg ?? PROOF_HASH_ALG,
-          canon: proofMetaValue?.canon ?? PROOF_CANON,
           proofCapsule: fallbackCapsule,
           capsuleHash: capsuleHashNext,
           svgHash,
-          shareUrl: proofMetaValue?.shareUrl,
-          verifierUrl: proofMetaValue?.verifierUrl,
-          zkPoseidonHash: proofMetaValue?.zkPoseidonHash,
-          zkProof: proofMetaValue?.zkProof,
-          proofHints: proofMetaValue?.proofHints,
-          zkPublicInputs: proofMetaValue?.zkPublicInputs,
-          authorSig: proofMetaValue?.authorSig ?? null,
+          zkPoseidonHash: proofMetaValue?.zkPoseidonHash ?? null,
+          zkPublicInputs: proofMetaValue?.zkPublicInputs ?? null,
         };
       }
 
       if (!bundleSeed) return null;
-      const bundleUnsigned = buildBundleUnsigned(bundleSeed);
-      return hashBundle(bundleUnsigned);
+      const canonicalBundleObject = buildCanonicalBundleObject({
+        proofCapsule: bundleSeed.proofCapsule,
+        capsuleHash: bundleSeed.capsuleHash,
+        svgHash: bundleSeed.svgHash,
+        zkPoseidonHash: bundleSeed.zkPoseidonHash ?? null,
+        zkPublicInputs: bundleSeed.zkPublicInputs ?? null,
+      });
+      const { hash } = await hashCanonicalBundleObject(canonicalBundleObject);
+      return hash;
     },
     []
   );
@@ -2136,10 +2149,18 @@ const VerifierStamperInner: React.FC = () => {
         delete nextBundle.receiveSig;
         delete nextBundle.bundleHash;
 
-        const bundleUnsigned = buildBundleUnsigned(nextBundle);
-        const bundleHashNext = await hashBundle(bundleUnsigned);
-        nextBundle.bundleHash = bundleHashNext;
-        childSvgWithProof = embedProofMetadata(childSvgText, nextBundle);
+        if (proofCapsule && capsuleHash) {
+          const canonicalBundleObject = buildCanonicalBundleObject({
+            proofCapsule,
+            capsuleHash,
+            svgHash,
+            zkPoseidonHash: proofBundleMeta?.zkPoseidonHash ?? null,
+            zkPublicInputs: proofBundleMeta?.zkPublicInputs ?? null,
+          });
+          const { hash: bundleHashNext } = await hashCanonicalBundleObject(canonicalBundleObject);
+          nextBundle.bundleHash = bundleHashNext;
+          childSvgWithProof = embedProofMetadata(childSvgText, nextBundle);
+        }
       }
     } catch (err) {
       logError("send.embedProofBundle", err);
@@ -2395,9 +2416,20 @@ const VerifierStamperInner: React.FC = () => {
       nextBundle = { svgHash, capsuleHash, ...(receiveSigLocal ? { receiveSig: receiveSigLocal } : {}) };
     }
 
-    const bundleUnsigned = buildBundleUnsigned(nextBundle);
-    const bundleHashNext = await hashBundle(bundleUnsigned);
-    nextBundle.bundleHash = bundleHashNext;
+    const bundleCapsule = (nextBundle.proofCapsule as ProofCapsuleV1 | undefined) ?? proofCapsule ?? undefined;
+    const bundleCapsuleHash =
+      typeof nextBundle.capsuleHash === "string" ? nextBundle.capsuleHash : capsuleHash ?? undefined;
+    if (bundleCapsule && bundleCapsuleHash) {
+      const canonicalBundleObject = buildCanonicalBundleObject({
+        proofCapsule: bundleCapsule,
+        capsuleHash: bundleCapsuleHash,
+        svgHash,
+        zkPoseidonHash: proofBundleMeta?.zkPoseidonHash ?? null,
+        zkPublicInputs: proofBundleMeta?.zkPublicInputs ?? null,
+      });
+      const { hash: bundleHashNext } = await hashCanonicalBundleObject(canonicalBundleObject);
+      nextBundle.bundleHash = bundleHashNext;
+    }
 
     const updatedSvg = embedProofMetadata(baseSvg, nextBundle);
     durl = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(updatedSvg)))}`;

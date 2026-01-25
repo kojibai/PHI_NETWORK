@@ -4,15 +4,18 @@ import { embedProofMetadata } from "./svgProof";
 import { hashProofCapsuleV1, hashSvgText, type ProofCapsuleV1 } from "../components/KaiVoh/verifierProof";
 
 export type CanonicalBundleObject = {
-  v: "KPB-1";
+  v: "KPB-2";
   hashAlg: "sha256";
   canon: "JCS";
   proofCapsule: ProofCapsuleV1;
   capsuleHash: string;
   svgHash: string;
-  zkPoseidonHash: string | null;
-  zkProof: unknown | null;
-  zkPublicInputs: unknown | null;
+  zk: {
+    scheme: "groth16-poseidon";
+    curve: "bn128";
+    poseidonPublic: string | null;
+    publicInputs: unknown | null;
+  };
 };
 
 export type CanonicalProofBundle = {
@@ -21,10 +24,15 @@ export type CanonicalProofBundle = {
   proofCapsule: ProofCapsuleV1;
   capsuleHash: string;
   svgHash: string;
-  zkPoseidonHash: string | null;
-  zkProof: unknown | null;
-  zkPublicInputs: unknown | null;
   bundleHash: string;
+  zk: {
+    scheme: "groth16-poseidon";
+    curve: "bn128";
+    zkPoseidonHash: string | null;
+    zkPublicInputs: unknown | null;
+    zkProof: unknown | null;
+    zkProofHash: string | null;
+  };
 };
 
 export type CanonicalManifest = {
@@ -60,6 +68,7 @@ export type CanonicalBundleOutput = {
   proofBundleJson: string;
   manifestJson: string;
   baseName: string;
+  zkProofHash: string | null;
 };
 
 function normalizeOptional(value: unknown): unknown | null {
@@ -71,19 +80,21 @@ export function buildCanonicalBundleObject(args: {
   capsuleHash: string;
   svgHash: string;
   zkPoseidonHash?: string | null;
-  zkProof?: unknown | null;
   zkPublicInputs?: unknown | null;
 }): CanonicalBundleObject {
   return {
-    v: "KPB-1",
+    v: "KPB-2",
     hashAlg: "sha256",
     canon: "JCS",
     proofCapsule: args.proofCapsule,
     capsuleHash: args.capsuleHash,
     svgHash: args.svgHash,
-    zkPoseidonHash: (normalizeOptional(args.zkPoseidonHash) as string | null) ?? null,
-    zkProof: normalizeOptional(args.zkProof),
-    zkPublicInputs: normalizeOptional(args.zkPublicInputs),
+    zk: {
+      scheme: "groth16-poseidon",
+      curve: "bn128",
+      poseidonPublic: (normalizeOptional(args.zkPoseidonHash) as string | null) ?? null,
+      publicInputs: normalizeOptional(args.zkPublicInputs),
+    },
   };
 }
 
@@ -93,6 +104,13 @@ export async function hashCanonicalBundleObject(bundleObject: CanonicalBundleObj
   return { jcs, hash: hash.toLowerCase() };
 }
 
+export async function computeZkProofHash(zkProof: unknown | null | undefined): Promise<string | null> {
+  if (zkProof === undefined || zkProof === null) return null;
+  const jcs = jcsCanonicalize(zkProof as JsonValue);
+  const hash = await sha256Hex(jcs);
+  return hash.toLowerCase();
+}
+
 export function buildCanonicalProofBundle(args: {
   proofCapsule: ProofCapsuleV1;
   capsuleHash: string;
@@ -100,6 +118,7 @@ export function buildCanonicalProofBundle(args: {
   zkPoseidonHash?: string | null;
   zkProof?: unknown | null;
   zkPublicInputs?: unknown | null;
+  zkProofHash?: string | null;
   bundleHash: string;
 }): CanonicalProofBundle {
   return {
@@ -108,10 +127,15 @@ export function buildCanonicalProofBundle(args: {
     proofCapsule: args.proofCapsule,
     capsuleHash: args.capsuleHash,
     svgHash: args.svgHash,
-    zkPoseidonHash: (normalizeOptional(args.zkPoseidonHash) as string | null) ?? null,
-    zkProof: normalizeOptional(args.zkProof),
-    zkPublicInputs: normalizeOptional(args.zkPublicInputs),
     bundleHash: args.bundleHash,
+    zk: {
+      scheme: "groth16-poseidon",
+      curve: "bn128",
+      zkPoseidonHash: (normalizeOptional(args.zkPoseidonHash) as string | null) ?? null,
+      zkPublicInputs: normalizeOptional(args.zkPublicInputs),
+      zkProof: normalizeOptional(args.zkProof),
+      zkProofHash: (normalizeOptional(args.zkProofHash) as string | null) ?? null,
+    },
   };
 }
 
@@ -135,13 +159,13 @@ export function buildCanonicalManifest(args: {
 export async function buildCanonicalGlyphBundle(inputs: CanonicalBundleInputs): Promise<CanonicalBundleOutput> {
   const svgHash = await hashSvgText(inputs.svgText);
   const capsuleHash = await hashProofCapsuleV1(inputs.proofCapsule);
+  const zkProofHash = await computeZkProofHash(inputs.zkProof ?? null);
 
   const canonicalBundleObject = buildCanonicalBundleObject({
     proofCapsule: inputs.proofCapsule,
     capsuleHash,
     svgHash,
     zkPoseidonHash: inputs.zkPoseidonHash ?? null,
-    zkProof: inputs.zkProof ?? null,
     zkPublicInputs: inputs.zkPublicInputs ?? null,
   });
 
@@ -155,6 +179,7 @@ export async function buildCanonicalGlyphBundle(inputs: CanonicalBundleInputs): 
     zkPoseidonHash: inputs.zkPoseidonHash ?? null,
     zkProof: inputs.zkProof ?? null,
     zkPublicInputs: inputs.zkPublicInputs ?? null,
+    zkProofHash,
     bundleHash,
   });
 
@@ -189,5 +214,6 @@ export async function buildCanonicalGlyphBundle(inputs: CanonicalBundleInputs): 
     proofBundleJson: JSON.stringify(proofBundle, null, 2),
     manifestJson: JSON.stringify(manifest, null, 2),
     baseName,
+    zkProofHash,
   };
 }

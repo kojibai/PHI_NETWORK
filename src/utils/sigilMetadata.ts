@@ -28,6 +28,7 @@ export type EmbeddedMeta = {
   zkProof?: unknown;
   proofHints?: unknown;
   zkPublicInputs?: unknown;
+  zkProofHash?: string;
   raw?: unknown;
 };
 
@@ -141,18 +142,25 @@ function toEmbeddedMetaFromUnknown(raw: unknown): EmbeddedMeta {
       ? (capsuleRaw as ProofCapsuleV1)
       : undefined;
 
+  const zkBlock = isRecord(raw.zk) ? raw.zk : null;
   const zkPoseidonHash =
-    typeof raw.zkPoseidonHash === "string"
-      ? raw.zkPoseidonHash
-      : typeof decodedPayload?.zkPoseidonHash === "string"
-        ? decodedPayload.zkPoseidonHash
-        : undefined;
+    typeof zkBlock?.zkPoseidonHash === "string"
+      ? zkBlock.zkPoseidonHash
+      : typeof zkBlock?.poseidonPublic === "string"
+        ? zkBlock.poseidonPublic
+        : typeof raw.zkPoseidonHash === "string"
+          ? raw.zkPoseidonHash
+          : typeof decodedPayload?.zkPoseidonHash === "string"
+            ? decodedPayload.zkPoseidonHash
+            : undefined;
   const zkProof =
-    "zkProof" in raw
-      ? raw.zkProof
-      : decodedPayload && "zkProof" in decodedPayload
-        ? decodedPayload.zkProof
-        : undefined;
+    zkBlock && "zkProof" in zkBlock
+      ? zkBlock.zkProof
+      : "zkProof" in raw
+        ? raw.zkProof
+        : decodedPayload && "zkProof" in decodedPayload
+          ? decodedPayload.zkProof
+          : undefined;
   const proofHints =
     "proofHints" in raw
       ? raw.proofHints
@@ -160,10 +168,20 @@ function toEmbeddedMetaFromUnknown(raw: unknown): EmbeddedMeta {
         ? decodedPayload.proofHints
         : undefined;
   const zkPublicInputs =
-    "zkPublicInputs" in raw
-      ? raw.zkPublicInputs
-      : decodedPayload && "zkPublicInputs" in decodedPayload
-        ? decodedPayload.zkPublicInputs
+    zkBlock && "zkPublicInputs" in zkBlock
+      ? zkBlock.zkPublicInputs
+      : zkBlock && "publicInputs" in zkBlock
+        ? zkBlock.publicInputs
+        : "zkPublicInputs" in raw
+          ? raw.zkPublicInputs
+          : decodedPayload && "zkPublicInputs" in decodedPayload
+            ? decodedPayload.zkPublicInputs
+            : undefined;
+  const zkProofHash =
+    typeof zkBlock?.zkProofHash === "string"
+      ? zkBlock.zkProofHash
+      : typeof raw.zkProofHash === "string"
+        ? raw.zkProofHash
         : undefined;
 
   const capsuleHash = typeof raw.capsuleHash === "string" ? raw.capsuleHash : undefined;
@@ -197,6 +215,7 @@ function toEmbeddedMetaFromUnknown(raw: unknown): EmbeddedMeta {
     zkProof,
     proofHints,
     zkPublicInputs,
+    zkProofHash,
     raw,
   };
 }
@@ -316,6 +335,7 @@ function findProofBundleInText(text: string): ProofBundleMeta | null {
         zkProof: meta.zkProof,
         proofHints: meta.proofHints,
         zkPublicInputs: meta.zkPublicInputs,
+        zkProofHash: meta.zkProofHash,
         raw: parsed,
       };
     }
@@ -346,6 +366,7 @@ function findProofBundleInText(text: string): ProofBundleMeta | null {
         zkProof: meta.zkProof,
         proofHints: meta.proofHints,
         zkPublicInputs: meta.zkPublicInputs,
+        zkProofHash: meta.zkProofHash,
         raw: blobParsed,
       };
     }
@@ -463,6 +484,7 @@ export type ProofBundleMeta = {
   zkProof?: unknown;
   proofHints?: unknown;
   zkPublicInputs?: unknown;
+  zkProofHash?: string;
   raw?: unknown;
 };
 
@@ -491,6 +513,7 @@ export function extractProofBundleMetaFromSvg(svgText: string): ProofBundleMeta 
           zkProof: meta.zkProof,
           proofHints: meta.proofHints,
           zkPublicInputs: meta.zkPublicInputs,
+          zkProofHash: meta.zkProofHash,
           raw: parsed,
         };
       }
@@ -521,6 +544,7 @@ export function extractProofBundleMetaFromSvg(svgText: string): ProofBundleMeta 
           zkProof: meta.zkProof,
           proofHints: meta.proofHints,
           zkPublicInputs: meta.zkPublicInputs,
+          zkProofHash: meta.zkProofHash,
           raw: parsed,
         };
       }

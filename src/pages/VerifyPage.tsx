@@ -39,6 +39,7 @@ import { jcsCanonicalize } from "../utils/jcs";
 import { svgCanonicalForHash } from "../utils/svgProof";
 import {
   buildCanonicalBundleObject,
+  computeZkProofHash,
   hashCanonicalBundleObject,
   type CanonicalProofBundle,
 } from "../utils/canonicalGlyphBundle";
@@ -172,7 +173,38 @@ type SharedReceipt = {
   zkProof?: ProofBundleMeta["zkProof"];
   proofHints?: ProofBundleMeta["proofHints"];
   zkPublicInputs?: ProofBundleMeta["zkPublicInputs"];
+  zkProofHash?: string;
 };
+
+function readZkPoseidonHash(raw: Record<string, unknown>): string | undefined {
+  const zk = isRecord(raw.zk) ? raw.zk : null;
+  if (typeof zk?.zkPoseidonHash === "string") return zk.zkPoseidonHash;
+  if (typeof zk?.poseidonPublic === "string") return zk.poseidonPublic;
+  if (typeof raw.zkPoseidonHash === "string") return raw.zkPoseidonHash;
+  return undefined;
+}
+
+function readZkPublicInputs(raw: Record<string, unknown>): unknown | undefined {
+  const zk = isRecord(raw.zk) ? raw.zk : null;
+  if (zk && "zkPublicInputs" in zk) return zk.zkPublicInputs;
+  if (zk && "publicInputs" in zk) return zk.publicInputs;
+  if ("zkPublicInputs" in raw) return raw.zkPublicInputs;
+  return undefined;
+}
+
+function readZkProof(raw: Record<string, unknown>): unknown | undefined {
+  const zk = isRecord(raw.zk) ? raw.zk : null;
+  if (zk && "zkProof" in zk) return zk.zkProof;
+  if ("zkProof" in raw) return raw.zkProof;
+  return undefined;
+}
+
+function readZkProofHash(raw: Record<string, unknown>): string | undefined {
+  const zk = isRecord(raw.zk) ? raw.zk : null;
+  if (typeof zk?.zkProofHash === "string") return zk.zkProofHash;
+  if (typeof raw.zkProofHash === "string") return raw.zkProofHash;
+  return undefined;
+}
 
 function parseProofCapsule(raw: unknown): ProofCapsuleV1 | null {
   if (!isRecord(raw)) return null;
@@ -197,10 +229,11 @@ function buildSharedReceiptFromObject(raw: unknown): SharedReceipt | null {
     verifierUrl: typeof raw.verifierUrl === "string" ? raw.verifierUrl : undefined,
     shareUrl: typeof raw.shareUrl === "string" ? raw.shareUrl : undefined,
     authorSig: raw.authorSig as ProofBundleMeta["authorSig"],
-    zkPoseidonHash: typeof raw.zkPoseidonHash === "string" ? raw.zkPoseidonHash : undefined,
-    zkProof: "zkProof" in raw ? raw.zkProof : undefined,
+    zkPoseidonHash: readZkPoseidonHash(raw),
+    zkProof: readZkProof(raw),
     proofHints: "proofHints" in raw ? raw.proofHints : undefined,
-    zkPublicInputs: "zkPublicInputs" in raw ? raw.zkPublicInputs : undefined,
+    zkPublicInputs: readZkPublicInputs(raw),
+    zkProofHash: readZkProofHash(raw),
   };
 }
 
@@ -304,16 +337,29 @@ function parseProofBundleFromObject(raw: unknown): CanonicalProofBundle | null {
   if (typeof raw.capsuleHash !== "string") return null;
   if (typeof raw.svgHash !== "string") return null;
   if (typeof raw.bundleHash !== "string") return null;
+  const zkPoseidonHash = readZkPoseidonHash(raw) ?? null;
+  const zkPublicInputs = readZkPublicInputs(raw) ?? null;
+  const zkProof = readZkProof(raw) ?? null;
+  const zkProofHash = readZkProofHash(raw) ?? null;
+  const zkBlock = isRecord(raw.zk) ? raw.zk : null;
+  const scheme =
+    typeof zkBlock?.scheme === "string" ? zkBlock.scheme : "groth16-poseidon";
+  const curve = typeof zkBlock?.curve === "string" ? zkBlock.curve : "bn128";
   return {
     hashAlg: typeof raw.hashAlg === "string" ? (raw.hashAlg as CanonicalProofBundle["hashAlg"]) : "sha256",
     canon: typeof raw.canon === "string" ? (raw.canon as CanonicalProofBundle["canon"]) : "JCS",
     proofCapsule,
     capsuleHash: raw.capsuleHash,
     svgHash: raw.svgHash,
-    zkPoseidonHash: typeof raw.zkPoseidonHash === "string" ? raw.zkPoseidonHash : null,
-    zkProof: "zkProof" in raw ? raw.zkProof : null,
-    zkPublicInputs: "zkPublicInputs" in raw ? raw.zkPublicInputs : null,
     bundleHash: raw.bundleHash,
+    zk: {
+      scheme,
+      curve,
+      zkPoseidonHash,
+      zkPublicInputs,
+      zkProof,
+      zkProofHash,
+    },
   };
 }
 
@@ -926,6 +972,7 @@ export default function VerifyPage(): ReactElement {
           zkProof: sharedReceipt.zkProof,
           proofHints: sharedReceipt.proofHints,
           zkPublicInputs: sharedReceipt.zkPublicInputs,
+          zkProofHash: sharedReceipt.zkProofHash,
         });
         setAuthorSigVerified(null);
         setPresenceSignedCount(0);
@@ -949,22 +996,26 @@ export default function VerifyPage(): ReactElement {
       const capsuleHashNext = await hashProofCapsuleV1(capsule);
 
       const zkPoseidonHash =
-        proofBundleSource && typeof proofBundleSource.zkPoseidonHash === "string"
-          ? proofBundleSource.zkPoseidonHash
+        proofBundleSource && isRecord(proofBundleSource)
+          ? readZkPoseidonHash(proofBundleSource)
           : embedded?.zkPoseidonHash;
       const zkProof =
-        proofBundleSource && "zkProof" in proofBundleSource ? proofBundleSource.zkProof : embedded?.zkProof ?? null;
+        proofBundleSource && isRecord(proofBundleSource) ? readZkProof(proofBundleSource) : embedded?.zkProof ?? null;
       const zkPublicInputs =
-        proofBundleSource && "zkPublicInputs" in proofBundleSource
-          ? proofBundleSource.zkPublicInputs
+        proofBundleSource && isRecord(proofBundleSource)
+          ? readZkPublicInputs(proofBundleSource)
           : embedded?.zkPublicInputs ?? null;
+      const zkProofHash =
+        proofBundleSource && isRecord(proofBundleSource)
+          ? readZkProofHash(proofBundleSource)
+          : embedded?.zkProofHash ?? undefined;
+      const computedZkProofHash = await computeZkProofHash(zkProof ?? null);
 
       const canonicalBundleObject = buildCanonicalBundleObject({
         proofCapsule: capsule,
         capsuleHash: capsuleHashNext,
         svgHash: svgHashNext,
         zkPoseidonHash: zkPoseidonHash ?? null,
-        zkProof,
         zkPublicInputs,
       });
       const { hash: bundleHashNext } = await hashCanonicalBundleObject(canonicalBundleObject);
@@ -981,6 +1032,8 @@ export default function VerifyPage(): ReactElement {
         setNotice("Capsule hash mismatch.");
       } else if (proofBundleBundleHash && proofBundleBundleHash !== bundleHashNext) {
         setNotice("Bundle hash mismatch.");
+      } else if (zkProofHash && computedZkProofHash && zkProofHash !== computedZkProofHash) {
+        setNotice("ZK proof hash mismatch.");
       }
 
       const authorSigNext = embedded?.authorSig;
@@ -1049,6 +1102,7 @@ export default function VerifyPage(): ReactElement {
       zkProof: sharedReceipt.zkProof,
       proofHints: sharedReceipt.proofHints,
       zkPublicInputs: sharedReceipt.zkPublicInputs,
+      zkProofHash: sharedReceipt.zkProofHash,
     };
 
     (async () => {
@@ -1367,7 +1421,6 @@ export default function VerifyPage(): ReactElement {
       capsuleHash,
       svgHash,
       zkPoseidonHash: zkMeta?.zkPoseidonHash ?? null,
-      zkProof: zkMeta?.zkProof ?? null,
       zkPublicInputs: zkMeta?.zkPublicInputs ?? null,
     });
     return JSON.stringify({ ...canonicalBundleObject, bundleHash }, null, 2);

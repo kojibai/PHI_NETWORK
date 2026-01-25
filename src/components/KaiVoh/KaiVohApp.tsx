@@ -43,8 +43,6 @@ import VerifierFrame from "./VerifierFrame";
 import {
   buildVerifierSlug,
   buildVerifierUrl,
-  buildBundleUnsigned,
-  hashBundle,
   hashProofCapsuleV1,
   hashSvgText,
   normalizeChakraDay,
@@ -64,6 +62,12 @@ import { ensurePasskey, signBundleHash } from "../../utils/webauthnKAS";
 import { computeZkPoseidonHash } from "../../utils/kai";
 import { buildProofHints, generateZkProofFromPoseidonHash } from "../../utils/zkProof";
 import type { SigilProofHints } from "../../types/sigil";
+import {
+  buildCanonicalBundleObject,
+  buildCanonicalProofBundle,
+  computeZkProofHash,
+  hashCanonicalBundleObject,
+} from "../../utils/canonicalGlyphBundle";
 
 /* Types */
 import type { PostEntry, SessionData } from "../session/sessionTypes";
@@ -812,25 +816,16 @@ function KaiVohFlow(): ReactElement {
               ? (mergedMetadata as { shareUrl?: string }).shareUrl
               : undefined;
 
-          const proofBundleBase = {
-            v: "KPB-1",
-            hashAlg: PROOF_HASH_ALG,
-            canon: PROOF_CANON,
+          const canonicalBundleObject = buildCanonicalBundleObject({
             proofCapsule: capsule,
             capsuleHash,
             svgHash,
-            shareUrl,
-            verifierUrl,
             zkPoseidonHash,
-            zkProof,
-            proofHints,
             zkPublicInputs,
-          };
-          const bundleUnsigned = buildBundleUnsigned({
-            ...proofBundleBase,
-            authorSig: null,
           });
-          bundleHash = await hashBundle(bundleUnsigned);
+          const { hash: computedBundleHash } = await hashCanonicalBundleObject(canonicalBundleObject);
+          bundleHash = computedBundleHash;
+          const zkProofHash = await computeZkProofHash(zkProof ?? null);
           try {
             await ensurePasskey(proofPhiKey);
             authorSig = await signBundleHash(proofPhiKey, bundleHash);
@@ -840,17 +835,25 @@ function KaiVohFlow(): ReactElement {
               `KAS signature failed. Please complete Face ID/Touch ID and ensure this PWA opens on the same hostname you registered. Details: ${reason}`
             );
           }
-          const proofBundle = {
-            ...proofBundleBase,
+          const proofBundle = buildCanonicalProofBundle({
+            proofCapsule: capsule,
+            capsuleHash,
+            svgHash,
+            zkPoseidonHash,
+            zkProof,
+            zkPublicInputs,
+            zkProofHash,
             bundleHash,
-            authorSig,
-          };
+          });
           if (authorSig?.v === "KAS-1") {
             const authUrl = shareUrl || verifierUrl;
             if (authUrl) registerSigilAuth(authUrl, authorSig);
           }
 
-          content = await embedProofMetadataIntoSvgBlob(content, proofBundle);
+          content = await embedProofMetadataIntoSvgBlob(content, {
+            ...proofBundle,
+            authorSig,
+          });
         }
 
         const ext =

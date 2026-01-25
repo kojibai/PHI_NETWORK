@@ -169,7 +169,47 @@ test("canonical builder determinism", async () => {
 
   assert.equal(first.svgHash, second.svgHash);
   assert.equal(first.bundleHash, second.bundleHash);
+  assert.deepEqual(first.svgBytes, second.svgBytes);
   assert.equal(first.proofBundleJson, second.proofBundleJson);
+});
+
+test("regenerating zkProof changes zkProofHash but not bundleHash", async () => {
+  const inputs = makeBundleInputs();
+  const first = await buildCanonicalGlyphBundle({
+    ...inputs,
+    zkPoseidonHash: "123",
+    zkProof: { proof: "ok-1" },
+    zkPublicInputs: ["123"],
+  });
+  const second = await buildCanonicalGlyphBundle({
+    ...inputs,
+    zkPoseidonHash: "123",
+    zkProof: { proof: "ok-2" },
+    zkPublicInputs: ["123"],
+  });
+
+  assert.equal(first.bundleHash, second.bundleHash);
+  assert.notEqual(first.proofBundle.zk.zkProofHash, second.proofBundle.zk.zkProofHash);
+});
+
+test("seal moment export matches sigil page canonical files", async () => {
+  const inputs = makeBundleInputs();
+  const sigilPageBundle = await buildCanonicalGlyphBundle({
+    ...inputs,
+    zkPoseidonHash: "123",
+    zkProof: { proof: "ok" },
+    zkPublicInputs: ["123"],
+  });
+  const sealMomentBundle = await buildCanonicalGlyphBundle({
+    ...inputs,
+    zkPoseidonHash: "123",
+    zkProof: { proof: "ok" },
+    zkPublicInputs: ["123"],
+  });
+
+  assert.deepEqual(sealMomentBundle.svgBytes, sigilPageBundle.svgBytes);
+  assert.equal(sealMomentBundle.proofBundleJson, sigilPageBundle.proofBundleJson);
+  assert.equal(sealMomentBundle.manifestJson, sigilPageBundle.manifestJson);
 });
 
 test("attestation addition does not mutate canonical bytes", async () => {
