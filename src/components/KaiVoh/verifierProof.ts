@@ -22,8 +22,20 @@ export const PROOF_HASH_ALG = "sha256" as const;
 export const PROOF_CANON = "JCS" as const;
 export const PROOF_METADATA_ID = "kai-voh-proof" as const;
 export const VERIFICATION_BUNDLE_VERSION = "KVB-1.1" as const;
+export const PROOF_BINDINGS = {
+  capsuleHashOf: "JCS(proofCapsule)",
+  bundleHashOf: "JCS(bundleWithoutBundleHash)",
+  authorChallengeOf: "bundleHash (hex bytes, KAS-1)",
+} as const;
+export const ZK_STATEMENT_BINDING = "Poseidon(capsuleHash|svgHash|domainTag)" as const;
+export const ZK_STATEMENT_DOMAIN = "kairos.sigil.zk.v1" as const;
 
 export type VerificationSource = "local" | "pbi";
+export type ProofBundleBindings = typeof PROOF_BINDINGS;
+export type ZkStatement = {
+  publicInputOf: typeof ZK_STATEMENT_BINDING;
+  domainTag: string;
+};
 
 /* -------------------------------------------------------------------------- */
 /*                                 Base URL                                   */
@@ -174,6 +186,8 @@ export async function hashSvgText(svgText: string): Promise<string> {
 export type ProofBundleLike = {
   hashAlg?: string;
   canon?: string;
+  bindings?: ProofBundleBindings;
+  zkStatement?: ZkStatement;
   proofCapsule?: ProofCapsuleV1;
   capsuleHash?: string;
   svgHash?: string;

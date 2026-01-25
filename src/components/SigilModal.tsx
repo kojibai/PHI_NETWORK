@@ -49,7 +49,10 @@ import {
   hashSvgText,
   normalizeChakraDay,
   PROOF_CANON,
+  PROOF_BINDINGS,
   PROOF_HASH_ALG,
+  ZK_STATEMENT_BINDING,
+  ZK_STATEMENT_DOMAIN,
   type ProofCapsuleV1,
 } from "./KaiVoh/verifierProof";
 import type { AuthorSig } from "../utils/authorSig";
@@ -1113,6 +1116,11 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
   type ProofBundle = {
     hashAlg: "sha256";
     canon: "JCS";
+    bindings: typeof PROOF_BINDINGS;
+    zkStatement?: {
+      publicInputOf: typeof ZK_STATEMENT_BINDING;
+      domainTag: string;
+    };
     proofCapsule: ProofCapsuleV1;
     capsuleHash: string;
     svgHash: string;
@@ -1424,6 +1432,13 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
       const proofBundleBase = {
         hashAlg: PROOF_HASH_ALG,
         canon: PROOF_CANON,
+        bindings: PROOF_BINDINGS,
+        zkStatement: zkPoseidonHash
+          ? {
+              publicInputOf: ZK_STATEMENT_BINDING,
+              domainTag: ZK_STATEMENT_DOMAIN,
+            }
+          : undefined,
         proofCapsule,
         capsuleHash,
         svgHash,
@@ -1450,7 +1465,7 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
       const proofBundle: ProofBundle = {
         ...proofBundleBase,
         bundleHash: computedBundleHash,
-        authorSig, 
+        authorSig,
       };
       if (authorSig?.v === "KAS-1") {
         const authUrl = shareUrl || verifierUrl;
