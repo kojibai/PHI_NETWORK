@@ -89,16 +89,19 @@ const kasPath = new URL("../src/utils/webauthnKAS.ts", import.meta.url);
 const receivePath = new URL("../src/utils/webauthnReceive.ts", import.meta.url);
 const ownerPath = new URL("../src/utils/ownerPhiKey.ts", import.meta.url);
 const shaPath = new URL("../src/utils/sha256.ts", import.meta.url);
+const receiveBundlePath = new URL("../src/utils/receiveBundle.ts", import.meta.url);
 
 const kas = await import(pathToFileURL(transpileRecursive(kasPath.href)).href);
 const receive = await import(pathToFileURL(transpileRecursive(receivePath.href)).href);
 const owner = await import(pathToFileURL(transpileRecursive(ownerPath.href)).href);
 const sha = await import(pathToFileURL(transpileRecursive(shaPath.href)).href);
+const receiveBundle = await import(pathToFileURL(transpileRecursive(receiveBundlePath.href)).href);
 
 const { verifyBundleAuthorSig } = kas;
 const { buildKasChallenge, verifyWebAuthnAssertion } = receive;
 const { deriveOwnerPhiKeyFromReceive } = owner;
 const { base64UrlEncode, base64UrlDecode, sha256Bytes, sha256Hex } = sha;
+const { buildReceiveBundleRoot, hashReceiveBundleRoot } = receiveBundle;
 
 function makeRandomBytes(size) {
   const out = new Uint8Array(size);
@@ -244,6 +247,51 @@ test("receive glyph provenance + ownership bindings", async () => {
     receiveBundleHash,
   });
   assert.equal(ownerPhiKey, ownerPhiKeyAgain);
+});
+
+test("receive bundle hash binds to receive signature challenge", async () => {
+  const proofCapsule = {
+    v: "KPV-1",
+    pulse: 11,
+    chakraDay: "Crown",
+    kaiSignature: "sig",
+    phiKey: "phi",
+    verifierSlug: "slug",
+  };
+  const receivePulse = 98765;
+  const receiveRoot = buildReceiveBundleRoot({
+    bundle: {
+      proofCapsule,
+      capsuleHash: "capsule-hash",
+      svgHash: "svg-hash",
+    },
+    originBundleHash: "origin-hash",
+    originAuthorSig: null,
+    receivePulse,
+  });
+  const receiveBundleHash = await hashReceiveBundleRoot(receiveRoot);
+  const receiveSig = await makeReceiveSig({
+    bundleHash: receiveBundleHash,
+    nonce: "nonce-test",
+    receivePulse,
+  });
+  const expectedChallenge = (await buildKasChallenge("receive", receiveBundleHash, receiveSig.nonce)).challengeBytes;
+  const receiveOk = await verifyWebAuthnAssertion({
+    assertion: receiveSig.assertion,
+    expectedChallenge,
+    pubKeyJwk: receiveSig.pubKeyJwk,
+    expectedCredId: receiveSig.credId,
+  });
+  assert.equal(receiveOk, true);
+
+  const wrongChallenge = (await buildKasChallenge("receive", await sha256Hex("wrong-hash"), receiveSig.nonce)).challengeBytes;
+  const wrongOk = await verifyWebAuthnAssertion({
+    assertion: receiveSig.assertion,
+    expectedChallenge: wrongChallenge,
+    pubKeyJwk: receiveSig.pubKeyJwk,
+    expectedCredId: receiveSig.credId,
+  });
+  assert.equal(wrongOk, false);
 });
 
 test("legacy compatibility: receive bundles without receiveSig mark ownership missing", async () => {

@@ -58,6 +58,9 @@ export type LiveChartProps = {
   /** If you know it's a child glyph, pass true to force USD mode. */
   isChildGlyph?: boolean;
 
+  /** Unit of incoming data points (default: phi). */
+  dataUnit?: "phi" | "usd";
+
   /**
    * Force chart unit mode.
    * - "auto" (default): child => USD, parent => Φ
@@ -133,6 +136,7 @@ export default function LiveChart({
   scalePvToChild = true,
   usdPerPhi,
   isChildGlyph = false,
+  dataUnit = "phi",
   mode = "auto",
 }: LiveChartProps) {
   // Container & width
@@ -209,7 +213,7 @@ export default function LiveChart({
   // Build plot series in correct units (Φ or USD)
   const plotData = useMemo<ChartPoint[]>(() => {
     if (!hasData) return safeData;
-    if (!isUsdMode) return safeData; // Φ mode
+    if (!isUsdMode || dataUnit === "usd") return safeData; // Φ mode or USD-native series
 
     let lastGoodUsd: number | null = null;
     return safeData.map((p) => {
@@ -218,7 +222,7 @@ export default function LiveChart({
       lastGoodUsd = nextGood;
       return { ...p, value: usdV };
     });
-  }, [hasData, safeData, isUsdMode, usdFromPoint]);
+  }, [hasData, safeData, isUsdMode, dataUnit, usdFromPoint]);
 
   // PV display in Φ, optionally scaled by child ratio
   const pvPhi = useMemo<number>(() => {

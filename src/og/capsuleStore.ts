@@ -83,6 +83,8 @@ function parseRecord(raw: unknown): VerifiedCardData | null {
     typeof record.verificationSig === "object" && record.verificationSig !== null
       ? (record.verificationSig as VerifiedCardData["verificationSig"])
       : undefined;
+  const valuation =
+    typeof record.valuation === "object" && record.valuation !== null ? (record.valuation as VerifiedCardData["valuation"]) : undefined;
 
   if (!capsuleHash || pulse == null || !phiKey || kasOk == null || g16Ok == null) return null;
 
@@ -102,6 +104,7 @@ function parseRecord(raw: unknown): VerifiedCardData | null {
     receiptHash,
     verificationSig,
     sigilSvg,
+    valuation,
   };
 }
 

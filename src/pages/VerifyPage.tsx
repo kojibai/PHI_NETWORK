@@ -32,6 +32,7 @@ import {
   ZK_STATEMENT_DOMAIN,
   type VerificationSource,
   type ProofCapsuleV1,
+  type ProofBundleLike,
 } from "../components/KaiVoh/verifierProof";
 import { extractProofBundleMetaFromSvg, type ProofBundleMeta } from "../utils/sigilMetadata";
 import { derivePhiKeyFromSig } from "../components/VerifierStamper/sigilUtils";
@@ -61,12 +62,14 @@ import { BREATH_MS } from "../components/valuation/constants";
 import {
   assertReceiptHashMatch,
   buildVerificationReceipt,
+  hashValuationSnapshot,
   hashVerificationReceipt,
   verificationSigFromKas,
   verifyVerificationSig,
   type VerificationReceipt,
   type VerificationSig,
 } from "../utils/verificationReceipt";
+import { buildReceiveBundleRoot, hashReceiveBundleRoot } from "../utils/receiveBundle";
 import {
   buildVerificationCacheKey,
   buildVerificationCacheRecord,
@@ -74,6 +77,12 @@ import {
   type VerificationCache,
   writeVerificationCache,
 } from "../utils/verificationCache";
+import {
+  buildValuationSnapshotKey,
+  createValuationSnapshot,
+  getOrCreateValuationSnapshot,
+  type ValuationSnapshotState,
+} from "../utils/valuationSnapshot";
 
 /* ────────────────────────────────────────────────────────────────
    Utilities
@@ -678,6 +687,8 @@ export default function VerifyPage(): ReactElement {
   const [verificationSigVerified, setVerificationSigVerified] = useState<boolean | null>(null);
   const [verificationSigBusy, setVerificationSigBusy] = useState<boolean>(false);
   const [receiptHash, setReceiptHash] = useState<string>("");
+  const [valuationSnapshotState, setValuationSnapshotState] = useState<ValuationSnapshotState | null>(null);
+  const [valuationHash, setValuationHash] = useState<string>("");
 
   const [receiveSig, setReceiveSig] = useState<ReceiveSig | null>(null);
   const [localReceiveBundle, setLocalReceiveBundle] = useState<ReceiveBundleState | null>(null);
@@ -764,6 +775,29 @@ export default function VerifyPage(): ReactElement {
         ? "Glyph embedded value"
         : "Live glyph valuation";
 
+  const isReceiveGlyph = useMemo(() => {
+    const mode = localReceiveBundle?.mode ?? embeddedProof?.mode ?? sharedReceipt?.mode;
+    if (mode === "receive") return true;
+    if (localReceiveBundle?.receiveSig || embeddedProof?.receiveSig || sharedReceipt?.receiveSig) return true;
+    if (localReceiveBundle?.originBundleHash || embeddedProof?.originBundleHash || sharedReceipt?.originBundleHash) return true;
+    if (localReceiveBundle?.ownerPhiKey || embeddedProof?.ownerPhiKey || sharedReceipt?.ownerPhiKey) return true;
+    return false;
+  }, [
+    embeddedProof?.mode,
+    embeddedProof?.originBundleHash,
+    embeddedProof?.ownerPhiKey,
+    embeddedProof?.receiveSig,
+    localReceiveBundle?.mode,
+    localReceiveBundle?.originBundleHash,
+    localReceiveBundle?.ownerPhiKey,
+    localReceiveBundle?.receiveSig,
+    sharedReceipt?.mode,
+    sharedReceipt?.originBundleHash,
+    sharedReceipt?.ownerPhiKey,
+    sharedReceipt?.receiveSig,
+  ]);
+
+
   // Focus Views
   const [openSvgEditor, setOpenSvgEditor] = useState<boolean>(false);
   const [openAuditJson, setOpenAuditJson] = useState<boolean>(false);
@@ -775,6 +809,7 @@ export default function VerifyPage(): ReactElement {
   const [chartOpen, setChartOpen] = useState<boolean>(false);
   const [chartFocus, setChartFocus] = useState<"phi" | "usd">("phi");
   const [chartReflowKey, setChartReflowKey] = useState<number>(0);
+  const chartMode = isReceiveGlyph ? "usd" : chartFocus;
 
   // Seal info popovers
   const [sealPopover, setSealPopover] = useState<"proof" | "kas" | "g16" | null>(null);
@@ -866,10 +901,11 @@ export default function VerifyPage(): ReactElement {
   }, [authorSigVerified, result, slug.pulse, slug.raw, slugRaw, zkVerify]);
 
   const openChartPopover = useCallback((focus: "phi" | "usd") => {
-    setChartFocus(focus);
+    const nextFocus = isReceiveGlyph ? "usd" : focus;
+    setChartFocus(nextFocus);
     setChartOpen(true);
     setChartReflowKey((k) => k + 1);
-  }, []);
+  }, [isReceiveGlyph]);
 
   const closeChartPopover = useCallback(() => {
     setChartOpen(false);
@@ -895,7 +931,7 @@ export default function VerifyPage(): ReactElement {
 
   React.useEffect(() => {
     if (chartOpen) setChartReflowKey((k) => k + 1);
-  }, [chartOpen, chartFocus]);
+  }, [chartMode, chartOpen, chartFocus]);
 
   React.useEffect(() => {
     if (!chartOpen) return;
@@ -920,6 +956,14 @@ export default function VerifyPage(): ReactElement {
     return Number.isFinite(candidate) ? candidate : 0;
   }, [displayPhi, liveValuePhi]);
 
+  const chartSeriesValue = useMemo(() => {
+    if (!isReceiveGlyph) return chartPhi;
+    const phiStatic = displayPhi ?? liveValuePhi ?? 0;
+    if (!Number.isFinite(phiStatic)) return 0;
+    if (!Number.isFinite(usdPerPhi) || usdPerPhi <= 0) return 0;
+    return phiStatic * usdPerPhi;
+  }, [chartPhi, displayPhi, isReceiveGlyph, liveValuePhi, usdPerPhi]);
+
   const seriesKey = useMemo(() => {
     if (result.status === "ok") {
       return `${result.embedded.pulse ?? slug.pulse ?? "x"}|${result.embedded.kaiSignature ?? ""}|${result.embedded.phiKey ?? ""}`;
@@ -930,7 +974,7 @@ export default function VerifyPage(): ReactElement {
   const chartData = useRollingChartSeries({
     seriesKey,
     sampleMs: BREATH_MS,
-    valuePhi: chartPhi,
+    valuePhi: chartSeriesValue,
     usdPerPhi,
     maxPoints: 4096,
     snapKey: chartReflowKey,
@@ -1426,6 +1470,49 @@ React.useEffect(() => {
     return sharedReceipt?.verifiedAtPulse ?? null;
   }, [result, sharedReceipt?.verifiedAtPulse]);
 
+  const valuationSnapshotKey = useMemo(() => {
+    if (!bundleHash || stewardVerifiedPulse == null) return "";
+    return buildValuationSnapshotKey(bundleHash, stewardVerifiedPulse);
+  }, [bundleHash, stewardVerifiedPulse]);
+
+  const valuationSnapshotInput = useMemo(() => {
+    if (result.status !== "ok" || stewardVerifiedPulse == null) return null;
+    if (displayPhi == null || !Number.isFinite(displayPhi)) return null;
+    const usdPerPhiValue = Number.isFinite(usdPerPhi) && usdPerPhi > 0 ? usdPerPhi : null;
+    return {
+      verifiedAtPulse: stewardVerifiedPulse,
+      phiValue: displayPhi,
+      usdPerPhi: usdPerPhiValue,
+      source: displaySource ?? "unknown",
+      mode: isReceiveGlyph ? "receive" : "origin",
+    };
+  }, [displayPhi, displaySource, isReceiveGlyph, result.status, stewardVerifiedPulse, usdPerPhi]);
+
+  React.useEffect(() => {
+    setValuationSnapshotState((prev) => {
+      if (!valuationSnapshotKey) return null;
+      if (prev?.key === valuationSnapshotKey) return prev;
+      return getOrCreateValuationSnapshot(prev, valuationSnapshotKey, valuationSnapshotInput);
+    });
+  }, [valuationSnapshotInput, valuationSnapshotKey]);
+
+  const valuationSnapshot = useMemo(() => valuationSnapshotState?.snapshot ?? null, [valuationSnapshotState]);
+
+  React.useEffect(() => {
+    let active = true;
+    if (!valuationSnapshot) {
+      setValuationHash("");
+      return;
+    }
+    (async () => {
+      const hash = await hashValuationSnapshot(valuationSnapshot);
+      if (active) setValuationHash(hash);
+    })();
+    return () => {
+      active = false;
+    };
+  }, [valuationSnapshot]);
+
   const verificationSource: VerificationSource = sharedReceipt?.verifier ?? "local";
   const verificationVersion = sharedReceipt?.verificationVersion ?? VERIFICATION_BUNDLE_VERSION;
   const cacheVerificationVersion = sharedReceipt?.verificationVersion ?? embeddedProof?.verificationVersion;
@@ -1610,14 +1697,16 @@ if (verified && typeof cacheBundleHash === "string" && cacheBundleHash.trim().le
   );
   const verificationReceipt = useMemo<VerificationReceipt | null>(() => {
     if (!bundleHash || !zkMeta?.zkPoseidonHash || stewardVerifiedPulse == null) return null;
+    const valuationPayload = valuationSnapshot && valuationHash ? { valuation: valuationSnapshot, valuationHash } : undefined;
     return buildVerificationReceipt({
       bundleHash,
       zkPoseidonHash: zkMeta.zkPoseidonHash,
       verifiedAtPulse: stewardVerifiedPulse,
       verifier: verificationSource,
       verificationVersion,
+      ...(valuationPayload ?? {}),
     });
-  }, [bundleHash, stewardVerifiedPulse, verificationSource, verificationVersion, zkMeta?.zkPoseidonHash]);
+  }, [bundleHash, stewardVerifiedPulse, valuationHash, valuationSnapshot, verificationSource, verificationVersion, zkMeta?.zkPoseidonHash]);
 
   const effectiveReceiveSig = useMemo(() => localReceiveBundle?.receiveSig ?? receiveSig ?? null, [localReceiveBundle?.receiveSig, receiveSig]);
   const effectiveReceivePulse = useMemo(() => {
@@ -1631,8 +1720,8 @@ if (verified && typeof cacheBundleHash === "string" && cacheBundleHash.trim().le
     if (embeddedProof?.receiveBundleHash) return embeddedProof.receiveBundleHash;
     if (sharedReceipt?.receiveBundleHash) return sharedReceipt.receiveBundleHash;
     if (effectiveReceiveSig?.binds.bundleHash) return effectiveReceiveSig.binds.bundleHash;
-    return bundleHash || "";
-  }, [bundleHash, embeddedProof?.receiveBundleHash, effectiveReceiveSig?.binds.bundleHash, localReceiveBundle?.receiveBundleHash, sharedReceipt?.receiveBundleHash]);
+    return "";
+  }, [embeddedProof?.receiveBundleHash, effectiveReceiveSig?.binds.bundleHash, localReceiveBundle?.receiveBundleHash, sharedReceipt?.receiveBundleHash]);
   const effectiveReceiveMode = useMemo(() => {
     if (localReceiveBundle?.mode) return localReceiveBundle.mode;
     if (embeddedProof?.mode) return embeddedProof.mode;
@@ -1672,6 +1761,48 @@ if (verified && typeof cacheBundleHash === "string" && cacheBundleHash.trim().le
     [embeddedProof?.ownerKeyDerivation, localReceiveBundle?.ownerKeyDerivation, sharedReceipt?.ownerKeyDerivation],
   );
 
+  const receiveBundleRoot = useMemo(() => {
+    if (!proofCapsule || !capsuleHash || !svgHash) return null;
+    const bundleSeed: ProofBundleLike = {
+      hashAlg: embeddedProof?.hashAlg ?? PROOF_HASH_ALG,
+      canon: embeddedProof?.canon ?? PROOF_CANON,
+      bindings: embeddedProof?.bindings ?? PROOF_BINDINGS,
+      zkStatement: embeddedProof?.zkStatement,
+      bundleRoot: bundleRoot ?? embeddedProof?.bundleRoot,
+      zkMeta: embeddedProof?.zkMeta,
+      proofCapsule,
+      capsuleHash,
+      svgHash,
+      zkPoseidonHash: zkMeta?.zkPoseidonHash ?? undefined,
+      zkProof: zkMeta?.zkProof ?? undefined,
+      zkPublicInputs: zkMeta?.zkPublicInputs ?? undefined,
+    };
+    return buildReceiveBundleRoot({
+      bundleRoot: bundleRoot ?? embeddedProof?.bundleRoot ?? undefined,
+      bundle: bundleSeed,
+      originBundleHash: effectiveOriginBundleHash ?? bundleHash ?? undefined,
+      originAuthorSig: effectiveOriginAuthorSig ?? null,
+      receivePulse: effectiveReceivePulse ?? undefined,
+    });
+  }, [
+    bundleHash,
+    bundleRoot,
+    capsuleHash,
+    embeddedProof?.bindings,
+    embeddedProof?.bundleRoot,
+    embeddedProof?.canon,
+    embeddedProof?.hashAlg,
+    embeddedProof?.zkMeta,
+    embeddedProof?.zkStatement,
+    effectiveOriginAuthorSig,
+    effectiveOriginBundleHash,
+    effectiveReceivePulse,
+    proofCapsule,
+    svgHash,
+    zkMeta?.zkPoseidonHash,
+    zkMeta?.zkProof,
+    zkMeta?.zkPublicInputs,
+  ]);
 
   React.useEffect(() => {
     let active = true;
@@ -1689,8 +1820,8 @@ if (verified && typeof cacheBundleHash === "string" && cacheBundleHash.trim().le
       return;
     }
 
-    const receiveBundleHashValue = effectiveReceiveBundleHash;
-    if (!receiveBundleHashValue || (receiveMode && receiveBundleHashValue !== bundleHash)) {
+    const receiveBundleHashValue = effectiveReceiveBundleHash || effectiveReceiveSig.binds.bundleHash;
+    if (!receiveBundleHashValue) {
       setOwnerPhiKeyVerified(false);
       setOwnershipAttested(false);
       return;
@@ -1730,6 +1861,12 @@ if (verified && typeof cacheBundleHash === "string" && cacheBundleHash.trim().le
       return;
     }
 
+    if (!receiveBundleRoot) {
+      setOwnerPhiKeyVerified(null);
+      setOwnershipAttested("missing");
+      return;
+    }
+
     if (!effectiveOwnerPhiKey) {
       setOwnerPhiKeyVerified(null);
       setOwnershipAttested("missing");
@@ -1737,6 +1874,14 @@ if (verified && typeof cacheBundleHash === "string" && cacheBundleHash.trim().le
     }
 
     (async () => {
+      const expectedReceiveBundleHash = await hashReceiveBundleRoot(receiveBundleRoot);
+      if (expectedReceiveBundleHash !== receiveBundleHashValue) {
+        if (active) {
+          setOwnerPhiKeyVerified(false);
+          setOwnershipAttested(false);
+        }
+        return;
+      }
       const expectedOwnerPhiKey = await deriveOwnerPhiKeyFromReceive({
         receiverPubKeyJwk: effectiveReceiveSig.pubKeyJwk,
         receivePulse: effectiveReceivePulse,
@@ -1753,12 +1898,12 @@ if (verified && typeof cacheBundleHash === "string" && cacheBundleHash.trim().le
       active = false;
     };
   }, [
-    bundleHash,
     effectiveOwnerPhiKey,
     effectiveReceiveBundleHash,
     effectiveReceiveMode,
     effectiveReceivePulse,
     effectiveReceiveSig,
+    receiveBundleRoot,
     receiveSigVerified,
   ]);
 
@@ -1879,6 +2024,7 @@ if (verified && typeof cacheBundleHash === "string" && cacheBundleHash.trim().le
     const receiptValue = verificationReceipt ?? embeddedProof?.receipt ?? sharedReceipt?.receipt;
     const receiptHashValue = receiptHash || embeddedProof?.receiptHash || sharedReceipt?.receiptHash;
     const verificationSigValue = verificationSig ?? embeddedProof?.verificationSig ?? sharedReceipt?.verificationSig;
+    const valuationValue = valuationSnapshot && valuationHash ? { ...valuationSnapshot, valuationHash } : undefined;
     return {
       capsuleHash,
       pulse: proofCapsule.pulse,
@@ -1895,6 +2041,7 @@ if (verified && typeof cacheBundleHash === "string" && cacheBundleHash.trim().le
       receiptHash: receiptHashValue || undefined,
       verificationSig: verificationSigValue ?? undefined,
       sigilSvg: svgText.trim() ? svgText : undefined,
+      valuation: valuationValue,
     };
   }, [
     bundleHash,
@@ -1912,6 +2059,8 @@ if (verified && typeof cacheBundleHash === "string" && cacheBundleHash.trim().le
     sharedReceipt?.verificationSig,
     stewardVerifiedPulse,
     svgText,
+    valuationHash,
+    valuationSnapshot,
     verificationReceipt,
     verificationSig,
     verificationSource,
@@ -1948,7 +2097,7 @@ if (verified && typeof cacheBundleHash === "string" && cacheBundleHash.trim().le
   }, [proofCapsule, receiptHash, verificationSigBusy]);
 
   const onReceiveGlyph = useCallback(async () => {
-    if (!bundleHash) return;
+    if (!bundleHash || !proofCapsule || !capsuleHash || !svgHash) return;
     if (receiveBusy) return;
     if (!isWebAuthnAvailable()) {
       setNotice("WebAuthn is not available in this browser. Please verify on a device with passkeys enabled.");
@@ -1958,8 +2107,33 @@ if (verified && typeof cacheBundleHash === "string" && cacheBundleHash.trim().le
     setReceiveBusy(true);
     try {
       const receivePulse = currentPulse ?? getKaiPulseEternalInt(new Date());
+      const originSigCandidate = effectiveOriginAuthorSig ?? (embeddedProof?.authorSig ?? null);
+      const originAuthorSig = isKASAuthorSig(originSigCandidate) ? originSigCandidate : null;
+      const originBundleHash = effectiveOriginBundleHash ?? bundleHash;
+      const receiveBundleSeed: ProofBundleLike = {
+        hashAlg: embeddedProof?.hashAlg ?? PROOF_HASH_ALG,
+        canon: embeddedProof?.canon ?? PROOF_CANON,
+        bindings: embeddedProof?.bindings ?? PROOF_BINDINGS,
+        zkStatement: embeddedProof?.zkStatement,
+        bundleRoot: bundleRoot ?? embeddedProof?.bundleRoot,
+        zkMeta: embeddedProof?.zkMeta,
+        proofCapsule,
+        capsuleHash,
+        svgHash,
+        zkPoseidonHash: zkMeta?.zkPoseidonHash ?? undefined,
+        zkProof: zkMeta?.zkProof ?? undefined,
+        zkPublicInputs: zkMeta?.zkPublicInputs ?? undefined,
+      };
+      const receiveBundleRoot = buildReceiveBundleRoot({
+        bundleRoot: bundleRoot ?? embeddedProof?.bundleRoot ?? undefined,
+        bundle: receiveBundleSeed,
+        originBundleHash,
+        originAuthorSig,
+        receivePulse,
+      });
+      const receiveBundleHash = await hashReceiveBundleRoot(receiveBundleRoot);
       const passkey = await ensureReceiverPasskey();
-      const { nonce, challengeBytes } = await buildKasChallenge("receive", bundleHash);
+      const { nonce, challengeBytes } = await buildKasChallenge("receive", receiveBundleHash);
       const assertion = await getWebAuthnAssertionJson({
         challenge: challengeBytes,
         allowCredIds: [passkey.credId],
@@ -1980,7 +2154,7 @@ if (verified && typeof cacheBundleHash === "string" && cacheBundleHash.trim().le
         v: "KRS-1",
         alg: "webauthn-es256",
         nonce,
-        binds: { bundleHash },
+        binds: { bundleHash: receiveBundleHash },
         createdAtPulse: receivePulse,
         credId: passkey.credId,
         pubKeyJwk: passkey.pubKeyJwk as ReceiveSig["pubKeyJwk"],
@@ -1990,24 +2164,20 @@ if (verified && typeof cacheBundleHash === "string" && cacheBundleHash.trim().le
       const ownerPhiKey = await deriveOwnerPhiKeyFromReceive({
         receiverPubKeyJwk: nextSig.pubKeyJwk,
         receivePulse,
-        receiveBundleHash: bundleHash,
+        receiveBundleHash,
       });
       const ownerKeyDerivation = buildOwnerKeyDerivation({
         originPhiKey: proofCapsule?.phiKey,
         receivePulse,
-        receiveBundleHash: bundleHash,
+        receiveBundleHash,
       });
-
-      const originSigCandidate = effectiveOriginAuthorSig ?? (embeddedProof?.authorSig ?? null);
-      const originAuthorSig = isKASAuthorSig(originSigCandidate) ? originSigCandidate : null;
-      const originBundleHash = effectiveOriginBundleHash ?? bundleHash;
 
       setReceiveSig(nextSig);
       setReceiveSigVerified(true);
       setLocalReceiveBundle({
         mode: "receive",
         originBundleHash,
-        receiveBundleHash: bundleHash,
+        receiveBundleHash,
         originAuthorSig,
         receiveSig: nextSig,
         receivePulse,
@@ -2023,12 +2193,25 @@ if (verified && typeof cacheBundleHash === "string" && cacheBundleHash.trim().le
     }
   }, [
     bundleHash,
+    bundleRoot,
+    capsuleHash,
     currentPulse,
     effectiveOriginAuthorSig,
     effectiveOriginBundleHash,
     embeddedProof?.authorSig,
+    embeddedProof?.bindings,
+    embeddedProof?.bundleRoot,
+    embeddedProof?.canon,
+    embeddedProof?.hashAlg,
+    embeddedProof?.zkMeta,
+    embeddedProof?.zkStatement,
     proofCapsule?.phiKey,
+    proofCapsule,
     receiveBusy,
+    svgHash,
+    zkMeta?.zkPoseidonHash,
+    zkMeta?.zkProof,
+    zkMeta?.zkPublicInputs,
   ]);
 
   const sealStateLabel = useCallback((state: SealState): string => {
@@ -2136,13 +2319,13 @@ body: [
 
   React.useEffect(() => {
     let active = true;
-    if (!effectiveReceiveSig || !bundleHash) {
+    if (!effectiveReceiveSig) {
       setReceiveSigVerified(null);
       return;
     }
 
     (async () => {
-      const receiveBundleHashValue = effectiveReceiveSig.binds.bundleHash;
+      const receiveBundleHashValue = effectiveReceiveBundleHash || effectiveReceiveSig.binds.bundleHash;
       if (!receiveBundleHashValue) {
         if (active) setReceiveSigVerified(false);
         return;
@@ -2161,7 +2344,7 @@ body: [
     return () => {
       active = false;
     };
-  }, [effectiveReceiveSig, bundleHash]);
+  }, [effectiveReceiveBundleHash, effectiveReceiveSig]);
 
 
   React.useEffect(() => {
@@ -2596,7 +2779,7 @@ React.useEffect(() => {
         >
           <div className="chart-popover" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
             <div className="chart-popover-head">
-              <div className="chart-popover-title">{chartFocus === "phi" ? "Φ Resonance · Live" : "$ Price · Live"}</div>
+              <div className="chart-popover-title">{chartMode === "phi" ? "Φ Resonance · Live" : "$ Price · Live"}</div>
               <button type="button" className="vmodal-close" onClick={closeChartPopover} aria-label="Close chart" title="Close chart">
                 ×
               </button>
@@ -2611,7 +2794,8 @@ React.useEffect(() => {
                   momentX={1}
                   colors={["rgba(167,255,244,1)"]}
                   usdPerPhi={usdPerPhi}
-                  mode={chartFocus === "usd" ? "usd" : "phi"}
+                  mode={chartMode === "usd" ? "usd" : "phi"}
+                  dataUnit={isReceiveGlyph ? "usd" : "phi"}
                   reflowKey={chartReflowKey}
                 />
               </React.Suspense>

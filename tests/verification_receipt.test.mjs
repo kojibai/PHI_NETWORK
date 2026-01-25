@@ -87,8 +87,18 @@ process.on("exit", () => {
 
 const receiptPath = new URL("../src/utils/verificationReceipt.ts", import.meta.url);
 const receipt = await import(pathToFileURL(transpileRecursive(receiptPath.href)).href);
+const valuationPath = new URL("../src/utils/valuationSnapshot.ts", import.meta.url);
+const valuation = await import(pathToFileURL(transpileRecursive(valuationPath.href)).href);
 
-const { buildVerificationReceipt, hashVerificationReceipt, verificationReceiptChallenge, verifyVerificationSig } = receipt;
+const {
+  assertReceiptHashMatch,
+  buildVerificationReceipt,
+  hashValuationSnapshot,
+  hashVerificationReceipt,
+  verificationReceiptChallenge,
+  verifyVerificationSig,
+} = receipt;
+const { createValuationSnapshot } = valuation;
 
 test("receipt hash changes when verifiedAtPulse changes", async () => {
   const receiptA = buildVerificationReceipt({
@@ -161,4 +171,65 @@ test("verification sig fails when receipt hash changes", async () => {
   };
   const ok = await verifyVerificationSig(hashB, fakeSig);
   assert.equal(ok, false);
+});
+
+test("receipt hash changes when valuation hash changes", async () => {
+  const valuationA = createValuationSnapshot({
+    verifiedAtPulse: 10,
+    phiValue: 2,
+    usdPerPhi: 3,
+    source: "live",
+    mode: "origin",
+  });
+  const valuationB = createValuationSnapshot({
+    verifiedAtPulse: 10,
+    phiValue: 2,
+    usdPerPhi: 4,
+    source: "live",
+    mode: "origin",
+  });
+  const hashA = await hashValuationSnapshot(valuationA);
+  const hashB = await hashValuationSnapshot(valuationB);
+  const receiptA = buildVerificationReceipt({
+    bundleHash: "0xaaa",
+    zkPoseidonHash: "0xbbb",
+    verifiedAtPulse: 10,
+    verifier: "local",
+    verificationVersion: "KVB-1.2",
+    valuationHash: hashA,
+    valuation: valuationA,
+  });
+  const receiptB = buildVerificationReceipt({
+    bundleHash: "0xaaa",
+    zkPoseidonHash: "0xbbb",
+    verifiedAtPulse: 10,
+    verifier: "local",
+    verificationVersion: "KVB-1.2",
+    valuationHash: hashB,
+    valuation: valuationB,
+  });
+  const receiptHashA = await hashVerificationReceipt(receiptA);
+  const receiptHashB = await hashVerificationReceipt(receiptB);
+  assert.notEqual(receiptHashA, receiptHashB);
+});
+
+test("receipt hash check fails on mismatched valuation hash", async () => {
+  const valuation = createValuationSnapshot({
+    verifiedAtPulse: 10,
+    phiValue: 2,
+    usdPerPhi: 3,
+    source: "live",
+    mode: "origin",
+  });
+  const receipt = buildVerificationReceipt({
+    bundleHash: "0xaaa",
+    zkPoseidonHash: "0xbbb",
+    verifiedAtPulse: 10,
+    verifier: "local",
+    verificationVersion: "KVB-1.2",
+    valuationHash: "deadbeef",
+    valuation,
+  });
+  const receiptHash = await hashVerificationReceipt(receipt);
+  await assert.rejects(async () => assertReceiptHashMatch(receipt, receiptHash), /verification receipt mismatch/);
 });

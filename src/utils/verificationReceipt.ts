@@ -1,5 +1,6 @@
 import { jcsCanonicalize } from "./jcs";
 import { base64UrlDecode, base64UrlEncode, hexToBytes, sha256Bytes, sha256Hex } from "./sha256";
+import { isValuationSnapshot, type ValuationSnapshot } from "./valuationSnapshot";
 
 export type VerificationReceipt = Readonly<{
   v: "KVR-1";
@@ -8,6 +9,8 @@ export type VerificationReceipt = Readonly<{
   verifiedAtPulse: number;
   verifier: string;
   verificationVersion: string;
+  valuationHash?: string;
+  valuation?: ValuationSnapshot;
 }>;
 
 export type VerificationSig = Readonly<{
@@ -28,15 +31,18 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 export function isVerificationReceipt(value: unknown): value is VerificationReceipt {
   if (!isRecord(value)) return false;
-  return (
+  const hasCore =
     value.v === "KVR-1" &&
     typeof value.bundleHash === "string" &&
     typeof value.zkPoseidonHash === "string" &&
     typeof value.verifiedAtPulse === "number" &&
     Number.isFinite(value.verifiedAtPulse) &&
     typeof value.verifier === "string" &&
-    typeof value.verificationVersion === "string"
-  );
+    typeof value.verificationVersion === "string";
+  if (!hasCore) return false;
+  if (value.valuationHash !== undefined && typeof value.valuationHash !== "string") return false;
+  if (value.valuation !== undefined && !isValuationSnapshot(value.valuation)) return false;
+  return true;
 }
 
 export function isVerificationSig(value: unknown): value is VerificationSig {
@@ -60,6 +66,8 @@ export function buildVerificationReceipt(params: {
   verifiedAtPulse: number;
   verifier: string;
   verificationVersion: string;
+  valuationHash?: string;
+  valuation?: ValuationSnapshot;
 }): VerificationReceipt {
   return {
     v: "KVR-1",
@@ -68,11 +76,17 @@ export function buildVerificationReceipt(params: {
     verifiedAtPulse: params.verifiedAtPulse,
     verifier: params.verifier,
     verificationVersion: params.verificationVersion,
+    valuationHash: params.valuationHash,
+    valuation: params.valuation,
   };
 }
 
 export async function hashVerificationReceipt(receipt: VerificationReceipt): Promise<string> {
   return await sha256Hex(jcsCanonicalize(receipt));
+}
+
+export async function hashValuationSnapshot(snapshot: ValuationSnapshot): Promise<string> {
+  return await sha256Hex(jcsCanonicalize(snapshot));
 }
 
 // Challenge derivation: base64url(bytes(receiptHash hex))
@@ -85,6 +99,15 @@ export async function assertReceiptHashMatch(receipt: unknown, receiptHash: stri
   if (!receiptHash) return;
   if (!isVerificationReceipt(receipt)) {
     throw new Error("verification receipt mismatch");
+  }
+  if (receipt.valuationHash || receipt.valuation) {
+    if (!receipt.valuationHash || !receipt.valuation || !isValuationSnapshot(receipt.valuation)) {
+      throw new Error("verification receipt mismatch");
+    }
+    const expectedValuationHash = await hashValuationSnapshot(receipt.valuation);
+    if (expectedValuationHash !== receipt.valuationHash) {
+      throw new Error("verification receipt mismatch");
+    }
   }
   const expected = await hashVerificationReceipt(receipt);
   if (expected !== receiptHash) {
