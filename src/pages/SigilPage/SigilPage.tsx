@@ -1614,7 +1614,7 @@ current.searchParams.forEach((v, k) => {
               kaiSignature: payload.kaiSignature ?? null,
               transferNonce: payload.transferNonce ?? null,
               expiresAtPulse: payload.expiresAtPulse ?? null,
-              claimExtendUnit: payload.claimExtendUnit ?? null,
+              claimExtendUnit: payload.claimExtendUnit ?? undefined,
               claimExtendAmount: payload.claimExtendAmount ?? null,
               attachment: payload.attachment ?? null,
               provenance: (payload.provenance as ProvenanceEntry[] | null) ?? null,

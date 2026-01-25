@@ -1,4 +1,4 @@
-import { jcsCanonicalize } from "./jcs";
+import { jcsCanonicalize, type JsonValue } from "./jcs";
 import { sha256Hex } from "./sha256";
 import { embedProofMetadata } from "./svgProof";
 import { hashProofCapsuleV1, hashSvgText, type ProofCapsuleV1 } from "../components/KaiVoh/verifierProof";
@@ -88,7 +88,7 @@ export function buildCanonicalBundleObject(args: {
 }
 
 export async function hashCanonicalBundleObject(bundleObject: CanonicalBundleObject): Promise<{ jcs: string; hash: string }> {
-  const jcs = jcsCanonicalize(bundleObject as unknown as Record<string, unknown>);
+  const jcs = jcsCanonicalize(bundleObject as unknown as JsonValue);
   const hash = await sha256Hex(jcs);
   return { jcs, hash: hash.toLowerCase() };
 }

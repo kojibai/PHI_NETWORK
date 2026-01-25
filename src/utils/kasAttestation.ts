@@ -1,4 +1,4 @@
-import { jcsCanonicalize } from "./jcs";
+import { jcsCanonicalize, type JsonValue } from "./jcs";
 import { base64UrlDecode, base64UrlEncode, hexToBytes, sha256Bytes, sha256Hex } from "./sha256";
 import type { KASAuthorSig } from "./authorSig";
 import type { ProofCapsuleV1 } from "../components/KaiVoh/verifierProof";
@@ -41,7 +41,7 @@ function parseClientDataOrigin(authorSig: KASAuthorSig): string {
 }
 
 export async function computeBundleObjectHash(bundleObject: CanonicalBundleObject): Promise<string> {
-  const jcs = jcsCanonicalize(bundleObject as unknown as Record<string, unknown>);
+  const jcs = jcsCanonicalize(bundleObject as unknown as JsonValue);
   const hash = await sha256Hex(jcs);
   return hash.toLowerCase();
 }
