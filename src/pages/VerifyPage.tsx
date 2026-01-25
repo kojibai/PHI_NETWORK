@@ -8,6 +8,7 @@ import VerifierFrame from "../components/KaiVoh/VerifierFrame";
 import { parseSlug, verifySigilSvg, type VerifyResult } from "../utils/verifySigil";
 import { DEFAULT_ISSUANCE_POLICY, quotePhiForUsd } from "../utils/phi-issuance";
 import { currency as fmtPhi, usd as fmtUsd } from "../components/valuation/display";
+import LiveChart from "../components/valuation/chart/LiveChart";
 import {
   buildVerifierSlug,
   buildVerifierUrl,
@@ -39,6 +40,8 @@ import { useValuation } from "./SigilPage/useValuation";
 import type { SigilMetadataLite } from "../utils/valuation";
 import { jcsCanonicalize } from "../utils/jcs";
 import { svgCanonicalForHash } from "../utils/svgProof";
+import useRollingChartSeries from "../components/VerifierStamper/hooks/useRollingChartSeries";
+import { BREATH_MS } from "../components/valuation/constants";
 
 /* ────────────────────────────────────────────────────────────────
    Utilities
@@ -419,23 +422,50 @@ function SealPill(props: { label: string; state: SealState; detail?: string }): 
   );
 }
 
-function MiniField(props: { label: string; value: string; title?: string }): ReactElement {
-  return (
-    <div className="mini">
+function MiniField(props: { label: string; value: string; title?: string; onClick?: () => void; ariaLabel?: string }): ReactElement {
+  const body = (
+    <>
       <div className="mini-k">{props.label}</div>
       <div className="mini-v mono" title={props.title ?? props.value}>
         {props.value || "—"}
       </div>
-    </div>
+    </>
   );
+  if (props.onClick) {
+    return (
+      <button type="button" className="mini mini--button" onClick={props.onClick} aria-label={props.ariaLabel ?? props.label} title={props.title ?? props.value}>
+        {body}
+      </button>
+    );
+  }
+  return <div className="mini">{body}</div>;
 }
 
-function LiveValuePill(props: { phiValue: number; usdValue: number | null; label: string; ariaLabel: string }): ReactElement {
+function LiveValuePill(props: {
+  phiValue: number;
+  usdValue: number | null;
+  label: string;
+  ariaLabel: string;
+  onPhiClick?: () => void;
+  onUsdClick?: () => void;
+}): ReactElement {
   return (
     <div className="vseal-value" aria-label={props.ariaLabel}>
       <div className="vseal-value-label">{props.label}</div>
-      <div className="vseal-value-phi">{fmtPhi(props.phiValue)}</div>
-      <div className="vseal-value-usd">{props.usdValue == null ? "—" : fmtUsd(props.usdValue)}</div>
+      {props.onPhiClick ? (
+        <button type="button" className="vseal-value-btn vseal-value-phi" onClick={props.onPhiClick} aria-label="Open live chart for Φ value">
+          {fmtPhi(props.phiValue)}
+        </button>
+      ) : (
+        <div className="vseal-value-phi">{fmtPhi(props.phiValue)}</div>
+      )}
+      {props.onUsdClick ? (
+        <button type="button" className="vseal-value-btn vseal-value-usd" onClick={props.onUsdClick} aria-label="Open live chart for USD value">
+          {props.usdValue == null ? "—" : fmtUsd(props.usdValue)}
+        </button>
+      ) : (
+        <div className="vseal-value-usd">{props.usdValue == null ? "—" : fmtUsd(props.usdValue)}</div>
+      )}
     </div>
   );
 }
@@ -587,6 +617,11 @@ export default function VerifyPage(): ReactElement {
   const [openZkInputs, setOpenZkInputs] = useState<boolean>(false);
   const [openZkHints, setOpenZkHints] = useState<boolean>(false);
 
+  // Live chart popover
+  const [chartOpen, setChartOpen] = useState<boolean>(false);
+  const [chartFocus, setChartFocus] = useState<"phi" | "usd">("phi");
+  const [chartReflowKey, setChartReflowKey] = useState<number>(0);
+
   // Header sigil preview (safe <img> object URL)
   const [sigilPreviewUrl, setSigilPreviewUrl] = useState<string>("");
 
@@ -672,6 +707,52 @@ export default function VerifyPage(): ReactElement {
     ensureMetaTag("name", "twitter:description", `Proof of Breath™ • ${statusLabel} • Pulse ${slug.pulse ?? "—"}`);
     ensureMetaTag("name", "twitter:image", ogImageUrl.toString());
   }, [authorSigVerified, result, slug.pulse, slug.raw, slugRaw, zkVerify]);
+
+  const openChartPopover = useCallback((focus: "phi" | "usd") => {
+    setChartFocus(focus);
+    setChartOpen(true);
+    setChartReflowKey((k) => k + 1);
+  }, []);
+
+  const closeChartPopover = useCallback(() => {
+    setChartOpen(false);
+  }, []);
+
+  React.useEffect(() => {
+    if (chartOpen) setChartReflowKey((k) => k + 1);
+  }, [chartOpen, chartFocus]);
+
+  React.useEffect(() => {
+    if (!chartOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closeChartPopover();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [chartOpen, closeChartPopover]);
+
+  const chartPhi = useMemo(() => {
+    const candidate = displayPhi ?? liveValuePhi ?? 0;
+    return Number.isFinite(candidate) ? candidate : 0;
+  }, [displayPhi, liveValuePhi]);
+
+  const seriesKey = useMemo(() => {
+    if (result.status === "ok") {
+      return `${result.embedded.pulse ?? slug.pulse ?? "x"}|${result.embedded.kaiSignature ?? ""}|${result.embedded.phiKey ?? ""}`;
+    }
+    return slug.raw ? `slug-${slug.raw}` : "verify";
+  }, [result, slug.pulse, slug.raw]);
+
+  const chartData = useRollingChartSeries({
+    seriesKey,
+    sampleMs: BREATH_MS,
+    valuePhi: chartPhi,
+    usdPerPhi,
+    maxPoints: 4096,
+    snapKey: chartReflowKey,
+  });
+
+  const pvForChart = useMemo(() => (chartPhi > 0 ? chartPhi : 0), [chartPhi]);
 
   const zkMeta = useMemo(() => {
     if (embeddedProof) return embeddedProof;
@@ -1354,6 +1435,8 @@ if (authorSigNext) {
                 usdValue={displayUsd}
                 label={displayLabel}
                 ariaLabel={displayAriaLabel}
+                onPhiClick={() => openChartPopover("phi")}
+                onUsdClick={displayUsd == null ? undefined : () => openChartPopover("usd")}
               />
             ) : null}
           </div>
@@ -1379,6 +1462,41 @@ if (authorSigNext) {
         </div>
 
       </header>
+
+      {chartOpen ? (
+        <div
+          className="chart-popover-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Live chart"
+          onMouseDown={closeChartPopover}
+          onClick={closeChartPopover}
+        >
+          <div className="chart-popover" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
+            <div className="chart-popover-head">
+              <div className="chart-popover-title">{chartFocus === "phi" ? "Φ Resonance · Live" : "$ Price · Live"}</div>
+              <button type="button" className="vmodal-close" onClick={closeChartPopover} aria-label="Close chart" title="Close chart">
+                ×
+              </button>
+            </div>
+            <div className="chart-popover-body">
+              <React.Suspense fallback={<div style={{ padding: 16, color: "var(--inkDim)" }}>Loading chart…</div>}>
+                <LiveChart
+                  data={chartData}
+                  live={chartPhi}
+                  pv={pvForChart}
+                  premiumX={1}
+                  momentX={1}
+                  colors={["rgba(167,255,244,1)"]}
+                  usdPerPhi={usdPerPhi}
+                  mode={chartFocus === "usd" ? "usd" : "phi"}
+                  reflowKey={chartReflowKey}
+                />
+              </React.Suspense>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {/* Body */}
       <div className="vbody">
@@ -1596,10 +1714,14 @@ if (authorSigNext) {
                   <MiniField
                     label={displaySource === "balance" ? "Glyph Φ balance" : displaySource === "embedded" ? "Glyph Φ value" : "Live Φ value"}
                     value={fmtPhi(displayPhi)}
+                    onClick={() => openChartPopover("phi")}
+                    ariaLabel="Open live chart for Φ value"
                   />
                   <MiniField
                     label={displaySource === "balance" ? "Glyph USD balance" : displaySource === "embedded" ? "Glyph USD value" : "Live USD value"}
                     value={displayUsd == null ? "—" : fmtUsd(displayUsd)}
+                    onClick={displayUsd == null ? undefined : () => openChartPopover("usd")}
+                    ariaLabel="Open live chart for USD value"
                   />
                 </div>
               ) : null}
