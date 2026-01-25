@@ -43,12 +43,14 @@ export type ZkStatement = {
   domainTag: string;
   publicInputsContract?: ZkPublicInputsContract;
 };
+export type ZkCurve = "bn128" | "BLS12-381" | (string & {});
 export type ZkMeta = Readonly<{
   protocol?: string;
-  curve?: string;
+  curve?: ZkCurve;
   scheme?: string;
   circuitId?: string;
   vkHash?: string;
+  warnings?: string[];
 }>;
 export type VerificationCache = Readonly<{
   zkVerifiedCached?: boolean;
@@ -155,6 +157,23 @@ export function normalizeChakraDay(v?: string): ChakraDay | undefined {
   // normalize incoming forms: "Third Eye", "third_eye", "third-eye" -> "thirdeye"
   const k = raw.toLowerCase().replace(/[\s_-]/g, "");
   return CHAKRA_MAP[k];
+}
+
+/* -------------------------------------------------------------------------- */
+/*                           ZK curve normalization                           */
+/* -------------------------------------------------------------------------- */
+
+export function normalizeZkCurve(curve: string): ZkCurve {
+  const trimmed = curve.trim();
+  if (!trimmed) return trimmed;
+  const normalized = trimmed.toLowerCase();
+  if (normalized === "bn128" || normalized === "altbn128" || normalized === "bn254") {
+    return "bn128";
+  }
+  if (normalized === "bls12-381") {
+    return "BLS12-381";
+  }
+  return trimmed;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -274,6 +293,39 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+type ZkProofWithCurve = Readonly<Record<string, unknown> & { curve?: ZkCurve }>;
+
+export function normalizeProofBundleZkCurves(input: {
+  zkProof?: unknown;
+  zkMeta?: ZkMeta;
+}): { zkProof?: unknown; zkMeta?: ZkMeta; curve?: ZkCurve } {
+  const { zkProof, zkMeta } = input;
+  if (!isRecord(zkProof) || typeof zkProof.curve !== "string") {
+    return { zkProof, zkMeta };
+  }
+
+  const normalizedCurve = normalizeZkCurve(zkProof.curve);
+  const normalizedProof: ZkProofWithCurve = { ...zkProof, curve: normalizedCurve };
+
+  if (!zkMeta) {
+    return { zkProof: normalizedProof, zkMeta, curve: normalizedCurve };
+  }
+
+  const metaCurve = typeof zkMeta.curve === "string" ? zkMeta.curve.trim() : undefined;
+  const warnings = Array.isArray(zkMeta.warnings) ? [...zkMeta.warnings] : [];
+  if (metaCurve && normalizeZkCurve(metaCurve) !== normalizedCurve) {
+    warnings.push(`curve_mismatch_corrected: meta=${metaCurve} proof=${normalizedCurve}`);
+  }
+
+  const normalizedMeta: ZkMeta = {
+    ...zkMeta,
+    curve: normalizedCurve,
+    warnings: warnings.length ? warnings : undefined,
+  };
+
+  return { zkProof: normalizedProof, zkMeta: normalizedMeta, curve: normalizedCurve };
+}
+
 function dropUndefined<T extends Record<string, unknown>>(value: T): T {
   const entries = Object.entries(value).filter((entry) => entry[1] !== undefined);
   return Object.fromEntries(entries) as T;
@@ -340,6 +392,9 @@ export function buildBundleRoot(bundle: ProofBundleLike): BundleRoot {
         }
       : undefined);
   const zkStatement = zkStatementBase ? withZkPublicInputsContract(zkStatementBase) : undefined;
+  const normalizedZk = normalizeProofBundleZkCurves({ zkProof: bundle.zkProof, zkMeta: bundle.zkMeta });
+  const zkProof = normalizedZk.zkProof ?? bundle.zkProof;
+  const zkMeta = normalizedZk.zkMeta ?? bundle.zkMeta;
   return dropUndefined({
     v: typeof bundle.v === "string" ? bundle.v : undefined,
     hashAlg,
@@ -350,9 +405,9 @@ export function buildBundleRoot(bundle: ProofBundleLike): BundleRoot {
     capsuleHash: bundle.capsuleHash,
     svgHash: bundle.svgHash,
     zkPoseidonHash: bundle.zkPoseidonHash,
-    zkProof: bundle.zkProof,
+    zkProof,
     zkPublicInputs: bundle.zkPublicInputs,
-    zkMeta: bundle.zkMeta,
+    zkMeta,
   });
 }
 
