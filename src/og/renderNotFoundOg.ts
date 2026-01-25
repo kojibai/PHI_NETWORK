@@ -3,8 +3,16 @@ import { Resvg } from "@resvg/resvg-js";
 const WIDTH = 1200;
 const HEIGHT = 630;
 
+const escapeXml = (value: string): string =>
+  String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&apos;");
+
 function buildNotFoundSvg(capsuleHash: string): string {
-  const safeHash = capsuleHash || "unknown";
+  const safeHash = escapeXml(capsuleHash || "unknown");
   return `
 <svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HEIGHT}">
   <defs>

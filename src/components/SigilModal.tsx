@@ -1285,7 +1285,7 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
         typeof payloadFromUrl?.userPhiKey === "string"
           ? payloadFromUrl.userPhiKey
           : phiKeyAttr;
-      const payloadHashHex = sealHash || payloadHashAttr;
+      const payloadHashHex = payloadHashAttr || sealHash;
 
       if (!kaiSignature) return "Export failed: kaiSignature missing from SVG.";
       if (!phiKey) return "Export failed: Φ-Key missing from SVG.";

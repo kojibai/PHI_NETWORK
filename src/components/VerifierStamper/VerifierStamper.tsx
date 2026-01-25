@@ -140,6 +140,13 @@ type GlyphUnlockState = {
   unlockedAtNonce?: string;
 };
 
+function shortenPhiKey(phiKey: string): string {
+  const trimmed = String(phiKey || "").trim();
+  if (!trimmed) return "";
+  if (trimmed.length <= 24) return trimmed;
+  return `${trimmed.slice(0, 12)}…${trimmed.slice(-10)}`;
+}
+
 function readPhiAmountFromMeta(meta: SigilMetadataWithOptionals): string | undefined {
   const candidate =
     meta.childAllocationPhi ??
@@ -2570,6 +2577,33 @@ const VerifierStamperInner: React.FC = () => {
     }
   }, [authorSigValue]);
 
+  const shareText = useMemo(() => {
+    const isVerified = uiState === "verified" || typeof proofBundleMeta?.verifiedAtPulse === "number";
+    if (!isVerified) return "";
+    const pulse = meta?.pulse;
+    const verifiedAt = proofBundleMeta?.verifiedAtPulse;
+    const capsulePhiKey =
+      (proofBundleMeta?.proofCapsule as { phiKey?: string } | null | undefined)?.phiKey ?? null;
+    const phiKey = meta?.userPhiKey ?? capsulePhiKey ?? "";
+    const phiKeyShort = phiKey ? shortenPhiKey(phiKey) : "";
+    const kasOk = Boolean(authorSigValue && isKASAuthorSig(authorSigValue));
+    const g16Ok = Boolean(zkProof);
+    const parts: string[] = ["VERIFIED"];
+    if (typeof pulse === "number" && Number.isFinite(pulse)) {
+      if (typeof verifiedAt === "number" && Number.isFinite(verifiedAt)) {
+        parts.push(`Pulse ${pulse} verified stewardship at pulse ${verifiedAt}`);
+      } else {
+        parts.push(`Pulse ${pulse}`);
+      }
+    } else if (typeof verifiedAt === "number" && Number.isFinite(verifiedAt)) {
+      parts.push(`Verified stewardship at pulse ${verifiedAt}`);
+    }
+    if (phiKeyShort) parts.push(`ΦKey ${phiKeyShort}`);
+    parts.push(`KAS ${kasOk ? "✅" : "❌"}`);
+    parts.push(`G16 ${g16Ok ? "✅" : "❌"}`);
+    return parts.join(" • ");
+  }, [authorSigValue, meta?.pulse, meta?.userPhiKey, proofBundleMeta?.proofCapsule, proofBundleMeta?.verifiedAtPulse, uiState, zkProof]);
+
   // Chakra: resolve from chakraDay or chakraGate (strips "gate" implicitly)
   const chakraDayDisplay = useMemo<ChakraDay | null>(() => resolveChakraDay(meta ?? {}), [meta]);
 
@@ -3222,6 +3256,7 @@ const VerifierStamperInner: React.FC = () => {
         open={sealOpen}
         url={sealUrl}
         hash={sealHash}
+        shareText={shareText || undefined}
         onClose={() => {
           setSealOpen(false);
           setRotateOut(false);
