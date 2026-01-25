@@ -1383,160 +1383,6 @@ React.useEffect(() => {
     setLocalReceiveBundle(null);
   }, [bundleHash, svgText]);
 
-  React.useEffect(() => {
-    let active = true;
-    if (!effectiveReceiveSig || !bundleHash) {
-      setReceiveSigVerified(null);
-      return;
-    }
-
-    (async () => {
-      const receiveBundleHashValue = effectiveReceiveSig.binds.bundleHash;
-      if (!receiveBundleHashValue) {
-        if (active) setReceiveSigVerified(false);
-        return;
-      }
-      const nonce = effectiveReceiveSig.nonce ?? "";
-      const { challengeBytes } = await buildKasChallenge("receive", receiveBundleHashValue, nonce);
-      const ok = await verifyWebAuthnAssertion({
-        assertion: effectiveReceiveSig.assertion,
-        expectedChallenge: challengeBytes,
-        pubKeyJwk: effectiveReceiveSig.pubKeyJwk,
-        expectedCredId: effectiveReceiveSig.credId,
-      });
-      if (active) setReceiveSigVerified(ok);
-    })();
-
-    return () => {
-      active = false;
-    };
-  }, [effectiveReceiveSig, bundleHash]);
-
-  React.useEffect(() => {
-    let active = true;
-    const receiveMode = effectiveReceiveMode === "receive";
-
-    if (!receiveMode && !effectiveReceiveSig) {
-      setOwnerPhiKeyVerified(null);
-      setOwnershipAttested("missing");
-      return;
-    }
-
-    if (!effectiveReceiveSig) {
-      setOwnerPhiKeyVerified(null);
-      setOwnershipAttested("missing");
-      return;
-    }
-
-    const receiveBundleHashValue = effectiveReceiveBundleHash;
-    if (!receiveBundleHashValue || (receiveMode && receiveBundleHashValue !== bundleHash)) {
-      setOwnerPhiKeyVerified(false);
-      setOwnershipAttested(false);
-      return;
-    }
-
-    if (effectiveReceiveSig.binds.bundleHash !== receiveBundleHashValue) {
-      setOwnerPhiKeyVerified(false);
-      setOwnershipAttested(false);
-      return;
-    }
-
-    if (effectiveReceivePulse == null) {
-      setOwnerPhiKeyVerified(false);
-      setOwnershipAttested(false);
-      return;
-    }
-
-    if (
-      typeof effectiveReceiveSig.createdAtPulse === "number" &&
-      Number.isFinite(effectiveReceiveSig.createdAtPulse) &&
-      effectiveReceiveSig.createdAtPulse !== effectiveReceivePulse
-    ) {
-      setOwnerPhiKeyVerified(false);
-      setOwnershipAttested(false);
-      return;
-    }
-
-    if (receiveSigVerified === null) {
-      setOwnerPhiKeyVerified(null);
-      setOwnershipAttested("missing");
-      return;
-    }
-
-    if (receiveSigVerified === false) {
-      setOwnerPhiKeyVerified(false);
-      setOwnershipAttested(false);
-      return;
-    }
-
-    if (!effectiveOwnerPhiKey) {
-      setOwnerPhiKeyVerified(null);
-      setOwnershipAttested("missing");
-      return;
-    }
-
-    (async () => {
-      const expectedOwnerPhiKey = await deriveOwnerPhiKeyFromReceive({
-        receiverPubKeyJwk: effectiveReceiveSig.pubKeyJwk,
-        receivePulse: effectiveReceivePulse,
-        receiveBundleHash: receiveBundleHashValue,
-      });
-      const ok = expectedOwnerPhiKey === effectiveOwnerPhiKey;
-      if (active) {
-        setOwnerPhiKeyVerified(ok);
-        setOwnershipAttested(ok);
-      }
-    })();
-
-    return () => {
-      active = false;
-    };
-  }, [
-    bundleHash,
-    effectiveOwnerPhiKey,
-    effectiveReceiveBundleHash,
-    effectiveReceiveMode,
-    effectiveReceivePulse,
-    effectiveReceiveSig,
-    receiveSigVerified,
-  ]);
-
-  React.useEffect(() => {
-    let active = true;
-    if (!bundleHash) return;
-    const originSig = effectiveOriginAuthorSig;
-    const legacySig = embeddedProof?.authorSig;
-
-    if (!originSig && !legacySig) {
-      setAuthorSigVerified(null);
-      return;
-    }
-
-    (async () => {
-      if (originSig) {
-        if (!effectiveOriginBundleHash || !isKASAuthorSig(originSig)) {
-          if (active) setAuthorSigVerified(false);
-          return;
-        }
-        const ok = await verifyBundleAuthorSig(effectiveOriginBundleHash, originSig);
-        if (active) setAuthorSigVerified(ok);
-        return;
-      }
-
-      if (!legacySig || !isKASAuthorSig(legacySig)) {
-        if (active) setAuthorSigVerified(false);
-        return;
-      }
-      const authorBundleHash = bundleHashFromAuthorSig(legacySig);
-      const candidateHashes = Array.from(new Set([authorBundleHash, bundleHash].filter(Boolean))) as string[];
-      const ok = await verifyAuthorSigWithFallback(legacySig, candidateHashes);
-      if (active) setAuthorSigVerified(ok);
-    })();
-
-    return () => {
-      active = false;
-    };
-  }, [bundleHash, embeddedProof?.authorSig, effectiveOriginAuthorSig, effectiveOriginBundleHash]);
 
   React.useEffect(() => {
     let active = true;
@@ -1825,6 +1671,133 @@ if (verified && typeof cacheBundleHash === "string" && cacheBundleHash.trim().le
       undefined,
     [embeddedProof?.ownerKeyDerivation, localReceiveBundle?.ownerKeyDerivation, sharedReceipt?.ownerKeyDerivation],
   );
+
+
+  React.useEffect(() => {
+    let active = true;
+    const receiveMode = effectiveReceiveMode === "receive";
+
+    if (!receiveMode && !effectiveReceiveSig) {
+      setOwnerPhiKeyVerified(null);
+      setOwnershipAttested("missing");
+      return;
+    }
+
+    if (!effectiveReceiveSig) {
+      setOwnerPhiKeyVerified(null);
+      setOwnershipAttested("missing");
+      return;
+    }
+
+    const receiveBundleHashValue = effectiveReceiveBundleHash;
+    if (!receiveBundleHashValue || (receiveMode && receiveBundleHashValue !== bundleHash)) {
+      setOwnerPhiKeyVerified(false);
+      setOwnershipAttested(false);
+      return;
+    }
+
+    if (effectiveReceiveSig.binds.bundleHash !== receiveBundleHashValue) {
+      setOwnerPhiKeyVerified(false);
+      setOwnershipAttested(false);
+      return;
+    }
+
+    if (effectiveReceivePulse == null) {
+      setOwnerPhiKeyVerified(false);
+      setOwnershipAttested(false);
+      return;
+    }
+
+    if (
+      typeof effectiveReceiveSig.createdAtPulse === "number" &&
+      Number.isFinite(effectiveReceiveSig.createdAtPulse) &&
+      effectiveReceiveSig.createdAtPulse !== effectiveReceivePulse
+    ) {
+      setOwnerPhiKeyVerified(false);
+      setOwnershipAttested(false);
+      return;
+    }
+
+    if (receiveSigVerified === null) {
+      setOwnerPhiKeyVerified(null);
+      setOwnershipAttested("missing");
+      return;
+    }
+
+    if (receiveSigVerified === false) {
+      setOwnerPhiKeyVerified(false);
+      setOwnershipAttested(false);
+      return;
+    }
+
+    if (!effectiveOwnerPhiKey) {
+      setOwnerPhiKeyVerified(null);
+      setOwnershipAttested("missing");
+      return;
+    }
+
+    (async () => {
+      const expectedOwnerPhiKey = await deriveOwnerPhiKeyFromReceive({
+        receiverPubKeyJwk: effectiveReceiveSig.pubKeyJwk,
+        receivePulse: effectiveReceivePulse,
+        receiveBundleHash: receiveBundleHashValue,
+      });
+      const ok = expectedOwnerPhiKey === effectiveOwnerPhiKey;
+      if (active) {
+        setOwnerPhiKeyVerified(ok);
+        setOwnershipAttested(ok);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [
+    bundleHash,
+    effectiveOwnerPhiKey,
+    effectiveReceiveBundleHash,
+    effectiveReceiveMode,
+    effectiveReceivePulse,
+    effectiveReceiveSig,
+    receiveSigVerified,
+  ]);
+
+  React.useEffect(() => {
+    let active = true;
+    if (!bundleHash) return;
+    const originSig = effectiveOriginAuthorSig;
+    const legacySig = embeddedProof?.authorSig;
+
+    if (!originSig && !legacySig) {
+      setAuthorSigVerified(null);
+      return;
+    }
+
+    (async () => {
+      if (originSig) {
+        if (!effectiveOriginBundleHash || !isKASAuthorSig(originSig)) {
+          if (active) setAuthorSigVerified(false);
+          return;
+        }
+        const ok = await verifyBundleAuthorSig(effectiveOriginBundleHash, originSig);
+        if (active) setAuthorSigVerified(ok);
+        return;
+      }
+
+      if (!legacySig || !isKASAuthorSig(legacySig)) {
+        if (active) setAuthorSigVerified(false);
+        return;
+      }
+      const authorBundleHash = bundleHashFromAuthorSig(legacySig);
+      const candidateHashes = Array.from(new Set([authorBundleHash, bundleHash].filter(Boolean))) as string[];
+      const ok = await verifyAuthorSigWithFallback(legacySig, candidateHashes);
+      if (active) setAuthorSigVerified(ok);
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [bundleHash, embeddedProof?.authorSig, effectiveOriginAuthorSig, effectiveOriginBundleHash]);
 
   const receiveCredId = useMemo(() => (effectiveReceiveSig ? effectiveReceiveSig.credId : ""), [effectiveReceiveSig]);
   const receiveNonce = useMemo(() => (effectiveReceiveSig?.nonce ? effectiveReceiveSig.nonce : ""), [effectiveReceiveSig?.nonce]);
@@ -2160,6 +2133,35 @@ body: [
 
   const stewardPulseLabel =
     stewardVerifiedPulse == null ? "Verified pulse unavailable (legacy bundle)" : `Steward Verified @ Pulse ${stewardVerifiedPulse}`;
+
+  React.useEffect(() => {
+    let active = true;
+    if (!effectiveReceiveSig || !bundleHash) {
+      setReceiveSigVerified(null);
+      return;
+    }
+
+    (async () => {
+      const receiveBundleHashValue = effectiveReceiveSig.binds.bundleHash;
+      if (!receiveBundleHashValue) {
+        if (active) setReceiveSigVerified(false);
+        return;
+      }
+      const nonce = effectiveReceiveSig.nonce ?? "";
+      const { challengeBytes } = await buildKasChallenge("receive", receiveBundleHashValue, nonce);
+      const ok = await verifyWebAuthnAssertion({
+        assertion: effectiveReceiveSig.assertion,
+        expectedChallenge: challengeBytes,
+        pubKeyJwk: effectiveReceiveSig.pubKeyJwk,
+        expectedCredId: effectiveReceiveSig.credId,
+      });
+      if (active) setReceiveSigVerified(ok);
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [effectiveReceiveSig, bundleHash]);
 
 
   React.useEffect(() => {
