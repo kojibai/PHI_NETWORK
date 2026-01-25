@@ -36,9 +36,12 @@ import type { SigilProofHints } from "../../types/sigil";
  * We export at the largest possible px that the *current device* can actually rasterize.
  * iOS Safari is the most sensitive; we'll try big -> smaller until it succeeds.
  */
+// Desktop can handle 4096 reliably
 const EXPORT_PX_CANDIDATES_DESKTOP: readonly number[] = [4096];
-const EXPORT_PX_CANDIDATES_IOS: readonly number[] = [4096, 3072, 2048, 1536, 1024];
-const EXPORT_PX_CANDIDATES_MOBILE_GENERIC: readonly number[] = [4096, 3072, 2048, 1536, 1024];
+
+// ✅ Mobile hard-cap (iOS + generic mobile): 2048 max for reliability
+const EXPORT_PX_CANDIDATES_IOS: readonly number[] = [2048, 1536, 1024];
+const EXPORT_PX_CANDIDATES_MOBILE_GENERIC: readonly number[] = [2048, 1536, 1024];
 
 function isIOS(): boolean {
   if (typeof navigator === "undefined") return false;
