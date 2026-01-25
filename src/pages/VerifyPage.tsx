@@ -1002,6 +1002,9 @@ export default function VerifyPage(): ReactElement {
             ? result.verifiedAtPulse
             : undefined);
 
+      const verifierValue = embedded?.verifier ?? verificationSource;
+      const verificationVersionValue = embedded?.verificationVersion ?? VERIFICATION_BUNDLE_VERSION;
+
       const bundleSeed =
         embedded?.raw && typeof embedded.raw === "object" && embedded.raw !== null
           ? {
@@ -1009,8 +1012,8 @@ export default function VerifyPage(): ReactElement {
               svgHash: svgHashNext,
               capsuleHash: capsuleHashNext,
               proofCapsule: capsule,
-              verifier: verificationSource,
-              verificationVersion: VERIFICATION_BUNDLE_VERSION,
+              verifier: verifierValue,
+              verificationVersion: verificationVersionValue,
               ...(verifiedAtPulse != null ? { verifiedAtPulse } : {}),
             }
           : {
@@ -1021,8 +1024,8 @@ export default function VerifyPage(): ReactElement {
               svgHash: svgHashNext,
               shareUrl: embedded?.shareUrl,
               verifierUrl: embedded?.verifierUrl,
-              verifier: verificationSource,
-              verificationVersion: VERIFICATION_BUNDLE_VERSION,
+              verifier: verifierValue,
+              verificationVersion: verificationVersionValue,
               ...(verifiedAtPulse != null ? { verifiedAtPulse } : {}),
               zkPoseidonHash: embedded?.zkPoseidonHash,
               zkProof: embedded?.zkProof,
