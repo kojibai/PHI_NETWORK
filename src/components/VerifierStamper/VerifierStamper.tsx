@@ -197,6 +197,14 @@ function readReceiveSigFromBundle(raw: unknown): ReceiveSig | null {
   return isReceiveSig(candidate) ? candidate : null;
 }
 
+function readReceiveBundleHashFromBundle(raw: unknown): string | null {
+  if (!isRecord(raw)) return null;
+  const candidate = raw.receiveBundleHash;
+  if (typeof candidate !== "string") return null;
+  const trimmed = candidate.trim();
+  return trimmed ? trimmed : null;
+}
+
 const RECEIVE_LOCK_PREFIX = "kai:receive:lock:v1";
 const RECEIVE_REMOTE_LIMIT = 200;
 const RECEIVE_REMOTE_PAGES = 3;
@@ -1248,20 +1256,24 @@ const VerifierStamperInner: React.FC = () => {
       }
 
       if (bundleHash) {
-        const key = `received:${bundleHash}`;
-        const stored = window.localStorage.getItem(key);
-        if (stored) {
+        const receiveBundleHash = readReceiveBundleHashFromBundle(proofBundleMeta?.raw);
+        const keys = new Set<string>();
+        if (receiveBundleHash) keys.add(`received:${receiveBundleHash}`);
+        keys.add(`received:${bundleHash}`);
+        for (const key of keys) {
+          const stored = window.localStorage.getItem(key);
+          if (!stored) continue;
           try {
             const parsed = JSON.parse(stored) as unknown;
             if (!alive) return;
-            setReceiveSig(isReceiveSig(parsed) ? parsed : null);
+            if (isReceiveSig(parsed)) {
+              setReceiveSig(parsed);
+              setReceiveStatus("already");
+              return;
+            }
           } catch {
             if (!alive) return;
-            setReceiveSig(null);
           }
-          if (!alive) return;
-          setReceiveStatus("already");
-          return;
         }
       }
 
