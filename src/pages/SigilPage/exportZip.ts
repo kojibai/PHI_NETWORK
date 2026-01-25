@@ -74,7 +74,9 @@ async function pngBlobFromSvgBestFit(
   }
 
   const msg =
-    lastErr instanceof Error ? lastErr.message : "Unknown error while rasterizing PNG";
+    lastErr instanceof Error
+      ? lastErr.message
+      : "Unknown error while rasterizing PNG";
   throw new Error(`PNG export failed at all sizes: ${msg}`);
 }
 
@@ -234,11 +236,6 @@ function updateSvgUrlSurfaces(svgEl: SVGSVGElement, fullUrl: string): void {
   });
 }
 
-type NavShare = {
-  share?: (data: ShareData) => Promise<void>;
-  canShare?: (data: ShareData) => boolean;
-};
-
 export async function exportZIP(ctx: {
   expired: boolean;
   exporting: boolean;
@@ -330,6 +327,7 @@ export async function exportZIP(ctx: {
         claimedMeta.beat,
         sealedStepIndex,
         String(claimedMeta.chakraDay ?? ""),
+        // readIntentionSigil expects a SigilPayload
         readIntentionSigil(toSigilPayloadStrict(claimedMeta, sealedStepIndex))
       )
     );
@@ -357,30 +355,37 @@ export async function exportZIP(ctx: {
     const tokenForManifest: string | undefined =
       claimedMetaCanon.transferNonce ?? transferToken ?? undefined;
 
-    const fullUrlForManifest = rewriteUrlPayload(baseUrlForManifest, sharePayloadForManifest, tokenForManifest);
+    const fullUrlForManifest = rewriteUrlPayload(
+      baseUrlForManifest,
+      sharePayloadForManifest,
+      tokenForManifest
+    );
 
     // Canonical payload write only (single call) — include URL hints for readers
     const { putMetadata } = await import("../../utils/svgMeta");
     const metaForSvg: Record<string, unknown> = {
       ...claimedMetaCanon,
       stepsPerBeat: stepsNum,
-      shareUrl: fullUrlForManifest,
-      fullUrl: fullUrlForManifest,
+      shareUrl: fullUrlForManifest, // hint for consumers
+      fullUrl: fullUrlForManifest, // alias
     };
     putMetadata(svgEl, metaForSvg);
 
     // Display-only exposure (non-canonical marker)
     try {
       svgEl.setAttribute("data-step-index", String(sealedStepIndex));
-      const NS_SVG = "http://www.w3.org/2000/svg";
+      const NS = "http://www.w3.org/2000/svg";
       let dispMeta = svgEl.querySelector("metadata#sigil-display");
       if (!dispMeta) {
-        dispMeta = document.createElementNS(NS_SVG, "metadata");
+        dispMeta = document.createElementNS(NS, "metadata");
         dispMeta.setAttribute("id", "sigil-display");
         dispMeta.setAttribute("data-noncanonical", "1");
         svgEl.appendChild(dispMeta);
       }
-      dispMeta.textContent = JSON.stringify({ stepIndex: sealedStepIndex, stepsPerBeat: stepsNum });
+      dispMeta.textContent = JSON.stringify({
+        stepIndex: sealedStepIndex,
+        stepsPerBeat: stepsNum,
+      });
     } catch {
       // eslint-disable-next-line no-console
       console.debug("Display metadata write failed");
@@ -440,6 +445,8 @@ export async function exportZIP(ctx: {
 
     const capsuleHash = await hashProofCapsuleV1(proofCapsule);
 
+    // Choose export candidates based on device. We still TRY 4096 first even on iOS,
+    // but will fall back automatically if the device can't handle it.
     const pxCandidates: readonly number[] = isIOS()
       ? EXPORT_PX_CANDIDATES_IOS
       : isLikelyMobile()
@@ -464,17 +471,17 @@ export async function exportZIP(ctx: {
     svgClone.setAttribute("data-payload-hash", payloadHashHex);
 
     const svgString = new XMLSerializer().serializeToString(svgClone);
-
     const embeddedMeta = extractEmbeddedMetaFromSvg(svgString);
     let zkPoseidonHash =
-      typeof embeddedMeta.zkPoseidonHash === "string" && embeddedMeta.zkPoseidonHash.trim().length > 0
+      typeof embeddedMeta.zkPoseidonHash === "string" &&
+      embeddedMeta.zkPoseidonHash.trim().length > 0
         ? embeddedMeta.zkPoseidonHash.trim()
         : undefined;
     let zkProof = embeddedMeta.zkProof;
     let proofHints = embeddedMeta.proofHints;
     let zkPublicInputs: unknown = embeddedMeta.zkPublicInputs;
-
-    const allowMissingProof = typeof navigator !== "undefined" && navigator.onLine === false;
+    const allowMissingProof =
+      typeof navigator !== "undefined" && navigator.onLine === false;
 
     if (!zkPoseidonHash && payloadHashHex) {
       const computed = await computeZkPoseidonHash(payloadHashHex);
@@ -482,7 +489,10 @@ export async function exportZIP(ctx: {
     }
 
     if (zkPoseidonHash) {
-      const proofObj = zkProof && typeof zkProof === "object" ? (zkProof as Record<string, unknown>) : null;
+      const proofObj =
+        zkProof && typeof zkProof === "object"
+          ? (zkProof as Record<string, unknown>)
+          : null;
       const hasProof =
         typeof zkProof === "string"
           ? zkProof.trim().length > 0
@@ -495,41 +505,52 @@ export async function exportZIP(ctx: {
       let secretForProof: string | undefined;
       if (payloadHashHex) {
         const computed = await computeZkPoseidonHash(payloadHashHex);
-        if (computed.hash === zkPoseidonHash) secretForProof = computed.secret;
+        if (computed.hash === zkPoseidonHash) {
+          secretForProof = computed.secret;
+        }
       }
 
       if (!hasProof && !secretForProof) {
-        if (!allowMissingProof) throw new Error("ZK secret missing for proof generation");
+        if (!allowMissingProof) {
+          throw new Error("ZK secret missing for proof generation");
+        }
       }
 
       if (!hasProof && secretForProof) {
         const generated = await generateZkProofFromPoseidonHash({
           poseidonHash: zkPoseidonHash,
           secret: secretForProof,
-          proofHints: typeof proofHints === "object" && proofHints !== null ? (proofHints as SigilProofHints) : undefined,
+          proofHints:
+            typeof proofHints === "object" && proofHints !== null
+              ? (proofHints as SigilProofHints)
+              : undefined,
         });
         if (!generated) {
-          if (!allowMissingProof) throw new Error("ZK proof generation failed");
+          if (!allowMissingProof) {
+            throw new Error("ZK proof generation failed");
+          }
         } else {
           zkProof = generated.proof;
           proofHints = generated.proofHints;
           zkPublicInputs = generated.zkPublicInputs;
         }
       }
-
       if (typeof proofHints !== "object" || proofHints === null) {
         proofHints = buildProofHints(zkPoseidonHash);
       } else {
         proofHints = buildProofHints(zkPoseidonHash, proofHints as SigilProofHints);
       }
     }
-
     if (zkPoseidonHash && zkPublicInputs) {
       const publicInput0 = readPublicInput0(zkPublicInputs);
-      if (publicInput0 && publicInput0 !== zkPoseidonHash) throw new Error("Embedded ZK mismatch");
+      if (publicInput0 && publicInput0 !== zkPoseidonHash) {
+        throw new Error("Embedded ZK mismatch");
+      }
     }
     if (zkPoseidonHash && (!zkProof || typeof zkProof !== "object")) {
-      if (!allowMissingProof) throw new Error("ZK proof missing");
+      if (!allowMissingProof) {
+        throw new Error("ZK proof missing");
+      }
     }
 
     if (zkPublicInputs) {
@@ -538,7 +559,9 @@ export async function exportZIP(ctx: {
     if (zkPoseidonHash) {
       svgClone.setAttribute("data-zk-scheme", "groth16-poseidon");
       svgClone.setAttribute("data-zk-poseidon-hash", zkPoseidonHash);
-      if (zkProof) svgClone.setAttribute("data-zk-proof", "present");
+      if (zkProof) {
+        svgClone.setAttribute("data-zk-proof", "present");
+      }
     }
 
     if (
@@ -564,10 +587,8 @@ export async function exportZIP(ctx: {
       proofHints,
       zkPublicInputs,
     };
-
     const bundleUnsigned = buildBundleUnsigned(proofBundleBase);
     const computedBundleHash = await hashBundle(bundleUnsigned);
-
     const proofBundle = {
       ...proofBundleBase,
       bundleHash: computedBundleHash,
@@ -578,103 +599,81 @@ export async function exportZIP(ctx: {
     const svgBlob = new Blob([sealedSvg], { type: "image/svg+xml;charset=utf-8" });
     const svgAssetHash = await sha256HexCanon(new Uint8Array(await svgBlob.arrayBuffer()));
 
-    // PNG export: try biggest -> shrink until device can render reliably
+    // ✅ PNG export: try biggest -> shrink until iOS can render reliably
     const { pngBlob, usedPxMax } = await pngBlobFromSvgBestFit(svgBlob, pxCandidates);
+
     const pngHash = await sha256HexCanon(new Uint8Array(await pngBlob.arrayBuffer()));
 
-    // Build ZIP
+    // Build ZIP (add manifest before generate)
     const JSZip = await loadJSZip();
     const zip = new JSZip();
-
-    // Optionally put PNG first (harmless; some unzip apps behave better)
-    zip.file(`${base}.png`, pngBlob);
     zip.file(`${base}.svg`, svgBlob);
-
+    zip.file(`${base}.png`, pngBlob);
     zip.file(`${base}.payload.json`, JSON.stringify(metaForSvg, null, 2));
     zip.file(`${base}.url.txt`, fullUrlForManifest);
-    zip.file(`${base}.proof_bundle.json`, JSON.stringify(proofBundle, null, 2));
+    if (proofBundle) {
+      zip.file(`${base}.proof_bundle.json`, JSON.stringify(proofBundle, null, 2));
+    }
 
     const manifestPayload = {
       hashAlg: "sha256",
       canon: "sorted keys + UTF-8 + no whitespace",
+      // ids
       hash: localHash || routeHash || "",
       canonicalHash: claimedMetaCanon.canonicalHash ?? null,
-
+      // moment (sealed)
       pulse: claimedMetaCanon.pulse,
       beat: claimedMetaCanon.beat,
       stepIndex: sealedStepIndex,
       atStepIndex: claimStepIndex,
       chakraDay: claimedMetaCanon.chakraDay ?? null,
-
+      // ownership
       userPhiKey: claimedMetaCanon.userPhiKey ?? null,
       kaiSignature: claimedMetaCanon.kaiSignature ?? null,
       transferNonce: claimedMetaCanon.transferNonce ?? null,
-
+      // timing
       expiresAtPulse: claimedMetaCanon.expiresAtPulse ?? null,
       exportedAtPulse: claimedMetaCanon.exportedAtPulse ?? null,
       claimedAtPulse: nowPulse,
-
+      // overlays
       overlays: { qr: false, eternalPulseBar: false },
       assets: {
         [`${base}.svg`]: svgAssetHash,
         [`${base}.png`]: pngHash,
       },
-
+      // record which export ceiling actually worked (helps audit/debug)
       pngPxMax: usedPxMax,
-
+      // claim controls
       claimExtendUnit: claimedMetaCanon.claimExtendUnit ?? null,
       claimExtendAmount: claimedMetaCanon.claimExtendAmount ?? null,
-
+      // canonical share refs
       fullUrl: fullUrlForManifest,
       p: pValue,
       urlQuery: { p: pValue, t: tValue },
-
       proofBundleHash: computedBundleHash,
       proofBundle,
     };
-
     const manifestHash = await sha256HexCanon(stableStringify(manifestPayload));
     const manifest = { ...manifestPayload, manifestHash };
     zip.file(`${base}.manifest.json`, JSON.stringify(manifest, null, 2));
 
-    const zipBlob = await zip.generateAsync({
-      type: "blob",
-      mimeType: "application/zip",
-      compression: "DEFLATE",
-      compressionOptions: { level: 6 },
-      streamFiles: true,
-    });
+    const zipBlob = await zip.generateAsync({ type: "blob" });
 
-    // iOS-safe download
-    const file = new File([zipBlob], `${base}.zip`, { type: "application/zip" });
-
-    const nav = navigator as unknown as NavShare;
-    const shareFn = typeof nav.share === "function" ? nav.share : null;
-    const canShareFn = typeof nav.canShare === "function" ? nav.canShare : null;
-
-    const canShareFiles = Boolean(canShareFn && shareFn && canShareFn({ files: [file] }));
-
-    if (canShareFiles && shareFn) {
-      await shareFn({ files: [file], title: base });
-    } else {
-      const dlUrl = URL.createObjectURL(zipBlob);
-      const a = document.createElement("a");
-      a.href = dlUrl;
-      a.download = `${base}.zip`;
-      a.rel = "noopener";
-      a.style.display = "none";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-
-      // iOS: keep URL alive long enough for OS to read it
-      window.setTimeout(() => URL.revokeObjectURL(dlUrl), 60_000);
-    }
+    // Download
+    const dlUrl = URL.createObjectURL(zipBlob);
+    const a = document.createElement("a");
+    a.href = dlUrl;
+    a.download = `${base}.zip`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    requestAnimationFrame(() => URL.revokeObjectURL(dlUrl));
 
     signal(setToast, "Access key generated");
   } catch (e) {
-    const msg = e instanceof Error ? e.message : "Export failed";
-    signal(setToast, `Export failed: ${msg}`);
+    // eslint-disable-next-line no-console
+    console.error(e);
+    signal(setToast, "Claim failed");
   } finally {
     setExporting(false);
   }
