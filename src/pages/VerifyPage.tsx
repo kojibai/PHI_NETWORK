@@ -1331,31 +1331,34 @@ if (authorSigNext) {
       return {
         title: "Proof of Breath™",
         status: result.status === "ok" ? "VERIFIED" : result.status === "error" ? "FAILED" : "STANDBY",
-        body: [
-          "Proof of Breath™ is the sovereign attestation that a ΦKey originates from a human-borne signature rail and that its integrity chain is intact.",
-          "This badge is issued only when the inhaled ΦKey, its vessel hash, sigil hash, and attestation bundle resolve into a deterministic, recomputable proof capsule.",
-          "No simulacra, no mutable links, no soft checks—only cryptographic determinism and canonicalization.",
-        ],
+body: [
+  "Proof of Breath™ is the sovereign attestation that a ΦKey originates from a living human signature rail and that its integrity chain remains unbroken.",
+  "This badge is issued only when the inhaled ΦKey, its vessel hash, sigil hash, and attestation bundle collapse into a deterministic, recomputable proof capsule under canonical rules.",
+  "No simulacra, no mutable links, no soft checks—only canonicalization, cryptographic determinism, and verifiable coherence.",
+],
+
       };
     }
     if (sealPopover === "kas") {
       return {
         title: "KAS • Kai Author Signature",
         status: sealStateLabel(sealKAS),
-        body: [
-          "KAS is the WebAuthn-authorized author seal binding a human credential to the bundle hash.",
-          "Verification checks the signed challenge, credential ID, and public key against the canonical bundle hash to confirm the author’s custodial intent.",
-          "This is bank-grade identity attestation: resistant to replay, transport, and tamper.",
-        ],
+body: [
+  "KAS is the WebAuthn-authorized author seal binding a living human credential to the canonical bundle hash.",
+  "Verification validates the signed challenge, credential ID, RPID/origin scope, and public key against the recomputed canonical bundle hash—proving the author’s custodial intent over this exact artifact.",
+  "This is bank-grade identity attestation: phishing-resistant, tamper-evident, and replay-resistant by design—enforced through a fresh nonce/pulse challenge under strict verification policy.",
+],
+
+
       };
     }
     return {
       title: "G16 • Groth16 Verification",
       status: sealStateLabel(sealZK),
       body: [
-        "G16 is the zero‑knowledge integrity rail for the ΦKey proof bundle, executed under Groth16 and Poseidon constraints.",
-        "Verification confirms that the embedded proof and public inputs satisfy the circuit without revealing private witness material.",
-        "This seal represents cryptographic finality—provable integrity with privacy preserved.",
+         "G16 is the zero-knowledge proof path for the ΦKey proof bundle, executed under Groth16 and Poseidon constraints.",
+  "Verification proves the embedded proof and public inputs satisfy the circuit, without revealing private witness material.",
+  "This seal represents cryptographic finality—provable integrity with privacy preserved."
       ],
     };
   }, [result.status, sealKAS, sealPopover, sealStateLabel, sealZK]);
@@ -1659,7 +1662,7 @@ if (authorSigNext) {
               {sealPopoverContent.body.map((line) => (
                 <p key={line}>{line}</p>
               ))}
-              <div className="seal-popover-footer">Certified on the sovereign verification rail. No advisory language. No soft claims.</div>
+              <div className="seal-popover-footer">Breath-Sealed. Proof-Verified. Truth-Aligned.</div>
             </div>
           </div>
         </div>
