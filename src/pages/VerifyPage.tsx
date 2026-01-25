@@ -991,7 +991,10 @@ export default function VerifyPage(): ReactElement {
       const capsule = embedded?.proofCapsule ?? fallbackCapsule;
       const capsuleHashNext = await hashProofCapsuleV1(capsule);
       const verificationSource: VerificationSource = "local";
-      const verifiedAtPulse = result.verifiedAtPulse;
+      const verifiedAtPulse =
+        typeof result.verifiedAtPulse === "number" && Number.isFinite(result.verifiedAtPulse)
+          ? result.verifiedAtPulse
+          : undefined;
 
       const bundleSeed =
         embedded?.raw && typeof embedded.raw === "object" && embedded.raw !== null
