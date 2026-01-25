@@ -107,6 +107,7 @@ import { computeZkPoseidonHash } from "../../utils/kai";
 import { generateZkProofFromPoseidonHash } from "../../utils/zkProof";
 import type { SigilProofHints } from "../../types/sigil";
 import type { SigilSharePayloadLoose } from "../SigilExplorer/types";
+import { buildOwnerKeyDerivation, deriveOwnerPhiKeyFromReceive } from "../../utils/ownerPhiKey";
 import {
   apiFetchWithFailover,
   loadApiBackupDeadUntil,
@@ -522,6 +523,7 @@ const VerifierStamperInner: React.FC = () => {
     if (!bundleHash) return null;
     setReceiveBusy(true);
     try {
+      const receivePulse = kaiPulseNow();
       const passkey = await resolveReceiverPasskey();
       const { nonce, challengeBytes } = await buildKasChallenge("receive", bundleHash);
       const assertion = await getWebAuthnAssertionJson({
@@ -545,6 +547,7 @@ const VerifierStamperInner: React.FC = () => {
         alg: "webauthn-es256",
         nonce,
         binds: { bundleHash },
+        createdAtPulse: receivePulse,
         credId: passkey.credId,
         pubKeyJwk: passkey.pubKeyJwk as ReceiveSig["pubKeyJwk"],
         assertion,
@@ -2407,6 +2410,17 @@ const VerifierStamperInner: React.FC = () => {
     const svgHash = await hashSvgText(baseSvg);
     const proofCapsule = proofBundleMeta?.proofCapsule;
     const capsuleHash = proofBundleMeta?.capsuleHash ?? (proofCapsule ? await hashProofCapsuleV1(proofCapsule) : null);
+    const receivePulse = receiveSigLocal?.createdAtPulse ?? nowPulse;
+    const originBundleHash =
+      proofBundleMeta?.originBundleHash ??
+      proofBundleMeta?.bundleHash ??
+      (proofBundleMeta?.raw && isRecord(proofBundleMeta.raw) && typeof proofBundleMeta.raw.bundleHash === "string"
+        ? (proofBundleMeta.raw.bundleHash as string)
+        : undefined);
+    const originSigCandidate =
+      proofBundleMeta?.originAuthorSig ??
+      (proofBundleMeta?.authorSig && isKASAuthorSig(proofBundleMeta.authorSig) ? proofBundleMeta.authorSig : null);
+    const originAuthorSig = originSigCandidate && isKASAuthorSig(originSigCandidate) ? originSigCandidate : null;
 
     let nextBundle: Record<string, unknown>;
     if (proofBundleMeta?.raw && isRecord(proofBundleMeta.raw)) {
@@ -2415,6 +2429,11 @@ const VerifierStamperInner: React.FC = () => {
         svgHash,
         capsuleHash,
         proofCapsule: proofCapsule ?? undefined,
+        mode: "receive",
+        originBundleHash,
+        originAuthorSig,
+        receivePulse,
+        authorSig: null,
         ...(receiveSigLocal ? { receiveSig: receiveSigLocal } : {}),
       };
     } else if (updated.kaiSignature && typeof updated.pulse === "number") {
@@ -2447,11 +2466,24 @@ const VerifierStamperInner: React.FC = () => {
         zkProof: proofBundleMeta?.zkProof,
         proofHints: proofBundleMeta?.proofHints,
         zkPublicInputs: proofBundleMeta?.zkPublicInputs,
-        authorSig: proofBundleMeta?.authorSig ?? null,
+        mode: "receive",
+        originBundleHash,
+        originAuthorSig,
+        receivePulse,
+        authorSig: null,
         ...(receiveSigLocal ? { receiveSig: receiveSigLocal } : {}),
       };
     } else {
-      nextBundle = { svgHash, capsuleHash, ...(receiveSigLocal ? { receiveSig: receiveSigLocal } : {}) };
+      nextBundle = {
+        svgHash,
+        capsuleHash,
+        mode: "receive",
+        originBundleHash,
+        originAuthorSig,
+        receivePulse,
+        authorSig: null,
+        ...(receiveSigLocal ? { receiveSig: receiveSigLocal } : {}),
+      };
     }
 
     const bundleRoot = buildBundleRoot(nextBundle);
@@ -2477,6 +2509,21 @@ const VerifierStamperInner: React.FC = () => {
       delete nextBundle.bundleRoot;
     }
     nextBundle.bundleHash = bundleHashNext;
+    nextBundle.receiveBundleHash = bundleHashNext;
+
+    if (receiveSigLocal) {
+      const ownerPhiKey = await deriveOwnerPhiKeyFromReceive({
+        receiverPubKeyJwk: receiveSigLocal.pubKeyJwk,
+        receivePulse,
+        receiveBundleHash: bundleHashNext,
+      });
+      nextBundle.ownerPhiKey = ownerPhiKey;
+      nextBundle.ownerKeyDerivation = buildOwnerKeyDerivation({
+        originPhiKey: proofCapsule?.phiKey,
+        receivePulse,
+        receiveBundleHash: bundleHashNext,
+      });
+    }
 
     const updatedSvg = embedProofMetadata(baseSvg, nextBundle);
     durl = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(updatedSvg)))}`;
