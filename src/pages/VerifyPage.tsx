@@ -1462,6 +1462,28 @@ body: [
   const receiveNonce = useMemo(() => (receiveSig ? receiveSig.nonce : ""), [receiveSig]);
   const receiveBundleHash = useMemo(() => (receiveSig?.binds.bundleHash ? receiveSig.binds.bundleHash : bundleHash || ""), [receiveSig, bundleHash]);
 
+  const svgPreview = useMemo(() => {
+    const raw = svgText.trim();
+    if (!raw) return "";
+    const lines = raw.split("\n");
+    return lines.slice(0, Math.min(lines.length, 8)).join("\n");
+  }, [svgText]);
+
+  const verifierPulse = result.status === "ok" ? (result.embedded.pulse ?? (slug.pulse ?? 0)) : slug.pulse ?? 0;
+  const verifierSig = result.status === "ok" ? (result.embedded.kaiSignature ?? (slug.shortSig ?? "unknown")) : slug.shortSig ?? "unknown";
+  const verifierPhi = result.status === "ok" ? result.derivedPhiKey : "—";
+  const verifierChakra = result.status === "ok" ? result.embedded.chakraDay : undefined;
+
+  const shareStatus = result.status === "ok" ? "VERIFIED" : result.status === "error" ? "FAILED" : "STANDBY";
+  const sharePhiShort = verifierPhi && verifierPhi !== "—" ? ellipsizeMiddle(verifierPhi, 12, 10) : "—";
+  const shareKas = sealKAS === "valid" ? "✅" : "❌";
+  const shareG16 = sealZK === "valid" ? "✅" : "❌";
+
+  const stewardPulseLabel =
+    stewardVerifiedPulse == null ? "Verified pulse unavailable (legacy bundle)" : `Steward Verified @ Pulse ${stewardVerifiedPulse}`;
+  const verificationSource: VerificationSource = sharedReceipt?.verifier ?? "local";
+  const verificationVersion = sharedReceipt?.verificationVersion ?? VERIFICATION_BUNDLE_VERSION;
+
   const auditBundleText = useMemo(() => {
     if (!proofCapsule) return "";
     return JSON.stringify(
@@ -1498,28 +1520,6 @@ body: [
     verificationVersion,
     zkMeta,
   ]);
-
-  const svgPreview = useMemo(() => {
-    const raw = svgText.trim();
-    if (!raw) return "";
-    const lines = raw.split("\n");
-    return lines.slice(0, Math.min(lines.length, 8)).join("\n");
-  }, [svgText]);
-
-  const verifierPulse = result.status === "ok" ? (result.embedded.pulse ?? (slug.pulse ?? 0)) : slug.pulse ?? 0;
-  const verifierSig = result.status === "ok" ? (result.embedded.kaiSignature ?? (slug.shortSig ?? "unknown")) : slug.shortSig ?? "unknown";
-  const verifierPhi = result.status === "ok" ? result.derivedPhiKey : "—";
-  const verifierChakra = result.status === "ok" ? result.embedded.chakraDay : undefined;
-
-  const shareStatus = result.status === "ok" ? "VERIFIED" : result.status === "error" ? "FAILED" : "STANDBY";
-  const sharePhiShort = verifierPhi && verifierPhi !== "—" ? ellipsizeMiddle(verifierPhi, 12, 10) : "—";
-  const shareKas = sealKAS === "valid" ? "✅" : "❌";
-  const shareG16 = sealZK === "valid" ? "✅" : "❌";
-
-  const stewardPulseLabel =
-    stewardVerifiedPulse == null ? "Verified pulse unavailable (legacy bundle)" : `Steward Verified @ Pulse ${stewardVerifiedPulse}`;
-  const verificationSource: VerificationSource = sharedReceipt?.verifier ?? "local";
-  const verificationVersion = sharedReceipt?.verificationVersion ?? VERIFICATION_BUNDLE_VERSION;
 
   const receiptJson = useMemo(() => {
     if (!proofCapsule) return "";

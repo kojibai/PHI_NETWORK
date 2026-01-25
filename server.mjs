@@ -134,7 +134,7 @@ async function createServer() {
       String(record.verifiedAtPulse),
     )}.png`;
     const title = `VERIFIED • Steward @ Pulse ${record.verifiedAtPulse} • ΦKey ${shortPhiKey(record.phikey)}`;
-    const description = "KAS ✓ • G16 ✓ • Proof of Breath™";
+    const description = `KAS ${record.kasOk ? "✓" : "×"} • G16 ${record.g16Ok ? "✓" : "×"} • Proof of Breath™`;
 
     return [
       `<meta property="og:image" content="${escapeHtml(ogImageUrl)}" />`,
