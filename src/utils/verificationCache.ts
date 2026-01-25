@@ -1,4 +1,5 @@
 import { sha256Hex } from "./sha256";
+import { VERIFICATION_BUNDLE_VERSION } from "./verificationVersion";
 
 export type VerificationCache = Readonly<{
   v: "KVC-1";
@@ -24,7 +25,7 @@ export async function buildVerificationCacheKey(params: {
   zkPoseidonHash: string;
   verificationVersion?: string | null;
 }): Promise<string> {
-  const version = params.verificationVersion ?? "KVB-1.0";
+  const version = params.verificationVersion ?? VERIFICATION_BUNDLE_VERSION;
   const seed = `${params.bundleHash}|${params.zkPoseidonHash}|${version}`;
   const digest = await sha256Hex(seed);
   return `${CACHE_PREFIX}${digest.toLowerCase()}`;
@@ -45,7 +46,7 @@ export function matchesVerificationCache(
   record: VerificationCache,
   params: { bundleHash: string; zkPoseidonHash: string; verificationVersion?: string | null }
 ): boolean {
-  const expectedVersion = params.verificationVersion ?? "KVB-1.0";
+  const expectedVersion = params.verificationVersion ?? VERIFICATION_BUNDLE_VERSION;
   return (
     record.bundleHash === params.bundleHash &&
     record.zkPoseidonHash === params.zkPoseidonHash &&
@@ -91,7 +92,7 @@ export async function buildVerificationCacheRecord(params: {
   createdAtMs?: number;
   expiresAtPulse?: number | null;
 }): Promise<VerificationCache> {
-  const verificationVersion = params.verificationVersion ?? "KVB-1.0";
+  const verificationVersion = params.verificationVersion ?? VERIFICATION_BUNDLE_VERSION;
   const cacheKey = await buildVerificationCacheKey({
     bundleHash: params.bundleHash,
     zkPoseidonHash: params.zkPoseidonHash,
