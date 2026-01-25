@@ -173,6 +173,7 @@ type SharedReceipt = {
   zkProof?: ProofBundleMeta["zkProof"];
   proofHints?: ProofBundleMeta["proofHints"];
   zkPublicInputs?: ProofBundleMeta["zkPublicInputs"];
+  verifiedAtPulse?: number;
 };
 
 function parseProofCapsule(raw: unknown): ProofCapsuleV1 | null {
@@ -190,6 +191,12 @@ function buildSharedReceiptFromObject(raw: unknown): SharedReceipt | null {
   if (!isRecord(raw)) return null;
   const proofCapsule = parseProofCapsule(raw.proofCapsule);
   if (!proofCapsule) return null;
+  const verifiedAtPulse =
+    typeof raw.verifiedAtPulse === "number" && Number.isFinite(raw.verifiedAtPulse)
+      ? raw.verifiedAtPulse
+      : typeof raw.verifiedAtPulse === "string" && Number.isFinite(Number(raw.verifiedAtPulse))
+        ? Number(raw.verifiedAtPulse)
+        : undefined;
   return {
     proofCapsule,
     capsuleHash: typeof raw.capsuleHash === "string" ? raw.capsuleHash : undefined,
@@ -202,6 +209,7 @@ function buildSharedReceiptFromObject(raw: unknown): SharedReceipt | null {
     zkProof: "zkProof" in raw ? raw.zkProof : undefined,
     proofHints: "proofHints" in raw ? raw.proofHints : undefined,
     zkPublicInputs: "zkPublicInputs" in raw ? raw.zkPublicInputs : undefined,
+    verifiedAtPulse,
   };
 }
 
@@ -909,7 +917,8 @@ export default function VerifyPage(): ReactElement {
     }
     setBusy(true);
     try {
-      const next = await verifySigilSvg(slug, raw);
+      const verifiedAtPulse = currentPulse ?? getKaiPulseEternalInt(new Date());
+      const next = await verifySigilSvg(slug, raw, verifiedAtPulse);
       setResult(next);
       if (next.status === "ok") {
         setIdentityAttested("missing");
@@ -920,7 +929,7 @@ export default function VerifyPage(): ReactElement {
     } finally {
       setBusy(false);
     }
-  }, [slug, svgText]);
+  }, [currentPulse, slug, svgText]);
 
   // Proof bundle construction (logic unchanged)
   React.useEffect(() => {
@@ -1045,6 +1054,7 @@ if (authorSigNext) {
       const slugShortSigMatches =
         slug.shortSig == null ? null : slug.shortSig === capsule.kaiSignature.slice(0, slug.shortSig.length);
       const derivedPhiKeyMatchesEmbedded = capsule.phiKey ? derivedPhiKey === capsule.phiKey : null;
+      const verifiedAtPulse = sharedReceipt.verifiedAtPulse ?? capsule.pulse;
 
       if (!active) return;
       const checks = {
@@ -1081,6 +1091,7 @@ if (authorSigNext) {
               embedded: baseEmbedded,
               derivedPhiKey,
               checks,
+              verifiedAtPulse,
             },
       );
       setEmbeddedProof(embed);
@@ -1316,13 +1327,14 @@ if (authorSigNext) {
     return {
       capsuleHash,
       pulse: proofCapsule.pulse,
+      verifiedAtPulse: result.verifiedAtPulse,
       phikey: proofCapsule.phiKey,
       kasOk: sealKAS === "valid",
       g16Ok: sealZK === "valid",
       verifierSlug: proofCapsule.verifierSlug,
       sigilSvg: svgText.trim() ? svgText : undefined,
     };
-  }, [capsuleHash, proofCapsule, result.status, sealKAS, sealZK, svgText]);
+  }, [capsuleHash, proofCapsule, result.status, result.verifiedAtPulse, sealKAS, sealZK, svgText]);
 
   const onDownloadVerifiedCard = useCallback(async () => {
     if (!verifiedCardData) return;
@@ -1461,7 +1473,12 @@ body: [
       verifierUrl: proofVerifierUrl || currentVerifyUrl,
     } as const;
 
+    const verifiedAtPulse = result.status === "ok" ? result.verifiedAtPulse : sharedReceipt?.verifiedAtPulse;
+
     const extended: Record<string, unknown> = { ...receipt };
+    if (typeof verifiedAtPulse === "number" && Number.isFinite(verifiedAtPulse)) {
+      extended.verifiedAtPulse = verifiedAtPulse;
+    }
     if (svgHash) extended.svgHash = svgHash;
     if (bundleHash) extended.bundleHash = bundleHash;
     if (embeddedProof?.shareUrl) extended.shareUrl = embeddedProof.shareUrl;
@@ -1476,7 +1493,20 @@ body: [
     }
 
     return jcsCanonicalize(extended as Parameters<typeof jcsCanonicalize>[0]);
-  }, [bundleHash, capsuleHash, currentVerifyUrl, embeddedProof?.shareUrl, proofCapsule, proofVerifierUrl, svgHash, zkMeta?.zkPoseidonHash, zkVerify]);
+  }, [
+    bundleHash,
+    capsuleHash,
+    currentVerifyUrl,
+    embeddedProof?.shareUrl,
+    proofCapsule,
+    proofVerifierUrl,
+    result.status,
+    result.verifiedAtPulse,
+    sharedReceipt?.verifiedAtPulse,
+    svgHash,
+    zkMeta?.zkPoseidonHash,
+    zkVerify,
+  ]);
 
   const shareReceiptUrl = useMemo(() => {
     if (!receiptJson) return "";

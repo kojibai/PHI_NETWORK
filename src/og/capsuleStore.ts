@@ -52,6 +52,18 @@ function parseRecord(raw: unknown): VerifiedCardData | null {
   const capsuleHash = typeof record.capsuleHash === "string" ? record.capsuleHash : null;
   const pulseValue = record.pulse;
   const pulse = typeof pulseValue === "number" && Number.isFinite(pulseValue) ? pulseValue : null;
+  const verifiedAtPulseValue =
+    record.verifiedAtPulse ??
+    record.verified_at_pulse ??
+    record.verifiedPulse ??
+    record.verified_pulse ??
+    record.verificationPulse;
+  const verifiedAtPulse =
+    typeof verifiedAtPulseValue === "number" && Number.isFinite(verifiedAtPulseValue)
+      ? verifiedAtPulseValue
+      : typeof verifiedAtPulseValue === "string" && verifiedAtPulseValue.trim() !== "" && Number.isFinite(Number(verifiedAtPulseValue))
+        ? Number(verifiedAtPulseValue)
+        : null;
   const phiKey = typeof record.phikey === "string"
     ? record.phikey
     : typeof record.phiKey === "string"
@@ -67,6 +79,7 @@ function parseRecord(raw: unknown): VerifiedCardData | null {
   return {
     capsuleHash,
     pulse,
+    verifiedAtPulse: verifiedAtPulse ?? pulse,
     phikey: phiKey,
     kasOk,
     g16Ok,

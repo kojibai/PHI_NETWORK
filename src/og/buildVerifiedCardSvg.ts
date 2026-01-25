@@ -59,7 +59,7 @@ function sigilImageMarkup(sigilSvg: string | undefined, clipId: string): string 
 }
 
 export function buildVerifiedCardSvg(data: VerifiedCardData): string {
-  const { capsuleHash, pulse, phikey, kasOk, g16Ok, sigilSvg } = data;
+  const { capsuleHash, verifiedAtPulse, phikey, kasOk, g16Ok, sigilSvg } = data;
   const { accent, accentSoft, accentGlow } = accentFromHash(capsuleHash);
   const id = `og-${hashStringToInt(capsuleHash).toString(16)}`;
   const sigilClipId = `${id}-sigil-clip`;
@@ -137,7 +137,7 @@ export function buildVerifiedCardSvg(data: VerifiedCardData): string {
     <path d="${headerCheckPath()}" fill="none" stroke="#4FFFA2" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" />
   </g>
 
-  <text class="subhead" x="420" y="220">Pulse ${pulse} • ΦKey</text>
+  <text class="subhead" x="420" y="220">Steward Verified @ Pulse ${verifiedAtPulse} • ΦKey</text>
   <text class="phikey" x="420" y="285">${phiShort}</text>
 
   <text class="label" x="420" y="360">KAS</text>

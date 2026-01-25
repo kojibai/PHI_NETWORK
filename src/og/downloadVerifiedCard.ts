@@ -10,7 +10,7 @@ function fileNameForCapsule(hash: string): string {
 
 export async function downloadVerifiedCardPng(data: VerifiedCardData): Promise<void> {
   const filename = fileNameForCapsule(data.capsuleHash);
-  const ogUrl = `/og/v/verified/${encodeURIComponent(data.capsuleHash)}.png`;
+  const ogUrl = `/og/v/verified/${encodeURIComponent(data.capsuleHash)}/${encodeURIComponent(String(data.verifiedAtPulse))}.png`;
 
   try {
     const res = await fetch(ogUrl, { method: "GET" });
