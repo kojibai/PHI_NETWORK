@@ -2710,9 +2710,13 @@ const SigilExplorer: React.FC = () => {
   const [transferRev, setTransferRev] = useState(0);
   const [lastAdded, setLastAdded] = useState<string | undefined>(undefined);
   const [usernameClaims, setUsernameClaims] = useState<UsernameClaimRegistry>(() => getUsernameClaimRegistry());
+  const [renderCount, setRenderCount] = useState(6);
+  const [renderMeasured, setRenderMeasured] = useState(false);
 
   const unmounted = useRef(false);
   const prefetchedRef = useRef<Set<string>>(new Set());
+  const firstRootRef = useRef<HTMLDivElement | null>(null);
+  const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
 
   // Scroll safety guards (prevents “refresh feel” on mobile while reading)
   const scrollElRef = useRef<HTMLDivElement | null>(null);
@@ -2734,6 +2738,10 @@ const SigilExplorer: React.FC = () => {
     }>
   >([]);
   const syncNowRef = useRef<((reason: SyncReason) => Promise<void>) | null>(null);
+  const loadMoreStep = 3;
+  const preloadMarginPx = 600;
+  const minVisibleRoots = 6;
+  const defaultRootHeight = 280;
 
   const markInteracting = useCallback((ms: number) => {
     const until = nowMs() + ms;
@@ -3440,6 +3448,65 @@ breathTimer = null;
 
   const forest = useMemo(() => buildForest(memoryRegistry), [registryRev]);
   const transferRegistry = useMemo(() => readSigilTransferRegistry(), [transferRev]);
+  const visibleForest = useMemo(() => forest.slice(0, renderCount), [forest, renderCount]);
+
+  useEffect(() => {
+    if (forest.length === 0) {
+      setRenderCount(0);
+      setRenderMeasured(false);
+      return;
+    }
+
+    setRenderCount((prev) => Math.min(forest.length, Math.max(prev, minVisibleRoots)));
+  }, [forest.length, minVisibleRoots]);
+
+  useLayoutEffect(() => {
+    const scrollEl = scrollElRef.current;
+    if (!scrollEl) return;
+    if (forest.length === 0) return;
+    if (renderMeasured) return;
+
+    const sampleHeight = firstRootRef.current?.getBoundingClientRect().height ?? defaultRootHeight;
+    const viewport = scrollEl.clientHeight;
+    const target = Math.ceil(viewport / Math.max(sampleHeight, 1)) + 1;
+    const nextCount = Math.min(forest.length, Math.max(target, minVisibleRoots));
+    setRenderCount(nextCount);
+    setRenderMeasured(true);
+  }, [forest.length, renderMeasured, minVisibleRoots, defaultRootHeight]);
+
+  useEffect(() => {
+    if (!hasWindow) return;
+
+    const onResize = () => setRenderMeasured(false);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  const loadMoreRoots = useCallback(() => {
+    setRenderCount((prev) => Math.min(forest.length, prev + loadMoreStep));
+  }, [forest.length, loadMoreStep]);
+
+  useEffect(() => {
+    if (!hasWindow) return;
+    const scrollEl = scrollElRef.current;
+    const sentinel = loadMoreSentinelRef.current;
+    if (!scrollEl || !sentinel) return;
+    if (renderCount >= forest.length) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) loadMoreRoots();
+      },
+      {
+        root: scrollEl,
+        rootMargin: `${preloadMarginPx}px 0px`,
+        threshold: 0.01,
+      },
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [forest.length, loadMoreRoots, preloadMarginPx, renderCount]);
 
   const phiTotalsByPulse = useMemo((): ReadonlyMap<number, number> => {
     const totals = new Map<number, number>();
@@ -3709,17 +3776,21 @@ breathTimer = null;
             </div>
           ) : (
             <div className="forest">
-              {forest.map((root) => (
-                <OriginPanel
-                  key={root.id}
-                  root={root}
-                  expanded={expanded}
-                  toggle={toggle}
-                  phiTotalsByPulse={phiTotalsByPulse}
-                  usernameClaims={usernameClaims}
-                  transferRegistry={transferRegistry}
-                />
+              {visibleForest.map((root, index) => (
+                <div key={root.id} ref={index === 0 ? firstRootRef : undefined}>
+                  <OriginPanel
+                    root={root}
+                    expanded={expanded}
+                    toggle={toggle}
+                    phiTotalsByPulse={phiTotalsByPulse}
+                    usernameClaims={usernameClaims}
+                    transferRegistry={transferRegistry}
+                  />
+                </div>
               ))}
+              {renderCount < forest.length && (
+                <div ref={loadMoreSentinelRef} aria-hidden="true" />
+              )}
             </div>
           )}
 
