@@ -1217,6 +1217,7 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
     try {
       const svgEl = getSVGElement();
       if (!svgEl) return "Export failed: sigil SVG is not available.";
+      const isOffline = typeof navigator !== "undefined" && navigator.onLine === false;
 
       const payloadFromUrl = sealUrl ? extractPayloadFromUrl(sealUrl) : null;
       const svgPulseAttr = svgEl.getAttribute("data-pulse");
@@ -1369,7 +1370,15 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
                 : undefined,
           });
           if (!generated) {
-            throw new Error("ZK proof generation failed");
+            if (!isOffline) {
+              throw new Error("ZK proof generation failed");
+            }
+            proofHints = buildProofHints(
+              zkPoseidonHash,
+              typeof proofHints === "object" && proofHints !== null
+                ? (proofHints as SigilProofHints)
+                : undefined
+            );
           } else {
             zkProof = generated.proof;
             proofHints = generated.proofHints;
@@ -1389,7 +1398,9 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
         }
       }
       if (zkPoseidonHash && (!zkProof || typeof zkProof !== "object")) {
-        throw new Error("ZK proof missing");
+        if (!isOffline) {
+          throw new Error("ZK proof missing");
+        }
       }
       if (zkPublicInputs) {
         svgClone.setAttribute("data-zk-public-inputs", JSON.stringify(zkPublicInputs));
@@ -1450,9 +1461,9 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
       const baseName = `☤KAI-Sigil_Glyph_v1-${pulseNum}_${kaiSignatureShort}_Φkey${phiKey}`;
       const zip = new JSZip();
       zip.file(`${baseName}.svg`, sealedSvg);
-      zip.file(`${baseName}_proof_bundle.json`, JSON.stringify(proofBundle, null, 2));
+      zip.file(`${baseName}_authsig_proof_bundle.json`, JSON.stringify(proofBundle, null, 2));
       const zipBlob = await zip.generateAsync({ type: "blob" });
-      downloadBlob(zipBlob, `${baseName}_proof_bundle.zip`);
+      downloadBlob(zipBlob, `${baseName}_authsig_proof_bundle.zip`);
 
       return null;
     } catch (err) {

@@ -305,7 +305,7 @@ export async function exportZIP(ctx: {
   try {
     setExporting(true);
 
-    const base = `☤KAI-Sigil_Glyph_v1${(localHash || routeHash || "mint").slice(0, 16)}_${payload.pulse}`;
+
     const stepsNum = (payload.stepsPerBeat ?? STEPS_PER_BEAT) as number;
 
     // KKS: sealed step is derived strictly from the sealed pulse and steps/beat
@@ -463,7 +463,7 @@ export async function exportZIP(ctx: {
       phiKey,
       verifierSlug: `${claimedMetaCanon.pulse}-${kaiSignatureShort}`,
     };
-
+    const base = `☤KAI-Sigil_Glyph_v1_${(localHash || routeHash || "mint").slice(0, 16)}_${payload.pulse}_${kaiSignatureShort}_Φkey${phiKey}`;
     const capsuleHash = await hashProofCapsuleV1(proofCapsule);
 
     const pxCandidates: readonly number[] = isIOS()
