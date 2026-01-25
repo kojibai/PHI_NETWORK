@@ -211,8 +211,6 @@ html.verify-shell, body.verify-shell{
 .official[data-kind="fail"]{ border-color: rgba(255,80,80,0.22); box-shadow: 0 0 0 1px rgba(255,80,80,0.10) inset, 0 0 0 4px rgba(255,80,80,0.06); }
 .official--button{
   appearance: none;
-  border: inherit;
-  background: inherit;
   color: inherit;
   font: inherit;
   cursor: pointer;
@@ -308,8 +306,6 @@ html.verify-shell, body.verify-shell{
 .seal[data-state="off"], .seal[data-state="na"]{ opacity: 0.72; }
 .seal--button{
   appearance: none;
-  border: inherit;
-  background: inherit;
   color: inherit;
   font: inherit;
   cursor: pointer;
