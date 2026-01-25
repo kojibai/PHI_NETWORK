@@ -50,5 +50,6 @@ export function buildReceiveBundleRoot(input: ReceiveBundleRootInput): ReceiveBu
 }
 
 export async function hashReceiveBundleRoot(root: ReceiveBundleRoot): Promise<string> {
-  return await sha256Hex(jcsCanonicalize(root as Parameters<typeof jcsCanonicalize>[0]));
+  const jsonRoot = root as unknown as Parameters<typeof jcsCanonicalize>[0];
+  return await sha256Hex(jcsCanonicalize(jsonRoot));
 }
