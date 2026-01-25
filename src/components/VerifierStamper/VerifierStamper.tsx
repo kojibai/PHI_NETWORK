@@ -101,7 +101,7 @@ import { DEFAULT_ISSUANCE_POLICY, quotePhiForUsd } from "../../utils/phi-issuanc
 import { BREATH_MS } from "../valuation/constants";
 import { recordSend, getSpentScaledFor, markConfirmedByLeaf } from "../../utils/sendLedger";
 import { recordSigilTransferMovement } from "../../utils/sigilTransferRegistry";
-import { buildBundleUnsigned, buildVerifierSlug, hashBundle, hashProofCapsuleV1, hashSvgText, normalizeChakraDay, PROOF_CANON, PROOF_HASH_ALG } from "../KaiVoh/verifierProof";
+import { buildBundleRoot, buildBundleUnsigned, buildVerifierSlug, computeBundleHash, hashBundle, hashProofCapsuleV1, hashSvgText, normalizeChakraDay, PROOF_CANON, PROOF_HASH_ALG, PROOF_BINDINGS } from "../KaiVoh/verifierProof";
 import { isKASAuthorSig } from "../../utils/authorSig";
 import { computeZkPoseidonHash } from "../../utils/kai";
 import { generateZkProofFromPoseidonHash } from "../../utils/zkProof";
@@ -429,11 +429,16 @@ const VerifierStamperInner: React.FC = () => {
         bundleSeed = {
           hashAlg: proofMetaValue?.hashAlg ?? PROOF_HASH_ALG,
           canon: proofMetaValue?.canon ?? PROOF_CANON,
+          bindings: proofMetaValue?.bindings,
+          zkStatement: proofMetaValue?.zkStatement,
+          bundleRoot: proofMetaValue?.bundleRoot,
           proofCapsule: fallbackCapsule,
           capsuleHash: capsuleHashNext,
           svgHash,
           shareUrl: proofMetaValue?.shareUrl,
           verifierUrl: proofMetaValue?.verifierUrl,
+          verifier: proofMetaValue?.verifier,
+          verifiedAtPulse: proofMetaValue?.verifiedAtPulse,
           zkPoseidonHash: proofMetaValue?.zkPoseidonHash,
           zkProof: proofMetaValue?.zkProof,
           proofHints: proofMetaValue?.proofHints,
@@ -443,8 +448,21 @@ const VerifierStamperInner: React.FC = () => {
       }
 
       if (!bundleSeed) return null;
-      const bundleUnsigned = buildBundleUnsigned(bundleSeed);
-      return hashBundle(bundleUnsigned);
+      if (proofMetaValue?.bundleRoot) {
+        return computeBundleHash(proofMetaValue.bundleRoot);
+      }
+      const bundleRoot = buildBundleRoot(bundleSeed);
+      const rootHash = await computeBundleHash(bundleRoot);
+      const legacySeed = { ...bundleSeed } as Record<string, unknown>;
+      delete legacySeed.bundleRoot;
+      delete legacySeed.transport;
+      delete legacySeed.verificationCache;
+      delete legacySeed.zkMeta;
+      const legacyUnsigned = buildBundleUnsigned(legacySeed);
+      const legacyHash = await hashBundle(legacyUnsigned);
+      if (proofMetaValue?.bindings?.bundleHashOf === PROOF_BINDINGS.bundleHashOf) return rootHash;
+      if (proofMetaValue?.bindings?.bundleHashOf === "JCS(bundleWithoutBundleHash)") return legacyHash;
+      return legacyHash;
     },
     []
   );
@@ -2136,8 +2154,24 @@ const VerifierStamperInner: React.FC = () => {
         delete nextBundle.receiveSig;
         delete nextBundle.bundleHash;
 
-        const bundleUnsigned = buildBundleUnsigned(nextBundle);
-        const bundleHashNext = await hashBundle(bundleUnsigned);
+        const bundleRoot = buildBundleRoot(nextBundle);
+        const rootHash = await computeBundleHash(bundleRoot);
+        const legacySeed = { ...nextBundle } as Record<string, unknown>;
+        delete legacySeed.bundleRoot;
+        delete legacySeed.transport;
+        delete legacySeed.verificationCache;
+        delete legacySeed.zkMeta;
+        const legacyUnsigned = buildBundleUnsigned(legacySeed);
+        const legacyHash = await hashBundle(legacyUnsigned);
+        const useRootHash =
+          isRecord(rawBundle) &&
+          (isRecord(rawBundle.bindings) ? rawBundle.bindings.bundleHashOf === PROOF_BINDINGS.bundleHashOf : false);
+        const bundleHashNext = useRootHash || isRecord(rawBundle) && "bundleRoot" in rawBundle ? rootHash : legacyHash;
+        if (useRootHash || (isRecord(rawBundle) && "bundleRoot" in rawBundle)) {
+          nextBundle.bundleRoot = bundleRoot;
+        } else {
+          delete nextBundle.bundleRoot;
+        }
         nextBundle.bundleHash = bundleHashNext;
         childSvgWithProof = embedProofMetadata(childSvgText, nextBundle);
       }
@@ -2379,11 +2413,16 @@ const VerifierStamperInner: React.FC = () => {
       nextBundle = {
         hashAlg: proofBundleMeta?.hashAlg ?? PROOF_HASH_ALG,
         canon: proofBundleMeta?.canon ?? PROOF_CANON,
+        bindings: proofBundleMeta?.bindings,
+        zkStatement: proofBundleMeta?.zkStatement,
+        bundleRoot: proofBundleMeta?.bundleRoot,
         proofCapsule: fallbackCapsule,
         capsuleHash: capsuleHashNext,
         svgHash,
         shareUrl: proofBundleMeta?.shareUrl,
         verifierUrl: proofBundleMeta?.verifierUrl,
+        verifier: proofBundleMeta?.verifier,
+        verifiedAtPulse: proofBundleMeta?.verifiedAtPulse,
         zkPoseidonHash: proofBundleMeta?.zkPoseidonHash,
         zkProof: proofBundleMeta?.zkProof,
         proofHints: proofBundleMeta?.proofHints,
@@ -2395,8 +2434,24 @@ const VerifierStamperInner: React.FC = () => {
       nextBundle = { svgHash, capsuleHash, ...(receiveSigLocal ? { receiveSig: receiveSigLocal } : {}) };
     }
 
-    const bundleUnsigned = buildBundleUnsigned(nextBundle);
-    const bundleHashNext = await hashBundle(bundleUnsigned);
+    const bundleRoot = buildBundleRoot(nextBundle);
+    const rootHash = await computeBundleHash(bundleRoot);
+    const legacySeed = { ...nextBundle } as Record<string, unknown>;
+    delete legacySeed.bundleRoot;
+    delete legacySeed.transport;
+    delete legacySeed.verificationCache;
+    delete legacySeed.zkMeta;
+    const legacyUnsigned = buildBundleUnsigned(legacySeed);
+    const legacyHash = await hashBundle(legacyUnsigned);
+    const useRootHash =
+      proofBundleMeta?.bundleRoot !== undefined ||
+      proofBundleMeta?.bindings?.bundleHashOf === PROOF_BINDINGS.bundleHashOf;
+    const bundleHashNext = useRootHash ? rootHash : legacyHash;
+    if (useRootHash) {
+      nextBundle.bundleRoot = bundleRoot;
+    } else {
+      delete nextBundle.bundleRoot;
+    }
     nextBundle.bundleHash = bundleHashNext;
 
     const updatedSvg = embedProofMetadata(baseSvg, nextBundle);

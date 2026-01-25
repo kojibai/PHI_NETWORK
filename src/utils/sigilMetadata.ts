@@ -1,9 +1,13 @@
 import { XMLParser } from "fast-xml-parser";
 import { gunzipB64 } from "../lib/sigil/codec";
 import type {
+  BundleRoot,
   ProofBundleBindings,
+  ProofBundleTransport,
   ProofCapsuleV1,
+  VerificationCache,
   VerificationSource,
+  ZkMeta,
   ZkStatement,
 } from "../components/KaiVoh/verifierProof";
 import type { AuthorSig } from "./authorSig";
@@ -33,6 +37,10 @@ export type EmbeddedMeta = {
   canon?: string;
   bindings?: ProofBundleBindings;
   zkStatement?: ZkStatement;
+  bundleRoot?: BundleRoot;
+  zkMeta?: ZkMeta;
+  verificationCache?: VerificationCache;
+  transport?: ProofBundleTransport;
   authorSig?: AuthorSig | null;
   zkPoseidonHash?: string;
   zkProof?: unknown;
@@ -80,6 +88,7 @@ function toEmbeddedMetaFromUnknown(raw: unknown): EmbeddedMeta {
 
   const capsuleRaw = isRecord(raw.proofCapsule) ? raw.proofCapsule : undefined;
   const decodedPayload = tryDecodeEmbeddedPayload(raw);
+  const transportRaw = isRecord(raw.transport) ? raw.transport : undefined;
 
   const kaiSignature =
     typeof raw.kaiSignature === "string"
@@ -123,9 +132,11 @@ function toEmbeddedMetaFromUnknown(raw: unknown): EmbeddedMeta {
   const shareUrl =
     typeof raw.shareUrl === "string"
       ? raw.shareUrl
-      : isRecord(raw.header) && typeof raw.header.shareUrl === "string"
-        ? raw.header.shareUrl
-        : undefined;
+      : typeof transportRaw?.shareUrl === "string"
+        ? transportRaw.shareUrl
+        : isRecord(raw.header) && typeof raw.header.shareUrl === "string"
+          ? raw.header.shareUrl
+          : undefined;
 
   const phiKeyRaw = typeof raw.phiKey === "string" ? raw.phiKey : undefined;
   const userPhiKey = typeof raw.userPhiKey === "string" ? raw.userPhiKey : undefined;
@@ -138,18 +149,25 @@ function toEmbeddedMetaFromUnknown(raw: unknown): EmbeddedMeta {
         userPhiKey;
 
   const verifierUrl =
-    typeof raw.verifierUrl === "string" ? raw.verifierUrl : undefined;
+    typeof raw.verifierUrl === "string"
+      ? raw.verifierUrl
+      : typeof transportRaw?.verifierUrl === "string"
+        ? transportRaw.verifierUrl
+        : undefined;
 
   const verifier =
     typeof raw.verifier === "string" && (raw.verifier === "local" || raw.verifier === "pbi")
       ? (raw.verifier as VerificationSource)
-      : undefined;
+      : typeof transportRaw?.verifier === "string" && (transportRaw.verifier === "local" || transportRaw.verifier === "pbi")
+        ? (transportRaw.verifier as VerificationSource)
+        : undefined;
 
   const verificationVersion =
     typeof raw.verificationVersion === "string" ? raw.verificationVersion : undefined;
 
   const verifiedAtPulseRaw =
     raw.verifiedAtPulse ??
+    transportRaw?.verifiedAtPulse ??
     decodedPayload?.verifiedAtPulse ??
     undefined;
   const verifiedAtPulse =
@@ -185,9 +203,11 @@ function toEmbeddedMetaFromUnknown(raw: unknown): EmbeddedMeta {
   const proofHints =
     "proofHints" in raw
       ? raw.proofHints
-      : decodedPayload && "proofHints" in decodedPayload
-        ? decodedPayload.proofHints
-        : undefined;
+      : transportRaw && "proofHints" in transportRaw
+        ? transportRaw.proofHints
+        : decodedPayload && "proofHints" in decodedPayload
+          ? decodedPayload.proofHints
+          : undefined;
   const zkPublicInputs =
     "zkPublicInputs" in raw
       ? raw.zkPublicInputs
@@ -202,6 +222,12 @@ function toEmbeddedMetaFromUnknown(raw: unknown): EmbeddedMeta {
   const canon = typeof raw.canon === "string" ? raw.canon : undefined;
   const bindings = isRecord(raw.bindings) ? (raw.bindings as ProofBundleBindings) : undefined;
   const zkStatement = isRecord(raw.zkStatement) ? (raw.zkStatement as ZkStatement) : undefined;
+  const bundleRoot = isRecord(raw.bundleRoot) ? (raw.bundleRoot as BundleRoot) : undefined;
+  const zkMeta = isRecord(raw.zkMeta) ? (raw.zkMeta as ZkMeta) : undefined;
+  const verificationCache = isRecord(raw.verificationCache)
+    ? (raw.verificationCache as VerificationCache)
+    : undefined;
+  const transport = isRecord(raw.transport) ? (raw.transport as ProofBundleTransport) : undefined;
   const authorSig = parseAuthorSig(raw.authorSig);
 
   return {
@@ -228,6 +254,10 @@ function toEmbeddedMetaFromUnknown(raw: unknown): EmbeddedMeta {
     canon,
     bindings,
     zkStatement,
+    bundleRoot,
+    zkMeta,
+    verificationCache,
+    transport,
     authorSig,
     zkPoseidonHash,
     zkProof,
@@ -352,6 +382,12 @@ function findProofBundleInText(text: string): ProofBundleMeta | null {
         zkProof: meta.zkProof,
         proofHints: meta.proofHints,
         zkPublicInputs: meta.zkPublicInputs,
+        bindings: meta.bindings,
+        zkStatement: meta.zkStatement,
+        bundleRoot: meta.bundleRoot,
+        zkMeta: meta.zkMeta,
+        verificationCache: meta.verificationCache,
+        transport: meta.transport,
         raw: parsed,
       };
     }
@@ -382,6 +418,12 @@ function findProofBundleInText(text: string): ProofBundleMeta | null {
         zkProof: meta.zkProof,
         proofHints: meta.proofHints,
         zkPublicInputs: meta.zkPublicInputs,
+        bindings: meta.bindings,
+        zkStatement: meta.zkStatement,
+        bundleRoot: meta.bundleRoot,
+        zkMeta: meta.zkMeta,
+        verificationCache: meta.verificationCache,
+        transport: meta.transport,
         raw: blobParsed,
       };
     }
@@ -490,6 +532,10 @@ export type ProofBundleMeta = {
   canon?: string;
   bindings?: ProofBundleBindings;
   zkStatement?: ZkStatement;
+  bundleRoot?: BundleRoot;
+  zkMeta?: ZkMeta;
+  verificationCache?: VerificationCache;
+  transport?: ProofBundleTransport;
   proofCapsule?: ProofCapsuleV1;
   capsuleHash?: string;
   svgHash?: string;
@@ -523,6 +569,10 @@ export function extractProofBundleMetaFromSvg(svgText: string): ProofBundleMeta 
           canon: meta.canon,
           bindings: meta.bindings,
           zkStatement: meta.zkStatement,
+          bundleRoot: meta.bundleRoot,
+          zkMeta: meta.zkMeta,
+          verificationCache: meta.verificationCache,
+          transport: meta.transport,
           proofCapsule: meta.proofCapsule,
           capsuleHash: meta.capsuleHash,
           svgHash: meta.svgHash,
@@ -558,6 +608,10 @@ export function extractProofBundleMetaFromSvg(svgText: string): ProofBundleMeta 
           canon: meta.canon,
           bindings: meta.bindings,
           zkStatement: meta.zkStatement,
+          bundleRoot: meta.bundleRoot,
+          zkMeta: meta.zkMeta,
+          verificationCache: meta.verificationCache,
+          transport: meta.transport,
           proofCapsule: meta.proofCapsule,
           capsuleHash: meta.capsuleHash,
           svgHash: meta.svgHash,

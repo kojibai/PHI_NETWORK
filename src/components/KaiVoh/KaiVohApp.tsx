@@ -43,14 +43,15 @@ import VerifierFrame from "./VerifierFrame";
 import {
   buildVerifierSlug,
   buildVerifierUrl,
-  buildBundleUnsigned,
-  hashBundle,
+  buildBundleRoot,
+  computeBundleHash,
   hashProofCapsuleV1,
   hashSvgText,
   normalizeChakraDay,
   PROOF_CANON,
   PROOF_BINDINGS,
   PROOF_HASH_ALG,
+  ZK_PUBLIC_INPUTS_CONTRACT,
   ZK_STATEMENT_BINDING,
   ZK_STATEMENT_DOMAIN,
   type ProofCapsuleV1,
@@ -815,32 +816,42 @@ function KaiVohFlow(): ReactElement {
               ? (mergedMetadata as { shareUrl?: string }).shareUrl
               : undefined;
 
+          const zkStatement = zkPoseidonHash
+            ? {
+                publicInputOf: ZK_STATEMENT_BINDING,
+                domainTag: ZK_STATEMENT_DOMAIN,
+                publicInputsContract: ZK_PUBLIC_INPUTS_CONTRACT,
+              }
+            : undefined;
+          const zkMeta = zkPoseidonHash
+            ? {
+                protocol: "groth16",
+                curve: "BLS12-381",
+                scheme: "groth16-poseidon",
+                circuitId: "sigil_proof",
+              }
+            : undefined;
           const proofBundleBase = {
             v: "KPB-1",
             hashAlg: PROOF_HASH_ALG,
             canon: PROOF_CANON,
             bindings: PROOF_BINDINGS,
-            zkStatement: zkPoseidonHash
-              ? {
-                  publicInputOf: ZK_STATEMENT_BINDING,
-                  domainTag: ZK_STATEMENT_DOMAIN,
-                }
-              : undefined,
+            zkStatement,
             proofCapsule: capsule,
             capsuleHash,
             svgHash,
-            shareUrl,
-            verifierUrl,
             zkPoseidonHash,
             zkProof,
-            proofHints,
             zkPublicInputs,
+            zkMeta,
           };
-          const bundleUnsigned = buildBundleUnsigned({
-            ...proofBundleBase,
-            authorSig: null,
-          });
-          bundleHash = await hashBundle(bundleUnsigned);
+          const transport = {
+            shareUrl,
+            verifierUrl,
+            proofHints,
+          };
+          const bundleRoot = buildBundleRoot(proofBundleBase);
+          bundleHash = await computeBundleHash(bundleRoot);
           try {
             await ensurePasskey(proofPhiKey);
             authorSig = await signBundleHash(proofPhiKey, bundleHash);
@@ -852,8 +863,11 @@ function KaiVohFlow(): ReactElement {
           }
           const proofBundle = {
             ...proofBundleBase,
+            bundleRoot,
             bundleHash,
             authorSig,
+            transport,
+            proofHints,
           };
           if (authorSig?.v === "KAS-1") {
             const authUrl = shareUrl || verifierUrl;

@@ -20,15 +20,16 @@ import { buildProofHints, generateZkProofFromPoseidonHash } from "../../utils/zk
 import { computeZkPoseidonHash } from "../../utils/kai";
 import { ensureTitleAndDesc, ensureViewBoxOnClone, ensureXmlns } from "../../utils/svgMeta";
 import {
-  buildBundleUnsigned,
+  buildBundleRoot,
   buildVerifierUrl,
-  hashBundle,
+  computeBundleHash,
   hashProofCapsuleV1,
   hashSvgText,
   normalizeChakraDay,
   PROOF_CANON,
   PROOF_BINDINGS,
   PROOF_HASH_ALG,
+  ZK_PUBLIC_INPUTS_CONTRACT,
   ZK_STATEMENT_BINDING,
   ZK_STATEMENT_DOMAIN,
   type ProofCapsuleV1,
@@ -588,35 +589,50 @@ export async function exportZIP(ctx: {
 
     const svgHash = await hashSvgText(svgString);
 
+    const zkStatement = zkPoseidonHash
+      ? {
+          publicInputOf: ZK_STATEMENT_BINDING,
+          domainTag: ZK_STATEMENT_DOMAIN,
+          publicInputsContract: ZK_PUBLIC_INPUTS_CONTRACT,
+        }
+      : undefined;
+    const zkMeta = zkPoseidonHash
+      ? {
+          protocol: "groth16",
+          curve: "BLS12-381",
+          scheme: "groth16-poseidon",
+          circuitId: "sigil_proof",
+        }
+      : undefined;
     const proofBundleBase = {
       hashAlg: PROOF_HASH_ALG,
       canon: PROOF_CANON,
       bindings: PROOF_BINDINGS,
-      zkStatement: zkPoseidonHash
-        ? {
-            publicInputOf: ZK_STATEMENT_BINDING,
-            domainTag: ZK_STATEMENT_DOMAIN,
-          }
-        : undefined,
+      zkStatement,
       proofCapsule,
       capsuleHash,
       svgHash,
-      shareUrl,
-      verifierUrl,
-      authorSig: null,
       zkPoseidonHash,
       zkProof,
-      proofHints,
       zkPublicInputs,
+      zkMeta,
     };
 
-    const bundleUnsigned = buildBundleUnsigned(proofBundleBase);
-    const computedBundleHash = await hashBundle(bundleUnsigned);
+    const transport = {
+      shareUrl,
+      verifierUrl,
+      proofHints,
+    };
+    const bundleRoot = buildBundleRoot(proofBundleBase);
+    const computedBundleHash = await computeBundleHash(bundleRoot);
 
     const proofBundle = {
       ...proofBundleBase,
+      bundleRoot,
       bundleHash: computedBundleHash,
       authorSig: null,
+      transport,
+      proofHints,
     };
 
     const sealedSvg = embedProofMetadata(svgString, proofBundle);

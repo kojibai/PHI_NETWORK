@@ -12,14 +12,18 @@ import LiveChart from "../components/valuation/chart/LiveChart";
 import {
   buildVerifierSlug,
   buildVerifierUrl,
+  buildBundleRoot,
   buildBundleUnsigned,
+  computeBundleHash,
   hashBundle,
   hashProofCapsuleV1,
   hashSvgText,
   normalizeChakraDay,
+  normalizeBundle,
   PROOF_CANON,
   PROOF_BINDINGS,
   PROOF_HASH_ALG,
+  ZK_PUBLIC_INPUTS_CONTRACT,
   VERIFICATION_BUNDLE_VERSION,
   ZK_STATEMENT_BINDING,
   ZK_STATEMENT_DOMAIN,
@@ -170,12 +174,18 @@ type SharedReceipt = {
   proofCapsule: ProofCapsuleV1;
   capsuleHash?: string;
   svgHash?: string;
+  bundleRoot?: ProofBundleMeta["bundleRoot"];
   bundleHash?: string;
   verifierUrl?: string;
   shareUrl?: string;
   verifier?: VerificationSource;
   verificationVersion?: string;
   authorSig?: ProofBundleMeta["authorSig"];
+  bindings?: ProofBundleMeta["bindings"];
+  zkStatement?: ProofBundleMeta["zkStatement"];
+  zkMeta?: ProofBundleMeta["zkMeta"];
+  verificationCache?: ProofBundleMeta["verificationCache"];
+  transport?: ProofBundleMeta["transport"];
   zkPoseidonHash?: string;
   zkProof?: ProofBundleMeta["zkProof"];
   proofHints?: ProofBundleMeta["proofHints"];
@@ -208,12 +218,18 @@ function buildSharedReceiptFromObject(raw: unknown): SharedReceipt | null {
     proofCapsule,
     capsuleHash: typeof raw.capsuleHash === "string" ? raw.capsuleHash : undefined,
     svgHash: typeof raw.svgHash === "string" ? raw.svgHash : undefined,
+    bundleRoot: isRecord(raw.bundleRoot) ? (raw.bundleRoot as ProofBundleMeta["bundleRoot"]) : undefined,
     bundleHash: typeof raw.bundleHash === "string" ? raw.bundleHash : undefined,
     verifierUrl: typeof raw.verifierUrl === "string" ? raw.verifierUrl : undefined,
     verifier: raw.verifier === "local" || raw.verifier === "pbi" ? (raw.verifier as VerificationSource) : undefined,
     verificationVersion: typeof raw.verificationVersion === "string" ? raw.verificationVersion : undefined,
     shareUrl: typeof raw.shareUrl === "string" ? raw.shareUrl : undefined,
     authorSig: raw.authorSig as ProofBundleMeta["authorSig"],
+    bindings: isRecord(raw.bindings) ? (raw.bindings as ProofBundleMeta["bindings"]) : undefined,
+    zkStatement: isRecord(raw.zkStatement) ? (raw.zkStatement as ProofBundleMeta["zkStatement"]) : undefined,
+    zkMeta: isRecord(raw.zkMeta) ? (raw.zkMeta as ProofBundleMeta["zkMeta"]) : undefined,
+    verificationCache: isRecord(raw.verificationCache) ? (raw.verificationCache as ProofBundleMeta["verificationCache"]) : undefined,
+    transport: isRecord(raw.transport) ? (raw.transport as ProofBundleMeta["transport"]) : undefined,
     zkPoseidonHash: typeof raw.zkPoseidonHash === "string" ? raw.zkPoseidonHash : undefined,
     zkProof: "zkProof" in raw ? raw.zkProof : undefined,
     proofHints: "proofHints" in raw ? raw.proofHints : undefined,
@@ -568,6 +584,7 @@ export default function VerifyPage(): ReactElement {
   const [proofCapsule, setProofCapsule] = useState<ProofCapsuleV1 | null>(null);
   const [capsuleHash, setCapsuleHash] = useState<string>("");
   const [svgHash, setSvgHash] = useState<string>("");
+  const [bundleRoot, setBundleRoot] = useState<ProofBundleMeta["bundleRoot"] | null>(null);
   const [bundleHash, setBundleHash] = useState<string>("");
   const [svgBytesHash, setSvgBytesHash] = useState<string>("");
 
@@ -842,7 +859,14 @@ export default function VerifyPage(): ReactElement {
   const pvForChart = useMemo(() => (chartPhi > 0 ? chartPhi : 0), [chartPhi]);
 
   const zkMeta = useMemo(() => {
-    if (embeddedProof) return embeddedProof;
+    if (embeddedProof) {
+      return {
+        zkPoseidonHash: embeddedProof.zkPoseidonHash,
+        zkProof: embeddedProof.zkProof,
+        zkPublicInputs: embeddedProof.zkPublicInputs,
+        proofHints: embeddedProof.transport?.proofHints ?? embeddedProof.proofHints,
+      } satisfies ProofBundleMeta;
+    }
     if (result.status !== "ok") return null;
     if (!result.embedded.zkProof && !result.embedded.zkPublicInputs && !result.embedded.zkPoseidonHash && !result.embedded.proofHints) return null;
 
@@ -948,6 +972,7 @@ export default function VerifyPage(): ReactElement {
         setProofCapsule(null);
         setCapsuleHash("");
         setSvgHash("");
+        setBundleRoot(null);
         setBundleHash("");
         setEmbeddedProof(null);
         setAuthorSigVerified(null);
@@ -1006,6 +1031,7 @@ export default function VerifyPage(): ReactElement {
 
       const verifierValue = embedded?.verifier;
       const verificationVersionValue = embedded?.verificationVersion;
+      const proofHintsValue = embedded?.transport?.proofHints ?? embedded?.proofHints;
 
       const bundleSeed =
         embedded?.raw && typeof embedded.raw === "object" && embedded.raw !== null
@@ -1021,6 +1047,10 @@ export default function VerifyPage(): ReactElement {
           : {
               hashAlg: embedded?.hashAlg ?? PROOF_HASH_ALG,
               canon: embedded?.canon ?? PROOF_CANON,
+              bindings: embedded?.bindings ?? PROOF_BINDINGS,
+              zkStatement: embedded?.zkStatement,
+              bundleRoot: embedded?.bundleRoot,
+              zkMeta: embedded?.zkMeta,
               proofCapsule: capsule,
               capsuleHash: capsuleHashNext,
               svgHash: svgHashNext,
@@ -1031,13 +1061,24 @@ export default function VerifyPage(): ReactElement {
               ...(verifiedAtPulse != null ? { verifiedAtPulse } : {}),
               zkPoseidonHash: embedded?.zkPoseidonHash,
               zkProof: embedded?.zkProof,
-              proofHints: embedded?.proofHints,
+              proofHints: proofHintsValue,
               zkPublicInputs: embedded?.zkPublicInputs,
               authorSig: embedded?.authorSig ?? null,
             };
 
-      const bundleUnsigned = buildBundleUnsigned(bundleSeed);
-      const bundleHashNext = await hashBundle(bundleUnsigned);
+      const bundleRootNext = buildBundleRoot(bundleSeed);
+      const rootHash = await computeBundleHash(bundleRootNext);
+      const legacySeed = { ...bundleSeed } as Record<string, unknown>;
+      delete legacySeed.bundleRoot;
+      delete legacySeed.transport;
+      delete legacySeed.verificationCache;
+      delete legacySeed.zkMeta;
+      const bundleUnsigned = buildBundleUnsigned(legacySeed);
+      const legacyHash = await hashBundle(bundleUnsigned);
+      const useRootHash =
+        Boolean(embedded?.bundleRoot) ||
+        embedded?.bindings?.bundleHashOf === PROOF_BINDINGS.bundleHashOf;
+      const bundleHashNext = useRootHash ? rootHash : legacyHash;
 
       const authorSigNext = embedded?.authorSig;
       let authorSigOk: boolean | null = null;
@@ -1047,10 +1088,14 @@ export default function VerifyPage(): ReactElement {
           // ✅ Verify KAS against the artifact's recomputed unsigned bundle hash
           authorSigOk = await verifyBundleAuthorSig(bundleHashNext, authorSigNext);
           if (!authorSigOk) {
-            const legacySeed = { ...bundleSeed };
-            delete (legacySeed as Record<string, unknown>).verifiedAtPulse;
-            delete (legacySeed as Record<string, unknown>).verifier;
-            delete (legacySeed as Record<string, unknown>).verificationVersion;
+            const legacySeed = { ...bundleSeed } as Record<string, unknown>;
+            delete legacySeed.bundleRoot;
+            delete legacySeed.transport;
+            delete legacySeed.verificationCache;
+            delete legacySeed.zkMeta;
+            delete legacySeed.verifiedAtPulse;
+            delete legacySeed.verifier;
+            delete legacySeed.verificationVersion;
             const legacyUnsigned = buildBundleUnsigned(legacySeed);
             const legacyHash = await hashBundle(legacyUnsigned);
             authorSigOk = await verifyBundleAuthorSig(legacyHash, authorSigNext);
@@ -1064,6 +1109,7 @@ export default function VerifyPage(): ReactElement {
       setProofCapsule(capsule);
       setSvgHash(svgHashNext);
       setCapsuleHash(capsuleHashNext);
+      setBundleRoot(useRootHash ? bundleRootNext : embedded?.bundleRoot ?? null);
       setBundleHash(bundleHashNext);
       setEmbeddedProof(embedded);
       setAuthorSigVerified(authorSigOk);
@@ -1083,6 +1129,7 @@ export default function VerifyPage(): ReactElement {
       proofCapsule: capsule,
       svgHash: sharedReceipt.svgHash,
       capsuleHash: sharedReceipt.capsuleHash,
+      bundleRoot: sharedReceipt.bundleRoot,
       bundleHash: sharedReceipt.bundleHash,
       shareUrl: sharedReceipt.shareUrl,
       verifierUrl: sharedReceipt.verifierUrl,
@@ -1090,6 +1137,11 @@ export default function VerifyPage(): ReactElement {
       verificationVersion: sharedReceipt.verificationVersion,
       verifiedAtPulse: sharedReceipt.verifiedAtPulse,
       authorSig: sharedReceipt.authorSig,
+      bindings: sharedReceipt.bindings,
+      zkStatement: sharedReceipt.zkStatement,
+      zkMeta: sharedReceipt.zkMeta,
+      verificationCache: sharedReceipt.verificationCache,
+      transport: sharedReceipt.transport,
       zkPoseidonHash: sharedReceipt.zkPoseidonHash,
       zkProof: sharedReceipt.zkProof,
       proofHints: sharedReceipt.proofHints,
@@ -1146,6 +1198,7 @@ export default function VerifyPage(): ReactElement {
       setProofCapsule(capsule);
       setCapsuleHash(sharedReceipt.capsuleHash ?? "");
       setSvgHash(sharedReceipt.svgHash ?? "");
+      setBundleRoot(sharedReceipt.bundleRoot ?? null);
       setBundleHash(sharedReceipt.bundleHash ?? "");
     })();
 
@@ -1264,13 +1317,43 @@ export default function VerifyPage(): ReactElement {
         }
       }
 
+      const expectedVkHash = embeddedProof?.zkMeta?.vkHash;
+      if (expectedVkHash && zkVkey && typeof zkVkey === "object") {
+        try {
+          const vkeyCanonical = jcsCanonicalize(zkVkey as Parameters<typeof jcsCanonicalize>[0]);
+          const vkeyHash = await sha256Hex(vkeyCanonical);
+          if (vkeyHash !== expectedVkHash) {
+            if (active) setZkVerify(false);
+            return;
+          }
+        } catch {
+          if (active) setZkVerify(false);
+          return;
+        }
+      }
+
       const parsedProof = parseJsonString(zkMeta.zkProof);
       const parsedInputs = parseJsonString(zkMeta.zkPublicInputs);
-      const inputs = Array.isArray(parsedInputs) || typeof parsedInputs === "object" ? parsedInputs : [parsedInputs];
+      const inputsArray = Array.isArray(parsedInputs)
+        ? parsedInputs.map((entry) => String(entry))
+        : parsedInputs && typeof parsedInputs === "object"
+          ? Object.values(parsedInputs as Record<string, unknown>).map((entry) => String(entry))
+          : [String(parsedInputs)];
+      const contract = embeddedProof?.zkStatement?.publicInputsContract ?? ZK_PUBLIC_INPUTS_CONTRACT;
+      const arityOk = inputsArray.length === contract.arity;
+      const invariantOk = arityOk && inputsArray[0] === inputsArray[1];
+      if (!arityOk || !invariantOk) {
+        if (active) setZkVerify(false);
+        return;
+      }
+      if (zkMeta?.zkPoseidonHash && inputsArray[0] !== zkMeta.zkPoseidonHash) {
+        if (active) setZkVerify(false);
+        return;
+      }
 
       const verified = await tryVerifyGroth16({
         proof: parsedProof,
-        publicSignals: inputs,
+        publicSignals: inputsArray,
         vkey: zkVkey ?? undefined,
         fallbackVkey: zkVkey ?? undefined,
       });
@@ -1379,6 +1462,23 @@ export default function VerifyPage(): ReactElement {
     () => (proofCapsule ? buildVerifierUrl(proofCapsule.pulse, proofCapsule.kaiSignature, undefined, stewardVerifiedPulse ?? undefined) : ""),
     [proofCapsule, stewardVerifiedPulse],
   );
+
+  const proofBindings = useMemo(() => embeddedProof?.bindings ?? PROOF_BINDINGS, [embeddedProof?.bindings]);
+  const zkStatementValue = useMemo(() => {
+    if (embeddedProof?.zkStatement) return embeddedProof.zkStatement;
+    if (zkMeta?.zkPoseidonHash) {
+      return {
+        publicInputOf: ZK_STATEMENT_BINDING,
+        domainTag: ZK_STATEMENT_DOMAIN,
+        publicInputsContract: ZK_PUBLIC_INPUTS_CONTRACT,
+      };
+    }
+    return null;
+  }, [embeddedProof?.zkStatement, zkMeta?.zkPoseidonHash]);
+  const publicInputsContractLabel = useMemo(() => {
+    if (!zkStatementValue?.publicInputsContract) return "—";
+    return `${zkStatementValue.publicInputsContract.arity} • ${zkStatementValue.publicInputsContract.invariant}`;
+  }, [zkStatementValue?.publicInputsContract]);
 
   const verifiedCardData = useMemo<VerifiedCardData | null>(() => {
     if (result.status !== "ok" || !proofCapsule || !capsuleHash || stewardVerifiedPulse == null) return null;
@@ -1505,37 +1605,42 @@ body: [
 
   const auditBundleText = useMemo(() => {
     if (!proofCapsule) return "";
-    return JSON.stringify(
-      {
-        hashAlg: PROOF_HASH_ALG,
-        canon: PROOF_CANON,
-        bindings: embeddedProof?.bindings ?? PROOF_BINDINGS,
-        zkStatement:
-          embeddedProof?.zkStatement ??
-          (zkMeta?.zkPoseidonHash
-            ? {
-                publicInputOf: ZK_STATEMENT_BINDING,
-                domainTag: ZK_STATEMENT_DOMAIN,
-              }
-            : null),
-        proofCapsule,
-        capsuleHash,
-        svgHash,
-        bundleHash,
-        shareUrl: embeddedProof?.shareUrl ?? null,
-        verifierUrl: proofVerifierUrl,
-        verifier: embeddedProof?.verifier ?? verificationSource,
-        verificationVersion: embeddedProof?.verificationVersion ?? verificationVersion,
-        verifiedAtPulse: stewardVerifiedPulse ?? null,
-        authorSig: embeddedProof?.authorSig ?? null,
-        zkPoseidonHash: zkMeta?.zkPoseidonHash ?? null,
-        zkProof: zkMeta?.zkProof ?? null,
-        proofHints: zkMeta?.proofHints ?? null,
-        zkPublicInputs: zkMeta?.zkPublicInputs ?? null,
-      },
-      null,
-      2,
-    );
+    const transport = {
+      shareUrl: embeddedProof?.transport?.shareUrl ?? embeddedProof?.shareUrl,
+      verifierUrl: embeddedProof?.transport?.verifierUrl ?? proofVerifierUrl,
+      verifier: embeddedProof?.transport?.verifier ?? embeddedProof?.verifier ?? verificationSource,
+      verifiedAtPulse: embeddedProof?.transport?.verifiedAtPulse ?? stewardVerifiedPulse ?? null,
+      proofHints: embeddedProof?.transport?.proofHints ?? embeddedProof?.proofHints ?? zkMeta?.proofHints ?? null,
+    };
+    const normalized = normalizeBundle({
+      hashAlg: PROOF_HASH_ALG,
+      canon: PROOF_CANON,
+      bindings: embeddedProof?.bindings ?? PROOF_BINDINGS,
+      zkStatement:
+        embeddedProof?.zkStatement ??
+        (zkMeta?.zkPoseidonHash
+          ? {
+              publicInputOf: ZK_STATEMENT_BINDING,
+              domainTag: ZK_STATEMENT_DOMAIN,
+              publicInputsContract: ZK_PUBLIC_INPUTS_CONTRACT,
+            }
+          : undefined),
+      bundleRoot: bundleRoot ?? embeddedProof?.bundleRoot,
+      proofCapsule,
+      capsuleHash,
+      svgHash,
+      bundleHash,
+      authorSig: embeddedProof?.authorSig ?? null,
+      zkPoseidonHash: zkMeta?.zkPoseidonHash ?? undefined,
+      zkProof: zkMeta?.zkProof ?? undefined,
+      zkPublicInputs: zkMeta?.zkPublicInputs ?? undefined,
+      zkMeta: embeddedProof?.zkMeta,
+      verificationCache: embeddedProof?.verificationCache ??
+        (zkVerify == null ? undefined : { zkVerifiedCached: Boolean(zkVerify) }),
+      transport,
+    });
+
+    return JSON.stringify(normalized, null, 2);
   }, [
     proofCapsule,
     capsuleHash,
@@ -1545,8 +1650,9 @@ body: [
     proofVerifierUrl,
     stewardVerifiedPulse,
     verificationSource,
-    verificationVersion,
     zkMeta,
+    zkVerify,
+    bundleRoot,
   ]);
 
   const receiptJson = useMemo(() => {
@@ -1567,14 +1673,16 @@ body: [
     }
     if (svgHash) extended.svgHash = svgHash;
     if (bundleHash) extended.bundleHash = bundleHash;
-    if (embeddedProof?.shareUrl) extended.shareUrl = embeddedProof.shareUrl;
+    const shareUrlValue = embeddedProof?.transport?.shareUrl ?? embeddedProof?.shareUrl;
+    if (shareUrlValue) extended.shareUrl = shareUrlValue;
     if (embeddedProof?.authorSig) extended.authorSig = embeddedProof.authorSig;
     if (embeddedProof?.zkProof) extended.zkProof = embeddedProof.zkProof;
-    if (embeddedProof?.proofHints) extended.proofHints = embeddedProof.proofHints;
+    const proofHintsValue = embeddedProof?.transport?.proofHints ?? embeddedProof?.proofHints;
+    if (proofHintsValue) extended.proofHints = proofHintsValue;
     if (embeddedProof?.zkPublicInputs) extended.zkPublicInputs = embeddedProof.zkPublicInputs;
     if (zkMeta?.zkPoseidonHash) {
       extended.zkPoseidonHash = zkMeta.zkPoseidonHash;
-      extended.zkVerified = Boolean(zkVerify);
+      extended.verificationCache = { zkVerifiedCached: Boolean(zkVerify) };
       extended.zkScheme = "groth16-poseidon";
     }
 
@@ -1584,6 +1692,12 @@ body: [
     capsuleHash,
     currentVerifyUrl,
     embeddedProof?.shareUrl,
+    embeddedProof?.transport?.shareUrl,
+    embeddedProof?.proofHints,
+    embeddedProof?.transport?.proofHints,
+    embeddedProof?.authorSig,
+    embeddedProof?.zkProof,
+    embeddedProof?.zkPublicInputs,
     proofCapsule,
     proofVerifierUrl,
     stewardVerifiedPulse,
@@ -1973,7 +2087,7 @@ body: [
             <div className="vcard" data-panel="proof">
               <div className="vcard-head">
                 <div className="vcard-title">Attestation Spine</div>
-                <div className="vcard-sub">vesselHash + sigilHash → bundleHash (offline integrity rail).</div>
+                <div className="vcard-sub">bundleRoot → bundleHash (capsuleHash + sigilHash + ZK → integrity rail).</div>
               </div>
 
               <div className="vcard-body vfit">
@@ -2026,14 +2140,55 @@ body: [
                     <IconBtn icon="💠" title="Remember vessel hash" ariaLabel="Remember vessel hash" onClick={() => void remember(capsuleHash, "Vessel hash")} disabled={!capsuleHash} />
                   </div>
 
-                <div className="vrow">
-                  <span className="vk">bundleHash</span>
-                  <code className="vv mono" title={bundleHash || "—"}>
-                    {bundleHash ? ellipsizeMiddle(bundleHash, 22, 16) : "—"}
-                  </code>
-                  <IconBtn icon="💠" title="Remember bundle hash" ariaLabel="Remember bundle hash" onClick={() => void remember(bundleHash, "Bundle hash")} disabled={!bundleHash} />
+                  <div className="vrow">
+                    <span className="vk">bundleHash</span>
+                    <code className="vv mono" title={bundleHash || "—"}>
+                      {bundleHash ? ellipsizeMiddle(bundleHash, 22, 16) : "—"}
+                    </code>
+                    <IconBtn icon="💠" title="Remember bundle hash" ariaLabel="Remember bundle hash" onClick={() => void remember(bundleHash, "Bundle hash")} disabled={!bundleHash} />
+                  </div>
                 </div>
-              </div>
+
+                <div className="vcard-sub">Advanced · Self-Describing Proof</div>
+                <div className="vrail-grid vrail-grid--2" aria-label="Self-describing proof bindings">
+                  <div className="vrow">
+                    <span className="vk">capsuleHashOf</span>
+                    <code className="vv mono">{proofBindings.capsuleHashOf}</code>
+                    <IconBtn icon="💠" title="Remember capsule hash binding" ariaLabel="Remember capsule hash binding" onClick={() => void remember(proofBindings.capsuleHashOf, "capsuleHashOf")} />
+                  </div>
+
+                  <div className="vrow">
+                    <span className="vk">bundleHashOf</span>
+                    <code className="vv mono">{proofBindings.bundleHashOf}</code>
+                    <IconBtn icon="💠" title="Remember bundle hash binding" ariaLabel="Remember bundle hash binding" onClick={() => void remember(proofBindings.bundleHashOf, "bundleHashOf")} />
+                  </div>
+
+                  <div className="vrow">
+                    <span className="vk">authorChallengeOf</span>
+                    <code className="vv mono">{proofBindings.authorChallengeOf}</code>
+                    <IconBtn icon="💠" title="Remember author challenge binding" ariaLabel="Remember author challenge binding" onClick={() => void remember(proofBindings.authorChallengeOf, "authorChallengeOf")} />
+                  </div>
+
+                  <div className="vrow">
+                    <span className="vk">publicInputOf</span>
+                    <code className="vv mono">{zkStatementValue?.publicInputOf ?? "—"}</code>
+                    <IconBtn icon="💠" title="Remember ZK public input binding" ariaLabel="Remember ZK public input binding" onClick={() => void remember(String(zkStatementValue?.publicInputOf ?? ""), "publicInputOf")} disabled={!zkStatementValue?.publicInputOf} />
+                  </div>
+
+                  <div className="vrow">
+                    <span className="vk">domainTag</span>
+                    <code className="vv mono">{zkStatementValue?.domainTag ?? "—"}</code>
+                    <IconBtn icon="💠" title="Remember ZK domain tag" ariaLabel="Remember ZK domain tag" onClick={() => void remember(String(zkStatementValue?.domainTag ?? ""), "domainTag")} disabled={!zkStatementValue?.domainTag} />
+                  </div>
+
+                  <div className="vrow">
+                    <span className="vk">publicInputsContract</span>
+                    <code className="vv mono" title={zkStatementValue?.publicInputsContract?.meaning ?? ZK_PUBLIC_INPUTS_CONTRACT.meaning}>
+                      {publicInputsContractLabel}
+                    </code>
+                    <IconBtn icon="💠" title="Remember ZK public input contract" ariaLabel="Remember ZK public input contract" onClick={() => void remember(publicInputsContractLabel, "publicInputsContract")} disabled={publicInputsContractLabel === "—"} />
+                  </div>
+                </div>
 
 
 
@@ -2251,7 +2406,7 @@ body: [
         </div>
       </Modal>
 
-      <Modal open={openAuditJson} title="Audit JSON" subtitle="Canonical audit payload (vesselHash + sigilHash → bundleHash)." onClose={() => setOpenAuditJson(false)}>
+      <Modal open={openAuditJson} title="Audit JSON" subtitle="Canonical audit payload (bundleRoot → bundleHash)." onClose={() => setOpenAuditJson(false)}>
         <textarea className="vta vta--readonly" readOnly value={auditBundleText || "—"} />
         <div className="vmodal-actions">
           <button
