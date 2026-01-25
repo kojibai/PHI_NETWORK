@@ -39,6 +39,7 @@
     "html2canvas": "^1.4.1",
     "jszip": "^3.10.1",
     "lucide-react": "^0.554.0",
+    "@resvg/resvg-js": "^2.6.0",
     "pako": "^2.1.0",
     "peerjs": "^1.5.5",
     "qrcode": "^1.5.4",

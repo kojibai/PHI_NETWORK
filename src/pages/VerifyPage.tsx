@@ -38,6 +38,8 @@ import { getKaiPulseEternalInt } from "../SovereignSolar";
 import { useKaiTicker } from "../hooks/useKaiTicker";
 import { useValuation } from "./SigilPage/useValuation";
 import type { SigilMetadataLite } from "../utils/valuation";
+import { downloadVerifiedCardPng } from "../og/downloadVerifiedCard";
+import type { VerifiedCardData } from "../og/types";
 import { jcsCanonicalize } from "../utils/jcs";
 import { svgCanonicalForHash } from "../utils/svgProof";
 import useRollingChartSeries from "../components/VerifierStamper/hooks/useRollingChartSeries";
@@ -1309,6 +1311,24 @@ if (authorSigNext) {
     return zkVerify ? "valid" : "invalid";
   }, [busy, zkMeta?.zkPoseidonHash, zkVerify]);
 
+  const verifiedCardData = useMemo<VerifiedCardData | null>(() => {
+    if (result.status !== "ok" || !proofCapsule || !capsuleHash) return null;
+    return {
+      capsuleHash,
+      pulse: proofCapsule.pulse,
+      phikey: proofCapsule.phiKey,
+      kasOk: sealKAS === "valid",
+      g16Ok: sealZK === "valid",
+      verifierSlug: proofCapsule.verifierSlug,
+      sigilSvg: svgText.trim() ? svgText : undefined,
+    };
+  }, [capsuleHash, proofCapsule, result.status, sealKAS, sealZK, svgText]);
+
+  const onDownloadVerifiedCard = useCallback(async () => {
+    if (!verifiedCardData) return;
+    await downloadVerifiedCardPng(verifiedCardData);
+  }, [verifiedCardData]);
+
   const sealStateLabel = useCallback((state: SealState): string => {
     switch (state) {
       case "valid":
@@ -1595,6 +1615,16 @@ body: [
                 </button>
                 <button type="button" className="vbtn vbtn--ghost" onClick={() => void onCopyReceipt()}>
                   💠
+                </button>
+              </div>
+            </div>
+          ) : null}
+          {verifiedCardData ? (
+            <div className="vreceipt-row" aria-label="Verified card actions">
+              <div className="vreceipt-label">Card</div>
+              <div className="vreceipt-actions">
+                <button type="button" className="vbtn vbtn--ghost" onClick={() => void onDownloadVerifiedCard()}>
+                  Save Verified Card (PNG)
                 </button>
               </div>
             </div>
