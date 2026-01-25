@@ -1740,7 +1740,7 @@ body: [
               <div className="vreceipt-label">Card</div>
               <div className="vreceipt-actions">
                 <button type="button" className="vbtn vbtn--ghost" onClick={() => void onDownloadVerifiedCard()}>
-                  Save Verified Card (PNG)
+                  ⬇
                 </button>
               </div>
             </div>
