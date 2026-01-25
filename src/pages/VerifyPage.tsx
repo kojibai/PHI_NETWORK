@@ -984,9 +984,13 @@ export default function VerifyPage(): ReactElement {
     const receipt = parseSharedReceiptFromText(raw);
     if (receipt) {
       try {
-        if (receipt.receiptHash) {
-          await assertReceiptHashMatch(receipt.receipt, receipt.receiptHash);
-        }
+if (receipt.receiptHash) {
+  if (!receipt.receipt) {
+    throw new Error("verification receipt mismatch");
+  }
+  await assertReceiptHashMatch(receipt.receipt, receipt.receiptHash);
+}
+
         setSharedReceipt(receipt);
         setSvgText("");
         setResult({ status: "idle" });
@@ -1263,24 +1267,30 @@ export default function VerifyPage(): ReactElement {
       active = false;
     };
   }, [sharedReceipt, slug, svgText]);
+React.useEffect(() => {
+  let active = true;
 
-  React.useEffect(() => {
-    let active = true;
-    if (!sharedReceipt?.receiptHash) return;
-    (async () => {
-      try {
-        await assertReceiptHashMatch(sharedReceipt.receipt, sharedReceipt.receiptHash);
-      } catch (err) {
-        if (!active) return;
-        const msg = err instanceof Error ? err.message : "verification receipt mismatch";
-        setResult({ status: "error", message: msg, slug });
-        setSharedReceipt(null);
+  const rh = sharedReceipt?.receiptHash;
+  if (typeof rh !== "string" || rh.trim().length === 0) return;
+
+  (async () => {
+    try {
+      if (!sharedReceipt?.receipt) {
+        throw new Error("verification receipt mismatch");
       }
-    })();
-    return () => {
-      active = false;
-    };
-  }, [sharedReceipt?.receipt, sharedReceipt?.receiptHash, slug]);
+      await assertReceiptHashMatch(sharedReceipt.receipt, rh);
+    } catch (err) {
+      if (!active) return;
+      const msg = err instanceof Error ? err.message : "verification receipt mismatch";
+      setResult({ status: "error", message: msg, slug });
+      setSharedReceipt(null);
+    }
+  })();
+
+  return () => {
+    active = false;
+  };
+}, [sharedReceipt, slug]);
 
   React.useEffect(() => {
     const nextSig = embeddedProof?.verificationSig ?? sharedReceipt?.verificationSig ?? null;
@@ -1412,22 +1422,27 @@ export default function VerifyPage(): ReactElement {
         }
         return;
       }
+const cacheBundleHash = bundleHash;
+const cachePoseidonHash =
+  typeof zkMeta?.zkPoseidonHash === "string" && zkMeta.zkPoseidonHash.trim().length > 0
+    ? zkMeta.zkPoseidonHash
+    : undefined;
 
-      const cacheBundleHash = bundleHash;
-      const cachePoseidonHash = zkMeta?.zkPoseidonHash;
-      if (cacheBundleHash && cachePoseidonHash) {
-        const cached = await readVerificationCache({
-          bundleHash: cacheBundleHash,
-          zkPoseidonHash: cachePoseidonHash,
-          verificationVersion: cacheVerificationVersion,
-        });
-        if (cached && active) {
-          setZkVerify(true);
-          setZkVerifiedCached(true);
-          setVerificationCacheEntry({ ...cached, zkVerifiedCached: true });
-          return;
-        }
-      }
+if (typeof cacheBundleHash === "string" && cacheBundleHash.trim().length > 0 && cachePoseidonHash) {
+  const cached = await readVerificationCache({
+    bundleHash: cacheBundleHash,
+    zkPoseidonHash: cachePoseidonHash,
+    verificationVersion: cacheVerificationVersion,
+  });
+
+  if (cached && active) {
+    setZkVerify(true);
+    setZkVerifiedCached(true);
+    setVerificationCacheEntry({ ...cached, zkVerifiedCached: true });
+    return;
+  }
+}
+
 
       if (!zkVkey) {
         try {
@@ -1497,22 +1512,23 @@ export default function VerifyPage(): ReactElement {
       if (!active) return;
       setZkVerify(verified);
       setZkVerifiedCached(false);
+if (verified && typeof cacheBundleHash === "string" && cacheBundleHash.trim().length > 0 && cachePoseidonHash) {
+  const entry = await buildVerificationCacheRecord({
+    bundleHash: cacheBundleHash,
+    zkPoseidonHash: cachePoseidonHash,
+    verificationVersion: cacheVerificationVersion,
+    verifiedAtPulse: stewardVerifiedPulse ?? undefined,
+    verifier: verificationSource,
+    createdAtMs: Date.now(),
+    expiresAtPulse: null,
+  });
 
-      if (verified && cacheBundleHash && cachePoseidonHash) {
-        const entry = await buildVerificationCacheRecord({
-          bundleHash: cacheBundleHash,
-          zkPoseidonHash: cachePoseidonHash,
-          verificationVersion: cacheVerificationVersion,
-          verifiedAtPulse: stewardVerifiedPulse ?? undefined,
-          verifier: verificationSource,
-          createdAtMs: Date.now(),
-          expiresAtPulse: null,
-        });
-        await writeVerificationCache(entry);
-        if (active) setVerificationCacheEntry(entry);
-      } else {
-        setVerificationCacheEntry(null);
-      }
+  await writeVerificationCache(entry);
+  if (active) setVerificationCacheEntry(entry);
+} else {
+  setVerificationCacheEntry(null);
+}
+
     })();
 
     return () => {
@@ -1571,6 +1587,16 @@ export default function VerifyPage(): ReactElement {
     },
     [identityScanBusy]
   );
+  const verificationReceipt = useMemo<VerificationReceipt | null>(() => {
+    if (!bundleHash || !zkMeta?.zkPoseidonHash || stewardVerifiedPulse == null) return null;
+    return buildVerificationReceipt({
+      bundleHash,
+      zkPoseidonHash: zkMeta.zkPoseidonHash,
+      verifiedAtPulse: stewardVerifiedPulse,
+      verifier: verificationSource,
+      verificationVersion,
+    });
+  }, [bundleHash, stewardVerifiedPulse, verificationSource, verificationVersion, zkMeta?.zkPoseidonHash]);
 
   React.useEffect(() => {
     if (!identityScanRequested) return;
@@ -1816,16 +1842,6 @@ body: [
   const stewardPulseLabel =
     stewardVerifiedPulse == null ? "Verified pulse unavailable (legacy bundle)" : `Steward Verified @ Pulse ${stewardVerifiedPulse}`;
 
-  const verificationReceipt = useMemo<VerificationReceipt | null>(() => {
-    if (!bundleHash || !zkMeta?.zkPoseidonHash || stewardVerifiedPulse == null) return null;
-    return buildVerificationReceipt({
-      bundleHash,
-      zkPoseidonHash: zkMeta.zkPoseidonHash,
-      verifiedAtPulse: stewardVerifiedPulse,
-      verifier: verificationSource,
-      verificationVersion,
-    });
-  }, [bundleHash, stewardVerifiedPulse, verificationSource, verificationVersion, zkMeta?.zkPoseidonHash]);
 
   React.useEffect(() => {
     let active = true;
@@ -1842,24 +1858,32 @@ body: [
     };
   }, [verificationReceipt]);
 
-  React.useEffect(() => {
-    let active = true;
-    if (!bundleHash || !zkMeta?.zkPoseidonHash) {
-      setCacheKey("");
-      return;
-    }
-    (async () => {
-      const key = await buildVerificationCacheKey({
-        bundleHash,
-        zkPoseidonHash: zkMeta.zkPoseidonHash,
-        verificationVersion: cacheVerificationVersion,
-      });
-      if (active) setCacheKey(key);
-    })();
-    return () => {
-      active = false;
-    };
-  }, [bundleHash, cacheVerificationVersion, zkMeta?.zkPoseidonHash]);
+React.useEffect(() => {
+  let active = true;
+
+  const poseidon =
+    typeof zkMeta?.zkPoseidonHash === "string" && zkMeta.zkPoseidonHash.trim().length > 0
+      ? zkMeta.zkPoseidonHash
+      : undefined;
+
+  if (!bundleHash || !poseidon) {
+    setCacheKey("");
+    return;
+  }
+
+  (async () => {
+    const key = await buildVerificationCacheKey({
+      bundleHash,
+      zkPoseidonHash: poseidon,
+      verificationVersion: cacheVerificationVersion,
+    });
+    if (active) setCacheKey(key);
+  })();
+
+  return () => {
+    active = false;
+  };
+}, [bundleHash, cacheVerificationVersion, zkMeta?.zkPoseidonHash]);
 
   const auditBundleText = useMemo(() => {
     if (!proofCapsule) return "";

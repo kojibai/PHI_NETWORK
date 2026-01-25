@@ -109,7 +109,6 @@ import type { SigilProofHints } from "../../types/sigil";
 import type { SigilSharePayloadLoose } from "../SigilExplorer/types";
 import {
   apiFetchWithFailover,
-  API_URLS_PATH,
   loadApiBackupDeadUntil,
   loadApiBaseHint,
   urlUrls,
