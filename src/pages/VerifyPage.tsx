@@ -1609,8 +1609,8 @@ body: [
       shareUrl: embeddedProof?.transport?.shareUrl ?? embeddedProof?.shareUrl,
       verifierUrl: embeddedProof?.transport?.verifierUrl ?? proofVerifierUrl,
       verifier: embeddedProof?.transport?.verifier ?? embeddedProof?.verifier ?? verificationSource,
-      verifiedAtPulse: embeddedProof?.transport?.verifiedAtPulse ?? stewardVerifiedPulse ?? null,
-      proofHints: embeddedProof?.transport?.proofHints ?? embeddedProof?.proofHints ?? zkMeta?.proofHints ?? null,
+      verifiedAtPulse: embeddedProof?.transport?.verifiedAtPulse ?? stewardVerifiedPulse ?? undefined,
+      proofHints: embeddedProof?.transport?.proofHints ?? embeddedProof?.proofHints ?? zkMeta?.proofHints ?? undefined,
     };
     const normalized = normalizeBundle({
       hashAlg: PROOF_HASH_ALG,
