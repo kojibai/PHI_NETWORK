@@ -1,6 +1,12 @@
 // src/utils/qrExport.ts
 import QRCode from "qrcode";
-import { ensureMetadata, ensureTitleAndDesc, ensureViewBoxOnClone, ensureXmlns, NS } from "./svgMeta";
+import {
+  ensureMetadata,
+  ensureTitleAndDesc,
+  ensureViewBoxOnClone,
+  ensureXmlns,
+  NS,
+} from "./svgMeta";
 
 export const EXPORT_PX = 1024;
 export const POSTER_PX = 2048;
@@ -262,51 +268,160 @@ export async function svgBlobForExport(
   return new Blob([finalXml], { type: "image/svg+xml;charset=utf-8" });
 }
 
+function isIOSWebKit(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent || "";
+  const platform = (navigator as unknown as { platform?: string }).platform || "";
+  const maxTouchPoints = (navigator as unknown as { maxTouchPoints?: number }).maxTouchPoints ?? 0;
+
+  const isApple =
+    /iPad|iPhone|iPod/i.test(ua) ||
+    /iPad|iPhone|iPod/i.test(platform) ||
+    (platform === "MacIntel" && maxTouchPoints > 1);
+
+  return isApple;
+}
+
+function stripHeavyNonVisualForRaster(svgText: string): string {
+  try {
+    const dom = new DOMParser().parseFromString(svgText, "image/svg+xml");
+    const svg = dom.documentElement as unknown as SVGSVGElement;
+    if (!svg || svg.nodeName.toLowerCase() !== "svg") return svgText;
+
+    ensureXmlns(svg);
+
+    // Keep ONLY the first <metadata>. Remove all other metadata blocks.
+    const metas = Array.from(svg.querySelectorAll("metadata"));
+    metas.forEach((m, i) => {
+      if (i === 0) return;
+      m.parentNode?.removeChild(m);
+    });
+
+    // If the remaining metadata is enormous (ZK bundle often is), truncate for raster only.
+    const keep = metas[0];
+    if (keep) {
+      const t = keep.textContent ?? "";
+      const MAX_META_CHARS = 20_000;
+      if (t.length > MAX_META_CHARS) {
+        keep.textContent = t.slice(0, MAX_META_CHARS);
+        keep.setAttribute("data-raster-truncated", "1");
+      }
+    }
+
+    // Remove any absurdly large attributes (common culprit: JSON stuffed into data-*).
+    const ATTR_MAX = 10_000;
+    for (const attr of Array.from(svg.attributes)) {
+      if (attr.value.length > ATTR_MAX) {
+        svg.removeAttribute(attr.name);
+      }
+    }
+
+    // Also strip giant attributes on descendants
+    svg.querySelectorAll<SVGElement>("*").forEach((el) => {
+      for (const a of Array.from(el.attributes)) {
+        if (a.value.length > ATTR_MAX) el.removeAttribute(a.name);
+      }
+    });
+
+    const xml = new XMLSerializer().serializeToString(svg);
+    return xml.startsWith("<?xml")
+      ? xml
+      : `<?xml version="1.0" encoding="UTF-8"?>\n${xml}`;
+  } catch {
+    return svgText;
+  }
+}
+
+async function maybePrepareSvgBlobForRaster(svgBlob: Blob): Promise<Blob> {
+  if (!svgBlob.type.includes("svg")) return svgBlob;
+  if (svgBlob.size < 250_000) return svgBlob;
+
+  const txt = await svgBlob.text();
+  const stripped = stripHeavyNonVisualForRaster(txt);
+  if (stripped === txt) return svgBlob;
+
+  return new Blob([stripped], { type: "image/svg+xml;charset=utf-8" });
+}
+
+function rafOnce(): Promise<void> {
+  return new Promise((resolve) => requestAnimationFrame(() => resolve()));
+}
+
+function waitImgLoad(img: HTMLImageElement): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const onLoad = () => {
+      cleanup();
+      resolve();
+    };
+    const onErr = () => {
+      cleanup();
+      reject(new Error("Image load failed"));
+    };
+    const cleanup = () => {
+      img.removeEventListener("load", onLoad);
+      img.removeEventListener("error", onErr);
+    };
+
+    img.addEventListener("load", onLoad, { once: true });
+    img.addEventListener("error", onErr, { once: true });
+
+    if (img.complete) queueMicrotask(() => onLoad());
+  });
+}
+
 function getSafePngPx(requestedPx: number): number {
   if (typeof window === "undefined") return requestedPx;
+
   const maxScreen = Math.max(window.screen.width, window.screen.height);
   if (!Number.isFinite(maxScreen)) return requestedPx;
-  if (maxScreen <= 1024) {
-    return Math.min(requestedPx, 2048);
-  }
+
+  // Old behavior preserved: small screens cap at 2048.
+  if (maxScreen <= 1024) return Math.min(requestedPx, 2048);
+
   return requestedPx;
 }
 
-export async function pngBlobFromSvg(svgBlob: Blob, px = EXPORT_PX) {
+function pickPxCandidates(requestedPx: number): readonly number[] {
+  if (!isIOSWebKit()) return [requestedPx];
+
+  // iOS: try largest → smaller until it succeeds
+  const raw = [requestedPx, 4096, 3072, 2048, 1536, 1024];
+  const unique: number[] = [];
+  for (const n of raw) {
+    if (!Number.isFinite(n) || n <= 0) continue;
+    if (!unique.includes(n)) unique.push(n);
+  }
+  unique.sort((a, b) => b - a);
+  return unique;
+}
+
+async function rasterizeSvgToPngAtSize(svgBlob: Blob, targetPx: number): Promise<Blob> {
   const url = URL.createObjectURL(svgBlob);
   try {
     const img = new Image();
     img.decoding = "async";
+    img.src = url;
 
-    if (typeof img.decode === "function") {
-      img.src = url;
-      await img.decode();
-    } else {
-      await new Promise<void>((res, rej) => {
-        let settled = false;
-        const resolveOnce = () => {
-          if (settled) return;
-          settled = true;
-          res();
-        };
-        const rejectOnce = (err: unknown) => {
-          if (settled) return;
-          settled = true;
-          rej(err);
-        };
-        img.onload = resolveOnce;
-        img.onerror = rejectOnce;
-        img.src = url;
-        if (img.complete) {
-          resolveOnce();
-        }
-      });
+    // WebKit: always wait "load" first
+    await waitImgLoad(img);
+
+    // Then try decode if present
+    const maybeDecode = (img as unknown as { decode?: () => Promise<void> }).decode;
+    if (typeof maybeDecode === "function") {
+      try {
+        await maybeDecode.call(img);
+      } catch {
+        // ignore decode flakiness on WebKit
+      }
     }
 
-    const targetPx = getSafePngPx(px);
+    // Give WebKit one frame to finish rasterization
+    await rafOnce();
+
     const canvas = document.createElement("canvas");
     canvas.width = targetPx;
     canvas.height = targetPx;
+
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("Canvas unsupported");
 
@@ -323,4 +438,29 @@ export async function pngBlobFromSvg(svgBlob: Blob, px = EXPORT_PX) {
   } finally {
     URL.revokeObjectURL(url);
   }
+}
+
+export async function pngBlobFromSvg(svgBlob: Blob, px = EXPORT_PX): Promise<Blob> {
+  // Raster-safe blob (strip heavy proof payloads for PNG only)
+  const rasterBlob = await maybePrepareSvgBlobForRaster(svgBlob);
+
+  // Requested (with screen cap)
+  const requested = getSafePngPx(px);
+
+  // iOS fallback ladder
+  const candidates = pickPxCandidates(requested);
+
+  let lastErr: unknown = null;
+
+  for (const candidate of candidates) {
+    try {
+      return await rasterizeSvgToPngAtSize(rasterBlob, candidate);
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+
+  const msg =
+    lastErr instanceof Error ? lastErr.message : "Unknown PNG rasterization failure";
+  throw new Error(`pngBlobFromSvg failed at all sizes. Last error: ${msg}`);
 }
