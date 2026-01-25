@@ -21,6 +21,7 @@ import { computeZkPoseidonHash } from "../../utils/kai";
 import { ensureTitleAndDesc, ensureViewBoxOnClone, ensureXmlns } from "../../utils/svgMeta";
 import {
   buildBundleRoot,
+  buildZkPublicInputs,
   buildVerifierUrl,
   computeBundleHash,
   hashProofCapsuleV1,
@@ -32,6 +33,7 @@ import {
   PROOF_HASH_ALG,
   ZK_PUBLIC_INPUTS_CONTRACT,
   ZK_STATEMENT_BINDING,
+  ZK_STATEMENT_ENCODING,
   ZK_STATEMENT_DOMAIN,
   type ProofCapsuleV1,
 } from "../../components/KaiVoh/verifierProof";
@@ -571,8 +573,9 @@ export async function exportZIP(ctx: {
       if (!allowMissingProof) throw new Error("ZK proof missing");
     }
 
-    if (zkPublicInputs) {
-      svgClone.setAttribute("data-zk-public-inputs", JSON.stringify(zkPublicInputs));
+    const normalizedZkPublicInputs = zkPoseidonHash ? buildZkPublicInputs(zkPoseidonHash) : zkPublicInputs;
+    if (normalizedZkPublicInputs) {
+      svgClone.setAttribute("data-zk-public-inputs", JSON.stringify(normalizedZkPublicInputs));
     }
     if (zkPoseidonHash) {
       svgClone.setAttribute("data-zk-scheme", "groth16-poseidon");
@@ -595,6 +598,7 @@ export async function exportZIP(ctx: {
           publicInputOf: ZK_STATEMENT_BINDING,
           domainTag: ZK_STATEMENT_DOMAIN,
           publicInputsContract: ZK_PUBLIC_INPUTS_CONTRACT,
+          encoding: ZK_STATEMENT_ENCODING,
         }
       : undefined;
     const zkMeta = zkPoseidonHash
@@ -617,7 +621,7 @@ export async function exportZIP(ctx: {
       svgHash,
       zkPoseidonHash,
       zkProof,
-      zkPublicInputs,
+      zkPublicInputs: normalizedZkPublicInputs,
       zkMeta: zkMetaNormalized,
     };
 

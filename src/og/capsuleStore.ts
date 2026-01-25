@@ -73,6 +73,16 @@ function parseRecord(raw: unknown): VerifiedCardData | null {
   const g16Ok = parseBoolean(record.g16Ok);
   const verifierSlug = typeof record.verifierSlug === "string" ? record.verifierSlug : undefined;
   const sigilSvg = typeof record.sigilSvg === "string" ? record.sigilSvg : undefined;
+  const verifier = typeof record.verifier === "string" ? record.verifier : undefined;
+  const verificationVersion = typeof record.verificationVersion === "string" ? record.verificationVersion : undefined;
+  const bundleHash = typeof record.bundleHash === "string" ? record.bundleHash : undefined;
+  const zkPoseidonHash = typeof record.zkPoseidonHash === "string" ? record.zkPoseidonHash : undefined;
+  const receipt = typeof record.receipt === "object" && record.receipt !== null ? (record.receipt as VerifiedCardData["receipt"]) : undefined;
+  const receiptHash = typeof record.receiptHash === "string" ? record.receiptHash : undefined;
+  const verificationSig =
+    typeof record.verificationSig === "object" && record.verificationSig !== null
+      ? (record.verificationSig as VerifiedCardData["verificationSig"])
+      : undefined;
 
   if (!capsuleHash || pulse == null || !phiKey || kasOk == null || g16Ok == null) return null;
 
@@ -84,6 +94,13 @@ function parseRecord(raw: unknown): VerifiedCardData | null {
     kasOk,
     g16Ok,
     verifierSlug,
+    verifier,
+    verificationVersion,
+    bundleHash,
+    zkPoseidonHash,
+    receipt,
+    receiptHash,
+    verificationSig,
     sigilSvg,
   };
 }

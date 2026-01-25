@@ -72,8 +72,36 @@ export function buildVerifiedCardSvg(data: VerifiedCardData): string {
 
   const phiShort = shortPhiKey(phikey);
 
+  const receiptPayload =
+    data.receipt ??
+    (data.bundleHash && data.zkPoseidonHash && data.verificationVersion && data.verifier
+      ? {
+          v: "KVR-1",
+          bundleHash: data.bundleHash,
+          zkPoseidonHash: data.zkPoseidonHash,
+          verifiedAtPulse,
+          verifier: data.verifier,
+          verificationVersion: data.verificationVersion,
+        }
+      : undefined);
+  const receiptMeta: Record<string, unknown> = {};
+  const bundleHash = receiptPayload?.bundleHash ?? data.bundleHash;
+  const zkPoseidonHash = receiptPayload?.zkPoseidonHash ?? data.zkPoseidonHash;
+  const verifier = receiptPayload?.verifier ?? data.verifier;
+  const verificationVersion = receiptPayload?.verificationVersion ?? data.verificationVersion;
+  if (bundleHash) receiptMeta.bundleHash = bundleHash;
+  if (zkPoseidonHash) receiptMeta.zkPoseidonHash = zkPoseidonHash;
+  if (verifier) receiptMeta.verifier = verifier;
+  if (verificationVersion) receiptMeta.verificationVersion = verificationVersion;
+  receiptMeta.verifiedAtPulse = receiptPayload?.verifiedAtPulse ?? verifiedAtPulse;
+  if (receiptPayload) receiptMeta.receipt = receiptPayload;
+  if (data.receiptHash) receiptMeta.receiptHash = data.receiptHash;
+  if (data.verificationSig) receiptMeta.verificationSig = data.verificationSig;
+  const receiptJson = JSON.stringify(receiptMeta);
+
   return `
 <svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HEIGHT}">
+  <metadata id="kai-verified-receipt"><![CDATA[${receiptJson}]]></metadata>
   <defs>
     <linearGradient id="${id}-bg" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%" stop-color="#05060A" />

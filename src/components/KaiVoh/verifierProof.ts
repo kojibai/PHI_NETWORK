@@ -17,8 +17,13 @@ import { jcsCanonicalize } from "../../utils/jcs";
 import { base64UrlEncode, hexToBytes, sha256Hex } from "../../utils/sha256";
 import { svgCanonicalForHash } from "../../utils/svgProof";
 import type { AuthorSig } from "../../utils/authorSig";
+import type { VerificationCache } from "../../utils/verificationCache";
+import type { VerificationReceipt, VerificationSig } from "../../utils/verificationReceipt";
+
+export type { VerificationCache } from "../../utils/verificationCache";
 
 export const PROOF_HASH_ALG = "sha256" as const;
+// JCS = RFC 8785 canonical JSON.
 export const PROOF_CANON = "JCS" as const;
 export const PROOF_METADATA_ID = "kai-voh-proof" as const;
 export const VERIFICATION_BUNDLE_VERSION = "KVB-1.2" as const;
@@ -29,6 +34,18 @@ export const PROOF_BINDINGS = {
 } as const;
 export const ZK_STATEMENT_BINDING = "Poseidon(capsuleHash|svgHash|domainTag)" as const;
 export const ZK_STATEMENT_DOMAIN = "kairos.sigil.zk.v1" as const;
+/**
+ * h2f mapping for Poseidon statement (documentation only):
+ * - capsuleHash/svgHash (hex sha256, 32 bytes): BigInt("0x" + hex) mod FIELD_PRIME
+ * - domainTag (UTF-8 string): BigInt("0x" + sha256(utf8(tag))) mod FIELD_PRIME
+ */
+export const ZK_STATEMENT_ENCODING = {
+  arity: 3,
+  inputs: ["capsuleHash", "svgHash", "domainTag"],
+  interpretation: "field_elements",
+  fieldMap: "h2f",
+  poseidon: "Poseidon([h2f(capsuleHash), h2f(svgHash), h2f(domainTag)])",
+} as const;
 export const ZK_PUBLIC_INPUTS_CONTRACT = {
   arity: 2,
   invariant: "publicInputs[0] == publicInputs[1]",
@@ -38,22 +55,22 @@ export const ZK_PUBLIC_INPUTS_CONTRACT = {
 export type VerificationSource = "local" | "pbi";
 export type ProofBundleBindings = typeof PROOF_BINDINGS;
 export type ZkPublicInputsContract = typeof ZK_PUBLIC_INPUTS_CONTRACT;
+export type ZkStatementEncoding = typeof ZK_STATEMENT_ENCODING;
 export type ZkStatement = {
   publicInputOf: typeof ZK_STATEMENT_BINDING;
   domainTag: string;
   publicInputsContract?: ZkPublicInputsContract;
+  encoding?: ZkStatementEncoding;
 };
-export type ZkCurve = "bn128" | "BLS12-381" | (string & {});
+export type ZkCurve = "bn128" | "BLS12-381";
 export type ZkMeta = Readonly<{
   protocol?: string;
   curve?: ZkCurve;
+  curveAliases?: string[];
   scheme?: string;
   circuitId?: string;
   vkHash?: string;
   warnings?: string[];
-}>;
-export type VerificationCache = Readonly<{
-  zkVerifiedCached?: boolean;
 }>;
 export type ProofBundleTransport = Readonly<{
   shareUrl?: string;
@@ -114,7 +131,12 @@ export function buildVerifierSlug(pulse: number, kaiSignature: string, verifiedA
   return `${pulse}-${shortSig}`;
 }
 
-export function buildVerifierUrl(pulse: number, kaiSignature: string, verifierBaseUrl?: string, verifiedAtPulse?: number): string {
+export function buildVerifierUrl(
+  pulse: number,
+  kaiSignature: string,
+  verifierBaseUrl?: string,
+  verifiedAtPulse?: number,
+): string {
   const base = (verifierBaseUrl ?? defaultHostedVerifierBaseUrl()).replace(/\/+$/, "");
   const slug = encodeURIComponent(buildVerifierSlug(pulse, kaiSignature, verifiedAtPulse));
   return `${base}/${slug}`;
@@ -163,9 +185,10 @@ export function normalizeChakraDay(v?: string): ChakraDay | undefined {
 /*                           ZK curve normalization                           */
 /* -------------------------------------------------------------------------- */
 
-export function normalizeZkCurve(curve: string): ZkCurve {
+export function normalizeZkCurve(curve: unknown): ZkCurve | undefined {
+  if (curve == null || typeof curve !== "string") return undefined;
   const trimmed = curve.trim();
-  if (!trimmed) return trimmed;
+  if (!trimmed) return undefined;
   const normalized = trimmed.toLowerCase();
   if (normalized === "bn128" || normalized === "altbn128" || normalized === "bn254") {
     return "bn128";
@@ -173,7 +196,14 @@ export function normalizeZkCurve(curve: string): ZkCurve {
   if (normalized === "bls12-381") {
     return "BLS12-381";
   }
-  return trimmed;
+  return undefined;
+}
+
+export function inferZkCurveFromContext(params: { protocol?: string; scheme?: string; circuitId?: string }): ZkCurve | undefined {
+  if (params.protocol === "groth16" && params.scheme === "groth16-poseidon" && params.circuitId === "sigil_proof") {
+    return "bn128";
+  }
+  return undefined;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -231,6 +261,7 @@ export type ProofBundleLike = {
   canon?: string;
   bindings?: ProofBundleBindings;
   zkStatement?: ZkStatement;
+  zkScheme?: string;
   proofCapsule?: ProofCapsuleV1;
   capsuleHash?: string;
   svgHash?: string;
@@ -245,6 +276,10 @@ export type ProofBundleLike = {
   zkPublicInputs?: unknown;
   zkMeta?: ZkMeta;
   verificationCache?: VerificationCache;
+  cacheKey?: string;
+  receipt?: VerificationReceipt;
+  receiptHash?: string;
+  verificationSig?: VerificationSig;
   transport?: ProofBundleTransport;
   bundleRoot?: BundleRoot;
   authorSig?: AuthorSig | null;
@@ -287,43 +322,178 @@ export type NormalizedBundle = Readonly<{
   verificationCache?: VerificationCache;
   transport?: ProofBundleTransport;
   zkPoseidonHash?: string;
+  cacheKey?: string;
+  receipt?: VerificationReceipt;
+  receiptHash?: string;
+  verificationSig?: VerificationSig;
 }>;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+/**
+ * IMPORTANT:
+ * When we "parse" verificationCache from unknown bundles, we treat it as a record
+ * to safely read properties without TS inferring {}.
+ */
+type VerificationCacheRecord = Partial<VerificationCache> & Record<string, unknown>;
+
 type ZkProofWithCurve = Readonly<Record<string, unknown> & { curve?: ZkCurve }>;
 
 export function normalizeProofBundleZkCurves(input: {
   zkProof?: unknown;
   zkMeta?: ZkMeta;
-}): { zkProof?: unknown; zkMeta?: ZkMeta; curve?: ZkCurve } {
-  const { zkProof, zkMeta } = input;
-  if (!isRecord(zkProof) || typeof zkProof.curve !== "string") {
-    return { zkProof, zkMeta };
-  }
+  bundleRoot?: BundleRoot;
+  proofHints?: unknown;
+  zkScheme?: string;
+}): { zkProof?: unknown; zkMeta?: ZkMeta; bundleRoot?: BundleRoot; curve?: ZkCurve } {
+  const { zkProof, zkMeta, bundleRoot } = input;
+  const proofRecord = isRecord(zkProof) ? zkProof : undefined;
+  const rootRecord = isRecord(bundleRoot) ? bundleRoot : undefined;
+  const rootProofRecord = rootRecord && isRecord(rootRecord.zkProof) ? rootRecord.zkProof : undefined;
 
-  const normalizedCurve = normalizeZkCurve(zkProof.curve);
-  const normalizedProof: ZkProofWithCurve = { ...zkProof, curve: normalizedCurve };
+  const proofCurve = normalizeZkCurve(proofRecord?.curve);
+  const metaCurveRaw = typeof zkMeta?.curve === "string" ? zkMeta.curve.trim() : undefined;
+  const metaCurve = normalizeZkCurve(metaCurveRaw);
+  const rootProofCurve = normalizeZkCurve(rootProofRecord?.curve);
+  const rootMetaRaw =
+    rootRecord && isRecord(rootRecord.zkMeta) && typeof (rootRecord.zkMeta as Record<string, unknown>).curve === "string"
+      ? String((rootRecord.zkMeta as Record<string, unknown>).curve).trim()
+      : undefined;
+  const rootMetaCurve = normalizeZkCurve(rootMetaRaw);
 
-  if (!zkMeta) {
-    return { zkProof: normalizedProof, zkMeta, curve: normalizedCurve };
-  }
+  const proofPoints = hasProofPoints(proofRecord) || hasProofPoints(rootProofRecord);
+  const protocol =
+    typeof proofRecord?.protocol === "string"
+      ? (proofRecord.protocol as string)
+      : typeof zkMeta?.protocol === "string"
+        ? zkMeta.protocol
+        : proofPoints
+          ? "groth16"
+          : undefined;
+  const scheme =
+    typeof zkMeta?.scheme === "string"
+      ? zkMeta.scheme
+      : typeof input.zkScheme === "string"
+        ? input.zkScheme
+        : isRecord(input.proofHints) && typeof input.proofHints.scheme === "string"
+          ? (input.proofHints.scheme as string)
+          : undefined;
+  const circuitId = typeof zkMeta?.circuitId === "string" ? zkMeta.circuitId : undefined;
+  const inferredCurve = inferZkCurveFromContext({ protocol, scheme, circuitId });
 
-  const metaCurve = typeof zkMeta.curve === "string" ? zkMeta.curve.trim() : undefined;
-  const warnings = Array.isArray(zkMeta.warnings) ? [...zkMeta.warnings] : [];
-  if (metaCurve && normalizeZkCurve(metaCurve) !== normalizedCurve) {
-    warnings.push(`curve_mismatch_corrected: meta=${metaCurve} proof=${normalizedCurve}`);
-  }
+  const effectiveProofCurve = proofCurve ?? rootProofCurve;
 
-  const normalizedMeta: ZkMeta = {
-    ...zkMeta,
-    curve: normalizedCurve,
-    warnings: warnings.length ? warnings : undefined,
+  const normalizeProof = (proof: Record<string, unknown>, curve?: ZkCurve): ZkProofWithCurve => {
+    const normalized: Record<string, unknown> = { ...proof };
+    if (curve) {
+      normalized.curve = curve;
+    } else if ("curve" in normalized) {
+      delete normalized.curve;
+    }
+    return normalized as ZkProofWithCurve;
   };
 
-  return { zkProof: normalizedProof, zkMeta: normalizedMeta, curve: normalizedCurve };
+  const applyCurveAliases = (curve?: ZkCurve): string[] | undefined => {
+    if (curve === "bn128") return ["bn254", "altbn128"];
+    return undefined;
+  };
+
+  const normalizeMeta = (meta: ZkMeta, curve: ZkCurve, warning?: string): ZkMeta => {
+    const warnings = warning
+      ? Array.isArray(meta.warnings)
+        ? [...meta.warnings, warning]
+        : [warning]
+      : meta.warnings;
+    const curveAliases = applyCurveAliases(curve) ?? meta.curveAliases;
+    return {
+      ...meta,
+      curve,
+      curveAliases,
+      warnings: warnings && warnings.length ? warnings : undefined,
+    };
+  };
+
+  let normalizedProof = proofRecord ? normalizeProof(proofRecord, effectiveProofCurve) : zkProof;
+  let normalizedMeta = zkMeta;
+  let normalizedRoot = rootRecord;
+
+  if (effectiveProofCurve) {
+    if (zkMeta) {
+      const warning =
+        metaCurveRaw && metaCurve !== effectiveProofCurve
+          ? `curve_mismatch_corrected meta=${metaCurveRaw} proof=${effectiveProofCurve}`
+          : undefined;
+      normalizedMeta = normalizeMeta(zkMeta, effectiveProofCurve, warning);
+    }
+    if (rootRecord) {
+      const rootMeta =
+        isRecord(rootRecord.zkMeta) && rootRecord.zkMeta ? (rootRecord.zkMeta as ZkMeta) : undefined;
+      const rootWarning =
+        rootMetaRaw && rootMetaCurve !== effectiveProofCurve
+          ? `curve_mismatch_corrected meta=${rootMetaRaw} proof=${effectiveProofCurve}`
+          : undefined;
+      const normalizedRootMeta = rootMeta ? normalizeMeta(rootMeta, effectiveProofCurve, rootWarning) : rootMeta;
+      normalizedRoot = {
+        ...rootRecord,
+        zkProof: rootProofRecord ? normalizeProof(rootProofRecord, effectiveProofCurve) : rootRecord.zkProof,
+        zkMeta: normalizedRootMeta,
+      };
+    }
+  } else if (proofPoints) {
+    if (metaCurve) {
+      if (zkMeta) normalizedMeta = normalizeMeta(zkMeta, metaCurve);
+      if (rootRecord) {
+        const rootMeta =
+          isRecord(rootRecord.zkMeta) && rootRecord.zkMeta ? (rootRecord.zkMeta as ZkMeta) : undefined;
+        normalizedRoot = {
+          ...rootRecord,
+          zkMeta: rootMeta ? normalizeMeta(rootMeta, metaCurve) : rootMeta,
+          zkProof: rootProofRecord ? normalizeProof(rootProofRecord, rootProofCurve) : rootRecord.zkProof,
+        };
+      }
+      if (proofRecord) normalizedProof = normalizeProof(proofRecord, undefined);
+    } else if (inferredCurve) {
+      if (proofRecord) normalizedProof = normalizeProof(proofRecord, inferredCurve);
+      if (zkMeta) {
+        normalizedMeta = normalizeMeta(zkMeta, inferredCurve);
+      } else {
+        normalizedMeta = { curve: inferredCurve, curveAliases: applyCurveAliases(inferredCurve) };
+      }
+      if (rootRecord) {
+        const rootMeta =
+          isRecord(rootRecord.zkMeta) && rootRecord.zkMeta ? (rootRecord.zkMeta as ZkMeta) : undefined;
+        const normalizedRootMeta = rootMeta ? normalizeMeta(rootMeta, inferredCurve) : rootMeta;
+        normalizedRoot = {
+          ...rootRecord,
+          zkProof: rootProofRecord ? normalizeProof(rootProofRecord, inferredCurve) : rootRecord.zkProof,
+          zkMeta: normalizedRootMeta,
+        };
+      }
+    } else if (proofRecord) {
+      normalizedProof = normalizeProof(proofRecord, undefined);
+    }
+  } else {
+    if (zkMeta && metaCurve) normalizedMeta = normalizeMeta(zkMeta, metaCurve);
+    if (rootRecord && metaCurve) {
+      const rootMeta =
+        isRecord(rootRecord.zkMeta) && rootRecord.zkMeta ? (rootRecord.zkMeta as ZkMeta) : undefined;
+      normalizedRoot = {
+        ...rootRecord,
+        zkMeta: rootMeta ? normalizeMeta(rootMeta, metaCurve) : rootMeta,
+        zkProof: rootProofRecord ? normalizeProof(rootProofRecord, rootProofCurve) : rootRecord.zkProof,
+      };
+    }
+    if (proofRecord) normalizedProof = normalizeProof(proofRecord, undefined);
+  }
+
+  return {
+    zkProof: normalizedProof,
+    zkMeta: normalizedMeta,
+    bundleRoot: normalizedRoot,
+    curve: effectiveProofCurve ?? metaCurve ?? inferredCurve,
+  };
 }
 
 function dropUndefined<T extends Record<string, unknown>>(value: T): T {
@@ -331,21 +501,41 @@ function dropUndefined<T extends Record<string, unknown>>(value: T): T {
   return Object.fromEntries(entries) as T;
 }
 
-function withZkPublicInputsContract(statement: ZkStatement): ZkStatement {
-  if (statement.publicInputsContract) return statement;
-  return { ...statement, publicInputsContract: ZK_PUBLIC_INPUTS_CONTRACT };
+function withZkStatementDefaults(statement: ZkStatement): ZkStatement {
+  let next = statement;
+  if (!next.publicInputsContract) {
+    next = { ...next, publicInputsContract: ZK_PUBLIC_INPUTS_CONTRACT };
+  }
+  if (!next.encoding) {
+    next = { ...next, encoding: ZK_STATEMENT_ENCODING };
+  }
+  return next;
+}
+
+function normalizeCanonLabel(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  if (trimmed.toLowerCase() === "jcs") return PROOF_CANON;
+  if (/sorted keys|utf-8|no whitespace/i.test(trimmed)) return PROOF_CANON;
+  return trimmed;
+}
+
+export function buildZkPublicInputs(poseidonHash?: string): string[] | undefined {
+  if (typeof poseidonHash !== "string") return undefined;
+  const trimmed = poseidonHash.trim();
+  if (!trimmed) return undefined;
+  return [trimmed, trimmed];
 }
 
 function normalizeBundleRoot(root: Record<string, unknown>): BundleRoot {
   const bindings = isRecord(root.bindings) ? (root.bindings as ProofBundleBindings) : undefined;
-  const zkStatement = isRecord(root.zkStatement)
-    ? withZkPublicInputsContract(root.zkStatement as ZkStatement)
-    : undefined;
+  const zkStatement = isRecord(root.zkStatement) ? withZkStatementDefaults(root.zkStatement as ZkStatement) : undefined;
   const zkMeta = isRecord(root.zkMeta) ? (root.zkMeta as ZkMeta) : undefined;
   return dropUndefined({
     v: typeof root.v === "string" ? root.v : undefined,
     hashAlg: typeof root.hashAlg === "string" ? root.hashAlg : undefined,
-    canon: typeof root.canon === "string" ? root.canon : undefined,
+    canon: normalizeCanonLabel(root.canon),
     bindings,
     zkStatement,
     proofCapsule: isRecord(root.proofCapsule) ? (root.proofCapsule as ProofCapsuleV1) : undefined,
@@ -382,19 +572,29 @@ export async function hashBundle(bundleUnsigned: Record<string, unknown>): Promi
 export function buildBundleRoot(bundle: ProofBundleLike): BundleRoot {
   const bindings = bundle.bindings ?? PROOF_BINDINGS;
   const hashAlg = typeof bundle.hashAlg === "string" ? bundle.hashAlg : PROOF_HASH_ALG;
-  const canon = typeof bundle.canon === "string" ? bundle.canon : PROOF_CANON;
+  const canon = normalizeCanonLabel(bundle.canon) ?? PROOF_CANON;
   const zkStatementBase =
     bundle.zkStatement ??
     (bundle.zkPoseidonHash
       ? {
           publicInputOf: ZK_STATEMENT_BINDING,
           domainTag: ZK_STATEMENT_DOMAIN,
+          encoding: ZK_STATEMENT_ENCODING,
         }
       : undefined);
-  const zkStatement = zkStatementBase ? withZkPublicInputsContract(zkStatementBase) : undefined;
-  const normalizedZk = normalizeProofBundleZkCurves({ zkProof: bundle.zkProof, zkMeta: bundle.zkMeta });
+  const zkStatement = zkStatementBase ? withZkStatementDefaults(zkStatementBase) : undefined;
+
+  const normalizedZk = normalizeProofBundleZkCurves({
+    zkProof: bundle.zkProof,
+    zkMeta: bundle.zkMeta,
+    proofHints: bundle.proofHints,
+    zkScheme: bundle.zkScheme,
+  });
+
   const zkProof = normalizedZk.zkProof ?? bundle.zkProof;
   const zkMeta = normalizedZk.zkMeta ?? bundle.zkMeta;
+  const zkPublicInputs = buildZkPublicInputs(bundle.zkPoseidonHash) ?? (bundle.zkPublicInputs as unknown);
+
   return dropUndefined({
     v: typeof bundle.v === "string" ? bundle.v : undefined,
     hashAlg,
@@ -406,7 +606,7 @@ export function buildBundleRoot(bundle: ProofBundleLike): BundleRoot {
     svgHash: bundle.svgHash,
     zkPoseidonHash: bundle.zkPoseidonHash,
     zkProof,
-    zkPublicInputs: bundle.zkPublicInputs,
+    zkPublicInputs,
     zkMeta,
   });
 }
@@ -420,46 +620,92 @@ export function challengeFromBundleHash(bundleHash: string): string {
 }
 
 export function normalizeBundle(bundle: ProofBundleLike): NormalizedBundle {
-  const bundleRoot = isRecord(bundle.bundleRoot)
-    ? normalizeBundleRoot(bundle.bundleRoot)
-    : buildBundleRoot(bundle);
+  const normalizedZk = normalizeProofBundleZkCurves({
+    zkProof: bundle.zkProof,
+    zkMeta: bundle.zkMeta,
+    bundleRoot: isRecord(bundle.bundleRoot) ? (bundle.bundleRoot as BundleRoot) : undefined,
+    proofHints: bundle.proofHints,
+    zkScheme: bundle.zkScheme,
+  });
+
+  const bundleRootBase = normalizedZk.bundleRoot ?? (isRecord(bundle.bundleRoot) ? bundle.bundleRoot : undefined);
+  const normalizedZkProof = normalizedZk.zkProof ?? bundle.zkProof;
+  const normalizedZkMeta = normalizedZk.zkMeta ?? bundle.zkMeta;
+
+  const bundleRoot = bundleRootBase
+    ? normalizeBundleRoot(bundleRootBase as Record<string, unknown>)
+    : buildBundleRoot({
+        ...bundle,
+        zkProof: normalizedZkProof,
+        zkMeta: normalizedZkMeta,
+      });
+
   const bindings = bundleRoot.bindings ?? bundle.bindings ?? PROOF_BINDINGS;
   const zkStatement = bundleRoot.zkStatement ?? bundle.zkStatement;
-  const transportBase = isRecord(bundle.transport) ? bundle.transport : {};
+
+  const transportBase: Record<string, unknown> = isRecord(bundle.transport) ? (bundle.transport as Record<string, unknown>) : {};
   const transport = dropUndefined({
     shareUrl:
       typeof bundle.shareUrl === "string"
         ? bundle.shareUrl
         : typeof transportBase.shareUrl === "string"
-          ? transportBase.shareUrl
+          ? (transportBase.shareUrl as string)
           : undefined,
     verifierUrl:
       typeof bundle.verifierUrl === "string"
         ? bundle.verifierUrl
         : typeof transportBase.verifierUrl === "string"
-          ? transportBase.verifierUrl
+          ? (transportBase.verifierUrl as string)
           : undefined,
     verifiedAtPulse:
       typeof bundle.verifiedAtPulse === "number" && Number.isFinite(bundle.verifiedAtPulse)
         ? bundle.verifiedAtPulse
-        : typeof transportBase.verifiedAtPulse === "number" && Number.isFinite(transportBase.verifiedAtPulse)
-          ? transportBase.verifiedAtPulse
+        : typeof transportBase.verifiedAtPulse === "number" && Number.isFinite(transportBase.verifiedAtPulse as number)
+          ? (transportBase.verifiedAtPulse as number)
           : undefined,
-    verifier:
-      bundle.verifier ?? (transportBase.verifier as VerificationSource | undefined),
-    proofHints:
-      "proofHints" in bundle ? bundle.proofHints : transportBase.proofHints,
+    verifier: bundle.verifier ?? (transportBase.verifier as VerificationSource | undefined),
+    proofHints: "proofHints" in bundle ? bundle.proofHints : transportBase.proofHints,
   });
-  const verificationCacheBase = isRecord(bundle.verificationCache) ? bundle.verificationCache : {};
+
+  // ✅ FIX: ensure verificationCacheBase is record-shaped (not {}), so property reads are type-safe.
+  const verificationCacheBase: VerificationCacheRecord = isRecord(bundle.verificationCache)
+    ? (bundle.verificationCache as VerificationCacheRecord)
+    : ({} as VerificationCacheRecord);
+
   const zkVerifiedCached =
     typeof bundle.zkVerified === "boolean"
       ? bundle.zkVerified
       : typeof verificationCacheBase.zkVerifiedCached === "boolean"
         ? verificationCacheBase.zkVerifiedCached
         : undefined;
-  const verificationCache = dropUndefined({
+
+  const verificationCacheObj = dropUndefined({
+    v: verificationCacheBase.v === "KVC-1" ? verificationCacheBase.v : undefined,
+    cacheKey: typeof verificationCacheBase.cacheKey === "string" ? verificationCacheBase.cacheKey : undefined,
+    bundleHash: typeof verificationCacheBase.bundleHash === "string" ? verificationCacheBase.bundleHash : undefined,
+    zkPoseidonHash: typeof verificationCacheBase.zkPoseidonHash === "string" ? verificationCacheBase.zkPoseidonHash : undefined,
+    verificationVersion:
+      typeof verificationCacheBase.verificationVersion === "string" ? verificationCacheBase.verificationVersion : undefined,
+    verifiedAtPulse:
+      typeof verificationCacheBase.verifiedAtPulse === "number" && Number.isFinite(verificationCacheBase.verifiedAtPulse)
+        ? verificationCacheBase.verifiedAtPulse
+        : undefined,
+    verifier: typeof verificationCacheBase.verifier === "string" ? verificationCacheBase.verifier : undefined,
+    createdAtMs:
+      typeof verificationCacheBase.createdAtMs === "number" && Number.isFinite(verificationCacheBase.createdAtMs)
+        ? verificationCacheBase.createdAtMs
+        : undefined,
+    expiresAtPulse:
+      typeof verificationCacheBase.expiresAtPulse === "number" && Number.isFinite(verificationCacheBase.expiresAtPulse)
+        ? verificationCacheBase.expiresAtPulse
+        : verificationCacheBase.expiresAtPulse === null
+          ? null
+          : undefined,
     zkVerifiedCached,
   });
+
+  const verificationCache =
+    Object.keys(verificationCacheObj).length > 0 ? (verificationCacheObj as unknown as VerificationCache) : undefined;
 
   return {
     proofCapsule: bundleRoot.proofCapsule ?? bundle.proofCapsule,
@@ -468,15 +714,74 @@ export function normalizeBundle(bundle: ProofBundleLike): NormalizedBundle {
     bundleRoot,
     bundleHash: typeof bundle.bundleHash === "string" ? bundle.bundleHash : undefined,
     authorSig: bundle.authorSig ?? null,
-    zkProof: bundleRoot.zkProof ?? bundle.zkProof,
+    zkProof: bundleRoot.zkProof ?? normalizedZkProof,
     zkPublicInputs: bundleRoot.zkPublicInputs ?? bundle.zkPublicInputs,
     bindings,
     zkStatement,
-    zkMeta: bundleRoot.zkMeta ?? bundle.zkMeta,
-    verificationCache: Object.keys(verificationCache).length ? verificationCache : undefined,
-    transport: Object.keys(transport).length ? transport : undefined,
+    zkMeta: bundleRoot.zkMeta ?? normalizedZkMeta,
+    verificationCache,
+    transport: Object.keys(transport).length ? (transport as ProofBundleTransport) : undefined,
     zkPoseidonHash: bundleRoot.zkPoseidonHash ?? bundle.zkPoseidonHash,
+    cacheKey: typeof bundle.cacheKey === "string" ? bundle.cacheKey : undefined,
+    receipt: bundle.receipt,
+    receiptHash: typeof bundle.receiptHash === "string" ? bundle.receiptHash : undefined,
+    verificationSig: bundle.verificationSig,
   };
+}
+
+function hasProofPoints(proof: unknown): boolean {
+  if (!isRecord(proof)) return false;
+  return ["pi_a", "pi_b", "pi_c"].some((key) => proof[key] != null);
+}
+
+export function assertZkCurveConsistency(params: { zkProof?: unknown; zkMeta?: ZkMeta }): void {
+  const proofRecord = isRecord(params.zkProof) ? params.zkProof : undefined;
+  const proofCurve = normalizeZkCurve(proofRecord?.curve);
+  const metaCurve = normalizeZkCurve(params.zkMeta?.curve);
+  const proofPoints = hasProofPoints(params.zkProof);
+
+  const protocol =
+    typeof proofRecord?.protocol === "string"
+      ? (proofRecord.protocol as string)
+      : typeof params.zkMeta?.protocol === "string"
+        ? params.zkMeta.protocol
+        : proofPoints
+          ? "groth16"
+          : undefined;
+  const scheme = typeof params.zkMeta?.scheme === "string" ? params.zkMeta.scheme : undefined;
+  const circuitId = typeof params.zkMeta?.circuitId === "string" ? params.zkMeta.circuitId : undefined;
+
+  const inferredCurve = !proofCurve && !metaCurve ? inferZkCurveFromContext({ protocol, scheme, circuitId }) : undefined;
+
+  if (proofCurve && metaCurve && proofCurve !== metaCurve) {
+    throw new Error("zk curve mismatch (meta vs proof)");
+  }
+
+  // Legacy/omitted curve metadata is acceptable; only fail on explicit mismatch.
+  // If both are missing but we can infer and proof points exist, allow.
+  if (!proofCurve && !metaCurve && inferredCurve && proofPoints) {
+    return;
+  }
+}
+
+export function assertZkPublicInputsContract(params: { zkPublicInputs?: unknown; zkPoseidonHash?: string }): void {
+  if (params.zkPublicInputs == null && params.zkPoseidonHash == null) return;
+  if (typeof params.zkPoseidonHash !== "string" || !params.zkPoseidonHash.trim()) {
+    throw new Error("zk public inputs contract violated");
+  }
+  if (!Array.isArray(params.zkPublicInputs)) {
+    throw new Error("zk public inputs contract violated");
+  }
+  const inputs = params.zkPublicInputs.map((entry) => String(entry));
+  if (inputs.length !== 2) {
+    throw new Error("zk public inputs contract violated");
+  }
+  if (inputs[0] !== inputs[1]) {
+    throw new Error("zk public inputs contract violated");
+  }
+  if (String(inputs[0]) !== String(params.zkPoseidonHash)) {
+    throw new Error("zk public inputs contract violated");
+  }
 }
 
 /** Convenience short display for hashes. */

@@ -43,6 +43,7 @@ import { computeZkPoseidonHash } from "../utils/kai";
 import JSZip from "jszip";
 import {
   buildBundleRoot,
+  buildZkPublicInputs,
   buildVerifierUrl,
   computeBundleHash,
   hashProofCapsuleV1,
@@ -54,6 +55,7 @@ import {
   PROOF_HASH_ALG,
   ZK_PUBLIC_INPUTS_CONTRACT,
   ZK_STATEMENT_BINDING,
+  ZK_STATEMENT_ENCODING,
   ZK_STATEMENT_DOMAIN,
   type BundleRoot,
   type ProofBundleTransport,
@@ -1126,6 +1128,7 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
       publicInputOf: typeof ZK_STATEMENT_BINDING;
       domainTag: string;
       publicInputsContract?: typeof ZK_PUBLIC_INPUTS_CONTRACT;
+      encoding?: typeof ZK_STATEMENT_ENCODING;
     };
     bundleRoot?: BundleRoot;
     transport?: ProofBundleTransport;
@@ -1419,8 +1422,9 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
           throw new Error("ZK proof missing");
         }
       }
-      if (zkPublicInputs) {
-        svgClone.setAttribute("data-zk-public-inputs", JSON.stringify(zkPublicInputs));
+      const normalizedZkPublicInputs = zkPoseidonHash ? buildZkPublicInputs(zkPoseidonHash) : zkPublicInputs;
+      if (normalizedZkPublicInputs) {
+        svgClone.setAttribute("data-zk-public-inputs", JSON.stringify(normalizedZkPublicInputs));
       }
       if (zkPoseidonHash) {
         svgClone.setAttribute("data-zk-scheme", "groth16-poseidon");
@@ -1443,6 +1447,7 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
             publicInputOf: ZK_STATEMENT_BINDING,
             domainTag: ZK_STATEMENT_DOMAIN,
             publicInputsContract: ZK_PUBLIC_INPUTS_CONTRACT,
+            encoding: ZK_STATEMENT_ENCODING,
           }
         : undefined;
       const zkMeta = zkPoseidonHash
@@ -1452,7 +1457,7 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
             circuitId: "sigil_proof",
           }
         : undefined;
-      const normalizedZk = normalizeProofBundleZkCurves({ zkProof, zkMeta });
+      const normalizedZk = normalizeProofBundleZkCurves({ zkProof, zkMeta, proofHints });
       zkProof = normalizedZk.zkProof;
       const zkMetaNormalized = normalizedZk.zkMeta;
       const proofBundleBase = {
@@ -1465,7 +1470,7 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
         svgHash,
         zkPoseidonHash,
         zkProof,
-        zkPublicInputs,
+        zkPublicInputs: normalizedZkPublicInputs,
         zkMeta: zkMetaNormalized,
       };
       const transport = {

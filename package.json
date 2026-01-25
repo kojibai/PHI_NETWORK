@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "packageManager": "pnpm@10.9.0",
+  "packageManager": "pnpm@10.28.1",
   "engines": {
     "node": ">=20.19.0"
   },
@@ -27,6 +27,7 @@
   "dependencies": {
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.4.0",
+    "@resvg/resvg-js": "^2.6.0",
     "@stripe/react-stripe-js": "^5.4.1",
     "@stripe/stripe-js": "^8.5.3",
     "blakejs": "^1.2.1",
@@ -39,7 +40,6 @@
     "html2canvas": "^1.4.1",
     "jszip": "^3.10.1",
     "lucide-react": "^0.554.0",
-    "@resvg/resvg-js": "^2.6.0",
     "pako": "^2.1.0",
     "peerjs": "^1.5.5",
     "qrcode": "^1.5.4",
