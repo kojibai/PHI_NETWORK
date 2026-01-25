@@ -19,6 +19,7 @@ import { svgCanonicalForHash } from "../../utils/svgProof";
 import type { AuthorSig } from "../../utils/authorSig";
 import type { VerificationCache } from "../../utils/verificationCache";
 import type { VerificationReceipt, VerificationSig } from "../../utils/verificationReceipt";
+import { VERIFICATION_BUNDLE_VERSION } from "../../utils/verificationVersion";
 
 export type { VerificationCache } from "../../utils/verificationCache";
 
@@ -26,7 +27,7 @@ export const PROOF_HASH_ALG = "sha256" as const;
 // JCS = RFC 8785 canonical JSON.
 export const PROOF_CANON = "JCS" as const;
 export const PROOF_METADATA_ID = "kai-voh-proof" as const;
-export const VERIFICATION_BUNDLE_VERSION = "KVB-1.2" as const;
+export { VERIFICATION_BUNDLE_VERSION };
 export const PROOF_BINDINGS = {
   capsuleHashOf: "JCS(proofCapsule)",
   bundleHashOf: "sha256(JCS(bundleRoot))",
