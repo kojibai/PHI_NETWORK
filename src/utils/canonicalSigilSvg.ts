@@ -1,5 +1,9 @@
 import { ensureTitleAndDesc, ensureViewBoxOnClone, ensureXmlns } from "./svgMeta";
-import { ensureCanonicalMetadataFirst, retagSvgIdsForStep } from "../pages/SigilPage/svgOps";
+import {
+  ensureCanonicalMetadataFirst,
+  retagSvgIdsForStep,
+  rewriteCanonicalMetadata,
+} from "../pages/SigilPage/svgOps";
 
 export const CANONICAL_PNG_PX = 2048;
 
@@ -44,7 +48,32 @@ export function buildCanonicalSigilSvg({
   svgClone.setAttribute("data-phi-key", phiKey);
   svgClone.setAttribute("data-payload-hash", payloadHash);
 
+  svgClone.removeAttribute("data-share-url");
+  svgClone.querySelectorAll("a").forEach((link) => {
+    link.removeAttribute("href");
+    link.removeAttribute("xlink:href");
+    link.removeAttribute("target");
+    link.removeAttribute("rel");
+  });
+
+  svgClone.querySelectorAll("text").forEach((t) => {
+    const s = t.textContent || "";
+    if (!s.includes("u=")) return;
+    const next = s.replace(/\bu=[^·]+/g, `u=${payloadHash}`);
+    if (next !== s) t.textContent = next;
+  });
+
   retagSvgIdsForStep(svgClone, pulse, beat, stepIndex);
+  rewriteCanonicalMetadata<Record<string, unknown>>(svgClone, (meta) => {
+    const next = { ...meta } as Record<string, unknown>;
+    const header = next.header;
+    if (header && typeof header === "object" && !Array.isArray(header)) {
+      const headerNext = { ...(header as Record<string, unknown>) };
+      delete headerNext.shareUrl;
+      next.header = headerNext;
+    }
+    return next;
+  });
   ensureCanonicalMetadataFirst(svgClone);
 
   return new XMLSerializer().serializeToString(svgClone);

@@ -12,7 +12,11 @@ import {
 import { extractEmbeddedMetaFromSvg } from "../../utils/sigilMetadata";
 import { generateZkProofFromPoseidonHash } from "../../utils/zkProof";
 import { computeZkPoseidonHash } from "../../utils/kai";
-import { normalizeChakraDay, type ProofCapsuleV1 } from "../../components/KaiVoh/verifierProof";
+import {
+  buildVerifierSlug,
+  normalizeChakraDay,
+  type ProofCapsuleV1,
+} from "../../components/KaiVoh/verifierProof";
 import { buildCanonicalGlyphBundle } from "../../utils/canonicalGlyphBundle";
 import { makeKasAttestationFilename, makeKasAttestationJson } from "../../utils/kasAttestation";
 import { signBundleHash } from "../../utils/webauthnKAS";
@@ -153,7 +157,7 @@ export async function exportZIP(ctx: {
       chakraDay: chakraNormalized,
       kaiSignature,
       phiKey,
-      verifierSlug: `${payload.pulse}-${kaiSignature.slice(0, 10)}`,
+      verifierSlug: buildVerifierSlug(payload.pulse, kaiSignature),
     };
 
     const svgString = buildCanonicalSigilSvg({
