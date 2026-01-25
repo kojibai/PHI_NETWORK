@@ -392,11 +392,11 @@ function TabBtn(props: { active: boolean; title: string; text: string; icon: Rea
   );
 }
 
-function OfficialBadge(props: { kind: BadgeKind; title: string; subtitle?: string }): ReactElement {
+function OfficialBadge(props: { kind: BadgeKind; title: string; subtitle?: string; onClick?: () => void; ariaLabel?: string }): ReactElement {
   const data = props.kind === "ok" ? "ok" : props.kind === "fail" ? "fail" : props.kind === "busy" ? "busy" : "idle";
   const showCheck = props.kind === "ok";
-  return (
-    <div className="official" data-kind={data} aria-live="polite">
+  const body = (
+    <>
       <div className="official-top">
         <div className="official-ring" aria-hidden="true">
           {showCheck ? <span className="official-check">✓</span> : null}
@@ -404,20 +404,58 @@ function OfficialBadge(props: { kind: BadgeKind; title: string; subtitle?: strin
         <div className="official-title">{props.title}</div>
       </div>
       {props.subtitle ? <div className="official-sub">{props.subtitle}</div> : null}
+    </>
+  );
+  if (props.onClick) {
+    return (
+      <button
+        type="button"
+        className="official official--button"
+        data-kind={data}
+        aria-live="polite"
+        onClick={props.onClick}
+        aria-label={props.ariaLabel ?? props.title}
+      >
+        {body}
+      </button>
+    );
+  }
+  return (
+    <div className="official" data-kind={data} aria-live="polite">
+      {body}
     </div>
   );
 }
 
-function SealPill(props: { label: string; state: SealState; detail?: string }): ReactElement {
+function SealPill(props: { label: string; state: SealState; detail?: string; onClick?: () => void; ariaLabel?: string }): ReactElement {
   const icon = props.state === "valid" ? "✓" : props.state === "invalid" ? "✕" : props.state === "busy" ? "⟡" : props.state === "na" ? "—" : "·";
   const text = props.state === "valid" ? "VERIFIED" : props.state === "invalid" ? "INVALID" : props.state === "busy" ? "CHECKING" : props.state === "na" ? "N/A" : "ABSENT";
-  return (
-    <div className="seal" data-state={props.state} title={props.detail ?? ""}>
+  const body = (
+    <>
       <span className="seal-ic" aria-hidden="true">
         {icon}
       </span>
       <span className="seal-lbl">{props.label}</span>
       <span className="seal-txt">{text}</span>
+    </>
+  );
+  if (props.onClick) {
+    return (
+      <button
+        type="button"
+        className="seal seal--button"
+        data-state={props.state}
+        title={props.detail ?? ""}
+        onClick={props.onClick}
+        aria-label={props.ariaLabel ?? `${props.label} seal`}
+      >
+        {body}
+      </button>
+    );
+  }
+  return (
+    <div className="seal" data-state={props.state} title={props.detail ?? ""}>
+      {body}
     </div>
   );
 }
@@ -622,6 +660,9 @@ export default function VerifyPage(): ReactElement {
   const [chartFocus, setChartFocus] = useState<"phi" | "usd">("phi");
   const [chartReflowKey, setChartReflowKey] = useState<number>(0);
 
+  // Seal info popovers
+  const [sealPopover, setSealPopover] = useState<"proof" | "kas" | "g16" | null>(null);
+
   // Header sigil preview (safe <img> object URL)
   const [sigilPreviewUrl, setSigilPreviewUrl] = useState<string>("");
 
@@ -718,6 +759,24 @@ export default function VerifyPage(): ReactElement {
     setChartOpen(false);
   }, []);
 
+  const closeSealPopover = useCallback(() => {
+    setSealPopover(null);
+  }, [setSealPopover]);
+
+  const openProofPopover = useCallback(() => {
+    setSealPopover("proof");
+  }, [setSealPopover]);
+
+  const openKasPopover = useCallback(() => {
+    setPanel("audit");
+    setSealPopover("kas");
+  }, [setPanel, setSealPopover]);
+
+  const openG16Popover = useCallback(() => {
+    setPanel("zk");
+    setSealPopover("g16");
+  }, [setPanel, setSealPopover]);
+
   React.useEffect(() => {
     if (chartOpen) setChartReflowKey((k) => k + 1);
   }, [chartOpen, chartFocus]);
@@ -730,6 +789,15 @@ export default function VerifyPage(): ReactElement {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [chartOpen, closeChartPopover]);
+
+  React.useEffect(() => {
+    if (!sealPopover) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closeSealPopover();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [closeSealPopover, sealPopover]);
 
   const chartPhi = useMemo(() => {
     const candidate = displayPhi ?? liveValuePhi ?? 0;
@@ -1241,6 +1309,57 @@ if (authorSigNext) {
     return zkVerify ? "valid" : "invalid";
   }, [busy, zkMeta?.zkPoseidonHash, zkVerify]);
 
+  const sealStateLabel = useCallback((state: SealState): string => {
+    switch (state) {
+      case "valid":
+        return "VERIFIED";
+      case "invalid":
+        return "INVALID";
+      case "busy":
+        return "CHECKING";
+      case "na":
+        return "N/A";
+      case "off":
+      default:
+        return "ABSENT";
+    }
+  }, []);
+
+  const sealPopoverContent = useMemo(() => {
+    if (!sealPopover) return null;
+    if (sealPopover === "proof") {
+      return {
+        title: "Proof of Breath™",
+        status: result.status === "ok" ? "VERIFIED" : result.status === "error" ? "FAILED" : "STANDBY",
+        body: [
+          "Proof of Breath™ is the sovereign attestation that a ΦKey originates from a human-borne signature rail and that its integrity chain is intact.",
+          "This badge is issued only when the inhaled ΦKey, its vessel hash, sigil hash, and attestation bundle resolve into a deterministic, recomputable proof capsule.",
+          "No simulacra, no mutable links, no soft checks—only cryptographic determinism and canonicalization.",
+        ],
+      };
+    }
+    if (sealPopover === "kas") {
+      return {
+        title: "KAS • Kai Author Signature",
+        status: sealStateLabel(sealKAS),
+        body: [
+          "KAS is the WebAuthn-authorized author seal binding a human credential to the bundle hash.",
+          "Verification checks the signed challenge, credential ID, and public key against the canonical bundle hash to confirm the author’s custodial intent.",
+          "This is bank-grade identity attestation: resistant to replay, transport, and tamper.",
+        ],
+      };
+    }
+    return {
+      title: "G16 • Groth16 Verification",
+      status: sealStateLabel(sealZK),
+      body: [
+        "G16 is the zero‑knowledge integrity rail for the ΦKey proof bundle, executed under Groth16 and Poseidon constraints.",
+        "Verification confirms that the embedded proof and public inputs satisfy the circuit without revealing private witness material.",
+        "This seal represents cryptographic finality—provable integrity with privacy preserved.",
+      ],
+    };
+  }, [result.status, sealKAS, sealPopover, sealStateLabel, sealZK]);
+
   const hasSvgBytes = Boolean(svgText.trim());
   const expectedSvgHash = sharedReceipt?.svgHash ?? embeddedProof?.svgHash ?? "";
   const hasKasIdentity = Boolean(embeddedProof?.authorSig && isKASAuthorSig(embeddedProof.authorSig));
@@ -1423,12 +1542,30 @@ if (authorSigNext) {
               </div>
             ) : null}
 
-            <OfficialBadge kind={badge.kind} title={badge.title} subtitle={badge.subtitle} />
+            <OfficialBadge
+              kind={badge.kind}
+              title={badge.title}
+              subtitle={badge.subtitle}
+              onClick={openProofPopover}
+              ariaLabel="Open Proof of Breath attestation details"
+            />
           </div>
 
           <div className="vseals" aria-label="Sovereign seals">
-            <SealPill label="KAS" state={sealKAS} detail={embeddedProof?.authorSig ? "Author seal (WebAuthn KAS)" : "No author seal present"} />
-            <SealPill label="G16" state={sealZK} detail={zkMeta?.zkPoseidonHash ? "Groth16 + Poseidon rail" : "No ZK rail present"} />
+            <SealPill
+              label="KAS"
+              state={sealKAS}
+              detail={embeddedProof?.authorSig ? "Author seal (WebAuthn KAS)" : "No author seal present"}
+              onClick={openKasPopover}
+              ariaLabel="Open KAS attestation details"
+            />
+            <SealPill
+              label="G16"
+              state={sealZK}
+              detail={zkMeta?.zkPoseidonHash ? "Groth16 + Poseidon rail" : "No ZK rail present"}
+              onClick={openG16Popover}
+              ariaLabel="Open Groth16 attestation details"
+            />
             {result.status === "ok" && displayPhi != null ? (
               <LiveValuePill
                 phiValue={displayPhi}
@@ -1493,6 +1630,36 @@ if (authorSigNext) {
                   reflowKey={chartReflowKey}
                 />
               </React.Suspense>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {sealPopoverContent ? (
+        <div
+          className="seal-popover-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${sealPopoverContent.title} details`}
+          onMouseDown={closeSealPopover}
+          onClick={closeSealPopover}
+        >
+          <div className="seal-popover" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
+            <div className="seal-popover-head">
+              <div>
+                <div className="seal-popover-kicker">Official Attestation</div>
+                <div className="seal-popover-title">{sealPopoverContent.title}</div>
+              </div>
+              <div className="seal-popover-status">{sealPopoverContent.status}</div>
+              <button type="button" className="vmodal-close" onClick={closeSealPopover} aria-label="Close attestation details" title="Close">
+                ×
+              </button>
+            </div>
+            <div className="seal-popover-body">
+              {sealPopoverContent.body.map((line) => (
+                <p key={line}>{line}</p>
+              ))}
+              <div className="seal-popover-footer">Certified on the sovereign verification rail. No advisory language. No soft claims.</div>
             </div>
           </div>
         </div>
