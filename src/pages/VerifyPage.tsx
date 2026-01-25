@@ -1659,7 +1659,7 @@ if (authorSigNext) {
               {sealPopoverContent.body.map((line) => (
                 <p key={line}>{line}</p>
               ))}
-              <div className="seal-popover-footer">Certified on the sovereign verification rail. No advisory language. No soft claims.</div>
+              <div className="seal-popover-footer">Certified by the sovereign verification authority. Declarative attestation only.</div>
             </div>
           </div>
         </div>
