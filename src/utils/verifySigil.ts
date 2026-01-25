@@ -32,7 +32,7 @@ export type VerifyResult =
       embedded: EmbeddedMeta;
       derivedPhiKey: string;
       checks: VerifyChecks;
-      verifiedAtPulse: number;
+      verifiedAtPulse: number | null;
     };
 
 export function parseSlug(rawSlug: string): SlugInfo {

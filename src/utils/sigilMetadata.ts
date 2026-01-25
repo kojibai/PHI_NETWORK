@@ -1,6 +1,6 @@
 import { XMLParser } from "fast-xml-parser";
 import { gunzipB64 } from "../lib/sigil/codec";
-import type { ProofCapsuleV1 } from "../components/KaiVoh/verifierProof";
+import type { ProofCapsuleV1, VerificationSource } from "../components/KaiVoh/verifierProof";
 import type { AuthorSig } from "./authorSig";
 import { parseAuthorSig } from "./authorSig";
 
@@ -17,6 +17,9 @@ export type EmbeddedMeta = {
   timestamp?: string;
   shareUrl?: string;
   verifierUrl?: string;
+  verifier?: VerificationSource;
+  verificationVersion?: string;
+  verifiedAtPulse?: number;
   proofCapsule?: ProofCapsuleV1;
   capsuleHash?: string;
   svgHash?: string;
@@ -130,6 +133,25 @@ function toEmbeddedMetaFromUnknown(raw: unknown): EmbeddedMeta {
   const verifierUrl =
     typeof raw.verifierUrl === "string" ? raw.verifierUrl : undefined;
 
+  const verifier =
+    typeof raw.verifier === "string" && (raw.verifier === "local" || raw.verifier === "pbi")
+      ? (raw.verifier as VerificationSource)
+      : undefined;
+
+  const verificationVersion =
+    typeof raw.verificationVersion === "string" ? raw.verificationVersion : undefined;
+
+  const verifiedAtPulseRaw =
+    raw.verifiedAtPulse ??
+    decodedPayload?.verifiedAtPulse ??
+    undefined;
+  const verifiedAtPulse =
+    typeof verifiedAtPulseRaw === "number" && Number.isFinite(verifiedAtPulseRaw)
+      ? verifiedAtPulseRaw
+      : typeof verifiedAtPulseRaw === "string" && Number.isFinite(Number(verifiedAtPulseRaw))
+        ? Number(verifiedAtPulseRaw)
+        : undefined;
+
   const proofCapsule =
     capsuleRaw &&
     typeof capsuleRaw.v === "string" &&
@@ -186,6 +208,9 @@ function toEmbeddedMetaFromUnknown(raw: unknown): EmbeddedMeta {
     timestamp,
     shareUrl,
     verifierUrl,
+    verifier,
+    verificationVersion,
+    verifiedAtPulse,
     proofCapsule,
     capsuleHash,
     svgHash,
@@ -458,6 +483,9 @@ export type ProofBundleMeta = {
   bundleHash?: string;
   shareUrl?: string;
   verifierUrl?: string;
+  verifier?: VerificationSource;
+  verificationVersion?: string;
+  verifiedAtPulse?: number;
   authorSig?: AuthorSig | null;
   zkPoseidonHash?: string;
   zkProof?: unknown;
@@ -486,6 +514,9 @@ export function extractProofBundleMetaFromSvg(svgText: string): ProofBundleMeta 
           bundleHash: meta.bundleHash,
           shareUrl: meta.shareUrl,
           verifierUrl: meta.verifierUrl,
+          verifier: meta.verifier,
+          verificationVersion: meta.verificationVersion,
+          verifiedAtPulse: meta.verifiedAtPulse,
           authorSig: meta.authorSig,
           zkPoseidonHash: meta.zkPoseidonHash,
           zkProof: meta.zkProof,
@@ -516,6 +547,9 @@ export function extractProofBundleMetaFromSvg(svgText: string): ProofBundleMeta 
           bundleHash: meta.bundleHash,
           shareUrl: meta.shareUrl,
           verifierUrl: meta.verifierUrl,
+          verifier: meta.verifier,
+          verificationVersion: meta.verificationVersion,
+          verifiedAtPulse: meta.verifiedAtPulse,
           authorSig: meta.authorSig,
           zkPoseidonHash: meta.zkPoseidonHash,
           zkProof: meta.zkProof,
