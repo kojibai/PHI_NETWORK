@@ -68,14 +68,17 @@ export function shortKaiSig10(sig: string): string {
   return safe.length > 10 ? safe.slice(0, 10) : safe;
 }
 
-export function buildVerifierSlug(pulse: number, kaiSignature: string): string {
+export function buildVerifierSlug(pulse: number, kaiSignature: string, verifiedAtPulse?: number): string {
   const shortSig = shortKaiSig10(kaiSignature);
+  if (verifiedAtPulse != null && Number.isFinite(verifiedAtPulse)) {
+    return `${pulse}-${shortSig}-${verifiedAtPulse}`;
+  }
   return `${pulse}-${shortSig}`;
 }
 
-export function buildVerifierUrl(pulse: number, kaiSignature: string, verifierBaseUrl?: string): string {
+export function buildVerifierUrl(pulse: number, kaiSignature: string, verifierBaseUrl?: string, verifiedAtPulse?: number): string {
   const base = (verifierBaseUrl ?? defaultHostedVerifierBaseUrl()).replace(/\/+$/, "");
-  const slug = encodeURIComponent(buildVerifierSlug(pulse, kaiSignature));
+  const slug = encodeURIComponent(buildVerifierSlug(pulse, kaiSignature, verifiedAtPulse));
   return `${base}/${slug}`;
 }
 

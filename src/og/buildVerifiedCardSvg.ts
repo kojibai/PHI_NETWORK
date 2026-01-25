@@ -1,8 +1,10 @@
+import phiSvg from "../assets/phi.svg?raw";
 import type { VerifiedCardData } from "./types";
 import { sanitizeSigilSvg, svgToDataUri } from "./sigilEmbed";
 
 const WIDTH = 1200;
 const HEIGHT = 630;
+const phiLogoDataUri = svgToDataUri(phiSvg);
 
 function hashStringToInt(value: string): number {
   let hash = 0;
@@ -107,7 +109,7 @@ export function buildVerifiedCardSvg(data: VerifiedCardData): string {
     </clipPath>
     <style>
       .headline { font: 800 72px "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif; fill: #EEF2FF; }
-      .subhead { font: 600 34px "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif; fill: #DDE6FF; }
+      .subhead { font: 600 30px "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif; fill: #DDE6FF; }
       .phikey { font: 700 44px "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif; fill: #EEF2FF; }
       .label { font: 800 34px "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif; fill: #DDE6FF; }
       .footer { font: 700 30px "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif; fill: #EEF2FF; }
@@ -129,7 +131,12 @@ export function buildVerifiedCardSvg(data: VerifiedCardData): string {
 
   <circle cx="240" cy="315" r="172" fill="none" stroke="url(#${ringGradientId})" stroke-width="8" filter="url(#${glowId})" />
   <circle cx="240" cy="315" r="135" fill="rgba(11,15,24,0.92)" stroke="rgba(255,255,255,0.05)" />
-  <text x="240" y="355" text-anchor="middle" font-size="170" font-weight="800" fill="#EEF2FF" font-family="Inter, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif">Φ</text>
+  <image
+    x="160" y="235"
+    width="160" height="160"
+    href="${phiLogoDataUri}"
+    preserveAspectRatio="xMidYMid meet"
+  />
 
   <text class="headline" x="420" y="120">VERIFIED</text>
   <g transform="translate(800 78)">
@@ -137,7 +144,9 @@ export function buildVerifiedCardSvg(data: VerifiedCardData): string {
     <path d="${headerCheckPath()}" fill="none" stroke="#4FFFA2" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" />
   </g>
 
-  <text class="subhead" x="420" y="220">Steward Verified @ Pulse ${verifiedAtPulse} • ΦKey</text>
+  <text class="subhead" x="420" y="215" textLength="360" lengthAdjust="spacingAndGlyphs">
+    Steward Verified @ Pulse ${verifiedAtPulse} • ΦKey
+  </text>
   <text class="phikey" x="420" y="285">${phiShort}</text>
 
   <text class="label" x="420" y="360">KAS</text>

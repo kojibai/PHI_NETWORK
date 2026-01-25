@@ -855,7 +855,6 @@ export default function VerifyPage(): ReactElement {
   const embeddedZkPublicInputs = useMemo(() => (zkMeta?.zkPublicInputs ? formatProofValue(zkMeta.zkPublicInputs) : ""), [zkMeta]);
   const embeddedProofHints = useMemo(() => (zkMeta?.proofHints ? formatProofValue(zkMeta.proofHints) : ""), [zkMeta]);
 
-  const proofVerifierUrl = useMemo(() => (proofCapsule ? buildVerifierUrl(proofCapsule.pulse, proofCapsule.kaiSignature) : ""), [proofCapsule]);
   const currentVerifyUrl = useMemo(() => {
     if (typeof window === "undefined") return "";
     return window.location.href;
@@ -991,10 +990,17 @@ export default function VerifyPage(): ReactElement {
       const capsule = embedded?.proofCapsule ?? fallbackCapsule;
       const capsuleHashNext = await hashProofCapsuleV1(capsule);
       const verificationSource: VerificationSource = "local";
-      const verifiedAtPulse =
-        typeof result.verifiedAtPulse === "number" && Number.isFinite(result.verifiedAtPulse)
-          ? result.verifiedAtPulse
+      const embeddedVerifiedAtPulse =
+        typeof embedded?.verifiedAtPulse === "number" && Number.isFinite(embedded.verifiedAtPulse)
+          ? embedded.verifiedAtPulse
           : undefined;
+      const verifiedAtPulse =
+        embeddedVerifiedAtPulse ??
+        (embedded
+          ? undefined
+          : typeof result.verifiedAtPulse === "number" && Number.isFinite(result.verifiedAtPulse)
+            ? result.verifiedAtPulse
+            : undefined);
 
       const bundleSeed =
         embedded?.raw && typeof embedded.raw === "object" && embedded.raw !== null
@@ -1005,7 +1011,7 @@ export default function VerifyPage(): ReactElement {
               proofCapsule: capsule,
               verifier: verificationSource,
               verificationVersion: VERIFICATION_BUNDLE_VERSION,
-              verifiedAtPulse,
+              ...(verifiedAtPulse != null ? { verifiedAtPulse } : {}),
             }
           : {
               hashAlg: embedded?.hashAlg ?? PROOF_HASH_ALG,
@@ -1017,7 +1023,7 @@ export default function VerifyPage(): ReactElement {
               verifierUrl: embedded?.verifierUrl,
               verifier: verificationSource,
               verificationVersion: VERIFICATION_BUNDLE_VERSION,
-              verifiedAtPulse,
+              ...(verifiedAtPulse != null ? { verifiedAtPulse } : {}),
               zkPoseidonHash: embedded?.zkPoseidonHash,
               zkProof: embedded?.zkProof,
               proofHints: embedded?.proofHints,
@@ -1363,6 +1369,11 @@ export default function VerifyPage(): ReactElement {
     if (result.status === "ok") return result.verifiedAtPulse;
     return sharedReceipt?.verifiedAtPulse ?? null;
   }, [result, sharedReceipt?.verifiedAtPulse]);
+
+  const proofVerifierUrl = useMemo(
+    () => (proofCapsule ? buildVerifierUrl(proofCapsule.pulse, proofCapsule.kaiSignature, undefined, stewardVerifiedPulse ?? undefined) : ""),
+    [proofCapsule, stewardVerifiedPulse],
+  );
 
   const verifiedCardData = useMemo<VerifiedCardData | null>(() => {
     if (result.status !== "ok" || !proofCapsule || !capsuleHash || stewardVerifiedPulse == null) return null;
