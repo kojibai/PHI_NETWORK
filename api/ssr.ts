@@ -229,7 +229,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     };
 
     // Start React SSR stream
-    pipeable = render(url.pathname + url.search, opts);
+    pipeable = render(url.pathname + url.search, null, opts);
   } catch (err) {
     console.error("SSR function crashed:", err);
     res.statusCode = 500;
