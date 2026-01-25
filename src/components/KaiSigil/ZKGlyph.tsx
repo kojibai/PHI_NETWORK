@@ -8,12 +8,6 @@ type Props = {
   phaseColor: string;
   outerRingText: string;
   innerRingText: string;
-
-  verified: boolean;
-  zkScheme?: string;
-  zkPoseidonHash?: string;
-  proofPresent: boolean;
-
   animate: boolean;
   prefersReduce: boolean;
 };
@@ -24,10 +18,6 @@ const ZKGlyph: React.FC<Props> = ({
   phaseColor,
   outerRingText,
   innerRingText,
-  verified,
-  zkScheme,
-  zkPoseidonHash,
-  proofPresent,
   animate,
   prefersReduce,
 }) => {
@@ -40,9 +30,6 @@ const ZKGlyph: React.FC<Props> = ({
   const binRingId = `${uid}-zk-bin-ring`;
   const gradId = `${uid}-zk-grad`;
   const petalUseId = `${uid}-zk-petal-def`;
-
-  // seal defs
-  const sealGlowId = `${uid}-seal-glow`;
 
   const wPetal = Math.max(1.0, (size ?? 240) * 0.008);
   const wRing = Math.max(0.9, (size ?? 240) * 0.007);
@@ -94,7 +81,7 @@ const ZKGlyph: React.FC<Props> = ({
   const outerFont = Math.max(8, (size ?? 240) * 0.026);
   const innerFont = Math.max(7, (size ?? 240) * 0.022);
 
-  const approxCharW = (fs: number) => fs * 0.62;
+  const approxCharW = (fs: number) => fs * 0.62; // good mono approximation
   const maxCharsForRadius = (radius: number, fs: number) => {
     const circ = 2 * Math.PI * radius;
     return Math.max(48, Math.floor(circ / approxCharW(fs)));
@@ -104,19 +91,9 @@ const ZKGlyph: React.FC<Props> = ({
     const s = (raw ?? "").trim();
     if (!s) return "";
 
-    const wanted = [
-      "sig=",
-      "b58=",
-      "len=",
-      "crc32=",
-      "creator=",
-      "zk=",
-      "alg=",
-      "day=",
-      "beat=",
-      "hz=",
-      "poseidon=",
-    ];
+    // Prefer showing the *seal fields*, not the whole URL/payload.
+    // Deterministic pick order:
+    const wanted = ["sig=", "b58=", "len=", "crc32=", "creator=", "zk=", "alg=", "day=", "beat=", "hz=", "poseidon="];
 
     const parts = s.split(" · ").map((p) => p.trim()).filter(Boolean);
     const kept = parts.filter((p) => wanted.some((w) => p.startsWith(w)));
@@ -147,6 +124,7 @@ const ZKGlyph: React.FC<Props> = ({
     const chars = Array.from(text);
     if (!chars.length) return null;
 
+    // Start at 12 o’clock, tangent direction
     const start = -Math.PI / 2;
     const n = chars.length;
 
@@ -160,7 +138,7 @@ const ZKGlyph: React.FC<Props> = ({
           const ang = start + t * Math.PI * 2;
           const x = CENTER + radius * Math.cos(ang);
           const y = CENTER + radius * Math.sin(ang);
-          const deg = (ang * 180) / Math.PI + 90;
+          const deg = (ang * 180) / Math.PI + 90; // tangent
 
           return (
             <text
@@ -186,77 +164,10 @@ const ZKGlyph: React.FC<Props> = ({
     );
   };
 
-  // ─────────────────────────────────────────────────────────────
-  // Authority seal (money-grade) — ONLY when verified
-  // ─────────────────────────────────────────────────────────────
-
-  const statusForAria = verified ? "verified" : proofPresent ? "proof-present" : "unverified";
-  const showSeal = verified === true;
-
-  const sealGreen = "#00FFD0";
-  const sealInk = "#001014";
-  const plateFill = "#061012";
-
-  // typography: disciplined, engraved, not loud
-  const sealTitleFont = Math.max(9, Math.min(14, Math.floor((size ?? 240) * 0.038)));
-  const sealSubFont = Math.max(7, Math.min(11, Math.floor((size ?? 240) * 0.026)));
-  const sealMicroFont = Math.max(6, Math.min(9, Math.floor((size ?? 240) * 0.020)));
-
-  const schemeShort = useMemo(() => {
-    const s = (zkScheme ?? "").trim().toLowerCase();
-    if (!s) return "G16";
-    if (s.includes("groth16")) return "G16";
-    if (s.includes("plonk")) return "PLONK";
-    return s.slice(0, 4).toUpperCase();
-  }, [zkScheme]);
-
-  const serialNib = useMemo(() => {
-    const h = (zkPoseidonHash ?? "").trim();
-    if (!h) return "";
-    const up = h.toUpperCase();
-    if (up.length <= 10) return up;
-    return `${up.slice(0, 5)}…${up.slice(-3)}`;
-  }, [zkPoseidonHash]);
-
-  // Capsule plate: smaller + more embedded
-  const plateW = rInner * 1.18;
-  const plateH = rInner * 0.40;
-  const plateX = CENTER - plateW / 2;
-  const plateY = CENTER - plateH / 2;
-  const plateR = Math.max(10, plateH * 0.50); // capsule
-
-  // Rosette ticks: security paper cue (lightweight, WebKit-safe)
-  const rosetteR = rInner * 0.78;
-  const tickCount = 72;
-  const tickLong = Math.max(6, (size ?? 240) * 0.030);
-  const tickShort = Math.max(3.5, (size ?? 240) * 0.018);
-  const tickW = Math.max(1, (size ?? 240) * 0.0032);
-
-  const ticks = useMemo(() => {
-    if (!showSeal) return [];
-    const out: Array<{ x1: number; y1: number; x2: number; y2: number; key: string }> = [];
-    for (let i = 0; i < tickCount; i++) {
-      const ang = (i / tickCount) * Math.PI * 2 - Math.PI / 2;
-      const isMajor = i % 6 === 0;
-      const len = isMajor ? tickLong : tickShort;
-
-      const x1 = CENTER + rosetteR * Math.cos(ang);
-      const y1 = CENTER + rosetteR * Math.sin(ang);
-      const x2 = CENTER + (rosetteR + len) * Math.cos(ang);
-      const y2 = CENTER + (rosetteR + len) * Math.sin(ang);
-
-      out.push({ x1, y1, x2, y2, key: `${i}` });
-    }
-    return out;
-  }, [showSeal, rosetteR, tickCount, tickLong, tickShort]);
-
-  // Latent Φ watermark
-  const phiWatermarkFont = Math.max(40, Math.floor((size ?? 240) * 0.42));
-
   return (
     <g
       id={`${uid}-zk-glyph`}
-      aria-label={`Atlantean zero-knowledge verification glyph (${statusForAria})`}
+      aria-label="Atlantean zero-knowledge verification glyph"
       pointerEvents="none"
     >
       <defs>
@@ -264,52 +175,24 @@ const ZKGlyph: React.FC<Props> = ({
           <stop offset="0%" stopColor={phaseColor} stopOpacity="0.85">
             {doAnim && (
               <>
-                <animate
-                  attributeName="stop-opacity"
-                  values=".55;.85;.55"
-                  dur={`${PULSE_MS}ms`}
-                  repeatCount="indefinite"
-                />
-                <animate
-                  attributeName="stop-color"
-                  values={`${phaseColor};#00FFD0;${phaseColor}`}
-                  dur={`${PULSE_MS * 3}ms`}
-                  repeatCount="indefinite"
-                />
+                <animate attributeName="stop-opacity" values=".55;.85;.55" dur={`${PULSE_MS}ms`} repeatCount="indefinite" />
+                <animate attributeName="stop-color" values={`${phaseColor};#00FFD0;${phaseColor}`} dur={`${PULSE_MS * 3}ms`} repeatCount="indefinite" />
               </>
             )}
           </stop>
           <stop offset="55%" stopColor={phaseColor} stopOpacity="0.55">
             {doAnim && (
-              <animate
-                attributeName="stop-color"
-                values={`${phaseColor};#00FFD0;${phaseColor}`}
-                dur={`${PULSE_MS * 3}ms`}
-                repeatCount="indefinite"
-              />
+              <animate attributeName="stop-color" values={`${phaseColor};#00FFD0;${phaseColor}`} dur={`${PULSE_MS * 3}ms`} repeatCount="indefinite" />
             )}
           </stop>
           <stop offset="100%" stopColor="#00FFD0" stopOpacity="0.25">
             {doAnim && (
-              <animate
-                attributeName="stop-opacity"
-                values=".15;.35;.15"
-                dur={`${PULSE_MS}ms`}
-                repeatCount="indefinite"
-              />
+              <animate attributeName="stop-opacity" values=".15;.35;.15" dur={`${PULSE_MS}ms`} repeatCount="indefinite" />
             )}
           </stop>
         </radialGradient>
 
-        {/* subtle glow for the seal (WebKit-safe: blur + merge) */}
-        <filter id={sealGlowId} x="-50%" y="-50%" width="200%" height="200%">
-          <feGaussianBlur stdDeviation="2" result="b" />
-          <feMerge>
-            <feMergeNode in="b" />
-            <feMergeNode in="SourceGraphic" />
-          </feMerge>
-        </filter>
-
+        {/* keep these paths (harmless) in case anything else wants them */}
         <path
           id={phiRingId}
           d={`M ${CENTER} ${CENTER - rOuter} a ${rOuter} ${rOuter} 0 1 1 0 ${2 * rOuter} a ${rOuter} ${rOuter} 0 1 1 0 -${2 * rOuter}`}
@@ -351,22 +234,8 @@ const ZKGlyph: React.FC<Props> = ({
       ))}
 
       <g opacity="0.25">
-        <circle
-          cx={CENTER - rInner / 2.2}
-          cy={CENTER}
-          r={rInner * 0.86}
-          fill="none"
-          stroke={phaseColor}
-          strokeWidth={wRing}
-        />
-        <circle
-          cx={CENTER + rInner / 2.2}
-          cy={CENTER}
-          r={rInner * 0.86}
-          fill="none"
-          stroke={sealGreen}
-          strokeWidth={wRing}
-        />
+        <circle cx={CENTER - rInner / 2.2} cy={CENTER} r={rInner * 0.86} fill="none" stroke={phaseColor} strokeWidth={wRing} />
+        <circle cx={CENTER + rInner / 2.2} cy={CENTER} r={rInner * 0.86} fill="none" stroke="#00FFD0" strokeWidth={wRing} />
       </g>
 
       <circle
@@ -381,131 +250,26 @@ const ZKGlyph: React.FC<Props> = ({
       />
 
       {/* Φ ring (mono, engraved) */}
-      {outerDisplay && renderRingText(outerDisplay, rOuter, mono, outerFont, phaseColor, 0.33)}
+      {outerDisplay &&
+        renderRingText(
+          outerDisplay,
+          rOuter,
+          mono,
+          outerFont,
+          phaseColor,
+          0.33
+        )}
 
       {/* binary / seal ring (sans, lighter) */}
-      {innerDisplay && renderRingText(innerDisplay, rInner, uiSans, innerFont, sealGreen, 0.28)}
-
-      {/* MONEY-GRADE SEAL (only when verified) */}
-      {showSeal && (
-        <g aria-hidden="true" pointerEvents="none" filter={`url(#${sealGlowId})`}>
-          {/* rosette tick ring */}
-          <g opacity="0.32">
-            {ticks.map((t) => (
-              <line
-                key={t.key}
-                x1={t.x1}
-                y1={t.y1}
-                x2={t.x2}
-                y2={t.y2}
-                stroke={sealGreen}
-                strokeOpacity="0.50"
-                strokeWidth={tickW}
-                strokeLinecap="round"
-                vectorEffect="non-scaling-stroke"
-              />
-            ))}
-          </g>
-
-          {/* latent Φ watermark */}
-          <text
-            x={CENTER}
-            y={CENTER}
-            textAnchor="middle"
-            dominantBaseline="middle"
-            fontFamily={uiSans}
-            fontSize={phiWatermarkFont}
-            fontWeight="900"
-            fill={sealGreen}
-            fillOpacity="0.05"
-          >
-            Φ
-          </text>
-
-          {/* capsule plate (embedded) */}
-          <rect
-            x={plateX}
-            y={plateY}
-            width={plateW}
-            height={plateH}
-            rx={plateR}
-            ry={plateR}
-            fill={plateFill}
-            fillOpacity="0.12"
-            stroke={sealGreen}
-            strokeOpacity="0.22"
-            strokeWidth={1.2}
-            vectorEffect="non-scaling-stroke"
-          />
-
-          {/* inner hairline */}
-          <rect
-            x={plateX + 3}
-            y={plateY + 3}
-            width={plateW - 6}
-            height={plateH - 6}
-            rx={Math.max(8, plateR - 3)}
-            ry={Math.max(8, plateR - 3)}
-            fill="none"
-            stroke={sealGreen}
-            strokeOpacity="0.10"
-            strokeWidth={1}
-            vectorEffect="non-scaling-stroke"
-          />
-
-          {/* VERIFIED — engraved (authority cue) */}
-          <text
-            x={CENTER}
-            y={CENTER - sealTitleFont * 0.36}
-            textAnchor="middle"
-            dominantBaseline="middle"
-            fontFamily={uiSans}
-            fontSize={sealTitleFont}
-            fontWeight="900"
-            letterSpacing="0.38em"
-            fill={sealGreen}
-            fillOpacity="0.84"
-            stroke={sealInk}
-            strokeOpacity="0.40"
-            strokeWidth={Math.max(1, sealTitleFont * 0.08)}
-            paintOrder="stroke"
-          >
-            VERIFIED
-          </text>
-
-          {/* PROOF OF BREATH — micro line */}
-          <text
-            x={CENTER}
-            y={CENTER + sealSubFont * 0.10}
-            textAnchor="middle"
-            dominantBaseline="middle"
-            fontFamily={uiSans}
-            fontSize={sealSubFont}
-            fontWeight="800"
-            letterSpacing="0.22em"
-            fill={sealGreen}
-            fillOpacity="0.58"
-          >
-            PROOF•OF•BREATH
-          </text>
-
-          {/* microprint serial (money cue) */}
-          <text
-            x={CENTER}
-            y={CENTER + sealSubFont * 1.06}
-            textAnchor="middle"
-            dominantBaseline="middle"
-            fontFamily={mono}
-            fontSize={sealMicroFont}
-            fontWeight="700"
-            letterSpacing="0.16em"
-            fill={sealGreen}
-            fillOpacity="0.44"
-          >
-            {`ZK:${schemeShort}${serialNib ? ` • ID:${serialNib}` : ""}`}
-          </text>
-        </g>
-      )}
+      {innerDisplay &&
+        renderRingText(
+          innerDisplay,
+          rInner,
+          uiSans,
+          innerFont,
+          "#00FFD0",
+          0.28
+        )}
     </g>
   );
 };

@@ -1,3 +1,4 @@
+
 // src/components/KaiSigil.tsx
 // (QR-FREE) KaiSigil — wired with ledger + DHT embed (Atomic Build Upgrade)
 // KKS v1.0: ALL RUNTIME LATTICE VALUES ARE DERIVED FROM PULSE ONLY (single source of truth).
@@ -103,22 +104,13 @@ import {
    - Then feed pμ to latticeFromMicroPulses().
 ────────────────────────────────────────────────────────────────── */
 
-/**
- * IMPORTANT: We keep validation, but we do NOT hard-crash the app anymore.
- * If a caller passes mismatched beat/stepIndex/stepPct, we emit an error via onError
- * and console.error (DEV), but we still render using pulse-derived canon.
- *
- * This preserves determinism (pulse is truth) while avoiding UX-breaking runtime throws.
- */
-const THROW_ON_KKS_INVARIANT = false;
-
 type KksV1 = Readonly<{
-  beat: number; // 0..35
-  stepIndex: number; // 0..43
-  stepPct: number; // percentIntoStep ∈ [0,1)
-  stepPctToNext: number; // ∈ (0,1]  (1 at step start, ~0 near boundary)
-  stepsPerBeat: number; // 44
-  pulsesPerStep: number; // 11
+  beat: number;                 // 0..35
+  stepIndex: number;            // 0..43
+  stepPct: number;              // percentIntoStep ∈ [0,1)
+  stepPctToNext: number;        // ∈ (0,1]  (1 at step start, ~0 near boundary)
+  stepsPerBeat: number;         // 44
+  pulsesPerStep: number;        // 11
 }>;
 
 function deriveKksV1FromPulse(pulse: number): KksV1 {
@@ -142,28 +134,6 @@ function deriveKksV1FromPulse(pulse: number): KksV1 {
     stepsPerBeat: STEPS_BEAT,
     pulsesPerStep: PULSES_STEP,
   };
-}
-
-type ZkDisplayState = {
-  verified: boolean;
-  scheme: string;
-  poseidonHash: string;
-  proofPresent: boolean;
-};
-
-function isZkProofLike(proof: unknown): boolean {
-  if (!isRecord(proof)) return false;
-  const piA = proof["pi_a"];
-  const piB = proof["pi_b"];
-  const piC = proof["pi_c"];
-  return (
-    Array.isArray(piA) &&
-    Array.isArray(piB) &&
-    Array.isArray(piC) &&
-    piA.length >= 2 &&
-    piB.length >= 2 &&
-    piC.length >= 2
-  );
 }
 
 /**
@@ -207,13 +177,9 @@ const KaiSigil = forwardRef<KaiSigilHandle, KaiSigilProps>((props, ref) => {
 
   // Pulse is the ONLY runtime source of truth.
   const pulse = coerceInt(pulseProp);
-  const pulseDisplay = pulse;
 
   // Deterministic lattice from pulse only.
   const kks = useMemo(() => deriveKksV1FromPulse(pulse), [pulse]);
-
-  // ✅ Display beat is ALWAYS pulse-derived.
-  const beatDisplay = kks.beat;
 
   // Chakra/day visuals (still supplied via prop; step lattice is independent).
   const chakraDayKey = normalizeChakraDayKey(chakraDay);
@@ -253,17 +219,8 @@ const KaiSigil = forwardRef<KaiSigilHandle, KaiSigilProps>((props, ref) => {
       const err = new Error(
         `[KaiSigil] KKS v1.0 determinism invariant violation → ${problems.join("; ")}`
       );
-
-      // Report, but do not break UX by default.
       onError?.(err);
-      if (typeof window !== "undefined") {
-        // eslint-disable-next-line no-console
-        console.error(err);
-      }
-
-      if (THROW_ON_KKS_INVARIANT) {
-        throw err;
-      }
+      throw err;
     }
   }, [
     strict,
@@ -290,15 +247,7 @@ const KaiSigil = forwardRef<KaiSigilHandle, KaiSigilProps>((props, ref) => {
       // optionally useful for UI/debugging
       stepPctToNext: kks.stepPctToNext,
     }),
-    [
-      pulse,
-      kks.beat,
-      kks.stepIndex,
-      kks.stepsPerBeat,
-      chakraDayKey,
-      kks.stepPct,
-      kks.stepPctToNext,
-    ]
+    [pulse, kks.beat, kks.stepIndex, kks.stepsPerBeat, chakraDayKey, kks.stepPct, kks.stepPctToNext]
   );
 
   const { prefersReduce, prefersContrast } = useMediaPrefs();
@@ -317,7 +266,11 @@ const KaiSigil = forwardRef<KaiSigilHandle, KaiSigilProps>((props, ref) => {
 
   const rotation = (PHI ** 2 * Math.PI * (canon.pulse % 97)) % (2 * Math.PI);
   const light = 50 + 15 * Math.sin(canon.visualClamped * 2 * Math.PI);
-  const baseColor = hsl((hue + 360 * 0.03 * canon.visualClamped) % 360, 100, light);
+  const baseColor = hsl(
+    (hue + 360 * 0.03 * canon.visualClamped) % 360,
+    100,
+    light
+  );
 
   const chakraGate = CHAKRA_GATES[chakraDayKey];
 
@@ -564,8 +517,10 @@ const KaiSigil = forwardRef<KaiSigilHandle, KaiSigilProps>((props, ref) => {
           version: "1",
         };
 
-        const valuationLiveAtExport = computeIntrinsicUnsigned(valuationSource, pulse0).unsigned
-          .valuePhi;
+        const valuationLiveAtExport = computeIntrinsicUnsigned(
+          valuationSource,
+          pulse0
+        ).unsigned.valuePhi;
 
         const embedded = {
           ...embeddedBase,
@@ -609,15 +564,11 @@ const KaiSigil = forwardRef<KaiSigilHandle, KaiSigilProps>((props, ref) => {
         }
       } catch (e) {
         onError?.(e);
-        if (strict && THROW_ON_KKS_INVARIANT) {
-          throw e instanceof Error ? e : new Error(String(e));
-        }
+        if (strict) throw (e instanceof Error ? e : new Error(String(e)));
       }
     })().catch((e) => {
       onError?.(e);
-      if (strict && THROW_ON_KKS_INVARIANT) {
-        throw e instanceof Error ? e : new Error(String(e));
-      }
+      if (strict) throw (e instanceof Error ? e : new Error(String(e)));
     });
 
     return () => {
@@ -650,12 +601,11 @@ const KaiSigil = forwardRef<KaiSigilHandle, KaiSigilProps>((props, ref) => {
     quality,
   ]);
 
-  /* Prefer the built snapshot for display (DOM/summary), otherwise use pulse-derived kks. */
+  /* Prefer the built snapshot for display (DOM/summary), otherwise use live canon */
   const displayStepIndex = useMemo(() => {
     const b = built;
-    if (b && b.createdFor.stateKey === stateKey) return b.createdFor.stepIndex;
-    return kks.stepIndex;
-  }, [built, stateKey, kks.stepIndex]);
+    return b && b.createdFor.stateKey === stateKey ? b.createdFor.stepIndex : canon.stepIndex;
+  }, [built, stateKey, canon.stepIndex]);
 
   const displayFrequencyHz = useMemo(() => {
     const b = built;
@@ -687,15 +637,15 @@ const KaiSigil = forwardRef<KaiSigilHandle, KaiSigilProps>((props, ref) => {
     getStrField(kaiData, "kairos_seal");
 
   const summaryDisplay = useMemo(
-    () => makeSummary(eternalSeal, beatDisplay, displayStepIndex, pulseDisplay),
-    [eternalSeal, beatDisplay, displayStepIndex, pulseDisplay]
+    () => makeSummary(eternalSeal, canon.beat, displayStepIndex, canon.pulse),
+    [eternalSeal, canon.beat, displayStepIndex, canon.pulse]
   );
 
   const summaryForAttrs = useMemo(() => {
     const stepForAttrs =
       built && built.createdFor.stateKey === stateKey ? built.createdFor.stepIndex : displayStepIndex;
-    return makeSummary(eternalSeal, beatDisplay, stepForAttrs, pulseDisplay);
-  }, [built, stateKey, eternalSeal, beatDisplay, displayStepIndex, pulseDisplay]);
+    return makeSummary(eternalSeal, canon.beat, stepForAttrs, canon.pulse);
+  }, [built, stateKey, eternalSeal, canon.beat, displayStepIndex, canon.pulse]);
 
   const summaryB64 = useMemo(() => toSummaryB64(summaryForAttrs), [summaryForAttrs]);
 
@@ -731,20 +681,16 @@ const KaiSigil = forwardRef<KaiSigilHandle, KaiSigilProps>((props, ref) => {
         el.dataset.svgHash = calc;
         el.dataset.svgValid = String(calc === hashOverride.toLowerCase());
 
-        if (calc !== hashOverride.toLowerCase() && strict && THROW_ON_KKS_INVARIANT) {
+        if (calc !== hashOverride.toLowerCase() && strict) {
           throw new Error(`[KaiSigil] SVG HASH MISMATCH (${calc})`);
         }
       } catch (e) {
         onError?.(e);
-        if (strict && THROW_ON_KKS_INVARIANT) {
-          throw e instanceof Error ? e : new Error(String(e));
-        }
+        if (strict) throw (e instanceof Error ? e : new Error(String(e)));
       }
     })().catch((e) => {
       onError?.(e);
-      if (strict && THROW_ON_KKS_INVARIANT) {
-        throw e instanceof Error ? e : new Error(String(e));
-      }
+      if (strict) throw (e instanceof Error ? e : new Error(String(e)));
     });
 
     return () => {
@@ -817,22 +763,9 @@ const KaiSigil = forwardRef<KaiSigilHandle, KaiSigilProps>((props, ref) => {
     if (sigAttr && sigAttr !== expectedHash) problems.push("data-payload-hash != expected payload hash");
 
     if (problems.length) {
-      const err = new Error(`[KaiSigil] Invariant violation → ${problems.join("; ")}`);
-      onError?.(err);
-      if (THROW_ON_KKS_INVARIANT) throw err;
-      // eslint-disable-next-line no-console
-      console.error(err);
+      throw new Error(`[KaiSigil] Invariant violation → ${problems.join("; ")}`);
     }
-  }, [
-    strict,
-    built,
-    stateKey,
-    chakraDayKey,
-    summaryForAttrs,
-    canonicalShareUrl,
-    canonicalPayloadHash,
-    onError,
-  ]);
+  }, [strict, built, stateKey, chakraDayKey, summaryForAttrs, canonicalShareUrl, canonicalPayloadHash]);
 
   const { toDataURL, exportBlob, verifySvgHash } = makeExporters(svgRef, size);
 
@@ -852,7 +785,6 @@ const KaiSigil = forwardRef<KaiSigilHandle, KaiSigilProps>((props, ref) => {
     typeof canonicalShareUrl === "string" && canonicalShareUrl.trim().length > 0
       ? canonicalShareUrl.trim()
       : undefined;
-
   const canonicalPayloadHashClean =
     typeof canonicalPayloadHash === "string" && canonicalPayloadHash.trim().length > 0
       ? canonicalPayloadHash.trim()
@@ -860,7 +792,9 @@ const KaiSigil = forwardRef<KaiSigilHandle, KaiSigilProps>((props, ref) => {
 
   const shareUrlForRender = canonicalShareUrlClean ?? shareUrl;
   const payloadHashForRender = canonicalPayloadHashClean ?? payloadHashHex;
-const frequencyHz = displayFrequencyHz;
+
+  const frequencyHz = (stateKeyOk ? built?.frequencyHz : undefined) ?? frequencyHzCurrent;
+
   const binaryForRender = useMemo(() => {
     if (!kaiSignature) return "";
 
@@ -881,11 +815,7 @@ const frequencyHz = displayFrequencyHz;
 
   const Wrapper: React.FC<{ children: React.ReactNode }> = ({ children }) =>
     absoluteShareUrl ? (
-      <a
-        href={absoluteShareUrl}
-        target="_self"
-        aria-label={`Open canonical sigil ${payloadHashForRender ?? ""}`}
-      >
+      <a href={absoluteShareUrl} target="_self" aria-label={`Open canonical sigil ${payloadHashForRender ?? ""}`}>
         {children}
       </a>
     ) : (
@@ -899,8 +829,8 @@ const frequencyHz = displayFrequencyHz;
     stateKeyOk,
     chakraDayKey,
     frequencyHz,
-    pulseDisplay,
-    beatDisplay,
+    canon.pulse,
+    canon.beat,
     displayStepIndex,
     zkPoseidonHash
   );
@@ -932,7 +862,6 @@ const frequencyHz = displayFrequencyHz;
 
       return JSON.stringify(next);
     } catch (err) {
-      // eslint-disable-next-line no-console
       console.debug("[KaiSigil] Failed to patch embedded metadata shareUrl", err);
       return raw;
     }
@@ -942,60 +871,6 @@ const frequencyHz = displayFrequencyHz;
     () => precomputeLedgerDht(stateKeyOk ? built?.embeddedMetaJson : undefined),
     [built, stateKeyOk]
   );
-
-  const zkDisplay = useMemo<ZkDisplayState>(() => {
-    const baseScheme = zkScheme ?? "groth16-poseidon";
-    const basePoseidon = zkPoseidonHash ?? "";
-    const base: ZkDisplayState = {
-      verified: false,
-      scheme: baseScheme,
-      poseidonHash: basePoseidon,
-      proofPresent: false,
-    };
-    if (!stateKeyOk || !embeddedMetaJson) return base;
-    try {
-      const parsed = JSON.parse(embeddedMetaJson) as Record<string, unknown>;
-      const proofHints = isRecord(parsed.proofHints) ? parsed.proofHints : null;
-      const scheme =
-        (proofHints && typeof proofHints.scheme === "string" && proofHints.scheme) || baseScheme;
-      const poseidonHash =
-        typeof parsed.zkPoseidonHash === "string" ? parsed.zkPoseidonHash : basePoseidon;
-
-      let zkPublicInputs: string[] = [];
-      if (Array.isArray(parsed.zkPublicInputs)) {
-        zkPublicInputs = parsed.zkPublicInputs.map((entry) => String(entry));
-      } else if (typeof parsed.zkPublicInputs === "string") {
-        try {
-          const parsedInputs = JSON.parse(parsed.zkPublicInputs) as unknown;
-          if (Array.isArray(parsedInputs)) {
-            zkPublicInputs = parsedInputs.map((entry) => String(entry));
-          } else {
-            zkPublicInputs = [parsed.zkPublicInputs];
-          }
-        } catch (err) {
-          // eslint-disable-next-line no-console
-          console.debug("[KaiSigil] Failed to parse zkPublicInputs string", err);
-          zkPublicInputs = [parsed.zkPublicInputs];
-        }
-      }
-
-      const proofPresent = isZkProofLike(parsed.zkProof);
-      const hasPoseidon = !!poseidonHash && poseidonHash !== "0x";
-      const inputsMatch = zkPublicInputs.length > 0 && zkPublicInputs[0] === poseidonHash;
-      const schemeOk = /groth16/i.test(scheme);
-
-      return {
-        verified: proofPresent && hasPoseidon && inputsMatch && schemeOk,
-        scheme,
-        poseidonHash,
-        proofPresent,
-      };
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.debug("[KaiSigil] Failed to parse ZK metadata", err);
-      return base;
-    }
-  }, [embeddedMetaJson, stateKeyOk, zkPoseidonHash, zkScheme]);
 
   /* Imperative API */
   useImperativeHandle(
@@ -1054,12 +929,12 @@ const frequencyHz = displayFrequencyHz;
           cursor: shareUrlForRender ? "pointer" : "default",
         } as React.CSSProperties
       }
-      data-pulse={String(pulseDisplay)}
-      data-beat={String(beatDisplay)}
+      data-pulse={String(canon.pulse)}
+      data-beat={String(canon.beat)}
       data-step-index={String(displayStepIndex)}
-      data-step-pct={String(canon.visualClamped)} // percentIntoStep (0..1)
-      data-step-pct-to-next={String(canon.stepPctToNext)} // (1 - percentIntoStep)
-      data-frequency-hz={String(frequencyHz)}
+      data-step-pct={String(canon.visualClamped)}              // percentIntoStep (0..1)
+      data-step-pct-to-next={String(canon.stepPctToNext)}      // (1 - percentIntoStep)
+      data-frequency-hz={String(displayFrequencyHz)}
       data-chakra-day={chakraDayKey}
       data-weekday={weekdayResolved ?? undefined}
       data-chakra-gate={chakraGate}
@@ -1079,6 +954,12 @@ const frequencyHz = displayFrequencyHz;
       data-arc={chakraArc ?? undefined}
       data-summary-b64={summaryB64}
       {...klockDataAttrs}
+      data-valuation-algorithm={mintSeal?.algorithm ?? undefined}
+      data-valuation-policy={mintSeal?.policyId ?? undefined}
+      data-valuation-policy-checksum={mintSeal?.policyChecksum ?? undefined}
+      data-valuation-stamp={mintSeal?.stamp ?? undefined}
+      data-valuation-value-phi={mintSeal?.valuePhi != null ? String(mintSeal.valuePhi) : undefined}
+      data-valuation-computed-at={mintSeal?.computedAtPulse != null ? String(mintSeal.computedAtPulse) : undefined}
       data-value-phi-live={liveValuePhi != null ? String(liveValuePhi) : undefined}
     >
       <title>{`Kairos HarmoniK Sigil • Pulse ${canon.pulse}`}</title>
@@ -1100,6 +981,7 @@ const frequencyHz = displayFrequencyHz;
         dhtJson={dhtJson}
       />
 
+      {/* defs (creates gradient/filter IDs based on uid) */}
       <Defs
         uid={uid}
         hue={hue}
@@ -1112,6 +994,7 @@ const frequencyHz = displayFrequencyHz;
         auraPath={auraPath}
       />
 
+      {/* Optional signature path */}
       {kaiSignature && (
         <defs>
           <path
@@ -1163,11 +1046,12 @@ const frequencyHz = displayFrequencyHz;
             chakraSides={CHAKRAS[chakraDayKey].sides}
             binaryForRender={binaryForRender}
             summary={summaryDisplay}
-            pulse={pulseDisplay}
+            pulse={canon.pulse}
           />
         </g>
       </Wrapper>
 
+      {/* ZK glyph */}
       {showZKBadge && (
         <ZKGlyph
           uid={uid}
@@ -1175,10 +1059,6 @@ const frequencyHz = displayFrequencyHz;
           phaseColor={phaseColor}
           outerRingText={outerRingText}
           innerRingText={stateKeyOk ? built?.innerRingText ?? "initializing…" : "initializing…"}
-          verified={zkDisplay.verified}
-          zkScheme={zkDisplay.scheme}
-          zkPoseidonHash={zkDisplay.poseidonHash}
-          proofPresent={zkDisplay.proofPresent}
           animate={animate}
           prefersReduce={prefersReduce}
         />
@@ -1191,4 +1071,10 @@ KaiSigil.displayName = "KaiSigil";
 export default KaiSigil;
 
 // Re-export types so callers can `import { KaiSigilHandle, KaiSigilProps } from "./KaiSigil"`
-export type { KaiSigilHandle, KaiSigilProps, Built, SnapshotKey, WeekdayName } from "./KaiSigil/types";
+export type {
+  KaiSigilHandle,
+  KaiSigilProps,
+  Built,
+  SnapshotKey,
+  WeekdayName,
+} from "./KaiSigil/types";
