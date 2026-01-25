@@ -13,11 +13,17 @@ import type { Groth16 } from "./components/VerifierStamper/zk";
 import * as snarkjs from "snarkjs";
 import { initReloadDetective } from "./utils/reloadDetective";
 import { initPerfDebug } from "./perf/perfDebug";
+import { readSnapshotFromDom, seedFromSnapshot, persistSnapshotToOfflineStores } from "./ssr/snapshotClient";
+import { SsrSnapshotProvider } from "./ssr/SsrSnapshotContext";
+import type { SsrSnapshot } from "./ssr/snapshotTypes";
 
 // ✅ Scheduler cadence utils
 import { startKaiCadence, startKaiFibBackoff } from "./utils/kai_cadence";
 
 const isProduction = import.meta.env.MODE === "production";
+const ssrSnapshot = typeof document !== "undefined" ? readSnapshotFromDom(document) : null;
+seedFromSnapshot(ssrSnapshot);
+persistSnapshotToOfflineStores(ssrSnapshot);
 
 declare global {
   interface Window {
@@ -33,6 +39,8 @@ declare global {
      *   <div id="root" data-ssr="1">...</div>
      */
     __KAI_SSR__?: boolean;
+    __SSR_SNAPSHOT_ETAG__?: string;
+    __SSR_SNAPSHOT__?: SsrSnapshot;
   }
 }
 
@@ -109,7 +117,9 @@ if (container) {
   const app = (
     <React.StrictMode>
       <ErrorBoundary>
-        <AppRouter />
+        <SsrSnapshotProvider snapshot={ssrSnapshot}>
+          <AppRouter />
+        </SsrSnapshotProvider>
       </ErrorBoundary>
     </React.StrictMode>
   );

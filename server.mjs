@@ -5,13 +5,12 @@ import { fileURLToPath } from "node:url";
 import { PassThrough } from "node:stream";
 import { createServer as createHttpServer } from "node:http";
 import { createServer as createViteServer } from "vite";
+import { createHash } from "node:crypto";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const resolvePath = (p) => path.resolve(__dirname, p);
 const isProd = process.env.NODE_ENV === "production";
 const port = Number(process.env.PORT || 5173);
-
-const safeJson = (value) => JSON.stringify(value).replace(/</g, "\\u003c");
 
 const mimeTypes = {
   ".js": "text/javascript",
@@ -69,6 +68,8 @@ async function createServer() {
     });
   }
 
+  let dataCache = null;
+
   const server = createHttpServer((req, res) => {
     if (!req.url) {
       res.statusCode = 400;
@@ -83,6 +84,14 @@ async function createServer() {
 
     const runSsr = async () => {
       const url = req.url || "/";
+      const origin = (() => {
+        const host = req.headers.host || "localhost";
+        const proto = req.headers["x-forwarded-proto"] || "http";
+        if (Array.isArray(proto)) return `${proto[0]}://${host}`;
+        return `${proto}://${host}`;
+      })();
+      const requestUrl = new URL(url, origin);
+
       const templatePath = isProd ? "dist/client/index.html" : "index.html";
       let template = await fs.readFile(resolvePath(templatePath), "utf-8");
       if (!isProd && vite) {
@@ -90,13 +99,44 @@ async function createServer() {
       }
 
       const [head, tail] = template.split("<!--ssr-outlet-->");
-      const initialData = { url };
-      const ssrHead = `<script>window.__INITIAL_DATA__=${safeJson(initialData)};</script>`;
-      const htmlHead = head.replace("<!--ssr-head-->", ssrHead);
-
-      const { render } = isProd
+      const { render, safeJsonStringify, stableJsonStringify, buildSnapshotEntries, LruTtlCache } = isProd
         ? await import(resolvePath("dist/server/entry-server.js"))
         : await vite.ssrLoadModule("/src/entry-server.tsx");
+
+      if (!dataCache) {
+        dataCache = new LruTtlCache({ maxEntries: 256 });
+      }
+
+      const snapshotEntries = await buildSnapshotEntries(requestUrl, dataCache);
+      const snapshot = {
+        version: "v1",
+        url: `${requestUrl.pathname}${requestUrl.search}`,
+        createdAtMs: Date.now(),
+        data: snapshotEntries,
+      };
+
+      const etagSource = { ...snapshot, createdAtMs: 0 };
+      const etag = createHash("sha256").update(stableJsonStringify(etagSource)).digest("hex");
+      snapshot.meta = { etag };
+
+      const ifNoneMatch = req.headers["if-none-match"];
+      const cacheControl = "public, max-age=0, s-maxage=30, stale-while-revalidate=300";
+
+      if (ifNoneMatch && ifNoneMatch.replace(/\"/g, "") === etag) {
+        res.statusCode = 304;
+        res.setHeader("ETag", `"${etag}"`);
+        res.setHeader("Cache-Control", cacheControl);
+        res.end();
+        return;
+      }
+
+      const initialData = { url };
+      const snapshotScript = `<script id=\"__SSR_SNAPSHOT__\" type=\"application/json\">${safeJsonStringify(
+        snapshot,
+      )}</script>`;
+      const snapshotEtag = `<script>window.__SSR_SNAPSHOT_ETAG__=${safeJsonStringify(etag)};window.__KAI_SSR__=true;</script>`;
+      const ssrHead = `<script>window.__INITIAL_DATA__=${safeJsonStringify(initialData)};</script>${snapshotScript}${snapshotEtag}`;
+      const htmlHead = head.replace("<!--ssr-head-->", ssrHead).replace("<div id=\"root\">", "<div id=\"root\" data-ssr=\"1\">");
 
       let didError = false;
       const bodyStream = new PassThrough();
@@ -105,11 +145,12 @@ async function createServer() {
         res.end();
       });
 
-      const { pipe, abort } = render(url, {
+      const { pipe, abort } = render(url, snapshot, {
         onShellReady() {
           res.statusCode = didError ? 500 : 200;
           res.setHeader("Content-Type", "text/html");
-          res.setHeader("Cache-Control", "no-cache");
+          res.setHeader("Cache-Control", cacheControl);
+          res.setHeader("ETag", `"${etag}"`);
           res.write(htmlHead);
           pipe(bodyStream);
           bodyStream.pipe(res, { end: false });

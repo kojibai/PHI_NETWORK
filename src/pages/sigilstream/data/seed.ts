@@ -2,6 +2,8 @@
 // Loads initial link seeds from /links.json with strict validation.
 
 import { report, isRecord } from "../core/utils";
+import { cacheKeyForRequest } from "../../../ssr/cache";
+import { getSeeded } from "../../../ssr/snapshotClient";
 
 export type Source = { url: string };
 
@@ -11,6 +13,10 @@ export type Source = { url: string };
  */
 export async function loadLinksJson(): Promise<Source[]> {
   try {
+    const seedKey = cacheKeyForRequest("GET", "/links.json");
+    const seeded = getSeeded<Source[]>(seedKey);
+    if (seeded) return seeded;
+
     const res = await fetch("/links.json", { cache: "no-store" });
     if (!res.ok) return [];
 
