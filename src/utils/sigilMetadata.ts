@@ -1,6 +1,11 @@
 import { XMLParser } from "fast-xml-parser";
 import { gunzipB64 } from "../lib/sigil/codec";
-import type { ProofCapsuleV1, VerificationSource } from "../components/KaiVoh/verifierProof";
+import type {
+  ProofBundleBindings,
+  ProofCapsuleV1,
+  VerificationSource,
+  ZkStatement,
+} from "../components/KaiVoh/verifierProof";
 import type { AuthorSig } from "./authorSig";
 import { parseAuthorSig } from "./authorSig";
 
@@ -26,6 +31,8 @@ export type EmbeddedMeta = {
   bundleHash?: string;
   hashAlg?: string;
   canon?: string;
+  bindings?: ProofBundleBindings;
+  zkStatement?: ZkStatement;
   authorSig?: AuthorSig | null;
   zkPoseidonHash?: string;
   zkProof?: unknown;
@@ -193,6 +200,8 @@ function toEmbeddedMetaFromUnknown(raw: unknown): EmbeddedMeta {
   const bundleHash = typeof raw.bundleHash === "string" ? raw.bundleHash : undefined;
   const hashAlg = typeof raw.hashAlg === "string" ? raw.hashAlg : undefined;
   const canon = typeof raw.canon === "string" ? raw.canon : undefined;
+  const bindings = isRecord(raw.bindings) ? (raw.bindings as ProofBundleBindings) : undefined;
+  const zkStatement = isRecord(raw.zkStatement) ? (raw.zkStatement as ZkStatement) : undefined;
   const authorSig = parseAuthorSig(raw.authorSig);
 
   return {
@@ -217,6 +226,8 @@ function toEmbeddedMetaFromUnknown(raw: unknown): EmbeddedMeta {
     bundleHash,
     hashAlg,
     canon,
+    bindings,
+    zkStatement,
     authorSig,
     zkPoseidonHash,
     zkProof,
@@ -477,6 +488,8 @@ export function extractEmbeddedMetaFromSvg(svgText: string): EmbeddedMeta {
 export type ProofBundleMeta = {
   hashAlg?: string;
   canon?: string;
+  bindings?: ProofBundleBindings;
+  zkStatement?: ZkStatement;
   proofCapsule?: ProofCapsuleV1;
   capsuleHash?: string;
   svgHash?: string;
@@ -508,6 +521,8 @@ export function extractProofBundleMetaFromSvg(svgText: string): ProofBundleMeta 
         return {
           hashAlg: meta.hashAlg,
           canon: meta.canon,
+          bindings: meta.bindings,
+          zkStatement: meta.zkStatement,
           proofCapsule: meta.proofCapsule,
           capsuleHash: meta.capsuleHash,
           svgHash: meta.svgHash,
@@ -541,6 +556,8 @@ export function extractProofBundleMetaFromSvg(svgText: string): ProofBundleMeta 
         return {
           hashAlg: meta.hashAlg,
           canon: meta.canon,
+          bindings: meta.bindings,
+          zkStatement: meta.zkStatement,
           proofCapsule: meta.proofCapsule,
           capsuleHash: meta.capsuleHash,
           svgHash: meta.svgHash,

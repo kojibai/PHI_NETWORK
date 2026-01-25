@@ -18,8 +18,11 @@ import {
   hashSvgText,
   normalizeChakraDay,
   PROOF_CANON,
+  PROOF_BINDINGS,
   PROOF_HASH_ALG,
   VERIFICATION_BUNDLE_VERSION,
+  ZK_STATEMENT_BINDING,
+  ZK_STATEMENT_DOMAIN,
   type VerificationSource,
   type ProofCapsuleV1,
 } from "../components/KaiVoh/verifierProof";
@@ -1506,6 +1509,15 @@ body: [
       {
         hashAlg: PROOF_HASH_ALG,
         canon: PROOF_CANON,
+        bindings: embeddedProof?.bindings ?? PROOF_BINDINGS,
+        zkStatement:
+          embeddedProof?.zkStatement ??
+          (zkMeta?.zkPoseidonHash
+            ? {
+                publicInputOf: ZK_STATEMENT_BINDING,
+                domainTag: ZK_STATEMENT_DOMAIN,
+              }
+            : null),
         proofCapsule,
         capsuleHash,
         svgHash,
@@ -1728,7 +1740,7 @@ body: [
               <div className="vreceipt-label">Card</div>
               <div className="vreceipt-actions">
                 <button type="button" className="vbtn vbtn--ghost" onClick={() => void onDownloadVerifiedCard()}>
-                  Save Verified Card (PNG)
+                  ⬇
                 </button>
               </div>
             </div>

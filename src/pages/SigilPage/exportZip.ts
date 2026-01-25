@@ -27,7 +27,10 @@ import {
   hashSvgText,
   normalizeChakraDay,
   PROOF_CANON,
+  PROOF_BINDINGS,
   PROOF_HASH_ALG,
+  ZK_STATEMENT_BINDING,
+  ZK_STATEMENT_DOMAIN,
   type ProofCapsuleV1,
 } from "../../components/KaiVoh/verifierProof";
 import type { SigilProofHints } from "../../types/sigil";
@@ -588,6 +591,13 @@ export async function exportZIP(ctx: {
     const proofBundleBase = {
       hashAlg: PROOF_HASH_ALG,
       canon: PROOF_CANON,
+      bindings: PROOF_BINDINGS,
+      zkStatement: zkPoseidonHash
+        ? {
+            publicInputOf: ZK_STATEMENT_BINDING,
+            domainTag: ZK_STATEMENT_DOMAIN,
+          }
+        : undefined,
       proofCapsule,
       capsuleHash,
       svgHash,

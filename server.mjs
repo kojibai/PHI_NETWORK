@@ -97,8 +97,8 @@ async function createServer() {
     if (!ogModulePromise) {
       ogModulePromise = (async () => {
         const mod = isProd
-          ? await import(resolvePath("dist/server/entry-server.js"))
-          : await vite.ssrLoadModule("/src/entry-server.tsx");
+          ? await import(resolvePath("dist/server/entry-server-exports.js"))
+          : await vite.ssrLoadModule("/src/entry-server-exports.ts");
         return {
           renderVerifiedOgPng: mod.renderVerifiedOgPng,
           renderNotFoundOgPng: mod.renderNotFoundOgPng,
@@ -260,9 +260,12 @@ async function createServer() {
         }
 
         const [head, tail] = template.split("<!--ssr-outlet-->");
-        const { render, safeJsonStringify, stableJsonStringify, buildSnapshotEntries, LruTtlCache } = isProd
+        const { render } = isProd
           ? await import(resolvePath("dist/server/entry-server.js"))
           : await vite.ssrLoadModule("/src/entry-server.tsx");
+        const { safeJsonStringify, stableJsonStringify, buildSnapshotEntries, LruTtlCache } = isProd
+          ? await import(resolvePath("dist/server/entry-server-exports.js"))
+          : await vite.ssrLoadModule("/src/entry-server-exports.ts");
 
         if (!dataCache) {
           dataCache = new LruTtlCache({ maxEntries: 256 });
