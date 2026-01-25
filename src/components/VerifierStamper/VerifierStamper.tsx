@@ -1257,39 +1257,22 @@ const VerifierStamperInner: React.FC = () => {
 
       if (bundleHash) {
         const receiveBundleHash = readReceiveBundleHashFromBundle(proofBundleMeta?.raw);
-        const keys = new Set<string>();
-        if (receiveBundleHash) keys.add(`received:${receiveBundleHash}`);
-        keys.add(`received:${bundleHash}`);
-        for (const key of keys) {
-          const stored = window.localStorage.getItem(key);
-          if (!stored) continue;
-          try {
-            const parsed = JSON.parse(stored) as unknown;
-            if (!alive) return;
-            if (isReceiveSig(parsed)) {
-              setReceiveSig(parsed);
-              setReceiveStatus("already");
-              return;
+        if (receiveBundleHash) {
+          const stored = window.localStorage.getItem(`received:${receiveBundleHash}`);
+          if (stored) {
+            try {
+              const parsed = JSON.parse(stored) as unknown;
+              if (!alive) return;
+              if (isReceiveSig(parsed)) {
+                setReceiveSig(parsed);
+                setReceiveStatus("already");
+                return;
+              }
+            } catch {
+              if (!alive) return;
             }
-          } catch {
-            if (!alive) return;
           }
         }
-      }
-
-      const embedded = readReceiveSigFromBundle(proofBundleMeta?.raw);
-      if (embedded) {
-        if (!alive) return;
-        setReceiveSig(embedded);
-        setReceiveStatus("already");
-        return;
-      }
-
-      if (meta && (await hasReceiveLock(meta))) {
-        if (!alive) return;
-        setReceiveSig(null);
-        setReceiveStatus("already");
-        return;
       }
 
       if (!alive) return;
@@ -2506,6 +2489,16 @@ const VerifierStamperInner: React.FC = () => {
         authorSig: null,
       };
     }
+
+    const rawBundle = proofBundleMeta?.raw;
+    const priorReceiveSig = readReceiveSigFromBundle(rawBundle);
+    if (rawBundle && isRecord(rawBundle)) {
+      const receiveSigHistory = collectReceiveSigHistory(rawBundle, priorReceiveSig);
+      if (receiveSigHistory.length > 0) {
+        nextBundle.receiveSigHistory = receiveSigHistory;
+      }
+    }
+    delete nextBundle.receiveSig;
 
     const bundleRoot = buildBundleRoot(nextBundle);
     const rootHash = await computeBundleHash(bundleRoot);

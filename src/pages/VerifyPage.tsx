@@ -884,9 +884,16 @@ export default function VerifyPage(): ReactElement {
     ogImageUrl.searchParams.set("status", statusLabel.toLowerCase());
     if (result.status === "ok") {
       ogImageUrl.searchParams.set("pulse", String(result.embedded.pulse ?? slug.pulse ?? ""));
-      ogImageUrl.searchParams.set("phiKey", result.derivedPhiKey ?? "");
+      const ogPhiKey =
+        localReceiveBundle?.ownerPhiKey ??
+        embeddedProof?.ownerPhiKey ??
+        sharedReceipt?.ownerPhiKey ??
+        result.derivedPhiKey ??
+        "";
+      ogImageUrl.searchParams.set("phiKey", ogPhiKey);
       if (result.embedded.chakraDay) ogImageUrl.searchParams.set("chakraDay", result.embedded.chakraDay);
-      if (authorSigVerified != null) ogImageUrl.searchParams.set("kas", authorSigVerified ? "1" : "0");
+      const kasStatus = effectiveReceiveSig ? receiveSigVerified : authorSigVerified;
+      if (kasStatus != null) ogImageUrl.searchParams.set("kas", kasStatus ? "1" : "0");
       if (zkVerify != null) ogImageUrl.searchParams.set("g16", zkVerify ? "1" : "0");
     }
 
@@ -899,7 +906,19 @@ export default function VerifyPage(): ReactElement {
     ensureMetaTag("name", "twitter:title", `Proof of Breath™ — ${statusLabel}`);
     ensureMetaTag("name", "twitter:description", `Proof of Breath™ • ${statusLabel} • Pulse ${slug.pulse ?? "—"}`);
     ensureMetaTag("name", "twitter:image", ogImageUrl.toString());
-  }, [authorSigVerified, result, slug.pulse, slug.raw, slugRaw, zkVerify]);
+  }, [
+    authorSigVerified,
+    effectiveReceiveSig,
+    embeddedProof?.ownerPhiKey,
+    localReceiveBundle?.ownerPhiKey,
+    receiveSigVerified,
+    result,
+    sharedReceipt?.ownerPhiKey,
+    slug.pulse,
+    slug.raw,
+    slugRaw,
+    zkVerify,
+  ]);
 
   const openChartPopover = useCallback((focus: "phi" | "usd") => {
     const nextFocus = isReceiveGlyph ? "usd" : focus;
@@ -1984,7 +2003,11 @@ if (verified && typeof cacheBundleHash === "string" && cacheBundleHash.trim().le
     () => (result.status === "ok" ? String(result.embedded.pulse ?? (slug.pulse ?? 0)) : String(slug.pulse ?? 0)),
     [result, slug.pulse],
   );
-  const kpiPhiKey = useMemo(() => (result.status === "ok" ? result.derivedPhiKey || "—" : "—"), [result]);
+  const effectivePhiKey = useMemo(() => {
+    if (effectiveOwnerPhiKey) return effectiveOwnerPhiKey;
+    return result.status === "ok" ? result.derivedPhiKey || "—" : "—";
+  }, [effectiveOwnerPhiKey, result]);
+  const kpiPhiKey = useMemo(() => effectivePhiKey, [effectivePhiKey]);
 
   const provenanceSig = useMemo(
     () => effectiveOriginAuthorSig ?? embeddedProof?.authorSig ?? null,
@@ -1993,10 +2016,14 @@ if (verified && typeof cacheBundleHash === "string" && cacheBundleHash.trim().le
 
   const sealKAS: SealState = useMemo(() => {
     if (busy) return "busy";
+    if (effectiveReceiveSig) {
+      if (receiveSigVerified === null) return "na";
+      return receiveSigVerified ? "valid" : "invalid";
+    }
     if (!provenanceSig) return "off";
     if (authorSigVerified === null) return "na";
     return authorSigVerified ? "valid" : "invalid";
-  }, [authorSigVerified, busy, provenanceSig]);
+  }, [authorSigVerified, busy, effectiveReceiveSig, provenanceSig, receiveSigVerified]);
 
   const sealZK: SealState = useMemo(() => {
     if (busy) return "busy";
@@ -2038,7 +2065,7 @@ if (verified && typeof cacheBundleHash === "string" && cacheBundleHash.trim().le
       capsuleHash,
       pulse: proofCapsule.pulse,
       verifiedAtPulse: stewardVerifiedPulse,
-      phikey: proofCapsule.phiKey,
+      phikey: effectivePhiKey !== "—" ? effectivePhiKey : proofCapsule.phiKey,
       kasOk: sealKAS === "valid",
       g16Ok: sealZK === "valid",
       verifierSlug: proofCapsule.verifierSlug,
@@ -2061,6 +2088,7 @@ if (verified && typeof cacheBundleHash === "string" && cacheBundleHash.trim().le
     proofCapsule,
     receiptHash,
     result.status,
+    effectivePhiKey,
     sealKAS,
     sealZK,
     sharedReceipt?.receipt,
@@ -2310,7 +2338,7 @@ body: [
 
   const verifierPulse = result.status === "ok" ? (result.embedded.pulse ?? (slug.pulse ?? 0)) : slug.pulse ?? 0;
   const verifierSig = result.status === "ok" ? (result.embedded.kaiSignature ?? (slug.shortSig ?? "unknown")) : slug.shortSig ?? "unknown";
-  const verifierPhi = result.status === "ok" ? result.derivedPhiKey : "—";
+  const verifierPhi = effectivePhiKey;
   const verifierChakra = result.status === "ok" ? result.embedded.chakraDay : undefined;
 
   const shareStatus = result.status === "ok" ? "VERIFIED" : result.status === "error" ? "FAILED" : "STANDBY";
