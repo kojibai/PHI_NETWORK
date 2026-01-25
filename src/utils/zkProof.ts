@@ -1,4 +1,5 @@
 import type { SigilProofHints } from "../types/sigil";
+import { generateSigilProof } from "../../zk/prove";
 
 function isNonEmptyObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && Object.keys(value).length > 0;
@@ -46,7 +47,6 @@ export async function generateZkProofFromPoseidonHash(params: {
   });
 
   const tryLocal = async () => {
-    const { generateSigilProof } = await import("../../zk/prove");
     const res = await generateSigilProof({ secret, expectedHash: poseidonHash });
     return buildResult(res.proof, res.publicSignals.map((entry) => String(entry)));
   };
