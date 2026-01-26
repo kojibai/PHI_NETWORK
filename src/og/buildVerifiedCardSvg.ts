@@ -89,6 +89,18 @@ function formatUsdValue(value: number | null | undefined): string {
   return fmtUsd(value);
 }
 
+function wrapUrl(text: string, maxChars: number): string[] {
+  if (!text) return [];
+  if (text.length <= maxChars) return [text];
+  const out: string[] = [];
+  let cursor = 0;
+  while (cursor < text.length) {
+    out.push(text.slice(cursor, cursor + maxChars));
+    cursor += maxChars;
+  }
+  return out.slice(0, 2);
+}
+
 function sigilImageMarkup(sigilSvg: string | undefined, clipId: string): string {
   if (!sigilSvg) {
     return `
@@ -220,6 +232,10 @@ export function buildVerifiedCardSvg(data: VerifiedCardData): string {
   const isReceiveMode = valuationSnapshot?.mode === "receive";
   const valuationModeLabel = isReceiveMode ? "RECEIVE" : "ORIGIN";
   const headlineText = isReceiveMode ? "VERIFIED RECEIVE" : "VERIFIED ORIGIN";
+  const verifyUrl =
+    data.verifierUrl ??
+    (data.verifierSlug ? `https://phi.network/verify/${encodeURIComponent(data.verifierSlug)}` : "");
+  const verifyUrlLines = wrapUrl(verifyUrl, 54);
 
   const receiptPayload =
     data.receipt ??
@@ -386,6 +402,7 @@ export function buildVerifiedCardSvg(data: VerifiedCardData): string {
       .value { font: 700 30px "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif; fill: #F2F5FB; }
       .mode-label { font: 800 18px "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif; fill: #94BCEB; letter-spacing: 0.24em; }
       .micro { font: 500 12px "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif; fill: #8FA3C5; letter-spacing: 0.12em; }
+      .micro-url { font: 500 11px "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif; fill: #A6B7D6; letter-spacing: 0.04em; }
       .brand { font: 600 14px "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif; fill: #9FB5DA; letter-spacing: 0.42em; }
       .seal { font: 700 16px "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif; letter-spacing: 0.24em; }
     </style>
@@ -474,6 +491,8 @@ export function buildVerifiedCardSvg(data: VerifiedCardData): string {
     <text class="micro" x="320" y="570">SVG ${shortHash(svgHash)}</text>
     <text class="micro" x="320" y="588">CAPSULE ${shortHash(capsuleHash)}</text>
     <text class="micro" x="820" y="588">phi.network</text>
+    ${verifyUrlLines[0] ? `<text class="micro-url" x="80" y="606">${verifyUrlLines[0]}</text>` : ""}
+    ${verifyUrlLines[1] ? `<text class="micro-url" x="80" y="622">${verifyUrlLines[1]}</text>` : ""}
   </g>
 </svg>
   `.trim();

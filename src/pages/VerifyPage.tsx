@@ -66,6 +66,7 @@ import { jcsCanonicalize } from "../utils/jcs";
 import { svgCanonicalForHash } from "../utils/svgProof";
 import useRollingChartSeries from "../components/VerifierStamper/hooks/useRollingChartSeries";
 import { BREATH_MS } from "../components/valuation/constants";
+import { computeCarrierArtifactHash, extractCarrierPayloadFromPng } from "../utils/carrierPayload";
 import {
   assertReceiptHashMatch,
   buildVerificationReceipt,
@@ -123,6 +124,30 @@ function parseJsonString(value: unknown): unknown {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+type VerifyRecordResponse =
+  | { ok: true; record: VerifiedCardData }
+  | { ok: false; error: string };
+
+function isVerifiedCardData(value: unknown): value is VerifiedCardData {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.capsuleHash === "string" &&
+    typeof value.pulse === "number" &&
+    Number.isFinite(value.pulse) &&
+    typeof value.verifiedAtPulse === "number" &&
+    Number.isFinite(value.verifiedAtPulse) &&
+    typeof value.phikey === "string"
+  );
+}
+
+function isVerifyRecordResponse(value: unknown): value is VerifyRecordResponse {
+  if (!isRecord(value) || typeof value.ok !== "boolean") return false;
+  if (value.ok) {
+    return isVerifiedCardData(value.record);
+  }
+  return typeof value.error === "string";
 }
 
 function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
@@ -701,6 +726,7 @@ function Modal(props: { open: boolean; title: string; subtitle?: string; onClose
 export default function VerifyPage(): ReactElement {
   const fileRef = useRef<HTMLInputElement | null>(null);
   const pngFileRef = useRef<HTMLInputElement | null>(null);
+  const carrierFileRef = useRef<HTMLInputElement | null>(null);
   const lastAutoScanKeyRef = useRef<string | null>(null);
 
   const slugRaw = useMemo(() => readSlugFromLocation(), []);
@@ -713,6 +739,13 @@ export default function VerifyPage(): ReactElement {
   const [result, setResult] = useState<VerifyResult>({ status: "idle" });
   const [busy, setBusy] = useState<boolean>(false);
   const [sharedReceipt, setSharedReceipt] = useState<SharedReceipt | null>(initialReceipt);
+  const [recordData, setRecordData] = useState<VerifiedCardData | null>(null);
+  const [recordFetchState, setRecordFetchState] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [recordFetchError, setRecordFetchError] = useState<string>("");
+
+  const [carrierProven, setCarrierProven] = useState<boolean>(false);
+  const [carrierNotice, setCarrierNotice] = useState<string>("");
+  const [carrierBusy, setCarrierBusy] = useState<boolean>(false);
 
   const [proofCapsule, setProofCapsule] = useState<ProofCapsuleV1 | null>(null);
   const [capsuleHash, setCapsuleHash] = useState<string>("");
@@ -752,6 +785,23 @@ export default function VerifyPage(): ReactElement {
 
   const { pulse: currentPulse } = useKaiTicker();
   const searchParams = useMemo(() => new URLSearchParams(typeof window !== "undefined" ? window.location.search : ""), []);
+
+  const recordBundleHash = useMemo(
+    () => bundleHash || embeddedProof?.bundleHash || sharedReceipt?.bundleHash || recordData?.bundleHash || "",
+    [bundleHash, embeddedProof?.bundleHash, recordData?.bundleHash, sharedReceipt?.bundleHash],
+  );
+
+  const recordReceiptHash = useMemo(
+    () => receiptHash || embeddedProof?.receiptHash || sharedReceipt?.receiptHash || recordData?.receiptHash || "",
+    [embeddedProof?.receiptHash, receiptHash, recordData?.receiptHash, sharedReceipt?.receiptHash],
+  );
+
+  const recordSvgHash = useMemo(
+    () => svgHash || embeddedProof?.svgHash || sharedReceipt?.svgHash || recordData?.svgHash || "",
+    [embeddedProof?.svgHash, recordData?.svgHash, sharedReceipt?.svgHash, svgHash],
+  );
+
+  const recordVerified = result.status === "ok";
 
   const valuationPayload = useMemo<SigilMetadataLite | null>(() => {
     if (result.status !== "ok") return null;
@@ -963,6 +1013,65 @@ export default function VerifyPage(): ReactElement {
     setOwnerAuthBusy(false);
   }, [result.status]);
 
+  React.useEffect(() => {
+    if (!slug.raw) {
+      setRecordData(null);
+      setRecordFetchState("idle");
+      setRecordFetchError("");
+      return;
+    }
+    let active = true;
+    setRecordFetchState("loading");
+    setRecordFetchError("");
+
+    (async () => {
+      try {
+        const res = await fetch(`/api/verify-record?slug=${encodeURIComponent(slug.raw)}`, { cache: "no-store" });
+        const raw = (await res.json()) as unknown;
+        if (!active) return;
+        if (!res.ok || !isVerifyRecordResponse(raw) || !raw.ok) {
+          const err = isRecord(raw) && typeof raw.error === "string" ? raw.error : "Record unavailable.";
+          setRecordData(null);
+          setRecordFetchState("error");
+          setRecordFetchError(err);
+          return;
+        }
+        setRecordData(raw.record);
+        setRecordFetchState("ready");
+        setRecordFetchError("");
+      } catch (err) {
+        if (!active) return;
+        const msg = err instanceof Error ? err.message : "Record fetch failed.";
+        setRecordData(null);
+        setRecordFetchState("error");
+        setRecordFetchError(msg);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [slug.raw]);
+
+  React.useEffect(() => {
+    if (!recordData?.proofBundleJson) return;
+    if (sharedReceipt || svgText.trim()) return;
+    try {
+      const parsed = JSON.parse(recordData.proofBundleJson) as unknown;
+      const receipt = buildSharedReceiptFromObject(parsed);
+      if (receipt) {
+        setSharedReceipt(receipt);
+      }
+    } catch {
+      // ignore invalid record payload
+    }
+  }, [recordData?.proofBundleJson, sharedReceipt, svgText]);
+
+  React.useEffect(() => {
+    setCarrierProven(false);
+    setCarrierNotice("");
+  }, [slug.raw, recordBundleHash, recordReceiptHash]);
+
   const openChartPopover = useCallback((focus: "phi" | "usd") => {
     const nextFocus = isReceiveGlyph ? "usd" : focus;
     setChartFocus(nextFocus);
@@ -1140,6 +1249,89 @@ export default function VerifyPage(): ReactElement {
       }
     },
     [slug],
+  );
+
+  const onPickCarrierFile = useCallback(
+    async (file: File): Promise<void> => {
+      if (!recordVerified || !recordBundleHash || !recordReceiptHash) {
+        setCarrierProven(false);
+        setCarrierNotice("Record not verified yet. Open the verify link first.");
+        return;
+      }
+      setCarrierBusy(true);
+      try {
+        if (isPngFile(file)) {
+          const buffer = await readFileArrayBuffer(file);
+          const bytes = new Uint8Array(buffer);
+          const payload = extractCarrierPayloadFromPng(bytes);
+          if (!payload) {
+            setCarrierProven(false);
+            setCarrierNotice("Sealed PNG missing carrier payload.");
+            return;
+          }
+          const slugMatch = payload.slug === slug.raw;
+          const bundleMatch = payload.bundleHash.toLowerCase() === recordBundleHash.toLowerCase();
+          const receiptMatch = payload.receiptHash.toLowerCase() === recordReceiptHash.toLowerCase();
+          if (!slugMatch || !bundleMatch || !receiptMatch) {
+            setCarrierProven(false);
+            setCarrierNotice("Sealed PNG does not match this verified record.");
+            return;
+          }
+          const artifactHash = await computeCarrierArtifactHash(bytes);
+          if (artifactHash !== payload.artifactHash.toLowerCase()) {
+            setCarrierProven(false);
+            setCarrierNotice("Sealed PNG hash mismatch. Screenshots cannot prove possession.");
+            return;
+          }
+          setCarrierProven(true);
+          setCarrierNotice("Carrier proven. Possession verified.");
+          return;
+        }
+
+        if (isSvgFile(file)) {
+          const text = await readFileText(file);
+          const embedded = extractProofBundleMetaFromSvg(text);
+          if (!embedded?.bundleHash || !embedded?.receiptHash) {
+            setCarrierProven(false);
+            setCarrierNotice("Sealed SVG missing proof bundle metadata.");
+            return;
+          }
+          if (embedded.proofCapsule?.verifierSlug && embedded.proofCapsule.verifierSlug !== slug.raw) {
+            setCarrierProven(false);
+            setCarrierNotice("Sealed SVG does not match this slug.");
+            return;
+          }
+          const bundleMatch = embedded.bundleHash.toLowerCase() === recordBundleHash.toLowerCase();
+          const receiptMatch = embedded.receiptHash.toLowerCase() === recordReceiptHash.toLowerCase();
+          if (!bundleMatch || !receiptMatch) {
+            setCarrierProven(false);
+            setCarrierNotice("Sealed SVG does not match this verified record.");
+            return;
+          }
+          if (recordSvgHash) {
+            const svgHash = await hashSvgText(text);
+            if (svgHash.toLowerCase() !== recordSvgHash.toLowerCase()) {
+              setCarrierProven(false);
+              setCarrierNotice("Sealed SVG hash mismatch.");
+              return;
+            }
+          }
+          setCarrierProven(true);
+          setCarrierNotice("Carrier proven. Possession verified.");
+          return;
+        }
+
+        setCarrierProven(false);
+        setCarrierNotice("Upload a sealed PNG or SVG file.");
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Carrier verification failed.";
+        setCarrierProven(false);
+        setCarrierNotice(msg);
+      } finally {
+        setCarrierBusy(false);
+      }
+    },
+    [recordBundleHash, recordReceiptHash, recordSvgHash, recordVerified, slug.raw],
   );
 
   const handleFiles = useCallback(
@@ -2424,6 +2616,25 @@ body: [
             ? "Not present"
             : "No reference hash";
 
+  const recordStatusLabel = recordVerified
+    ? "Verified"
+    : recordFetchState === "loading"
+      ? "Loading"
+      : recordFetchState === "error"
+        ? "Unavailable"
+        : "Pending";
+
+  const recordStatusDetail = recordVerified
+    ? "Record verified from the public bundle."
+    : recordFetchState === "error"
+      ? recordFetchError || "Record unavailable."
+      : "Awaiting public record verification.";
+
+  const carrierStatusLabel = carrierProven ? "Proven" : "Not proven";
+  const carrierStatusDetail = carrierProven
+    ? "Sealed artifact matched this record."
+    : "Upload the sealed file to prove possession.";
+
   const svgPreview = useMemo(() => {
     const raw = svgText.trim();
     if (!raw) return "";
@@ -2641,7 +2852,15 @@ React.useEffect(() => {
     const verificationSigValue = verificationSig ?? embeddedProof?.verificationSig ?? sharedReceipt?.verificationSig;
     const valuationValue = valuationSnapshot && valuationHash ? { ...valuationSnapshot, valuationHash } : undefined;
     const ownerPhiKeyValue = effectiveOwnerPhiKey ?? effectivePhiKey;
-    const verifierUrlValue = proofVerifierUrl || currentVerifyUrl;
+    const verifierUrlValue =
+      proofCapsule
+        ? buildVerifierUrl(
+            proofCapsule.pulse,
+            proofCapsule.kaiSignature,
+            undefined,
+            stewardVerifiedPulse ?? undefined,
+          )
+        : proofVerifierUrl || currentVerifyUrl;
     return {
       capsuleHash,
       svgHash: svgHash || undefined,
@@ -2878,6 +3097,47 @@ React.useEffect(() => {
           <div className="vlink">
             <span className="vlink-k">Path</span>
             <code className="vlink-v mono">/verify/{slug.raw || "—"}</code>
+          </div>
+
+          <div className="vstatus-grid" aria-label="Verification status">
+            <div className={`vstatus-card ${recordVerified ? "is-ok" : recordFetchState === "loading" ? "is-pending" : "is-warn"}`}>
+              <div className="vstatus-k">Record Verified</div>
+              <div className="vstatus-v">{recordStatusLabel}</div>
+              <div className="vstatus-sub">{recordStatusDetail}</div>
+            </div>
+            <div className={`vstatus-card ${carrierProven ? "is-ok" : "is-warn"}`}>
+              <div className="vstatus-k">Carrier Proven</div>
+              <div className="vstatus-v">{carrierStatusLabel}</div>
+              <div className="vstatus-sub">{carrierStatusDetail}</div>
+            </div>
+          </div>
+
+          {!carrierProven && recordVerified ? (
+            <div className="vstatus-note">Public record verified. Possession not proven.</div>
+          ) : null}
+
+          <div className="vstatus-actions">
+            <input
+              ref={carrierFileRef}
+              className="vfile"
+              type="file"
+              accept=".png,.svg,image/png,image/svg+xml"
+              onChange={(e) => {
+                const file = e.currentTarget.files?.[0];
+                if (file) void onPickCarrierFile(file);
+                e.currentTarget.value = "";
+              }}
+            />
+            <button
+              type="button"
+              className="vcta vcta--carrier"
+              onClick={() => carrierFileRef.current?.click()}
+              disabled={carrierBusy || !recordVerified}
+              title={recordVerified ? "Upload the sealed file to prove possession." : "Verify the record before proving possession."}
+            >
+              {carrierBusy ? "VERIFYING…" : "Prove Possession (Upload sealed file)"}
+            </button>
+            {carrierNotice ? <div className="vstatus-foot">{carrierNotice}</div> : null}
           </div>
         </div>
 
