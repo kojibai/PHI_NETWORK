@@ -1,6 +1,7 @@
 import phiSvg from "../assets/phi.svg?raw";
 import type { VerifiedCardData } from "./types";
 import { sanitizeSigilSvg, svgToDataUri } from "./sigilEmbed";
+import { currency as fmtPhi, usd as fmtUsd } from "../components/valuation/display";
 
 const WIDTH = 1200;
 const HEIGHT = 630;
@@ -40,6 +41,21 @@ function headerCheckPath(): string {
   return "M16 26 L26 36 L44 16";
 }
 
+function dropUndefined<T extends Record<string, unknown>>(value: T): T {
+  const entries = Object.entries(value).filter((entry) => entry[1] !== undefined);
+  return Object.fromEntries(entries) as T;
+}
+
+function formatPhiValue(value: number | null | undefined): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "—";
+  return fmtPhi(value);
+}
+
+function formatUsdValue(value: number | null | undefined): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "—";
+  return fmtUsd(value);
+}
+
 function sigilImageMarkup(sigilSvg: string | undefined, clipId: string): string {
   if (!sigilSvg) {
     return `
@@ -71,6 +87,15 @@ export function buildVerifiedCardSvg(data: VerifiedCardData): string {
   const badgeGlowId = `${id}-badge-glow`;
 
   const phiShort = shortPhiKey(phikey);
+  const valuationSnapshot = data.valuation ? { ...data.valuation } : undefined;
+  if (valuationSnapshot && "valuationHash" in valuationSnapshot) {
+    delete (valuationSnapshot as { valuationHash?: string }).valuationHash;
+  }
+  const valuationHash = data.valuation?.valuationHash ?? data.receipt?.valuationHash;
+  const valuationPhi = formatPhiValue(valuationSnapshot?.phiValue);
+  const valuationUsd = formatUsdValue(valuationSnapshot?.usdValue);
+  const valuationModeLabel =
+    valuationSnapshot?.mode === "receive" ? "RECEIVE" : valuationSnapshot?.mode === "origin" ? "ORIGIN" : null;
 
   const receiptPayload =
     data.receipt ??
@@ -99,9 +124,20 @@ export function buildVerifiedCardSvg(data: VerifiedCardData): string {
   if (data.verificationSig) receiptMeta.verificationSig = data.verificationSig;
   const receiptJson = JSON.stringify(receiptMeta);
 
+  const auditMeta = dropUndefined({
+    receiptHash: data.receiptHash,
+    valuation: valuationSnapshot,
+    valuationHash,
+    bundleHash,
+    zkPoseidonHash,
+    verifiedAtPulse: receiptPayload?.verifiedAtPulse ?? verifiedAtPulse,
+  });
+  const auditJson = JSON.stringify(auditMeta);
+
   return `
 <svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HEIGHT}">
   <metadata id="kai-verified-receipt"><![CDATA[${receiptJson}]]></metadata>
+  <metadata id="kai-verified-audit"><![CDATA[${auditJson}]]></metadata>
   <defs>
     <linearGradient id="${id}-bg" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%" stop-color="#05060A" />
@@ -140,6 +176,8 @@ export function buildVerifiedCardSvg(data: VerifiedCardData): string {
       .subhead { font: 600 30px "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif; fill: #DDE6FF; }
       .phikey { font: 700 44px "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif; fill: #EEF2FF; }
       .label { font: 800 34px "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif; fill: #DDE6FF; }
+      .value { font: 700 28px "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif; fill: #EEF2FF; }
+      .mode-label { font: 800 22px "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif; fill: #9FE7FF; letter-spacing: 0.08em; }
       .footer { font: 700 30px "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif; fill: #EEF2FF; }
       .footer-right { font: 600 22px "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif; fill: #B9C7E6; }
     </style>
@@ -167,6 +205,7 @@ export function buildVerifiedCardSvg(data: VerifiedCardData): string {
   />
 
   <text class="headline" x="420" y="120">VERIFIED</text>
+  ${valuationModeLabel ? `<text class="mode-label" x="420" y="155">${valuationModeLabel}</text>` : ""}
   <g transform="translate(800 78)">
     <circle cx="28" cy="28" r="26" fill="rgba(14,40,24,0.9)" stroke="#4FFFA2" stroke-width="2" filter="url(#${badgeGlowId})" />
     <path d="${headerCheckPath()}" fill="none" stroke="#4FFFA2" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" />
@@ -188,6 +227,12 @@ export function buildVerifiedCardSvg(data: VerifiedCardData): string {
     <rect width="64" height="64" rx="16" fill="rgba(10,16,22,0.9)" stroke="#35F2B8" stroke-width="2" />
     <path d="${badgeMark(g16Ok)}" fill="none" stroke="${g16Ok ? "#35F2B8" : "#FF6F6F"}" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" />
   </g>
+
+  <text class="label" x="420" y="430">Φ VALUE (MINTED)</text>
+  <text class="value" x="420" y="468">${valuationPhi}</text>
+
+  <text class="label" x="420" y="510">USD VALUE (MINTED)</text>
+  <text class="value" x="420" y="546">${valuationUsd}</text>
 
   <rect x="828" y="198" width="324" height="324" rx="34" fill="rgba(8,12,18,0.75)" stroke="${accent}" stroke-width="3" filter="url(#${glowId})" />
   <rect x="840" y="210" width="300" height="300" rx="28" fill="rgba(10,14,20,0.65)" />

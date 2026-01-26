@@ -101,13 +101,27 @@ import { DEFAULT_ISSUANCE_POLICY, quotePhiForUsd } from "../../utils/phi-issuanc
 import { BREATH_MS } from "../valuation/constants";
 import { recordSend, getSpentScaledFor, markConfirmedByLeaf } from "../../utils/sendLedger";
 import { recordSigilTransferMovement } from "../../utils/sigilTransferRegistry";
-import { buildBundleRoot, buildBundleUnsigned, buildVerifierSlug, computeBundleHash, hashBundle, hashProofCapsuleV1, hashSvgText, normalizeChakraDay, PROOF_CANON, PROOF_HASH_ALG, PROOF_BINDINGS } from "../KaiVoh/verifierProof";
+import {
+  buildBundleRoot,
+  buildBundleUnsigned,
+  buildVerifierSlug,
+  computeBundleHash,
+  hashBundle,
+  hashProofCapsuleV1,
+  hashSvgText,
+  normalizeChakraDay,
+  PROOF_CANON,
+  PROOF_HASH_ALG,
+  PROOF_BINDINGS,
+  type ProofBundleLike,
+} from "../KaiVoh/verifierProof";
 import { isKASAuthorSig } from "../../utils/authorSig";
 import { computeZkPoseidonHash } from "../../utils/kai";
 import { generateZkProofFromPoseidonHash } from "../../utils/zkProof";
 import type { SigilProofHints } from "../../types/sigil";
 import type { SigilSharePayloadLoose } from "../SigilExplorer/types";
 import { buildOwnerKeyDerivation, deriveOwnerPhiKeyFromReceive } from "../../utils/ownerPhiKey";
+import { buildReceiveBundleRoot, hashReceiveBundleRoot } from "../../utils/receiveBundle";
 import {
   apiFetchWithFailover,
   loadApiBackupDeadUntil,
@@ -181,6 +195,14 @@ function readReceiveSigFromBundle(raw: unknown): ReceiveSig | null {
   if (!isRecord(raw)) return null;
   const candidate = raw.receiveSig;
   return isReceiveSig(candidate) ? candidate : null;
+}
+
+function readReceiveBundleHashFromBundle(raw: unknown): string | null {
+  if (!isRecord(raw)) return null;
+  const candidate = raw.receiveBundleHash;
+  if (typeof candidate !== "string") return null;
+  const trimmed = candidate.trim();
+  return trimmed ? trimmed : null;
 }
 
 const RECEIVE_LOCK_PREFIX = "kai:receive:lock:v1";
@@ -518,19 +540,19 @@ const VerifierStamperInner: React.FC = () => {
     [unlockBusy, unlockState.isUnlocked, bundleHash, proofBundleMeta?.authorSig]
   );
 
-  const claimReceiveSig = useCallback(async (): Promise<ReceiveSig | null> => {
-    if (receiveBusy || receiveStatus !== "new") return null;
-    if (!bundleHash) return null;
-    setReceiveBusy(true);
-    try {
-      const receivePulse = kaiPulseNow();
-      const passkey = await resolveReceiverPasskey();
-      const { nonce, challengeBytes } = await buildKasChallenge("receive", bundleHash);
-      const assertion = await getWebAuthnAssertionJson({
-        challenge: challengeBytes,
-        allowCredIds: [passkey.credId],
-        preferInternal: true,
-      });
+  const claimReceiveSig = useCallback(
+    async (receiveBundleHash: string, receivePulse: number): Promise<ReceiveSig | null> => {
+      if (receiveBusy || receiveStatus !== "new") return null;
+      if (!receiveBundleHash) return null;
+      setReceiveBusy(true);
+      try {
+        const passkey = await resolveReceiverPasskey();
+        const { nonce, challengeBytes } = await buildKasChallenge("receive", receiveBundleHash);
+        const assertion = await getWebAuthnAssertionJson({
+          challenge: challengeBytes,
+          allowCredIds: [passkey.credId],
+          preferInternal: true,
+        });
       const ok = await verifyWebAuthnAssertion({
         assertion,
         expectedChallenge: challengeBytes,
@@ -542,28 +564,30 @@ const VerifierStamperInner: React.FC = () => {
         return null;
       }
 
-      const nextSig: ReceiveSig = {
-        v: "KRS-1",
-        alg: "webauthn-es256",
-        nonce,
-        binds: { bundleHash },
-        createdAtPulse: receivePulse,
-        credId: passkey.credId,
-        pubKeyJwk: passkey.pubKeyJwk as ReceiveSig["pubKeyJwk"],
-        assertion,
-      };
+        const nextSig: ReceiveSig = {
+          v: "KRS-1",
+          alg: "webauthn-es256",
+          nonce,
+          binds: { bundleHash: receiveBundleHash },
+          createdAtPulse: receivePulse,
+          credId: passkey.credId,
+          pubKeyJwk: passkey.pubKeyJwk as ReceiveSig["pubKeyJwk"],
+          assertion,
+        };
 
-      window.localStorage.setItem(`received:${bundleHash}`, JSON.stringify(nextSig));
-      setReceiveSig(nextSig);
-      setReceiveStatus("already");
-      return nextSig;
-    } catch {
-      setError("Receive claim canceled.");
-      return null;
-    } finally {
-      setReceiveBusy(false);
-    }
-  }, [receiveBusy, receiveStatus, bundleHash, resolveReceiverPasskey]);
+        window.localStorage.setItem(`received:${receiveBundleHash}`, JSON.stringify(nextSig));
+        setReceiveSig(nextSig);
+        setReceiveStatus("already");
+        return nextSig;
+      } catch {
+        setError("Receive claim canceled.");
+        return null;
+      } finally {
+        setReceiveBusy(false);
+      }
+    },
+    [receiveBusy, receiveStatus, resolveReceiverPasskey],
+  );
 
   const [me, setMe] = useState<Keypair | null>(null);
   useEffect(() => {
@@ -917,9 +941,10 @@ const VerifierStamperInner: React.FC = () => {
   );
 
   const hasReceiveLock = useCallback(
-    async (m: SigilMetadata): Promise<boolean> => {
+    async (m: SigilMetadata, options?: { includeRemote?: boolean }): Promise<boolean> => {
       if (await hasLocalReceiveLock(m)) return true;
       if (await hasRegistryReceiveLock(m)) return true;
+      if (options?.includeRemote === false) return false;
       return hasRemoteReceiveLock(m);
     },
     [hasLocalReceiveLock, hasRegistryReceiveLock, hasRemoteReceiveLock]
@@ -1168,6 +1193,10 @@ const VerifierStamperInner: React.FC = () => {
       if (receiveFromBundle) {
         metaNext = { ...metaNext, receiveSig: receiveFromBundle };
       }
+      const receiveBundleHashFromBundle = readReceiveBundleHashFromBundle(proofMetaNext?.raw);
+      if (receiveBundleHashFromBundle && !metaNext.receiveBundleHash) {
+        metaNext = { ...metaNext, receiveBundleHash: receiveBundleHashFromBundle };
+      }
       if (proofMetaNext?.raw && isRecord(proofMetaNext.raw)) {
         metaNext = { ...metaNext, proofBundleRaw: proofMetaNext.raw };
       }
@@ -1231,39 +1260,6 @@ const VerifierStamperInner: React.FC = () => {
         autoReceiveRef.current = null;
       }
 
-      if (bundleHash) {
-        const key = `received:${bundleHash}`;
-        const stored = window.localStorage.getItem(key);
-        if (stored) {
-          try {
-            const parsed = JSON.parse(stored) as unknown;
-            if (!alive) return;
-            setReceiveSig(isReceiveSig(parsed) ? parsed : null);
-          } catch {
-            if (!alive) return;
-            setReceiveSig(null);
-          }
-          if (!alive) return;
-          setReceiveStatus("already");
-          return;
-        }
-      }
-
-      const embedded = readReceiveSigFromBundle(proofBundleMeta?.raw);
-      if (embedded) {
-        if (!alive) return;
-        setReceiveSig(embedded);
-        setReceiveStatus("already");
-        return;
-      }
-
-      if (meta && (await hasReceiveLock(meta))) {
-        if (!alive) return;
-        setReceiveSig(null);
-        setReceiveStatus("already");
-        return;
-      }
-
       if (!alive) return;
       setReceiveSig(null);
       setReceiveStatus(bundleHash ? "new" : "idle");
@@ -1271,7 +1267,7 @@ const VerifierStamperInner: React.FC = () => {
     return () => {
       alive = false;
     };
-  }, [bundleHash, proofBundleMeta?.raw, meta, hasReceiveLock]);
+  }, [bundleHash]);
 
   useEffect(() => {
     if (!bundleHash || unlockState.isUnlocked || !unlockState.isRequired) return;
@@ -2265,17 +2261,13 @@ const VerifierStamperInner: React.FC = () => {
       return;
     }
 
-    if ((await hasLocalReceiveLock(meta)) || (await hasRegistryReceiveLock(meta))) {
+    if (await hasReceiveLock(meta, { includeRemote: false })) {
       setError("This transfer has already been received.");
       setReceiveStatus("already");
       return;
     }
 
     let receiveSigLocal = receiveSig ?? null;
-    if (receiveStatus === "new" && !receiveSigLocal) {
-      receiveSigLocal = await claimReceiveSig();
-      if (!receiveSigLocal) return;
-    }
 
     const { used } = getChildLockInfo(meta, kaiPulseNow());
     if (used) {
@@ -2410,7 +2402,7 @@ const VerifierStamperInner: React.FC = () => {
     const svgHash = await hashSvgText(baseSvg);
     const proofCapsule = proofBundleMeta?.proofCapsule;
     const capsuleHash = proofBundleMeta?.capsuleHash ?? (proofCapsule ? await hashProofCapsuleV1(proofCapsule) : null);
-    const receivePulse = receiveSigLocal?.createdAtPulse ?? nowPulse;
+    let receivePulse = receiveSigLocal?.createdAtPulse ?? nowPulse;
     const originBundleHash =
       proofBundleMeta?.originBundleHash ??
       proofBundleMeta?.bundleHash ??
@@ -2434,7 +2426,6 @@ const VerifierStamperInner: React.FC = () => {
         originAuthorSig,
         receivePulse,
         authorSig: null,
-        ...(receiveSigLocal ? { receiveSig: receiveSigLocal } : {}),
       };
     } else if (updated.kaiSignature && typeof updated.pulse === "number") {
       const chakraDay = normalizeChakraDay(updated.chakraDay ?? "") ?? "Crown";
@@ -2471,7 +2462,6 @@ const VerifierStamperInner: React.FC = () => {
         originAuthorSig,
         receivePulse,
         authorSig: null,
-        ...(receiveSigLocal ? { receiveSig: receiveSigLocal } : {}),
       };
     } else {
       nextBundle = {
@@ -2482,9 +2472,18 @@ const VerifierStamperInner: React.FC = () => {
         originAuthorSig,
         receivePulse,
         authorSig: null,
-        ...(receiveSigLocal ? { receiveSig: receiveSigLocal } : {}),
       };
     }
+
+    const rawBundle = proofBundleMeta?.raw;
+    const priorReceiveSig = readReceiveSigFromBundle(rawBundle);
+    if (rawBundle && isRecord(rawBundle)) {
+      const receiveSigHistory = collectReceiveSigHistory(rawBundle, priorReceiveSig);
+      if (receiveSigHistory.length > 0) {
+        nextBundle.receiveSigHistory = receiveSigHistory;
+      }
+    }
+    delete nextBundle.receiveSig;
 
     const bundleRoot = buildBundleRoot(nextBundle);
     const rootHash = await computeBundleHash(bundleRoot);
@@ -2508,20 +2507,44 @@ const VerifierStamperInner: React.FC = () => {
     } else {
       delete nextBundle.bundleRoot;
     }
+    const computeReceiveBundleHash = async (pulse: number) => {
+      const receiveBundleRoot = buildReceiveBundleRoot({
+        bundleRoot,
+        bundle: nextBundle as ProofBundleLike,
+        originBundleHash,
+        originAuthorSig,
+        receivePulse: pulse,
+      });
+      const receiveBundleHash = await hashReceiveBundleRoot(receiveBundleRoot);
+      return { receiveBundleRoot, receiveBundleHash };
+    };
+
+    let { receiveBundleRoot, receiveBundleHash } = await computeReceiveBundleHash(receivePulse);
+    if (receiveSigLocal && receiveSigLocal.binds.bundleHash !== receiveBundleHash) {
+      receiveSigLocal = null;
+      receivePulse = nowPulse;
+      ({ receiveBundleRoot, receiveBundleHash } = await computeReceiveBundleHash(receivePulse));
+    }
+    if (receiveStatus === "new" && !receiveSigLocal) {
+      receiveSigLocal = await claimReceiveSig(receiveBundleHash, receivePulse);
+      if (!receiveSigLocal) return;
+    }
     nextBundle.bundleHash = bundleHashNext;
-    nextBundle.receiveBundleHash = bundleHashNext;
+    nextBundle.receiveBundleHash = receiveBundleHash;
+    nextBundle.receiveBundleRoot = receiveBundleRoot;
+    if (receiveSigLocal) nextBundle.receiveSig = receiveSigLocal;
 
     if (receiveSigLocal) {
       const ownerPhiKey = await deriveOwnerPhiKeyFromReceive({
         receiverPubKeyJwk: receiveSigLocal.pubKeyJwk,
         receivePulse,
-        receiveBundleHash: bundleHashNext,
+        receiveBundleHash,
       });
       nextBundle.ownerPhiKey = ownerPhiKey;
       nextBundle.ownerKeyDerivation = buildOwnerKeyDerivation({
         originPhiKey: proofCapsule?.phiKey,
         receivePulse,
-        receiveBundleHash: bundleHashNext,
+        receiveBundleHash,
       });
     }
 

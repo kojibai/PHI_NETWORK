@@ -1,4 +1,7 @@
 import type { VerificationReceipt, VerificationSig } from "../utils/verificationReceipt";
+import type { ValuationSnapshot } from "../utils/valuationSnapshot";
+
+export type VerifiedCardValuation = ValuationSnapshot & { valuationHash?: string };
 
 export type VerifiedCardData = {
   capsuleHash: string;
@@ -16,4 +19,5 @@ export type VerifiedCardData = {
   receiptHash?: string;
   verificationSig?: VerificationSig;
   sigilSvg?: string;
+  valuation?: VerifiedCardValuation;
 };

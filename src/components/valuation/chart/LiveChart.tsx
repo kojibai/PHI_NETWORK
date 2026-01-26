@@ -58,6 +58,9 @@ export type LiveChartProps = {
   /** If you know it's a child glyph, pass true to force USD mode. */
   isChildGlyph?: boolean;
 
+  /** Unit of incoming data points (default: phi). */
+  dataUnit?: "phi" | "usd";
+
   /**
    * Force chart unit mode.
    * - "auto" (default): child => USD, parent => Φ
@@ -133,6 +136,7 @@ export default function LiveChart({
   scalePvToChild = true,
   usdPerPhi,
   isChildGlyph = false,
+  dataUnit = "phi",
   mode = "auto",
 }: LiveChartProps) {
   // Container & width
@@ -145,23 +149,7 @@ export default function LiveChart({
   const dataMax = hasData ? safeData[safeData.length - 1].i : 1;
   const lastIndex = hasData ? safeData[safeData.length - 1].i : 0;
   const lastParentValue = hasData ? safeData[safeData.length - 1].value : live;
-
-  // Detect child glyph (explicit or live differs from parent last tick)
-  const childΦ = useMemo<number | null>(() => {
-    if (childPhiExact != null && Number.isFinite(childPhiExact)) return childPhiExact;
-    const diff = Math.abs(live - lastParentValue);
-    return diff > 1e-9 ? live : null;
-  }, [childPhiExact, live, lastParentValue]);
-
-  // Force child mode from prop if known
-  const isChild = isChildGlyph || childΦ != null;
-
-  // Unit mode (Φ vs USD)
-  const isUsdMode = useMemo(() => {
-    if (mode === "usd") return true;
-    if (mode === "phi") return false;
-    return isChild; // auto
-  }, [mode, isChild]);
+  const lastPoint = hasData ? (safeData[safeData.length - 1] as FXPoint) : null;
 
   /* ─────────────────── STABLE FX LATCH ───────────────────
    * Remember last known positive FX and use it whenever a new
@@ -180,6 +168,31 @@ export default function LiveChart({
     },
     [usdPerPhi],
   );
+
+  const lastParentPhi = useMemo<number>(() => {
+    if (!hasData) return live;
+    if (dataUnit !== "usd") return Number(lastParentValue);
+    const fx = lastPoint ? fxOf(lastPoint) : usdPerPhi;
+    if (!finitePos(fx)) return Number(lastParentValue);
+    return Number(lastParentValue) / (fx as number);
+  }, [dataUnit, fxOf, hasData, lastParentValue, lastPoint, live, usdPerPhi]);
+
+  // Detect child glyph (explicit or live differs from parent last tick)
+  const childΦ = useMemo<number | null>(() => {
+    if (childPhiExact != null && Number.isFinite(childPhiExact)) return childPhiExact;
+    const diff = Math.abs(live - lastParentPhi);
+    return diff > 1e-9 ? live : null;
+  }, [childPhiExact, live, lastParentPhi]);
+
+  // Force child mode from prop if known
+  const isChild = isChildGlyph || childΦ != null;
+
+  // Unit mode (Φ vs USD)
+  const isUsdMode = useMemo(() => {
+    if (mode === "usd") return true;
+    if (mode === "phi") return false;
+    return isChild; // auto
+  }, [mode, isChild]);
 
   /** USD for a point based on Φ×FX or provided USD, with stability guard */
   const usdFromPoint = useCallback(
@@ -209,7 +222,7 @@ export default function LiveChart({
   // Build plot series in correct units (Φ or USD)
   const plotData = useMemo<ChartPoint[]>(() => {
     if (!hasData) return safeData;
-    if (!isUsdMode) return safeData; // Φ mode
+    if (!isUsdMode || dataUnit === "usd") return safeData; // Φ mode or USD-native series
 
     let lastGoodUsd: number | null = null;
     return safeData.map((p) => {
@@ -218,16 +231,16 @@ export default function LiveChart({
       lastGoodUsd = nextGood;
       return { ...p, value: usdV };
     });
-  }, [hasData, safeData, isUsdMode, usdFromPoint]);
+  }, [hasData, safeData, isUsdMode, dataUnit, usdFromPoint]);
 
   // PV display in Φ, optionally scaled by child ratio
   const pvPhi = useMemo<number>(() => {
-    if (!scalePvToChild || childΦ == null || !Number.isFinite(lastParentValue) || lastParentValue <= 0) {
+    if (!scalePvToChild || childΦ == null || !Number.isFinite(lastParentPhi) || lastParentPhi <= 0) {
       return pv;
     }
-    const r = childΦ / lastParentValue;
+    const r = childΦ / lastParentPhi;
     return pv * r;
-  }, [pv, scalePvToChild, childΦ, lastParentValue]);
+  }, [pv, scalePvToChild, childΦ, lastParentPhi]);
 
   // PV line in chart units
   const pvChart = useMemo<number>(() => (isUsdMode ? pvPhi * fxOf() : pvPhi), [isUsdMode, pvPhi, fxOf]);
