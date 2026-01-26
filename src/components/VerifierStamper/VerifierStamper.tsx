@@ -541,8 +541,12 @@ const VerifierStamperInner: React.FC = () => {
   );
 
   const claimReceiveSig = useCallback(
-    async (receiveBundleHash: string, receivePulse: number): Promise<ReceiveSig | null> => {
-      if (receiveBusy || receiveStatus !== "new") return null;
+    async (
+      receiveBundleHash: string,
+      receivePulse: number,
+      options?: { force?: boolean }
+    ): Promise<ReceiveSig | null> => {
+      if (receiveBusy || (!options?.force && receiveStatus !== "new")) return null;
       if (!receiveBundleHash) return null;
       setReceiveBusy(true);
       try {
@@ -794,9 +798,13 @@ const VerifierStamperInner: React.FC = () => {
   );
 
   const buildReceiveLockKeys = useCallback(
-    async (m: SigilMetadata): Promise<{ keys: string[]; canonical: string | null; nonce: string | null }> => {
+    async (
+      m: SigilMetadata,
+      options?: { bundleHash?: string | null; canonicalOverride?: string | null }
+    ): Promise<{ keys: string[]; canonical: string | null; nonce: string | null }> => {
       const keys = new Set<string>();
-      if (bundleHash) keys.add(`${RECEIVE_LOCK_PREFIX}:bundle:${bundleHash}`);
+      const bundleHashValue = options?.bundleHash ?? bundleHash;
+      if (bundleHashValue) keys.add(`${RECEIVE_LOCK_PREFIX}:bundle:${bundleHashValue}`);
 
       const last = m.transfers?.slice(-1)[0];
       if (last) {
@@ -810,7 +818,7 @@ const VerifierStamperInner: React.FC = () => {
         null;
       if (nonce) keys.add(`${RECEIVE_LOCK_PREFIX}:nonce:${nonce}`);
 
-      let effCanonical = canonical;
+      let effCanonical = options?.canonicalOverride ?? canonical;
       if (!effCanonical) {
         try {
           const eff = await computeEffectiveCanonical(m);
@@ -951,8 +959,12 @@ const VerifierStamperInner: React.FC = () => {
   );
 
   const writeReceiveLock = useCallback(
-    async (m: SigilMetadata, nowPulse: number) => {
-      const { keys } = await buildReceiveLockKeys(m);
+    async (
+      m: SigilMetadata,
+      nowPulse: number,
+      options?: { bundleHash?: string | null; canonicalOverride?: string | null }
+    ) => {
+      const { keys } = await buildReceiveLockKeys(m, options);
       for (const key of keys) {
         if (!window.localStorage.getItem(key)) {
           window.localStorage.setItem(key, JSON.stringify({ pulse: nowPulse }));
@@ -960,6 +972,170 @@ const VerifierStamperInner: React.FC = () => {
       }
     },
     [buildReceiveLockKeys]
+  );
+
+  const rebuildProofBundleForSegment = useCallback(
+    async (
+      svgText: string,
+      metaValue: SigilMetadata
+    ): Promise<{ bundle: Record<string, unknown>; bundleHash: string | null; receiveBundleHash: string | null } | null> => {
+      const proofCapsule = proofBundleMeta?.proofCapsule;
+      const capsuleHash = proofBundleMeta?.capsuleHash ?? (proofCapsule ? await hashProofCapsuleV1(proofCapsule) : null);
+      const svgHash = await hashSvgText(svgText);
+      const rawBundle = proofBundleMeta?.raw;
+
+      let nextBundle: Record<string, unknown> | null = null;
+      if (rawBundle && isRecord(rawBundle)) {
+        nextBundle = { ...(rawBundle as Record<string, unknown>), svgHash, capsuleHash, proofCapsule: proofCapsule ?? undefined };
+      } else if (metaValue.kaiSignature && typeof metaValue.pulse === "number") {
+        const chakraDay = normalizeChakraDay(metaValue.chakraDay ?? "") ?? "Crown";
+        const verifierSlug = buildVerifierSlug(metaValue.pulse, metaValue.kaiSignature);
+        const phiKey = metaValue.userPhiKey ?? (await derivePhiKeyFromSig(metaValue.kaiSignature));
+        const fallbackCapsule = {
+          v: "KPV-1" as const,
+          pulse: metaValue.pulse,
+          chakraDay,
+          kaiSignature: metaValue.kaiSignature,
+          phiKey,
+          verifierSlug,
+        };
+        const capsuleHashNext = capsuleHash ?? (await hashProofCapsuleV1(fallbackCapsule));
+        nextBundle = {
+          hashAlg: proofBundleMeta?.hashAlg ?? PROOF_HASH_ALG,
+          canon: proofBundleMeta?.canon ?? PROOF_CANON,
+          bindings: proofBundleMeta?.bindings,
+          zkStatement: proofBundleMeta?.zkStatement,
+          bundleRoot: proofBundleMeta?.bundleRoot,
+          proofCapsule: fallbackCapsule,
+          capsuleHash: capsuleHashNext,
+          svgHash,
+          shareUrl: proofBundleMeta?.shareUrl,
+          verifierUrl: proofBundleMeta?.verifierUrl,
+          verifier: proofBundleMeta?.verifier,
+          verifiedAtPulse: proofBundleMeta?.verifiedAtPulse,
+          zkPoseidonHash: proofBundleMeta?.zkPoseidonHash,
+          zkProof: proofBundleMeta?.zkProof,
+          proofHints: proofBundleMeta?.proofHints,
+          zkPublicInputs: proofBundleMeta?.zkPublicInputs,
+          authorSig: proofBundleMeta?.authorSig ?? null,
+          mode: proofBundleMeta?.mode,
+          originBundleHash: proofBundleMeta?.originBundleHash,
+          originAuthorSig: proofBundleMeta?.originAuthorSig ?? null,
+          receiveSig: proofBundleMeta?.receiveSig ?? null,
+          receivePulse: proofBundleMeta?.receivePulse,
+          receiveBundleHash: proofBundleMeta?.receiveBundleHash,
+          ownerPhiKey: proofBundleMeta?.ownerPhiKey,
+          ownerKeyDerivation: proofBundleMeta?.ownerKeyDerivation,
+        };
+      }
+
+      if (!nextBundle) return null;
+
+      const bundleRoot = buildBundleRoot(nextBundle);
+      const rootHash = await computeBundleHash(bundleRoot);
+      const legacySeed = { ...nextBundle } as Record<string, unknown>;
+      delete legacySeed.bundleRoot;
+      delete legacySeed.transport;
+      delete legacySeed.verificationCache;
+      delete legacySeed.cacheKey;
+      delete legacySeed.receipt;
+      delete legacySeed.receiptHash;
+      delete legacySeed.verificationSig;
+      delete legacySeed.zkMeta;
+      const legacyUnsigned = buildBundleUnsigned(legacySeed);
+      const legacyHash = await hashBundle(legacyUnsigned);
+      const useRootHash =
+        proofBundleMeta?.bundleRoot !== undefined ||
+        proofBundleMeta?.bindings?.bundleHashOf === PROOF_BINDINGS.bundleHashOf ||
+        (isRecord(rawBundle) && "bundleRoot" in rawBundle);
+      const bundleHashNext = useRootHash ? rootHash : legacyHash;
+      if (useRootHash) {
+        nextBundle.bundleRoot = bundleRoot;
+      } else {
+        delete nextBundle.bundleRoot;
+      }
+      nextBundle.bundleHash = bundleHashNext;
+
+      const priorReceiveSig = readReceiveSigFromBundle(rawBundle ?? nextBundle);
+      const receiveMode = nextBundle.mode === "receive" || Boolean(priorReceiveSig) || Boolean(nextBundle.receiveBundleHash);
+      let receiveBundleHashNext: string | null = null;
+      if (receiveMode) {
+        let receivePulse = typeof nextBundle.receivePulse === "number" ? nextBundle.receivePulse : priorReceiveSig?.createdAtPulse;
+        if (typeof receivePulse !== "number" || !Number.isFinite(receivePulse)) receivePulse = kaiPulseNow();
+
+        const originBundleHash = typeof nextBundle.originBundleHash === "string" ? nextBundle.originBundleHash : undefined;
+        const originAuthorSig = isKASAuthorSig(nextBundle.originAuthorSig) ? nextBundle.originAuthorSig : null;
+
+        const receiveBundleRoot = buildReceiveBundleRoot({
+          bundleRoot,
+          bundle: nextBundle as ProofBundleLike,
+          originBundleHash,
+          originAuthorSig,
+          receivePulse,
+        });
+        receiveBundleHashNext = await hashReceiveBundleRoot(receiveBundleRoot);
+
+        let receiveSigNext = priorReceiveSig;
+        if (receiveSigNext && receiveSigNext.binds.bundleHash !== receiveBundleHashNext) {
+          receiveSigNext = await claimReceiveSig(receiveBundleHashNext, receivePulse, { force: true });
+        }
+
+        if (receiveSigNext) {
+          nextBundle.receiveSig = receiveSigNext;
+          nextBundle.receivePulse = receiveSigNext.createdAtPulse ?? receivePulse;
+          nextBundle.receiveBundleHash = receiveBundleHashNext;
+          nextBundle.receiveBundleRoot = receiveBundleRoot;
+          const ownerPhiKey = await deriveOwnerPhiKeyFromReceive({
+            receiverPubKeyJwk: receiveSigNext.pubKeyJwk,
+            receivePulse: nextBundle.receivePulse as number,
+            receiveBundleHash: receiveBundleHashNext,
+          });
+          nextBundle.ownerPhiKey = ownerPhiKey;
+          nextBundle.ownerKeyDerivation = buildOwnerKeyDerivation({
+            originPhiKey: proofCapsule?.phiKey,
+            receivePulse: nextBundle.receivePulse as number,
+            receiveBundleHash: receiveBundleHashNext,
+          });
+        } else {
+          delete nextBundle.receiveSig;
+          delete nextBundle.receiveBundleHash;
+          delete nextBundle.receiveBundleRoot;
+          delete nextBundle.ownerPhiKey;
+          delete nextBundle.ownerKeyDerivation;
+        }
+
+        if (rawBundle && isRecord(rawBundle) && priorReceiveSig && receiveSigNext?.binds.bundleHash !== priorReceiveSig.binds.bundleHash) {
+          const receiveSigHistory = collectReceiveSigHistory(rawBundle, priorReceiveSig);
+          if (receiveSigHistory.length > 0) nextBundle.receiveSigHistory = receiveSigHistory;
+        }
+      }
+
+      return { bundle: nextBundle, bundleHash: bundleHashNext, receiveBundleHash: receiveBundleHashNext };
+    },
+    [claimReceiveSig, proofBundleMeta]
+  );
+
+  const buildSegmentedSvgDataUrl = useCallback(
+    async (
+      m: SigilMetadata
+    ): Promise<{ dataUrl: string; svgText: string; bundleHash: string | null; receiveBundleHash: string | null } | null> => {
+      if (!svgURL) return null;
+      const rawSvg = await fetch(svgURL).then((r) => r.text());
+      let svgText = embedMetadataText(rawSvg, m);
+      let bundleHashNext: string | null = null;
+      let receiveBundleHashNext: string | null = null;
+      if (proofBundleMeta) {
+        const rebuilt = await rebuildProofBundleForSegment(svgText, m);
+        if (rebuilt) {
+          svgText = embedProofMetadata(svgText, rebuilt.bundle);
+          bundleHashNext = rebuilt.bundleHash;
+          receiveBundleHashNext = rebuilt.receiveBundleHash;
+        }
+      }
+      const dataUrl = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svgText)))}`;
+      return { dataUrl, svgText, bundleHash: bundleHashNext, receiveBundleHash: receiveBundleHashNext };
+    },
+    [proofBundleMeta, rebuildProofBundleForSegment, svgURL]
   );
 
   const publishReceiveLock = useCallback(
@@ -1518,6 +1694,22 @@ const VerifierStamperInner: React.FC = () => {
       setUiState(next);
     },
     [liveSig, computeEffectiveCanonical, contentSigExpected, receiveSig]
+  );
+
+  const markSegmentedAsReceived = useCallback(
+    async (
+      m: SigilMetadata,
+      nowPulse: number,
+      options?: { bundleHash?: string | null; canonicalOverride?: string | null }
+    ) => {
+      try {
+        await writeReceiveLock(m, nowPulse, options);
+        setReceiveStatus("already");
+      } catch (err) {
+        logError("segment.writeReceiveLock", err);
+      }
+    },
+    [writeReceiveLock]
   );
 
   useEffect(() => {
@@ -2222,8 +2414,24 @@ const VerifierStamperInner: React.FC = () => {
           segmentFileBlob,
           `sigil_segment_${rolled.pulse ?? 0}_${String((rolled.segments?.length ?? 1) - 1).padStart(6, "0")}.json`
         );
-      const durl2 = await embedMetadata(svgURL, rolled);
-      download(durl2, `${pulseFilename("sigil_head_after_seal", rolled.pulse ?? 0, nowPulse)}.svg`);
+      const segmented = await buildSegmentedSvgDataUrl(rolled);
+      if (segmented) {
+        download(
+          segmented.dataUrl,
+          `${pulseFilename("sigil_head_after_seal", rolled.pulse ?? 0, nowPulse)}.svg`
+        );
+      }
+      const hasReceiveProof =
+        Boolean((rolled as SigilMetadataWithOptionals).receiveSig) ||
+        Boolean(proofBundleMeta?.receiveSig) ||
+        (isRecord(proofBundleMeta?.raw) && proofBundleMeta?.raw?.mode === "receive");
+      if (hasReceiveProof) {
+        const eff = await computeEffectiveCanonical(rolled);
+        await markSegmentedAsReceived(rolled, nowPulse, {
+          bundleHash: segmented?.bundleHash ?? bundleHash,
+          canonicalOverride: eff.canonical,
+        });
+      }
       const rolled2 = await refreshHeadWindow(rolled);
       await syncMetaAndUi(rolled2);
       setError(null);
@@ -2575,19 +2783,52 @@ const VerifierStamperInner: React.FC = () => {
       return;
     }
     const { meta: rolled, segmentFileBlob } = await sealCurrentWindowIntoSegment(meta);
+    const nowPulse = kaiPulseNow();
+    const rolledSendLock = (rolled as SigilMetadataWithOptionals).sendLock;
+    if (rolledSendLock?.nonce) {
+      (rolled as SigilMetadataWithOptionals).sendLock = {
+        ...rolledSendLock,
+        used: true,
+        usedPulse: nowPulse,
+      };
+    }
     if (segmentFileBlob)
       download(
         segmentFileBlob,
         `sigil_segment_${rolled.pulse ?? 0}_${String((rolled.segments?.length ?? 1) - 1).padStart(6, "0")}.json`
       );
-    if (svgURL) {
-      const durl = await embedMetadata(svgURL, rolled);
-      download(durl, `${pulseFilename("sigil_head_after_seal", rolled.pulse ?? 0, kaiPulseNow())}.svg`);
+    const segmented = await buildSegmentedSvgDataUrl(rolled);
+    if (segmented) {
+      download(
+        segmented.dataUrl,
+        `${pulseFilename("sigil_head_after_seal", rolled.pulse ?? 0, nowPulse)}.svg`
+      );
+    }
+    const hasReceiveProof =
+      Boolean((rolled as SigilMetadataWithOptionals).receiveSig) ||
+      Boolean(proofBundleMeta?.receiveSig) ||
+      (isRecord(proofBundleMeta?.raw) && proofBundleMeta?.raw?.mode === "receive");
+    if (hasReceiveProof) {
+      const eff = await computeEffectiveCanonical(rolled);
+      await markSegmentedAsReceived(rolled, nowPulse, {
+        bundleHash: segmented?.bundleHash ?? bundleHash,
+        canonicalOverride: eff.canonical,
+      });
     }
     const rolled2 = await refreshHeadWindow(rolled);
     await syncMetaAndUi(rolled2);
     setError(null);
-  }, [meta, svgURL, isSendFilename, refreshHeadWindow, syncMetaAndUi]);
+  }, [
+    meta,
+    isSendFilename,
+    refreshHeadWindow,
+    syncMetaAndUi,
+    buildSegmentedSvgDataUrl,
+    bundleHash,
+    computeEffectiveCanonical,
+    markSegmentedAsReceived,
+    proofBundleMeta,
+  ]);
 
   const frequencyHz = useMemo(
     () =>

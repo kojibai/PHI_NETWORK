@@ -2770,13 +2770,6 @@ React.useEffect(() => {
                 >
                   ✍
                 </button>
-              </div>
-            </div>
-          ) : null}
-          {canReceiveGlyph ? (
-            <div className="vreceipt-row" aria-label="Receive actions">
-              <div className="vreceipt-label">Receive</div>
-              <div className="vreceipt-actions">
                 <button
                   type="button"
                   className="vbtn vbtn--ghost"
@@ -2787,18 +2780,12 @@ React.useEffect(() => {
                 >
                   🜁
                 </button>
-              </div>
-            </div>
-          ) : null}
-          {verifiedCardData ? (
-            <div className="vreceipt-row" aria-label="Verified card actions">
-              <div className="vreceipt-label">Card</div>
-              <div className="vreceipt-actions">
                 <button type="button" className="vbtn vbtn--ghost" onClick={() => void onDownloadVerifiedCard()}>
                   ⬇
                 </button>
               </div>
             </div>
+
           ) : null}
         </div>
 
