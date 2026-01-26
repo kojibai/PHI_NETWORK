@@ -2784,9 +2784,10 @@ const VerifierStamperInner: React.FC = () => {
     }
     let { meta: rolled, segmentFileBlob } = await sealCurrentWindowIntoSegment(meta);
     const nowPulse = kaiPulseNow();
-    if ((rolled as SigilMetadataWithOptionals).sendLock) {
+    const rolledSendLock = (rolled as SigilMetadataWithOptionals).sendLock;
+    if (rolledSendLock?.nonce) {
       (rolled as SigilMetadataWithOptionals).sendLock = {
-        ...(rolled as SigilMetadataWithOptionals).sendLock,
+        ...rolledSendLock,
         used: true,
         usedPulse: nowPulse,
       };
