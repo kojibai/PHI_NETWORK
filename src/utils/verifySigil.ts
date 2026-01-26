@@ -27,6 +27,7 @@ export type VerifyResult =
       embedded?: EmbeddedMeta;
       derivedPhiKey?: string;
       checks?: VerifyChecks;
+      embeddedRawPhiKey?: string | null;
     }
   | {
       status: "ok";
@@ -35,6 +36,7 @@ export type VerifyResult =
       derivedPhiKey: string;
       checks: VerifyChecks;
       verifiedAtPulse: number | null;
+      embeddedRawPhiKey: string | null;
     };
 
 export function parseSlug(rawSlug: string): SlugInfo {
@@ -59,6 +61,12 @@ function firstN(s: string, n: number): string {
 export async function verifySigilSvg(slug: SlugInfo, svgText: string, verifiedAtPulse?: number): Promise<VerifyResult> {
   try {
     const embedded = extractEmbeddedMetaFromSvg(svgText);
+    const embeddedRawPhiKey =
+      embedded.raw && typeof embedded.raw === "object" && embedded.raw !== null
+        ? typeof (embedded.raw as Record<string, unknown>).phiKey === "string"
+          ? ((embedded.raw as Record<string, unknown>).phiKey as string)
+          : null
+        : null;
     if (embedded.receiptHash) {
       await assertReceiptHashMatch(embedded.receipt, embedded.receiptHash);
     }
@@ -69,6 +77,7 @@ export async function verifySigilSvg(slug: SlugInfo, svgText: string, verifiedAt
         message: "No kaiSignature found in the SVG metadata.",
         slug,
         embedded,
+        embeddedRawPhiKey,
       };
     }
 
@@ -109,6 +118,7 @@ export async function verifySigilSvg(slug: SlugInfo, svgText: string, verifiedAt
         embedded,
         derivedPhiKey,
         checks,
+        embeddedRawPhiKey,
       };
     }
 
@@ -126,6 +136,7 @@ export async function verifySigilSvg(slug: SlugInfo, svgText: string, verifiedAt
       },
       derivedPhiKey,
       checks,
+      embeddedRawPhiKey,
       verifiedAtPulse:
         typeof verifiedAtPulse === "number" && Number.isFinite(verifiedAtPulse) ? verifiedAtPulse : null,
     };

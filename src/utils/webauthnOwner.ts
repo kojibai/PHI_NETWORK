@@ -55,6 +55,14 @@ function derToRawSignature(signature: Uint8Array, size: number): Uint8Array | nu
   return raw;
 }
 
+function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
 async function importP256Jwk(jwk: JsonWebKey): Promise<CryptoKey> {
   return crypto.subtle.importKey("jwk", jwk, { name: "ECDSA", namedCurve: "P-256" }, false, ["verify"]);
 }
@@ -94,7 +102,11 @@ export async function verifyOwnerWebAuthnAssertion(args: {
 }): Promise<boolean> {
   try {
     if (args.assertion.type !== "public-key") return false;
-    if (args.expectedCredId && args.assertion.rawId !== args.expectedCredId) return false;
+    if (args.expectedCredId) {
+      const expectedBytes = base64UrlDecode(args.expectedCredId);
+      const actualBytes = base64UrlDecode(args.assertion.rawId);
+      if (!bytesEqual(expectedBytes, actualBytes)) return false;
+    }
 
     const expectedChallengeB64 = base64UrlEncode(args.expectedChallenge);
     const clientDataBytes = base64UrlDecode(args.assertion.response.clientDataJSON);
