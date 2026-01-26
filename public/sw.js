@@ -168,6 +168,13 @@ async function warmUrls(urls, { mapShell = false } = {}) {
       const url = normalizeWarmUrl(raw);
       if (!url) return;
 
+      const hasExtension = url.pathname.split("/").pop()?.includes(".");
+
+      if (mapShell && shell && !hasExtension) {
+        await mapShellToRoute(url.href, shell);
+        return;
+      }
+
       const cacheName = cacheBucketFor(url);
       const req = new Request(url.href, { cache: "reload" });
 

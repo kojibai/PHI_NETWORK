@@ -1219,7 +1219,7 @@ export function AppChrome(): React.JSX.Element {
         });
 
         await Promise.all(
-          [...OFFLINE_ASSETS_TO_WARM, ...SHELL_ROUTES_TO_WARM].map(async (url) => {
+          [...OFFLINE_ASSETS_TO_WARM, ...APP_SHELL_HINTS].map(async (url) => {
             try {
               await fetch(url, { cache: "no-cache", signal: aborter.signal });
             } catch {
