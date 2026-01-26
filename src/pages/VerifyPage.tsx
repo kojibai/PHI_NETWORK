@@ -1638,7 +1638,11 @@ if (verified && typeof cacheBundleHash === "string" && cacheBundleHash.trim().le
   ]);
 
   const attemptIdentityScan = useCallback(
-    async (authorSig: KASAuthorSig, bundleHashValue: string): Promise<void> => {
+    async (
+      target:
+        | { kind: "origin"; sig: KASAuthorSig; bundleHashValue: string }
+        | { kind: "receive"; sig: ReceiveSig; bundleHashValue: string }
+    ): Promise<void> => {
       if (identityScanBusy) return;
       setIdentityScanBusy(true);
       try {
@@ -1647,12 +1651,13 @@ if (verified && typeof cacheBundleHash === "string" && cacheBundleHash.trim().le
           setNotice("WebAuthn is not available in this browser. Please verify on a device with passkeys enabled.");
           return;
         }
-        const { challengeBytes } = await buildKasChallenge("unlock", bundleHashValue);
+        const purpose = target.kind === "receive" ? "receive" : "unlock";
+        const { challengeBytes } = await buildKasChallenge(purpose, target.bundleHashValue);
         let assertion: Awaited<ReturnType<typeof getWebAuthnAssertionJson>>;
         try {
           assertion = await getWebAuthnAssertionJson({
             challenge: challengeBytes,
-            allowCredIds: [authorSig.credId],
+            allowCredIds: [target.sig.credId],
             preferInternal: true,
           });
         } catch {
@@ -1664,8 +1669,8 @@ if (verified && typeof cacheBundleHash === "string" && cacheBundleHash.trim().le
         const ok = await verifyWebAuthnAssertion({
           assertion,
           expectedChallenge: challengeBytes,
-          pubKeyJwk: authorSig.pubKeyJwk,
-          expectedCredId: authorSig.credId,
+          pubKeyJwk: target.sig.pubKeyJwk,
+          expectedCredId: target.sig.credId,
         });
         setIdentityAttested(ok);
         if (!ok) setNotice("Identity verification failed.");
@@ -1971,17 +1976,26 @@ if (verified && typeof cacheBundleHash === "string" && cacheBundleHash.trim().le
   const receiveNonce = useMemo(() => (effectiveReceiveSig?.nonce ? effectiveReceiveSig.nonce : ""), [effectiveReceiveSig?.nonce]);
   const receiveBundleHash = useMemo(() => effectiveReceiveBundleHash, [effectiveReceiveBundleHash]);
 
+  const authScanTarget = useMemo(() => {
+    if (effectiveReceiveSig) {
+      const receiveBundleHashValue = effectiveReceiveBundleHash || effectiveReceiveSig.binds.bundleHash;
+      if (!receiveBundleHashValue) return null;
+      return { kind: "receive", sig: effectiveReceiveSig, bundleHashValue: receiveBundleHashValue } as const;
+    }
+    const originSig = effectiveOriginAuthorSig ?? embeddedProof?.authorSig;
+    if (!originSig || !isKASAuthorSig(originSig) || !bundleHash) return null;
+    return { kind: "origin", sig: originSig, bundleHashValue: bundleHash } as const;
+  }, [bundleHash, effectiveOriginAuthorSig, effectiveReceiveBundleHash, effectiveReceiveSig, embeddedProof?.authorSig]);
+
   React.useEffect(() => {
     if (!identityScanRequested) return;
-    const authorSig = effectiveOriginAuthorSig ?? embeddedProof?.authorSig;
-    if (!authorSig || !isKASAuthorSig(authorSig)) {
+    if (!authScanTarget) {
       setIdentityAttested("missing");
       setIdentityScanRequested(false);
       return;
     }
-    if (!bundleHash) return;
-    void attemptIdentityScan(authorSig, bundleHash);
-  }, [attemptIdentityScan, bundleHash, embeddedProof?.authorSig, effectiveOriginAuthorSig, identityScanRequested]);
+    void attemptIdentityScan(authScanTarget);
+  }, [attemptIdentityScan, authScanTarget, identityScanRequested]);
 
   const badge: { kind: BadgeKind; title: string; subtitle?: string } = useMemo(() => {
     if (busy) return { kind: "busy", title: "SEALING", subtitle: "Deterministic proof rails executing." };
@@ -2011,18 +2025,13 @@ if (verified && typeof cacheBundleHash === "string" && cacheBundleHash.trim().le
   }, [provenanceSig]);
   const requestIdentityScan = useCallback(() => {
     if (identityScanBusy) return;
-    const authorSig = effectiveOriginAuthorSig ?? embeddedProof?.authorSig;
-    if (!authorSig || !isKASAuthorSig(authorSig)) {
-      setNotice("No author passkey is available for identity scan.");
-      return;
-    }
-    if (!bundleHash) {
-      setNotice("Bundle hash unavailable. Verify the ΦKey first.");
+    if (!authScanTarget) {
+      setNotice("No owner passkey is available for identity scan.");
       return;
     }
     setIdentityAttested("missing");
     setIdentityScanRequested(true);
-  }, [bundleHash, effectiveOriginAuthorSig, embeddedProof?.authorSig, identityScanBusy]);
+  }, [authScanTarget, identityScanBusy]);
 
   const sealKAS: SealState = useMemo(() => {
     if (busy) return "busy";
@@ -2388,8 +2397,8 @@ body: [
 
   const hasSvgBytes = Boolean(svgText.trim());
   const expectedSvgHash = sharedReceipt?.svgHash ?? embeddedProof?.svgHash ?? "";
-  const hasKasIdentity = Boolean(provenanceSig && isKASAuthorSig(provenanceSig));
-  const canScanIdentity = hasKasIdentity && Boolean(bundleHash);
+  const hasKasIdentity = Boolean(authScanTarget);
+  const canScanIdentity = hasKasIdentity;
   const identityStatusLabel =
     !hasKasIdentity
       ? "Not present"
@@ -2402,7 +2411,14 @@ body: [
             : canScanIdentity
               ? "Tap to verify"
               : "Alignment required";
-  const passkeyPhiKeyLabel = storedKasPhiKey ? ellipsizeMiddle(storedKasPhiKey, 12, 10) : "—";
+  const passkeyPhiKeyLabel = effectiveReceiveSig
+    ? ellipsizeMiddle(effectiveOwnerPhiKey ?? effectivePhiKey ?? "—", 12, 10)
+    : storedKasPhiKey
+      ? ellipsizeMiddle(storedKasPhiKey, 12, 10)
+      : "—";
+  const passkeyPhiKeyTitle = effectiveReceiveSig
+    ? effectiveOwnerPhiKey ?? effectivePhiKey ?? "No owner ΦKey found"
+    : storedKasPhiKey ?? "No passkey ΦKey found";
   const artifactStatusLabel =
     artifactAttested === true
       ? "Present (Verified)"
@@ -2808,7 +2824,13 @@ React.useEffect(() => {
             <SealPill
               label="KAS"
               state={sealKAS}
-              detail={provenanceSig ? "Origin author seal (WebAuthn KAS)" : "No author seal present"}
+              detail={
+                effectiveReceiveSig
+                  ? "Owner receive seal (WebAuthn KAS)"
+                  : provenanceSig
+                    ? "Origin author seal (WebAuthn KAS)"
+                    : "No author seal present"
+              }
               onClick={openKasPopover}
               ariaLabel="Open KAS attestation details"
             />
@@ -3012,7 +3034,7 @@ React.useEffect(() => {
                           onClick={canScanIdentity ? requestIdentityScan : undefined}
                           ariaLabel={canScanIdentity ? "Scan passkey to verify identity" : "Identity scan unavailable"}
                         />
-                        <MiniField label="Passkey ΦKey" value={passkeyPhiKeyLabel} title={storedKasPhiKey ?? "No passkey ΦKey found"} />
+                        <MiniField label="Passkey ΦKey" value={passkeyPhiKeyLabel} title={passkeyPhiKeyTitle} />
                         <MiniField label="Sigil-Glyph (Artifact)" value={artifactStatusLabel} />
                       </div>
                       <div className="vmini-grid vmini-grid--2" aria-label="Quick readout">
