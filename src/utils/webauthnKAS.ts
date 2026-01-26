@@ -11,7 +11,6 @@
 
 import { decodeCbor } from "./cbor";
 import { base64UrlDecode, base64UrlEncode, hexToBytes, sha256Bytes } from "./sha256";
-import { b64u, phiFromPublicKey } from "../components/VerifierStamper/crypto";
 import type { KASAuthorSig } from "./authorSig";
 
 export type StoredPasskey = {
@@ -212,94 +211,6 @@ function readAuthDataFromAttestation(decoded: unknown): Uint8Array {
   throw new Error("Attestation authData is not a byte array.");
 }
 
-async function exportSpkiB64uFromJwk(jwk: JsonWebKey): Promise<string> {
-  const pubKey = await crypto.subtle.importKey("jwk", jwk, { name: "ECDSA", namedCurve: "P-256" }, true, []);
-  const spki = await crypto.subtle.exportKey("spki", pubKey);
-  return b64u.encode(new Uint8Array(spki));
-}
-
-function passkeyFromAttestation(credential: PublicKeyCredential): StoredPasskey {
-  const response = credential.response as AuthenticatorAttestationResponse;
-  const attestationObjectBytes = new Uint8Array(response.attestationObject);
-  const decoded = decodeCbor(attestationObjectBytes);
-
-  const authData = readAuthDataFromAttestation(decoded);
-  const parsed = parseAuthData(authData);
-
-  const coseKeyDecoded = decodeCbor(parsed.credentialPublicKey);
-  const pubKeyJwk = coseEc2ToJwk(coseKeyDecoded);
-
-  return {
-    credId: base64UrlEncode(new Uint8Array(credential.rawId)),
-    pubKeyJwk,
-  };
-}
-
-export function storePasskey(phiKey: string, record: StoredPasskey): void {
-  saveStored(phiKey, record);
-}
-
-export async function derivePhiKeyFromPubKeyJwk(pubKeyJwk: JsonWebKey): Promise<string> {
-  const spkiB64u = await exportSpkiB64uFromJwk(pubKeyJwk);
-  return phiFromPublicKey(spkiB64u);
-}
-
-export async function createPasskeyForPhiKey(args: {
-  phiKey: string;
-  rpName?: string;
-  rpId?: string;
-  residentKey?: "preferred" | "required";
-  timeoutMs?: number;
-  excludeCredentials?: string[];
-}): Promise<StoredPasskey> {
-  if (!isWebAuthnSupported()) {
-    throw new Error("WebAuthn is not available in this browser.");
-  }
-
-  await tryRequestPersistentStorage();
-
-  const userIdFull = await sha256Bytes(`KAS-1|phiKey|${args.phiKey}`);
-  const userId = userIdFull.slice(0, 16);
-  const challenge = crypto.getRandomValues(new Uint8Array(32));
-
-  const excludeCredentials = args.excludeCredentials?.length
-    ? args.excludeCredentials.map((id) => ({
-        id: bytesToArrayBuffer(base64UrlDecode(id)),
-        type: "public-key" as const,
-      }))
-    : undefined;
-
-  const created = await navigator.credentials.create({
-    publicKey: {
-      challenge,
-      rp: {
-        name: args.rpName ?? "Kai-Voh",
-        ...(args.rpId ? { id: args.rpId } : { id: window.location.hostname }),
-      },
-      user: {
-        id: userId,
-        name: args.phiKey,
-        displayName: args.phiKey,
-      },
-      pubKeyCredParams: [{ type: "public-key", alg: -7 }],
-      authenticatorSelection: {
-        residentKey: args.residentKey ?? "preferred",
-        userVerification: "required",
-      },
-      timeout: args.timeoutMs ?? 60_000,
-      attestation: "none",
-      ...(excludeCredentials ? { excludeCredentials } : {}),
-    },
-  });
-
-  const credential = (created ?? null) as PublicKeyCredential | null;
-  if (!credential) {
-    throw new Error("Passkey creation was canceled or failed.");
-  }
-
-  return passkeyFromAttestation(credential);
-}
-
 export async function ensurePasskey(phiKey: string): Promise<StoredPasskey> {
   if (!isWebAuthnSupported()) {
     throw new Error("WebAuthn is not available in this browser.");
@@ -345,7 +256,22 @@ export async function ensurePasskey(phiKey: string): Promise<StoredPasskey> {
     throw new Error("Passkey creation was canceled or failed.");
   }
 
-  const record = passkeyFromAttestation(credential);
+  const response = credential.response as AuthenticatorAttestationResponse;
+
+  const attestationObjectBytes = new Uint8Array(response.attestationObject);
+  const decoded = decodeCbor(attestationObjectBytes);
+
+  const authData = readAuthDataFromAttestation(decoded);
+  const parsed = parseAuthData(authData);
+
+  const coseKeyDecoded = decodeCbor(parsed.credentialPublicKey);
+  const pubKeyJwk = coseEc2ToJwk(coseKeyDecoded);
+
+  const record: StoredPasskey = {
+    credId: base64UrlEncode(new Uint8Array(credential.rawId)),
+    pubKeyJwk,
+  };
+
   saveStored(phiKey, record);
   return record;
 }
