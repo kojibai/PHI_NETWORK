@@ -9,7 +9,7 @@ export type VerifiedCardData = {
   pulse: number;
   verifiedAtPulse: number;
   phikey: string;
-  kasOk: boolean;
+  kasOk?: boolean;
   g16Ok: boolean;
   verifierSlug?: string;
   verifierUrl?: string;

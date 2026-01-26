@@ -96,6 +96,16 @@ function shortHash(value: string | undefined, head = 10, tail = 8): string {
   return `${value.slice(0, head)}…${value.slice(-tail)}`;
 }
 
+function sealPlacement(seedValue: string): { x: number; y: number; rotation: number; dash: string } {
+  const hash = hashStringToInt(seedValue);
+  const offsetX = (hash % 60) - 30;
+  const offsetY = ((hash >> 6) % 32) - 16;
+  const rotation = (hash % 360) - 180;
+  const dashA = 4 + (hash % 5);
+  const dashB = 3 + ((hash >> 3) % 4);
+  return { x: 1000 + offsetX, y: 96 + offsetY, rotation, dash: `${dashA} ${dashB}` };
+}
+
 export function buildVerifiedCardSvg(data: VerifiedCardData): string {
   const { capsuleHash, verifiedAtPulse, phikey, kasOk, g16Ok, sigilSvg, qrDataUrl, svgHash, receiptHash } = data;
   const { accent, accentSoft, accentGlow } = accentFromHash(capsuleHash);
@@ -107,6 +117,9 @@ export function buildVerifiedCardSvg(data: VerifiedCardData): string {
   const waveId = `${id}-wave`;
   const badgeGlowId = `${id}-badge-glow`;
   const sealId = `${id}-seal`;
+  const hasKas = typeof kasOk === "boolean";
+  const sealSeed = `${capsuleHash}|${svgHash ?? ""}|${verifiedAtPulse}`;
+  const seal = sealPlacement(sealSeed);
 
   const phiShort = shortPhiKey(phikey);
   const valuationSnapshot = data.valuation ? { ...data.valuation } : data.receipt?.valuation ? { ...data.receipt.valuation } : undefined;
@@ -239,14 +252,18 @@ export function buildVerifiedCardSvg(data: VerifiedCardData): string {
   <text class="label" x="320" y="260">ΦKEY</text>
   <text class="phikey" x="320" y="300">${phiShort}</text>
 
-  <text class="label" x="320" y="350">KAS</text>
-  <g transform="translate(380 324)" filter="url(#${badgeGlowId})">
+  ${hasKas ? `<text class="label" x="320" y="350">KAS</text>` : ""}
+  ${
+    hasKas
+      ? `<g transform="translate(380 324)" filter="url(#${badgeGlowId})">
     <rect width="54" height="54" rx="14" fill="rgba(10,16,22,0.9)" stroke="${kasOk ? "#38E4B6" : "#C86B6B"}" stroke-width="2" />
     <path d="${badgeMark(kasOk)}" fill="none" stroke="${kasOk ? "#38E4B6" : "#C86B6B"}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" />
-  </g>
+  </g>`
+      : ""
+  }
 
-  <text class="label" x="470" y="350">G16</text>
-  <g transform="translate(530 324)" filter="url(#${badgeGlowId})">
+  <text class="label" x="${hasKas ? 470 : 320}" y="350">G16</text>
+  <g transform="translate(${hasKas ? 530 : 380} 324)" filter="url(#${badgeGlowId})">
     <rect width="54" height="54" rx="14" fill="rgba(10,16,22,0.9)" stroke="${g16Ok ? "#38E4B6" : "#C86B6B"}" stroke-width="2" />
     <path d="${badgeMark(g16Ok)}" fill="none" stroke="${g16Ok ? "#38E4B6" : "#C86B6B"}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" />
   </g>
@@ -257,10 +274,11 @@ export function buildVerifiedCardSvg(data: VerifiedCardData): string {
   <text class="label" x="320" y="498">USD VALUE</text>
   <text class="value" x="320" y="534">${valuationUsd}</text>
 
-  <g id="${sealId}" transform="translate(700 86)">
-    <circle cx="120" cy="60" r="48" fill="rgba(12,14,18,0.75)" stroke="${accent}" stroke-width="2" filter="url(#${glowId})" />
-    <text x="120" y="55" text-anchor="middle" class="seal" fill="${accent}">VERIFIED</text>
-    <text x="120" y="74" text-anchor="middle" class="seal" fill="${accentSoft}">SEAL</text>
+  <g id="${sealId}" transform="translate(${seal.x} ${seal.y}) rotate(${seal.rotation})">
+    <circle cx="0" cy="0" r="44" fill="rgba(12,14,18,0.72)" stroke="${accent}" stroke-width="2" filter="url(#${glowId})" stroke-dasharray="${seal.dash}" />
+    <circle cx="0" cy="0" r="30" fill="none" stroke="${accentSoft}" stroke-width="1.2" opacity="0.7" />
+    <text x="0" y="-2" text-anchor="middle" class="seal" fill="${accent}">VERIFIED</text>
+    <text x="0" y="16" text-anchor="middle" class="seal" fill="${accentSoft}">${shortHash(capsuleHash, 6, 4)}</text>
   </g>
 
   <rect x="796" y="136" width="348" height="348" rx="30" fill="rgba(6,8,12,0.75)" stroke="${accent}" stroke-width="2.4" filter="url(#${glowId})" />
