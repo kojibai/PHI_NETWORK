@@ -1482,7 +1482,7 @@ if (receipt.receiptHash) {
               embedded: baseEmbedded,
               derivedPhiKey,
               checks,
-              embeddedRawPhiKey: null,
+              embeddedRawPhiKey: capsule.phiKey,
             }
           : {
               status: "ok",
@@ -1491,7 +1491,7 @@ if (receipt.receiptHash) {
               derivedPhiKey,
               checks,
               verifiedAtPulse,
-              embeddedRawPhiKey: null,
+              embeddedRawPhiKey: capsule.phiKey,
             },
       );
       setEmbeddedProof(embed);
