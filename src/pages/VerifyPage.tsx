@@ -378,6 +378,17 @@ function buildReceiptShareUrl(baseUrl: string, receiptJson: string): string {
   return url.toString();
 }
 
+function resolveVerifiedShareUrl(
+  proofVerifierUrl: string | undefined,
+  currentVerifyUrl: string,
+  receiptJson: string,
+): string {
+  const baseUrl = proofVerifierUrl || currentVerifyUrl;
+  if (!baseUrl) return "";
+  if (!receiptJson) return baseUrl;
+  return buildReceiptShareUrl(baseUrl, receiptJson);
+}
+
 async function readFileText(file: File): Promise<string> {
   return await new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -2634,72 +2645,6 @@ React.useEffect(() => {
     return JSON.stringify(auditBundlePayload);
   }, [auditBundlePayload]);
 
-  const verifiedCardData = useMemo<VerifiedCardData | null>(() => {
-    if (result.status !== "ok" || !proofCapsule || !capsuleHash || stewardVerifiedPulse == null) return null;
-    const receiptValue = verificationReceipt ?? embeddedProof?.receipt ?? sharedReceipt?.receipt;
-    const receiptHashValue = receiptHash || embeddedProof?.receiptHash || sharedReceipt?.receiptHash;
-    const verificationSigValue = verificationSig ?? embeddedProof?.verificationSig ?? sharedReceipt?.verificationSig;
-    const valuationValue = valuationSnapshot && valuationHash ? { ...valuationSnapshot, valuationHash } : undefined;
-    const ownerPhiKeyValue = effectiveOwnerPhiKey ?? effectivePhiKey;
-    const verifierUrlValue = proofVerifierUrl || currentVerifyUrl;
-    return {
-      capsuleHash,
-      svgHash: svgHash || undefined,
-      pulse: proofCapsule.pulse,
-      verifiedAtPulse: stewardVerifiedPulse,
-      phikey: ownerPhiKeyValue && ownerPhiKeyValue !== "—" ? ownerPhiKeyValue : proofCapsule.phiKey,
-      kasOk: hasKASAuthSig ? sealKAS === "valid" : undefined,
-      g16Ok: sealZK === "valid",
-      verifierSlug: proofCapsule.verifierSlug,
-      verifierUrl: verifierUrlValue || undefined,
-      verifier: verificationSource,
-      verificationVersion,
-      bundleHash: bundleHash || undefined,
-      zkPoseidonHash: zkMeta?.zkPoseidonHash ?? undefined,
-      receipt: receiptValue ?? undefined,
-      receiptHash: receiptHashValue || undefined,
-      verificationSig: verificationSigValue ?? undefined,
-      sigilSvg: svgText.trim() ? svgText : undefined,
-      valuation: valuationValue,
-      proofBundleJson: proofBundleJson || undefined,
-    };
-  }, [
-    bundleHash,
-    capsuleHash,
-    currentVerifyUrl,
-    embeddedProof?.receipt,
-    embeddedProof?.receiptHash,
-    embeddedProof?.verificationSig,
-    effectiveOwnerPhiKey,
-    proofCapsule,
-    proofBundleJson,
-    proofVerifierUrl,
-    receiptHash,
-    result.status,
-    effectivePhiKey,
-    hasKASAuthSig,
-    sealKAS,
-    sealZK,
-    sharedReceipt?.receipt,
-    sharedReceipt?.receiptHash,
-    sharedReceipt?.verificationSig,
-    stewardVerifiedPulse,
-    svgHash,
-    svgText,
-    valuationHash,
-    valuationSnapshot,
-    verificationReceipt,
-    verificationSig,
-    verificationSource,
-    verificationVersion,
-    zkMeta?.zkPoseidonHash,
-  ]);
-
-  const onDownloadVerifiedCard = useCallback(async () => {
-    if (!verifiedCardData) return;
-    await downloadVerifiedCardPng(verifiedCardData);
-  }, [verifiedCardData]);
-
   const receiptJson = useMemo(() => {
     if (!proofCapsule) return "";
     const receipt = {
@@ -2800,6 +2745,75 @@ React.useEffect(() => {
     verificationSig,
     zkVerifiedCached,
   ]);
+
+  const verifiedCardData = useMemo<VerifiedCardData | null>(() => {
+    if (result.status !== "ok" || !proofCapsule || !capsuleHash || stewardVerifiedPulse == null) return null;
+    const receiptValue = verificationReceipt ?? embeddedProof?.receipt ?? sharedReceipt?.receipt;
+    const receiptHashValue = receiptHash || embeddedProof?.receiptHash || sharedReceipt?.receiptHash;
+    const verificationSigValue = verificationSig ?? embeddedProof?.verificationSig ?? sharedReceipt?.verificationSig;
+    const valuationValue = valuationSnapshot && valuationHash ? { ...valuationSnapshot, valuationHash } : undefined;
+    const ownerPhiKeyValue = effectiveOwnerPhiKey ?? effectivePhiKey;
+    const verifierUrlValue = proofVerifierUrl || currentVerifyUrl;
+    const shareReceiptUrlValue = resolveVerifiedShareUrl(proofVerifierUrl, currentVerifyUrl, receiptJson);
+    return {
+      capsuleHash,
+      svgHash: svgHash || undefined,
+      pulse: proofCapsule.pulse,
+      verifiedAtPulse: stewardVerifiedPulse,
+      phikey: ownerPhiKeyValue && ownerPhiKeyValue !== "—" ? ownerPhiKeyValue : proofCapsule.phiKey,
+      kasOk: hasKASAuthSig ? sealKAS === "valid" : undefined,
+      g16Ok: sealZK === "valid",
+      verifierSlug: proofCapsule.verifierSlug,
+      verifierUrl: verifierUrlValue || undefined,
+      shareReceiptUrl: shareReceiptUrlValue || undefined,
+      verifier: verificationSource,
+      verificationVersion,
+      bundleHash: bundleHash || undefined,
+      zkPoseidonHash: zkMeta?.zkPoseidonHash ?? undefined,
+      receipt: receiptValue ?? undefined,
+      receiptHash: receiptHashValue || undefined,
+      verificationSig: verificationSigValue ?? undefined,
+      sigilSvg: svgText.trim() ? svgText : undefined,
+      valuation: valuationValue,
+      proofBundleJson: proofBundleJson || undefined,
+    };
+  }, [
+    bundleHash,
+    capsuleHash,
+    currentVerifyUrl,
+    embeddedProof?.receipt,
+    embeddedProof?.receiptHash,
+    embeddedProof?.verificationSig,
+    effectiveOwnerPhiKey,
+    proofCapsule,
+    proofBundleJson,
+    proofVerifierUrl,
+    receiptHash,
+    result.status,
+    effectivePhiKey,
+    hasKASAuthSig,
+    sealKAS,
+    sealZK,
+    sharedReceipt?.receipt,
+    sharedReceipt?.receiptHash,
+    sharedReceipt?.verificationSig,
+    stewardVerifiedPulse,
+    svgHash,
+    svgText,
+    valuationHash,
+    valuationSnapshot,
+    verificationReceipt,
+    verificationSig,
+    verificationSource,
+    verificationVersion,
+    zkMeta?.zkPoseidonHash,
+    receiptJson,
+  ]);
+
+  const onDownloadVerifiedCard = useCallback(async () => {
+    if (!verifiedCardData) return;
+    await downloadVerifiedCardPng(verifiedCardData);
+  }, [verifiedCardData]);
 
   const shareReceiptUrl = useMemo(() => {
     if (!receiptJson) return "";

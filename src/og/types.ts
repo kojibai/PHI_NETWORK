@@ -20,6 +20,7 @@ export type VerifiedCardData = {
   receipt?: VerificationReceipt;
   receiptHash?: string;
   verificationSig?: VerificationSig;
+  shareReceiptUrl?: string;
   sigilSvg?: string;
   valuation?: VerifiedCardValuation;
   proofBundleJson?: string;

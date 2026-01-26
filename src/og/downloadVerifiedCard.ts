@@ -14,7 +14,7 @@ function fileNameForCapsule(hash: string, verifiedAtPulse: number): string {
 function buildPointerPayload(data: VerifiedCardData): string {
   const payload = {
     v: "KVB-PTR-1",
-    verifierUrl: data.verifierUrl ?? "",
+    verifierUrl: data.shareReceiptUrl ?? data.verifierUrl ?? "",
     bundleHash: data.bundleHash ?? "",
     receiptHash: data.receiptHash ?? "",
     verifiedAtPulse: data.verifiedAtPulse,
@@ -36,7 +36,7 @@ function exportHeightPx(): number {
 
 export async function downloadVerifiedCardPng(data: VerifiedCardData): Promise<void> {
   const filename = fileNameForCapsule(data.capsuleHash, data.verifiedAtPulse);
-  const qrPayload = buildPointerPayload(data);
+  const qrPayload = data.shareReceiptUrl ?? data.verifierUrl ?? buildPointerPayload(data);
   const qrDataUrl = await qrDataURL(qrPayload, { size: 360, margin: 1, ecc: "M" });
 
   const svg = buildVerifiedCardSvg({ ...data, qrDataUrl });
