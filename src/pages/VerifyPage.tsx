@@ -2044,6 +2044,10 @@ if (verified && typeof cacheBundleHash === "string" && cacheBundleHash.trim().le
   React.useEffect(() => {
     let active = true;
     if (!bundleHash) return;
+    if (isReceiveGlyph) {
+      setProvenanceSigVerified(null);
+      return;
+    }
     const originSig = provenanceAuthorSig;
 
     if (!originSig) {
@@ -2071,7 +2075,7 @@ if (verified && typeof cacheBundleHash === "string" && cacheBundleHash.trim().le
     return () => {
       active = false;
     };
-  }, [bundleHash, provenanceAuthorSig, effectiveOriginBundleHash]);
+  }, [bundleHash, provenanceAuthorSig, effectiveOriginBundleHash, isReceiveGlyph]);
 
   const receiveCredId = useMemo(() => (effectiveReceiveSig ? effectiveReceiveSig.credId : ""), [effectiveReceiveSig]);
   const receiveNonce = useMemo(() => (effectiveReceiveSig?.nonce ? effectiveReceiveSig.nonce : ""), [effectiveReceiveSig?.nonce]);
@@ -2098,10 +2102,16 @@ if (verified && typeof cacheBundleHash === "string" && cacheBundleHash.trim().le
 
   const sealKAS: SealState = useMemo(() => {
     if (busy || ownerAuthBusy) return "busy";
-    if (!ownerAuthorSig) return "off";
-    if (ownerAuthVerified === null) return "na";
-    return ownerAuthVerified ? "valid" : "invalid";
-  }, [busy, ownerAuthBusy, ownerAuthVerified, ownerAuthorSig]);
+    if (ownerAuthorSig) {
+      if (ownerAuthVerified === null) return "na";
+      return ownerAuthVerified ? "valid" : "invalid";
+    }
+    if (effectiveReceiveSig) {
+      if (receiveSigVerified === null) return "na";
+      return receiveSigVerified ? "valid" : "invalid";
+    }
+    return "off";
+  }, [busy, ownerAuthBusy, ownerAuthVerified, ownerAuthorSig, effectiveReceiveSig, receiveSigVerified]);
 
   const sealZK: SealState = useMemo(() => {
     if (busy) return "busy";
@@ -2789,7 +2799,13 @@ React.useEffect(() => {
             <SealPill
               label="KAS"
               state={sealKAS}
-              detail={effectiveOwnerSig ? "Owner/auth signer (WebAuthn KAS)" : "Owner/auth signer missing"}
+              detail={
+                effectiveOwnerSig
+                  ? "Owner/auth signer (WebAuthn KAS)"
+                  : effectiveReceiveSig
+                    ? "Owner receive signer (WebAuthn KAS)"
+                    : "Owner/auth signer missing"
+              }
               onClick={openKasPopover}
               ariaLabel="Open KAS attestation details"
             />
@@ -3305,8 +3321,12 @@ React.useEffect(() => {
                   <MiniField label="Attestation bundle" value={embeddedProof ? "present" : "—"} />
                   <MiniField label="Owner/Auth signer" value={effectiveOwnerSig ? "present" : "—"} />
                   <MiniField label="Owner/Auth verified" value={ownerAuthVerified === null ? "n/a" : ownerAuthVerified ? "true" : "false"} />
-                  <MiniField label="Provenance/Origin signature" value={provenanceSig ? "present" : "—"} />
-                  <MiniField label="Provenance/Origin verified" value={provenanceSigVerified === null ? "n/a" : provenanceSigVerified ? "true" : "false"} />
+                  {!isReceiveGlyph ? (
+                    <MiniField label="Provenance/Origin signature" value={provenanceSig ? "present" : "—"} />
+                  ) : null}
+                  {!isReceiveGlyph ? (
+                    <MiniField label="Provenance/Origin verified" value={provenanceSigVerified === null ? "n/a" : provenanceSigVerified ? "true" : "false"} />
+                  ) : null}
                   <MiniField label="Owner receive signature" value={effectiveReceiveSig ? "present" : "—"} />
                   <MiniField label="Owner receive verified" value={receiveSigVerified === null ? "n/a" : receiveSigVerified ? "true" : "false"} />
                   <MiniField label="Owner ΦKey" value={effectiveOwnerPhiKey ? "present" : "—"} />
