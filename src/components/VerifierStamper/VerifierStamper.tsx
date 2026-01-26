@@ -1118,22 +1118,36 @@ const VerifierStamperInner: React.FC = () => {
   const buildSegmentedSvgDataUrl = useCallback(
     async (
       m: SigilMetadata
-    ): Promise<{ dataUrl: string; svgText: string; bundleHash: string | null; receiveBundleHash: string | null } | null> => {
+    ): Promise<{
+      dataUrl: string;
+      svgText: string;
+      bundleHash: string | null;
+      receiveBundleHash: string | null;
+      proofBundle?: Record<string, unknown> | null;
+    } | null> => {
       if (!svgURL) return null;
       const rawSvg = await fetch(svgURL).then((r) => r.text());
       let svgText = embedMetadataText(rawSvg, m);
       let bundleHashNext: string | null = null;
       let receiveBundleHashNext: string | null = null;
+      let proofBundle: Record<string, unknown> | null = null;
       if (proofBundleMeta) {
         const rebuilt = await rebuildProofBundleForSegment(svgText, m);
         if (rebuilt) {
           svgText = embedProofMetadata(svgText, rebuilt.bundle);
           bundleHashNext = rebuilt.bundleHash;
           receiveBundleHashNext = rebuilt.receiveBundleHash;
+          proofBundle = rebuilt.bundle;
         }
       }
       const dataUrl = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svgText)))}`;
-      return { dataUrl, svgText, bundleHash: bundleHashNext, receiveBundleHash: receiveBundleHashNext };
+      return {
+        dataUrl,
+        svgText,
+        bundleHash: bundleHashNext,
+        receiveBundleHash: receiveBundleHashNext,
+        proofBundle,
+      };
     },
     [proofBundleMeta, rebuildProofBundleForSegment, svgURL]
   );
@@ -2095,27 +2109,89 @@ const VerifierStamperInner: React.FC = () => {
     [conv.phiStringToSend, remainingPhiScaled]
   );
 
+  const buildBundleZip = useCallback(
+    async (options: {
+      svgText: string;
+      meta: SigilMetadata;
+      base: string;
+      context: "download" | "receive" | "segment";
+      proofBundle?: Record<string, unknown> | null;
+      segmentFile?: { name: string; blob: Blob } | null;
+    }): Promise<Blob> => {
+      const { svgText, meta: metaValue, base, context, proofBundle, segmentFile } = options;
+      const svgBlob = new Blob([svgText], { type: "image/svg+xml;charset=utf-8" });
+      let pngBlob: Blob | null = null;
+      try {
+        const svgDataUrl = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svgText)))}`;
+        pngBlob = await pngBlobFromSvgDataUrl(svgDataUrl, 1024);
+      } catch (err) {
+        logError("pngBlobFromSvgDataUrl", err);
+      }
+
+      const { default: JSZip } = await import("jszip");
+      const zip = new JSZip();
+      zip.file(`${base}.svg`, svgBlob);
+      if (pngBlob) zip.file(`${base}.png`, pngBlob);
+      zip.file(`${base}.metadata.json`, JSON.stringify(metaValue, null, 2));
+      if (proofBundle) {
+        zip.file(`${base}.proof_bundle.json`, JSON.stringify(proofBundle, null, 2));
+      }
+      if (segmentFile) {
+        zip.file(segmentFile.name, segmentFile.blob);
+      }
+      const manifest = {
+        bundleVersion: "verifier-stamper-v1",
+        context,
+        createdAt: new Date().toISOString(),
+        pulse: typeof metaValue.pulse === "number" ? metaValue.pulse : null,
+        kaiPulse: typeof metaValue.kaiPulse === "number" ? metaValue.kaiPulse : null,
+        bundleHash: proofBundle && typeof proofBundle.bundleHash === "string" ? proofBundle.bundleHash : null,
+        receiveBundleHash:
+          proofBundle && typeof (proofBundle as { receiveBundleHash?: string }).receiveBundleHash === "string"
+            ? (proofBundle as { receiveBundleHash?: string }).receiveBundleHash
+            : null,
+        files: {
+          svg: `${base}.svg`,
+          png: pngBlob ? `${base}.png` : null,
+          metadata: `${base}.metadata.json`,
+          proofBundle: proofBundle ? `${base}.proof_bundle.json` : null,
+          segment: segmentFile?.name ?? null,
+        },
+      };
+      zip.file(`${base}.manifest.json`, JSON.stringify(manifest, null, 2));
+
+      return zip.generateAsync({
+        type: "blob",
+        mimeType: "application/zip",
+        compression: "DEFLATE",
+        compressionOptions: { level: 6 },
+        streamFiles: true,
+      });
+    },
+    []
+  );
+
   const downloadZip = useCallback(async () => {
     if (!meta || !svgURL) return;
     const svgDataUrl = await embedMetadata(svgURL, meta);
-    const svgBlob = await fetch(svgDataUrl).then((r) => r.blob());
-    let pngBlob: Blob | null = null;
-    try {
-      pngBlob = await pngBlobFromSvgDataUrl(svgDataUrl, 1024);
-    } catch (err) {
-      logError("pngBlobFromSvgDataUrl", err);
+    let svgText = await fetch(svgDataUrl).then((r) => r.text());
+    const proofBundle = proofBundleMeta?.raw && isRecord(proofBundleMeta.raw) ? proofBundleMeta.raw : null;
+    if (proofBundle) {
+      svgText = embedProofMetadata(svgText, proofBundle);
     }
-    const { default: JSZip } = await import("jszip");
-    const zip = new JSZip();
     const sigilPulse = meta.pulse ?? 0;
     const last = meta.transfers?.slice(-1)[0];
     const sendPulse = last?.senderKaiPulse ?? meta.kaiPulse ?? kaiPulseNow();
     const base = pulseFilename("sigil_bundle", sigilPulse, sendPulse);
-    zip.file(`${base}.svg`, svgBlob);
-    if (pngBlob) zip.file(`${base}.png`, pngBlob);
-    const zipBlob = await zip.generateAsync({ type: "blob" });
+    const zipBlob = await buildBundleZip({
+      svgText,
+      meta,
+      base,
+      context: "download",
+      proofBundle,
+    });
     download(zipBlob, `${base}.zip`);
-  }, [meta, svgURL]);
+  }, [buildBundleZip, meta, proofBundleMeta, svgURL]);
 
   const isSendFilename = useMemo(() => (sourceFilename || "").toLowerCase().includes("sigil_send"), [sourceFilename]);
 
@@ -2409,16 +2485,23 @@ const VerifierStamperInner: React.FC = () => {
     const cap = updated.segmentSize ?? SEGMENT_SIZE;
     if (windowSize >= cap) {
       const { meta: rolled, segmentFileBlob } = await sealCurrentWindowIntoSegment(updated);
-      if (segmentFileBlob)
+      const segmented = await buildSegmentedSvgDataUrl(rolled);
+      if (segmented) {
+        const segmentName = `sigil_segment_${rolled.pulse ?? 0}_${String((rolled.segments?.length ?? 1) - 1).padStart(6, "0")}.json`;
+        const base = pulseFilename("sigil_segment_bundle", rolled.pulse ?? 0, nowPulse);
+        const zipBlob = await buildBundleZip({
+          svgText: segmented.svgText,
+          meta: rolled,
+          base,
+          context: "segment",
+          proofBundle: segmented.proofBundle ?? null,
+          segmentFile: segmentFileBlob ? { name: segmentName, blob: segmentFileBlob } : null,
+        });
+        download(zipBlob, `${base}.zip`);
+      } else if (segmentFileBlob) {
         download(
           segmentFileBlob,
           `sigil_segment_${rolled.pulse ?? 0}_${String((rolled.segments?.length ?? 1) - 1).padStart(6, "0")}.json`
-        );
-      const segmented = await buildSegmentedSvgDataUrl(rolled);
-      if (segmented) {
-        download(
-          segmented.dataUrl,
-          `${pulseFilename("sigil_head_after_seal", rolled.pulse ?? 0, nowPulse)}.svg`
         );
       }
       const hasReceiveProof =
@@ -2757,9 +2840,16 @@ const VerifierStamperInner: React.FC = () => {
     }
 
     const updatedSvg = embedProofMetadata(baseSvg, nextBundle);
-    durl = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(updatedSvg)))}`;
     const sigilPulse = updated.pulse ?? 0;
-    download(durl, `${pulseFilename("sigil_receive", sigilPulse, nowPulse)}.svg`);
+    const receiveBase = pulseFilename("sigil_bundle", sigilPulse, nowPulse);
+    const receiveZip = await buildBundleZip({
+      svgText: updatedSvg,
+      meta: updated,
+      base: receiveBase,
+      context: "receive",
+      proofBundle: nextBundle,
+    });
+    download(receiveZip, `${receiveBase}.zip`);
     const receivedPhi = readPhiAmountFromMeta(updated);
     const receivedPhiNumber = receivedPhi ? Number(receivedPhi) : NaN;
     dispatchPhiMoveSuccess({
@@ -2767,8 +2857,7 @@ const VerifierStamperInner: React.FC = () => {
       amountPhiDisplay: receivedPhi ? `Φ ${fmtPhiFixed4(receivedPhi)}` : undefined,
       amountDisplay: receivedPhi ? `Φ ${fmtPhiFixed4(receivedPhi)}` : undefined,
       amountPhi: Number.isFinite(receivedPhiNumber) ? receivedPhiNumber : undefined,
-      downloadUrl: durl,
-      downloadLabel: "Sigil Receive",
+      downloadLabel: "Sigil Bundle",
       message: "Transfer received.",
     });
     const updated2 = await refreshHeadWindow(updated);
@@ -2792,16 +2881,23 @@ const VerifierStamperInner: React.FC = () => {
         usedPulse: nowPulse,
       };
     }
-    if (segmentFileBlob)
+    const segmented = await buildSegmentedSvgDataUrl(rolled);
+    if (segmented) {
+      const segmentName = `sigil_segment_${rolled.pulse ?? 0}_${String((rolled.segments?.length ?? 1) - 1).padStart(6, "0")}.json`;
+      const base = pulseFilename("sigil_segment_bundle", rolled.pulse ?? 0, nowPulse);
+      const zipBlob = await buildBundleZip({
+        svgText: segmented.svgText,
+        meta: rolled,
+        base,
+        context: "segment",
+        proofBundle: segmented.proofBundle ?? null,
+        segmentFile: segmentFileBlob ? { name: segmentName, blob: segmentFileBlob } : null,
+      });
+      download(zipBlob, `${base}.zip`);
+    } else if (segmentFileBlob) {
       download(
         segmentFileBlob,
         `sigil_segment_${rolled.pulse ?? 0}_${String((rolled.segments?.length ?? 1) - 1).padStart(6, "0")}.json`
-      );
-    const segmented = await buildSegmentedSvgDataUrl(rolled);
-    if (segmented) {
-      download(
-        segmented.dataUrl,
-        `${pulseFilename("sigil_head_after_seal", rolled.pulse ?? 0, nowPulse)}.svg`
       );
     }
     const hasReceiveProof =
@@ -2823,6 +2919,7 @@ const VerifierStamperInner: React.FC = () => {
     isSendFilename,
     refreshHeadWindow,
     syncMetaAndUi,
+    buildBundleZip,
     buildSegmentedSvgDataUrl,
     bundleHash,
     computeEffectiveCanonical,
