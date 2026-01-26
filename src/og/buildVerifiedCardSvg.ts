@@ -39,6 +39,41 @@ function badgeMark(ok: boolean): string {
   return "M20 20 L44 44 M44 20 L20 44";
 }
 
+type TextMetricsLite = { width: number; ascent: number; descent: number };
+
+function measureTextMetrics(
+  text: string,
+  font: string,
+  fontPx: number,
+  letterSpacingEm = 0,
+): TextMetricsLite {
+  let width = text.length * fontPx * 0.6;
+  let ascent = fontPx * 0.8;
+  let descent = fontPx * 0.2;
+
+  let ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null = null;
+  if (typeof OffscreenCanvas !== "undefined") {
+    ctx = new OffscreenCanvas(1, 1).getContext("2d");
+  } else if (typeof document !== "undefined") {
+    const canvas = document.createElement("canvas");
+    ctx = canvas.getContext("2d");
+  }
+
+  if (ctx) {
+    ctx.font = font;
+    const metrics = ctx.measureText(text);
+    width = metrics.width;
+    ascent = metrics.actualBoundingBoxAscent || ascent;
+    descent = metrics.actualBoundingBoxDescent || descent;
+  }
+
+  if (letterSpacingEm > 0 && text.length > 1) {
+    width += (text.length - 1) * letterSpacingEm * fontPx;
+  }
+
+  return { width, ascent, descent };
+}
+
 function dropUndefined<T extends Record<string, unknown>>(value: T): T {
   const entries = Object.entries(value).filter((entry) => entry[1] !== undefined);
   return Object.fromEntries(entries) as T;
@@ -233,16 +268,20 @@ export function buildVerifiedCardSvg(data: VerifiedCardData): string {
 
   const proofSealLabel = "PROOF OF BREATH™";
   const proofSealMicro = `${shortHash(capsuleHash, 6, 4)} · ${shortHash(bundleHashValue, 6, 4)}`;
-  const proofSealSize = 240;
-  const proofSealX = 600;
+  const proofSealSizeDefault = 240;
+  const proofSealRadiusDefault = Math.floor(proofSealSizeDefault / 2);
+  const proofSealRadiusMin = 120;
+  const proofSealXDefault = 600;
   const proofSealY = 312;
-  const proofSealMarkup = proofSeal.toSvg(proofSealX, proofSealY, proofSealSize, id, proofSealLabel, proofSealMicro);
   const sigilFrameX = 796;
   const sigilFrameY = 136;
   const sigilFrameSize = 348;
   const unit = 22;
   const phiGap = Math.round(unit * PHI);
-  const badgeLabelY = 262;
+  const titleY = 134;
+  const subheadY = titleY + 42;
+  const modeLabelY = subheadY + 34;
+  const badgeLabelY = modeLabelY + Math.round(unit * 2.15);
   const valueLabelY = badgeLabelY + phiGap;
   const valueY = valueLabelY + Math.round(unit * 1.4);
   const usdLabelY = valueY + phiGap;
@@ -251,8 +290,50 @@ export function buildVerifiedCardSvg(data: VerifiedCardData): string {
   const qrBoxY = usdValueY + Math.round(phiGap * 0.45);
   const qrBoxW = 288;
   const qrBoxH = 140;
-  const brandX = 420;
-  const brandY = 206;
+  const brandX = VERIFIED_CARD_W / 2;
+  const brandY = 78;
+  const brandText = "SIGIL-SEAL";
+  const brandFontPx = 14;
+  const brandLetterSpacingEm = 0.42;
+  const brandFont = `600 ${brandFontPx}px Inter, "Segoe UI", "Helvetica Neue", Arial, sans-serif`;
+  const brandMetrics = measureTextMetrics(brandText, brandFont, brandFontPx, brandLetterSpacingEm);
+  const brandIconSize = 12;
+  const brandIconGap = Math.round(brandFontPx * 0.6);
+  const brandGroupWidth = brandMetrics.width + brandIconSize + brandIconGap;
+  const brandTextX = brandX - brandGroupWidth / 2 + brandIconSize + brandIconGap;
+  const brandIconX = brandX - brandGroupWidth / 2 + brandIconSize / 2;
+  const labelFontPx = 22;
+  const labelLetterSpacingEm = 0.08;
+  const labelFont = `700 ${labelFontPx}px Inter, "Segoe UI", "Helvetica Neue", Arial, sans-serif`;
+  const g16LabelX = hasKas ? 470 : 320;
+  const g16Metrics = measureTextMetrics("G16", labelFont, labelFontPx, labelLetterSpacingEm);
+  const g16BadgeSize = Math.round(labelFontPx * 1.25);
+  const g16BadgeGap = Math.round(labelFontPx * 0.45);
+  const g16BadgeX = g16LabelX + g16Metrics.width + g16BadgeGap;
+  const g16BadgeY = badgeLabelY - Math.round(Math.max(g16Metrics.ascent * 0.9, g16BadgeSize * 0.85));
+  const g16BadgeRadius = Math.round(g16BadgeSize * 0.26);
+  const g16BadgeStroke = Math.max(1.4, g16BadgeSize * 0.033);
+  const g16MarkScale = (g16BadgeSize / 54) * 0.5;
+  const g16MarkTranslate = (g16BadgeSize / 54) * 13.5;
+  const valueFontPx = 30;
+  const valueFont = `700 ${valueFontPx}px Inter, "Segoe UI", "Helvetica Neue", Arial, sans-serif`;
+  const valueMetrics = measureTextMetrics(valuationPhi, valueFont, valueFontPx);
+  const usdMetrics = measureTextMetrics(valuationUsd, valueFont, valueFontPx);
+  const leftValueRightEdge = 320 + Math.max(valueMetrics.width, usdMetrics.width);
+  const safeGap = 24;
+  const badgeLeftBound = leftValueRightEdge + safeGap;
+  let proofSealX = proofSealXDefault;
+  let allowedRadius = proofSealX - badgeLeftBound;
+  let proofSealRadius = Math.min(proofSealRadiusDefault, allowedRadius);
+  if (proofSealRadius < proofSealRadiusMin) {
+    const neededShift = Math.min(24, proofSealRadiusMin - proofSealRadius);
+    proofSealX += neededShift;
+    allowedRadius = proofSealX - badgeLeftBound;
+    proofSealRadius = Math.min(proofSealRadiusDefault, allowedRadius);
+  }
+  proofSealRadius = Math.max(0, proofSealRadius);
+  const proofSealSize = proofSealRadius * 2;
+  const proofSealMarkup = proofSeal.toSvg(proofSealX, proofSealY, proofSealSize, id, proofSealLabel, proofSealMicro);
   const phiKeyLabelY = Math.round(proofSealY + proofSealSize / 2 + phiGap * 0.7);
   const phiKeyValueY = phiKeyLabelY + Math.round(unit * 1.9);
   const brandPalette = proofSeal.palette;
@@ -334,11 +415,12 @@ export function buildVerifiedCardSvg(data: VerifiedCardData): string {
     preserveAspectRatio="xMidYMid meet"
   />
 
-  <text class="headline" x="320" y="120">${headlineText}</text>
-  <text class="subhead" x="320" y="162">Steward Verified @ Pulse ${verifiedAtPulse}</text>
-  ${valuationModeLabel ? `<text class="mode-label" x="320" y="196">${valuationModeLabel}</text>` : ""}
-  ${sealBrandIcon(brandX - 18, brandY - 4, { primary: brandPalette.primary, accent: brandPalette.accent })}
-  <text class="brand" x="${brandX}" y="${brandY}">SIGIL-SEAL</text>
+  ${sealBrandIcon(brandIconX, brandY - 4, { primary: brandPalette.primary, accent: brandPalette.accent })}
+  <text class="brand" x="${brandTextX}" y="${brandY}" filter="url(#${badgeGlowId})" opacity="0.85">${brandText}</text>
+
+  <text class="headline" x="320" y="${titleY}">${headlineText}</text>
+  <text class="subhead" x="320" y="${subheadY}">Steward Verified @ Pulse ${verifiedAtPulse}</text>
+  ${valuationModeLabel ? `<text class="mode-label" x="320" y="${modeLabelY}">${valuationModeLabel}</text>` : ""}
 
   <text class="label" x="${proofSealX}" y="${phiKeyLabelY}" text-anchor="middle">ΦKEY</text>
   <text class="phikey" x="${proofSealX}" y="${phiKeyValueY}" text-anchor="middle">${phiShort}</text>
@@ -355,13 +437,11 @@ export function buildVerifiedCardSvg(data: VerifiedCardData): string {
       : ""
   }
 
-  <text class="label" x="${hasKas ? 470 : 320}" y="${badgeLabelY}">G16</text>
-  <g transform="translate(${hasKas ? 508 : 358} ${badgeLabelY - 22})" filter="url(#${badgeGlowId})">
-    <g transform="translate(4 4) scale(0.85)">
-      <rect width="54" height="54" rx="14" fill="rgba(10,16,22,0.9)" stroke="${g16Ok ? "#38E4B6" : "#C86B6B"}" stroke-width="1.8" />
-      <g transform="translate(13.5 13.5) scale(0.5)">
-        <path d="${badgeMark(g16Ok)}" fill="none" stroke="${g16Ok ? "#38E4B6" : "#C86B6B"}" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" />
-      </g>
+  <text class="label" x="${g16LabelX}" y="${badgeLabelY}">G16</text>
+  <g transform="translate(${g16BadgeX} ${g16BadgeY})" filter="url(#${badgeGlowId})">
+    <rect width="${g16BadgeSize}" height="${g16BadgeSize}" rx="${g16BadgeRadius}" fill="rgba(10,16,22,0.9)" stroke="${g16Ok ? "#38E4B6" : "#C86B6B"}" stroke-width="${g16BadgeStroke}" />
+    <g transform="translate(${g16MarkTranslate} ${g16MarkTranslate}) scale(${g16MarkScale})">
+      <path d="${badgeMark(g16Ok)}" fill="none" stroke="${g16Ok ? "#38E4B6" : "#C86B6B"}" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" />
     </g>
   </g>
 
