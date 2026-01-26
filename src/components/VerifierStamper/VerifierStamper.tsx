@@ -941,9 +941,10 @@ const VerifierStamperInner: React.FC = () => {
   );
 
   const hasReceiveLock = useCallback(
-    async (m: SigilMetadata): Promise<boolean> => {
+    async (m: SigilMetadata, options?: { includeRemote?: boolean }): Promise<boolean> => {
       if (await hasLocalReceiveLock(m)) return true;
       if (await hasRegistryReceiveLock(m)) return true;
+      if (options?.includeRemote === false) return false;
       return hasRemoteReceiveLock(m);
     },
     [hasLocalReceiveLock, hasRegistryReceiveLock, hasRemoteReceiveLock]
@@ -1192,6 +1193,10 @@ const VerifierStamperInner: React.FC = () => {
       if (receiveFromBundle) {
         metaNext = { ...metaNext, receiveSig: receiveFromBundle };
       }
+      const receiveBundleHashFromBundle = readReceiveBundleHashFromBundle(proofMetaNext?.raw);
+      if (receiveBundleHashFromBundle && !metaNext.receiveBundleHash) {
+        metaNext = { ...metaNext, receiveBundleHash: receiveBundleHashFromBundle };
+      }
       if (proofMetaNext?.raw && isRecord(proofMetaNext.raw)) {
         metaNext = { ...metaNext, proofBundleRaw: proofMetaNext.raw };
       }
@@ -1255,43 +1260,6 @@ const VerifierStamperInner: React.FC = () => {
         autoReceiveRef.current = null;
       }
 
-      if (bundleHash) {
-        const receiveBundleHash = readReceiveBundleHashFromBundle(proofBundleMeta?.raw);
-        const keys = new Set<string>();
-        if (receiveBundleHash) keys.add(`received:${receiveBundleHash}`);
-        keys.add(`received:${bundleHash}`);
-        for (const key of keys) {
-          const stored = window.localStorage.getItem(key);
-          if (!stored) continue;
-          try {
-            const parsed = JSON.parse(stored) as unknown;
-            if (!alive) return;
-            if (isReceiveSig(parsed)) {
-              setReceiveSig(parsed);
-              setReceiveStatus("already");
-              return;
-            }
-          } catch {
-            if (!alive) return;
-          }
-        }
-      }
-
-      const embedded = readReceiveSigFromBundle(proofBundleMeta?.raw);
-      if (embedded) {
-        if (!alive) return;
-        setReceiveSig(embedded);
-        setReceiveStatus("already");
-        return;
-      }
-
-      if (meta && (await hasReceiveLock(meta))) {
-        if (!alive) return;
-        setReceiveSig(null);
-        setReceiveStatus("already");
-        return;
-      }
-
       if (!alive) return;
       setReceiveSig(null);
       setReceiveStatus(bundleHash ? "new" : "idle");
@@ -1299,7 +1267,7 @@ const VerifierStamperInner: React.FC = () => {
     return () => {
       alive = false;
     };
-  }, [bundleHash, proofBundleMeta?.raw, meta, hasReceiveLock]);
+  }, [bundleHash]);
 
   useEffect(() => {
     if (!bundleHash || unlockState.isUnlocked || !unlockState.isRequired) return;
@@ -2293,7 +2261,7 @@ const VerifierStamperInner: React.FC = () => {
       return;
     }
 
-    if ((await hasLocalReceiveLock(meta)) || (await hasRegistryReceiveLock(meta))) {
+    if (await hasReceiveLock(meta, { includeRemote: false })) {
       setError("This transfer has already been received.");
       setReceiveStatus("already");
       return;
@@ -2507,6 +2475,16 @@ const VerifierStamperInner: React.FC = () => {
       };
     }
 
+    const rawBundle = proofBundleMeta?.raw;
+    const priorReceiveSig = readReceiveSigFromBundle(rawBundle);
+    if (rawBundle && isRecord(rawBundle)) {
+      const receiveSigHistory = collectReceiveSigHistory(rawBundle, priorReceiveSig);
+      if (receiveSigHistory.length > 0) {
+        nextBundle.receiveSigHistory = receiveSigHistory;
+      }
+    }
+    delete nextBundle.receiveSig;
+
     const bundleRoot = buildBundleRoot(nextBundle);
     const rootHash = await computeBundleHash(bundleRoot);
     const legacySeed = { ...nextBundle } as Record<string, unknown>;
@@ -2553,6 +2531,7 @@ const VerifierStamperInner: React.FC = () => {
     }
     nextBundle.bundleHash = bundleHashNext;
     nextBundle.receiveBundleHash = receiveBundleHash;
+    nextBundle.receiveBundleRoot = receiveBundleRoot;
     if (receiveSigLocal) nextBundle.receiveSig = receiveSigLocal;
 
     if (receiveSigLocal) {
