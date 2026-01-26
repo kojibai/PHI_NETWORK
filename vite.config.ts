@@ -37,6 +37,7 @@ export default defineConfig(({ isSsrBuild }) => {
       outDir: ssrBuild ? "dist/server" : "dist",
       ssrManifest: !ssrBuild,
       target: ssrBuild ? "node20" : undefined,
+      emptyOutDir: !ssrBuild,
       rollupOptions: {
         input: ssrBuild ? undefined : "index.html",
       },
