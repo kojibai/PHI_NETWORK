@@ -25,6 +25,7 @@ export type VerifyResult =
       message: string;
       slug: SlugInfo;
       embedded?: EmbeddedMeta;
+      embeddedRawPhiKey?: string | null;
       derivedPhiKey?: string;
       checks?: VerifyChecks;
     }
@@ -32,6 +33,7 @@ export type VerifyResult =
       status: "ok";
       slug: SlugInfo;
       embedded: EmbeddedMeta;
+      embeddedRawPhiKey: string | null;
       derivedPhiKey: string;
       checks: VerifyChecks;
       verifiedAtPulse: number | null;
@@ -69,11 +71,13 @@ export async function verifySigilSvg(slug: SlugInfo, svgText: string, verifiedAt
         message: "No kaiSignature found in the SVG metadata.",
         slug,
         embedded,
+        embeddedRawPhiKey: embedded.phiKey ? embedded.phiKey : null,
       };
     }
 
     const derivedPhiKey = await derivePhiKeyFromSig(sig);
     const embeddedPhiKey = (embedded.phiKey ?? "").trim();
+    const embeddedRawPhiKey = embeddedPhiKey.length > 0 ? embeddedPhiKey : null;
     const embeddedPulseExact = embedded.pulseExact;
     const embeddedPulse =
       embeddedPulseExact && Number.isFinite(Number(embeddedPulseExact))
@@ -107,6 +111,7 @@ export async function verifySigilSvg(slug: SlugInfo, svgText: string, verifiedAt
         message: "Verification failed: one or more checks did not match.",
         slug,
         embedded,
+        embeddedRawPhiKey,
         derivedPhiKey,
         checks,
       };
@@ -124,6 +129,7 @@ export async function verifySigilSvg(slug: SlugInfo, svgText: string, verifiedAt
         ...normalizedEmbedded,
         phiKey: embeddedPhiKey.length > 0 ? embeddedPhiKey : derivedPhiKey,
       },
+      embeddedRawPhiKey,
       derivedPhiKey,
       checks,
       verifiedAtPulse:

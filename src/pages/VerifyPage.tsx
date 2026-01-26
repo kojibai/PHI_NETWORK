@@ -40,6 +40,7 @@ import { tryVerifyGroth16 } from "../components/VerifierStamper/zk";
 import { isKASAuthorSig, type KASAuthorSig } from "../utils/authorSig";
 import {
   isWebAuthnAvailable,
+  derivePhiKeyFromPubKeyJwk,
   signBundleHash,
   storePasskey,
   verifyBundleAuthorSig,
@@ -1063,7 +1064,8 @@ export default function VerifyPage(): ReactElement {
   const runOwnerAuthFlow = useCallback(
     async (args: {
       ownerAuthorSig: KASAuthorSig | null;
-      glyphPhiKey: string;
+      glyphPhiKeyDeclared: string | null;
+      glyphPhiKeyFallback: string | null;
     }): Promise<void> => {
       if (ownerAuthBusy) return;
       setOwnerAuthVerified(null);
@@ -1109,9 +1111,15 @@ export default function VerifyPage(): ReactElement {
         }
       };
 
-      const allowCredentials = expectedCredId
-        ? [{ type: "public-key" as const, id: toArrayBuffer(base64UrlDecode(expectedCredId)) }]
-        : undefined;
+      let allowCredentials: PublicKeyCredentialDescriptor[] | undefined = undefined;
+      if (expectedCredId) {
+        try {
+          const idBytes = base64UrlDecode(expectedCredId);
+          allowCredentials = [{ type: "public-key" as const, id: toArrayBuffer(idBytes) }];
+        } catch {
+          allowCredentials = undefined;
+        }
+      }
 
       let assertion = await requestAssertion(allowCredentials);
       if (!assertion) {
@@ -1135,8 +1143,17 @@ export default function VerifyPage(): ReactElement {
           return;
         }
 
-        if (args.glyphPhiKey) {
-          storePasskey(args.glyphPhiKey, {
+        const signerPhiKey = await derivePhiKeyFromPubKeyJwk(ownerAuthorSig.pubKeyJwk);
+        const declaredPhiKey = args.glyphPhiKeyDeclared;
+        if (declaredPhiKey && signerPhiKey !== declaredPhiKey) {
+          setOwnerAuthVerified(false);
+          setOwnerAuthStatus("Signer mismatch.");
+          setOwnerAuthBusy(false);
+          return;
+        }
+
+        if (args.glyphPhiKeyDeclared) {
+          storePasskey(args.glyphPhiKeyDeclared, {
             credId: assertionJson.rawId,
             pubKeyJwk: ownerAuthorSig.pubKeyJwk,
           });
@@ -1189,8 +1206,10 @@ if (receipt.receiptHash) {
       if (next.status === "ok") {
         const embeddedProofMeta = extractProofBundleMetaFromSvg(raw);
         const ownerAuthorSig = (embeddedProofMeta?.authorSig ?? next.embedded.authorSig ?? null) as KASAuthorSig | null;
-        const glyphPhiKey = next.embedded.phiKey ?? "";
-        await runOwnerAuthFlow({ ownerAuthorSig, glyphPhiKey });
+        const rawEmbeddedPhiKey = next.embeddedRawPhiKey ?? null;
+        const glyphPhiKeyDeclared = rawEmbeddedPhiKey && rawEmbeddedPhiKey.trim().length > 0 ? rawEmbeddedPhiKey : null;
+        const glyphPhiKeyFallback = glyphPhiKeyDeclared ? null : next.derivedPhiKey ?? null;
+        await runOwnerAuthFlow({ ownerAuthorSig, glyphPhiKeyDeclared, glyphPhiKeyFallback });
       } else {
         setOwnerAuthVerified(null);
         setOwnerAuthStatus("Not present");
