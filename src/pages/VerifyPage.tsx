@@ -1199,7 +1199,7 @@ if (receipt.receiptHash) {
       if (next.status === "ok") {
         const embeddedProofMeta = extractProofBundleMetaFromSvg(raw);
         const ownerAuthorSig = (embeddedProofMeta?.authorSig ?? next.embedded.authorSig ?? null) as KASAuthorSig | null;
-        const glyphPhiKey = next.embedded.phiKey ?? next.derivedPhiKey ?? "";
+        const glyphPhiKey = next.embedded.phiKey ?? "";
         await runOwnerAuthFlow({ ownerAuthorSig, glyphPhiKey });
       } else {
         setOwnerAuthVerified(null);
@@ -2099,6 +2099,13 @@ if (verified && typeof cacheBundleHash === "string" && cacheBundleHash.trim().le
   const kpiPhiKey = useMemo(() => effectivePhiKey, [effectivePhiKey]);
 
   const provenanceSig = provenanceAuthorSig;
+
+  const ownerAuthSignerPresent = Boolean(effectiveOwnerSig || effectiveReceiveSig);
+  const ownerAuthVerifiedValue = useMemo(() => {
+    if (effectiveOwnerSig) return ownerAuthVerified;
+    if (effectiveReceiveSig) return receiveSigVerified;
+    return null;
+  }, [effectiveOwnerSig, effectiveReceiveSig, ownerAuthVerified, receiveSigVerified]);
 
   const sealKAS: SealState = useMemo(() => {
     if (busy || ownerAuthBusy) return "busy";
@@ -3319,8 +3326,11 @@ React.useEffect(() => {
               <div className="vcard-body vfit">
                 <div className="vmini-grid vmini-grid--6" aria-label="Audit checks">
                   <MiniField label="Attestation bundle" value={embeddedProof ? "present" : "—"} />
-                  <MiniField label="Owner/Auth signer" value={effectiveOwnerSig ? "present" : "—"} />
-                  <MiniField label="Owner/Auth verified" value={ownerAuthVerified === null ? "n/a" : ownerAuthVerified ? "true" : "false"} />
+                  <MiniField label="Owner/Auth signer" value={ownerAuthSignerPresent ? "present" : "—"} />
+                  <MiniField
+                    label="Owner/Auth verified"
+                    value={ownerAuthVerifiedValue === null ? "n/a" : ownerAuthVerifiedValue ? "true" : "false"}
+                  />
                   {!isReceiveGlyph ? (
                     <MiniField label="Provenance/Origin signature" value={provenanceSig ? "present" : "—"} />
                   ) : null}
