@@ -845,6 +845,11 @@ export default function VerifyPage(): ReactElement {
     () => hasRequiredKasAuthorSig(embeddedProof?.authorSig ?? (result.status === "ok" ? result.embedded.authorSig : null)),
     [embeddedProof?.authorSig, result],
   );
+  const hasKASReceiveSig = useMemo(() => {
+    if (!receiveSig) return false;
+    return Boolean(receiveSig.credId && receiveSig.pubKeyJwk);
+  }, [receiveSig]);
+  const hasKASAuthSig = hasKASOwnerSig || hasKASReceiveSig;
   const effectiveOwnerSig = ownerAuthorSig;
   const isChildGlyphValue =
     isChildGlyph(result.status === "ok" ? result.embedded.raw : null) || isChildGlyph(embeddedProof?.raw);
@@ -951,10 +956,10 @@ export default function VerifyPage(): ReactElement {
   }, [setSealPopover]);
 
   const openKasPopover = useCallback(() => {
-    if (!hasKASOwnerSig) return;
+    if (!hasKASAuthSig) return;
     setPanel("audit");
     setSealPopover("kas");
-  }, [hasKASOwnerSig, setPanel, setSealPopover]);
+  }, [hasKASAuthSig, setPanel, setSealPopover]);
 
   const openG16Popover = useCallback(() => {
     setPanel("zk");
@@ -976,7 +981,7 @@ export default function VerifyPage(): ReactElement {
 
   React.useEffect(() => {
     if (!sealPopover) return;
-    if (sealPopover === "kas" && !hasKASOwnerSig) {
+    if (sealPopover === "kas" && !hasKASAuthSig) {
       setSealPopover(null);
       return;
     }
@@ -985,7 +990,7 @@ export default function VerifyPage(): ReactElement {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [closeSealPopover, hasKASOwnerSig, sealPopover]);
+  }, [closeSealPopover, hasKASAuthSig, sealPopover]);
 
   const chartPhi = useMemo(() => {
     const candidate = displayPhi ?? liveValuePhi ?? 0;
@@ -1269,11 +1274,10 @@ if (receipt.receiptHash) {
       if (next.status === "ok") {
         const embeddedProofMeta = extractProofBundleMetaFromSvg(raw);
         const ownerAuthorSig = embeddedProofMeta?.authorSig ?? next.embedded.authorSig ?? null;
-        const hasKASOwnerSig = hasRequiredKasAuthorSig(ownerAuthorSig);
         const rawEmbeddedPhiKey = next.embeddedRawPhiKey ?? null;
         const glyphPhiKeyDeclared = normalizeRawDeclaredPhiKey(rawEmbeddedPhiKey);
         const glyphPhiKeyFallback = glyphPhiKeyDeclared ? null : next.derivedPhiKey ?? null;
-        if (hasKASOwnerSig) {
+        if (hasRequiredKasAuthorSig(ownerAuthorSig)) {
           await runOwnerAuthFlow({ ownerAuthorSig, glyphPhiKeyDeclared, glyphPhiKeyFallback });
         }
         stampAuditFields({
@@ -1294,7 +1298,7 @@ if (receipt.receiptHash) {
 
   const autoScanContext = useMemo(() => {
     if (!sharedReceipt) return null;
-    const authorSig = (embeddedProof?.authorSig ?? sharedReceipt.authorSig) as KASAuthorSig | null;
+    const authorSig = embeddedProof?.authorSig ?? sharedReceipt.authorSig ?? null;
     if (!hasRequiredKasAuthorSig(authorSig)) return null;
     const bundleHashValue = sharedReceipt.bundleHash ?? bundleHash;
     if (!bundleHashValue) return null;
@@ -2024,7 +2028,7 @@ if (verified && typeof cacheBundleHash === "string" && cacheBundleHash.trim().le
 
   React.useEffect(() => {
     let active = true;
-    if (!hasKASOwnerSig) {
+    if (!hasKASAuthSig) {
       setOwnerPhiKeyVerified(null);
       setOwnershipAttested("missing");
       return;
@@ -2146,7 +2150,7 @@ if (verified && typeof cacheBundleHash === "string" && cacheBundleHash.trim().le
     effectiveReceiveMode,
     effectiveReceivePulse,
     effectiveReceiveSig,
-    hasKASOwnerSig,
+    hasKASAuthSig,
     receiveBundleRoot,
     receiveSigVerified,
     ownerAuthVerified,
@@ -2212,16 +2216,16 @@ if (verified && typeof cacheBundleHash === "string" && cacheBundleHash.trim().le
   const provenanceSig = hasKASProvenanceSig ? provenanceAuthorSig : null;
   const provenanceSigVerifiedValue = hasKASProvenanceSig ? provenanceSigVerified : null;
 
-  const ownerAuthSignerPresent = hasKASOwnerSig && Boolean(effectiveOwnerSig || effectiveReceiveSig);
+  const ownerAuthSignerPresent = hasKASAuthSig && Boolean(effectiveOwnerSig || effectiveReceiveSig);
   const ownerAuthVerifiedValue = useMemo(() => {
-    if (!hasKASOwnerSig) return null;
+    if (!hasKASAuthSig) return null;
     if (effectiveOwnerSig) return ownerAuthVerified;
     if (effectiveReceiveSig) return receiveSigVerified;
     return null;
-  }, [effectiveOwnerSig, effectiveReceiveSig, hasKASOwnerSig, ownerAuthVerified, receiveSigVerified]);
+  }, [effectiveOwnerSig, effectiveReceiveSig, hasKASAuthSig, ownerAuthVerified, receiveSigVerified]);
 
   const sealKAS: SealState = useMemo(() => {
-    if (!hasKASOwnerSig) return "off";
+    if (!hasKASAuthSig) return "off";
     if (busy || ownerAuthBusy) return "busy";
     if (ownerAuthorSig) {
       if (ownerAuthVerified === null) return "na";
@@ -2232,7 +2236,7 @@ if (verified && typeof cacheBundleHash === "string" && cacheBundleHash.trim().le
       return receiveSigVerified ? "valid" : "invalid";
     }
     return "off";
-  }, [busy, hasKASOwnerSig, ownerAuthBusy, ownerAuthVerified, ownerAuthorSig, effectiveReceiveSig, receiveSigVerified]);
+  }, [busy, hasKASAuthSig, ownerAuthBusy, ownerAuthVerified, ownerAuthorSig, effectiveReceiveSig, receiveSigVerified]);
 
   const sealZK: SealState = useMemo(() => {
     if (busy) return "busy";
@@ -2374,7 +2378,7 @@ body: [
       };
     }
     if (sealPopover === "kas") {
-      if (!hasKASOwnerSig) return null;
+      if (!hasKASAuthSig) return null;
       return {
         title: "KAS • Kai Author Signature",
         status: sealStateLabel(sealKAS),
@@ -2396,7 +2400,7 @@ body: [
   "This seal represents cryptographic finality—provable integrity with privacy preserved."
       ],
     };
-  }, [hasKASOwnerSig, result.status, sealKAS, sealPopover, sealStateLabel, sealZK]);
+  }, [hasKASAuthSig, result.status, sealKAS, sealPopover, sealStateLabel, sealZK]);
 
   const hasSvgBytes = Boolean(svgText.trim());
   const expectedSvgHash = sharedReceipt?.svgHash ?? embeddedProof?.svgHash ?? "";
@@ -2426,7 +2430,7 @@ body: [
 
   const shareStatus = result.status === "ok" ? "VERIFIED" : result.status === "error" ? "FAILED" : "STANDBY";
   const sharePhiShort = verifierPhi && verifierPhi !== "—" ? ellipsizeMiddle(verifierPhi, 12, 10) : "—";
-  const shareKas = hasKASOwnerSig ? (sealKAS === "valid" ? "✅" : "❌") : null;
+  const shareKas = hasKASAuthSig ? (sealKAS === "valid" ? "✅" : "❌") : null;
   const shareG16 = sealZK === "valid" ? "✅" : "❌";
   const verificationSigLabel =
     verificationSigVerified === true ? "Verification signed" : verificationSigVerified === false ? "Verification signature invalid" : "Sign Verification";
@@ -2437,7 +2441,7 @@ body: [
 
   React.useEffect(() => {
     let active = true;
-    if (!hasKASOwnerSig) {
+    if (!hasKASReceiveSig) {
       setReceiveSigVerified(null);
       return;
     }
@@ -2466,7 +2470,7 @@ body: [
     return () => {
       active = false;
     };
-  }, [effectiveReceiveBundleHash, effectiveReceiveSig, hasKASOwnerSig]);
+  }, [effectiveReceiveBundleHash, effectiveReceiveSig, hasKASReceiveSig]);
 
 
   React.useEffect(() => {
@@ -2806,7 +2810,7 @@ React.useEffect(() => {
           </div>
 
           <div className="vseals" aria-label="Sovereign seals">
-            {hasKASOwnerSig ? (
+            {hasKASAuthSig ? (
               <SealPill
                 label="KAS"
                 state={sealKAS}
@@ -3345,19 +3349,19 @@ React.useEffect(() => {
                       value={provenanceSigVerifiedValue === null ? "n/a" : provenanceSigVerifiedValue ? "true" : "false"}
                     />
                   ) : null}
-                  {hasKASOwnerSig && isReceiveGlyph ? (
+                  {hasKASReceiveSig && isReceiveGlyph ? (
                     <MiniField label="Owner receive signature" value={effectiveReceiveSig ? "present" : "—"} />
                   ) : null}
-                  {hasKASOwnerSig && isReceiveGlyph ? (
+                  {hasKASReceiveSig && isReceiveGlyph ? (
                     <MiniField label="Owner receive verified" value={receiveSigVerified === null ? "n/a" : receiveSigVerified ? "true" : "false"} />
                   ) : null}
-                  {hasKASOwnerSig ? (
+                  {hasKASAuthSig ? (
                     <MiniField label="Owner ΦKey" value={effectiveOwnerPhiKey ? "present" : "—"} />
                   ) : null}
-                  {hasKASOwnerSig ? (
+                  {hasKASAuthSig ? (
                     <MiniField label="Owner ΦKey verified" value={ownerPhiKeyVerified === null ? "n/a" : ownerPhiKeyVerified ? "true" : "false"} />
                   ) : null}
-                  {hasKASOwnerSig ? (
+                  {hasKASAuthSig ? (
                     <MiniField label="Ownership attested" value={ownershipAttested === "missing" ? "missing" : ownershipAttested ? "true" : "false"} />
                   ) : null}
                   <MiniField label="sigilHash parity" value={embeddedProof?.svgHash ? String(embeddedProof.svgHash === svgHash) : "n/a"} />
@@ -3365,7 +3369,7 @@ React.useEffect(() => {
                   <MiniField label="bundleHash parity" value={embeddedProof?.bundleHash ? String(embeddedProof.bundleHash === bundleHash) : "n/a"} />
                 </div>
 
-                {hasKASOwnerSig && isReceiveGlyph ? (
+                {hasKASReceiveSig && isReceiveGlyph ? (
                   <div className="vmini-grid vmini-grid--3" aria-label="Receive signature status">
                     <MiniField
                       label="Receive credId"
@@ -3375,7 +3379,7 @@ React.useEffect(() => {
                   </div>
                 ) : null}
 
-                {hasKASOwnerSig && isReceiveGlyph && effectiveReceiveSig ? (
+                {hasKASReceiveSig && isReceiveGlyph && effectiveReceiveSig ? (
                   <div className="vmini-grid vmini-grid--2" aria-label="Receive signature summary">
                     <MiniField
                       label="Receive nonce"
@@ -3389,7 +3393,7 @@ React.useEffect(() => {
                 <div className="vfoot" aria-label="Audit actions">
                   <div className="vfoot-left">
                     <div className="vseals" aria-label="Seal summary">
-                      {hasKASOwnerSig ? <SealPill label="KAS" state={sealKAS} /> : null}
+                      {hasKASAuthSig ? <SealPill label="KAS" state={sealKAS} /> : null}
                       <SealPill label="G16" state={sealZK} />
                     </div>
                   </div>
