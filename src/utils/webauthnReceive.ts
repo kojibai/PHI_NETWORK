@@ -267,6 +267,25 @@ export function findStoredKasPasskeyByCredId(credId: string): StoredPasskey | nu
   return null;
 }
 
+export function findStoredKasPhiKeyByCredId(credId: string): string | null {
+  if (typeof window === "undefined") return null;
+  for (let i = 0; i < window.localStorage.length; i += 1) {
+    const key = window.localStorage.key(i);
+    if (!key || !key.startsWith(KAS_PASSKEY_PREFIX)) continue;
+    const raw = window.localStorage.getItem(key);
+    if (!raw) continue;
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (isStoredPasskey(parsed) && parsed.credId === credId) {
+        return key.slice(KAS_PASSKEY_PREFIX.length);
+      }
+    } catch {
+      // ignore invalid entry
+    }
+  }
+  return null;
+}
+
 function saveStoredReceiverPasskey(record: StoredPasskey): void {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(RECEIVE_PASSKEY_KEY, JSON.stringify(record));
