@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "packageManager": "pnpm@10.9.0",
+  "packageManager": "pnpm@10.28.1",
   "engines": {
     "node": ">=20.19.0"
   },
@@ -19,7 +19,7 @@
     "dev:ssr": "NODE_ENV=development node server.mjs",
     "build:clean": "rm -rf dist .vite && pnpm run build:ssr",
     "build": "tsc -b && vite build",
-    "build:ssr": "tsc -b && vite build && vite build --ssr src/entry-server.tsx --outDir dist/server && node scripts/ssr-pack.mjs",
+    "build:ssr": "tsc -b && vite build && vite build --ssr src/entry-server.tsx --outDir dist/server && vite build --ssr src/entry-server-exports.ts --outDir dist/server && node scripts/ssr-pack.mjs",
     "lint": "eslint .",
     "preview": "NODE_ENV=production node server.mjs",
     "test": "node --test"
@@ -27,6 +27,7 @@
   "dependencies": {
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.4.0",
+    "@resvg/resvg-js": "^2.6.0",
     "@stripe/react-stripe-js": "^5.4.1",
     "@stripe/stripe-js": "^8.5.3",
     "blakejs": "^1.2.1",

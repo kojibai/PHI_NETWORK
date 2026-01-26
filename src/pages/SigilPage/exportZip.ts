@@ -20,14 +20,21 @@ import { buildProofHints, generateZkProofFromPoseidonHash } from "../../utils/zk
 import { computeZkPoseidonHash } from "../../utils/kai";
 import { ensureTitleAndDesc, ensureViewBoxOnClone, ensureXmlns } from "../../utils/svgMeta";
 import {
-  buildBundleUnsigned,
+  buildBundleRoot,
+  buildZkPublicInputs,
   buildVerifierUrl,
-  hashBundle,
+  computeBundleHash,
   hashProofCapsuleV1,
   hashSvgText,
+  normalizeProofBundleZkCurves,
   normalizeChakraDay,
   PROOF_CANON,
+  PROOF_BINDINGS,
   PROOF_HASH_ALG,
+  ZK_PUBLIC_INPUTS_CONTRACT,
+  ZK_STATEMENT_BINDING,
+  ZK_STATEMENT_ENCODING,
+  ZK_STATEMENT_DOMAIN,
   type ProofCapsuleV1,
 } from "../../components/KaiVoh/verifierProof";
 import type { SigilProofHints } from "../../types/sigil";
@@ -566,8 +573,9 @@ export async function exportZIP(ctx: {
       if (!allowMissingProof) throw new Error("ZK proof missing");
     }
 
-    if (zkPublicInputs) {
-      svgClone.setAttribute("data-zk-public-inputs", JSON.stringify(zkPublicInputs));
+    const normalizedZkPublicInputs = zkPoseidonHash ? buildZkPublicInputs(zkPoseidonHash) : zkPublicInputs;
+    if (normalizedZkPublicInputs) {
+      svgClone.setAttribute("data-zk-public-inputs", JSON.stringify(normalizedZkPublicInputs));
     }
     if (zkPoseidonHash) {
       svgClone.setAttribute("data-zk-scheme", "groth16-poseidon");
@@ -585,28 +593,53 @@ export async function exportZIP(ctx: {
 
     const svgHash = await hashSvgText(svgString);
 
+    const zkStatement = zkPoseidonHash
+      ? {
+          publicInputOf: ZK_STATEMENT_BINDING,
+          domainTag: ZK_STATEMENT_DOMAIN,
+          publicInputsContract: ZK_PUBLIC_INPUTS_CONTRACT,
+          encoding: ZK_STATEMENT_ENCODING,
+        }
+      : undefined;
+    const zkMeta = zkPoseidonHash
+      ? {
+          protocol: "groth16",
+          scheme: "groth16-poseidon",
+          circuitId: "sigil_proof",
+        }
+      : undefined;
+    const normalizedZk = normalizeProofBundleZkCurves({ zkProof, zkMeta });
+    zkProof = normalizedZk.zkProof;
+    const zkMetaNormalized = normalizedZk.zkMeta;
     const proofBundleBase = {
       hashAlg: PROOF_HASH_ALG,
       canon: PROOF_CANON,
+      bindings: PROOF_BINDINGS,
+      zkStatement,
       proofCapsule,
       capsuleHash,
       svgHash,
-      shareUrl,
-      verifierUrl,
-      authorSig: null,
       zkPoseidonHash,
       zkProof,
-      proofHints,
-      zkPublicInputs,
+      zkPublicInputs: normalizedZkPublicInputs,
+      zkMeta: zkMetaNormalized,
     };
 
-    const bundleUnsigned = buildBundleUnsigned(proofBundleBase);
-    const computedBundleHash = await hashBundle(bundleUnsigned);
+    const transport = {
+      shareUrl,
+      verifierUrl,
+      proofHints,
+    };
+    const bundleRoot = buildBundleRoot(proofBundleBase);
+    const computedBundleHash = await computeBundleHash(bundleRoot);
 
     const proofBundle = {
       ...proofBundleBase,
+      bundleRoot,
       bundleHash: computedBundleHash,
       authorSig: null,
+      transport,
+      proofHints,
     };
 
     const sealedSvg = embedProofMetadata(svgString, proofBundle);

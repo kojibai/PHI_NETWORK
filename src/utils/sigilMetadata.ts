@@ -1,8 +1,21 @@
 import { XMLParser } from "fast-xml-parser";
 import { gunzipB64 } from "../lib/sigil/codec";
-import type { ProofCapsuleV1 } from "../components/KaiVoh/verifierProof";
+import type {
+  BundleRoot,
+  ProofBundleBindings,
+  ProofBundleTransport,
+  ProofCapsuleV1,
+  VerificationSource,
+  ZkMeta,
+  ZkStatement,
+} from "../components/KaiVoh/verifierProof";
 import type { AuthorSig } from "./authorSig";
 import { parseAuthorSig } from "./authorSig";
+import type { ReceiveSig } from "./webauthnReceive";
+import { isReceiveSig } from "./webauthnReceive";
+import type { OwnerKeyDerivation } from "./ownerPhiKey";
+import type { VerificationCache } from "./verificationCache";
+import type { VerificationReceipt, VerificationSig } from "./verificationReceipt";
 
 export type EmbeddedMeta = {
   pulse?: number;
@@ -17,13 +30,34 @@ export type EmbeddedMeta = {
   timestamp?: string;
   shareUrl?: string;
   verifierUrl?: string;
+  verifier?: VerificationSource;
+  verificationVersion?: string;
+  verifiedAtPulse?: number;
   proofCapsule?: ProofCapsuleV1;
   capsuleHash?: string;
   svgHash?: string;
   bundleHash?: string;
   hashAlg?: string;
   canon?: string;
+  bindings?: ProofBundleBindings;
+  zkStatement?: ZkStatement;
+  bundleRoot?: BundleRoot;
+  zkMeta?: ZkMeta;
+  verificationCache?: VerificationCache;
+  cacheKey?: string;
+  receipt?: VerificationReceipt;
+  receiptHash?: string;
+  verificationSig?: VerificationSig;
+  transport?: ProofBundleTransport;
   authorSig?: AuthorSig | null;
+  mode?: "origin" | "receive";
+  originBundleHash?: string;
+  receiveBundleHash?: string;
+  originAuthorSig?: AuthorSig | null;
+  receiveSig?: ReceiveSig | null;
+  receivePulse?: number;
+  ownerPhiKey?: string;
+  ownerKeyDerivation?: OwnerKeyDerivation;
   zkPoseidonHash?: string;
   zkProof?: unknown;
   proofHints?: unknown;
@@ -52,6 +86,26 @@ function safeJsonParse(s: string): unknown | null {
   }
 }
 
+function parseOwnerKeyDerivation(raw: unknown): OwnerKeyDerivation | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const record = raw as Record<string, unknown>;
+  if (record.v !== "OPK-1" || record.method !== "phiKey@pulse") return undefined;
+  const receivePulse = typeof record.receivePulse === "number" && Number.isFinite(record.receivePulse) ? record.receivePulse : null;
+  if (receivePulse == null) return undefined;
+  const binds = record.binds;
+  if (!binds || typeof binds !== "object") return undefined;
+  const bindsRec = binds as Record<string, unknown>;
+  if (typeof bindsRec.receiveBundleHash !== "string") return undefined;
+  const originPhiKey = typeof record.originPhiKey === "string" ? record.originPhiKey : undefined;
+  return {
+    v: "OPK-1",
+    method: "phiKey@pulse",
+    originPhiKey,
+    receivePulse,
+    binds: { receiveBundleHash: bindsRec.receiveBundleHash },
+  };
+}
+
 function tryDecodeEmbeddedPayload(raw: Record<string, unknown>): Record<string, unknown> | null {
   const payload = raw.payload;
   if (typeof payload !== "string" || payload.trim().length === 0) return null;
@@ -70,6 +124,7 @@ function toEmbeddedMetaFromUnknown(raw: unknown): EmbeddedMeta {
 
   const capsuleRaw = isRecord(raw.proofCapsule) ? raw.proofCapsule : undefined;
   const decodedPayload = tryDecodeEmbeddedPayload(raw);
+  const transportRaw = isRecord(raw.transport) ? raw.transport : undefined;
 
   const kaiSignature =
     typeof raw.kaiSignature === "string"
@@ -113,9 +168,11 @@ function toEmbeddedMetaFromUnknown(raw: unknown): EmbeddedMeta {
   const shareUrl =
     typeof raw.shareUrl === "string"
       ? raw.shareUrl
-      : isRecord(raw.header) && typeof raw.header.shareUrl === "string"
-        ? raw.header.shareUrl
-        : undefined;
+      : typeof transportRaw?.shareUrl === "string"
+        ? transportRaw.shareUrl
+        : isRecord(raw.header) && typeof raw.header.shareUrl === "string"
+          ? raw.header.shareUrl
+          : undefined;
 
   const phiKeyRaw = typeof raw.phiKey === "string" ? raw.phiKey : undefined;
   const userPhiKey = typeof raw.userPhiKey === "string" ? raw.userPhiKey : undefined;
@@ -128,7 +185,33 @@ function toEmbeddedMetaFromUnknown(raw: unknown): EmbeddedMeta {
         userPhiKey;
 
   const verifierUrl =
-    typeof raw.verifierUrl === "string" ? raw.verifierUrl : undefined;
+    typeof raw.verifierUrl === "string"
+      ? raw.verifierUrl
+      : typeof transportRaw?.verifierUrl === "string"
+        ? transportRaw.verifierUrl
+        : undefined;
+
+  const verifier =
+    typeof raw.verifier === "string" && (raw.verifier === "local" || raw.verifier === "pbi")
+      ? (raw.verifier as VerificationSource)
+      : typeof transportRaw?.verifier === "string" && (transportRaw.verifier === "local" || transportRaw.verifier === "pbi")
+        ? (transportRaw.verifier as VerificationSource)
+        : undefined;
+
+  const verificationVersion =
+    typeof raw.verificationVersion === "string" ? raw.verificationVersion : undefined;
+
+  const verifiedAtPulseRaw =
+    raw.verifiedAtPulse ??
+    transportRaw?.verifiedAtPulse ??
+    decodedPayload?.verifiedAtPulse ??
+    undefined;
+  const verifiedAtPulse =
+    typeof verifiedAtPulseRaw === "number" && Number.isFinite(verifiedAtPulseRaw)
+      ? verifiedAtPulseRaw
+      : typeof verifiedAtPulseRaw === "string" && Number.isFinite(Number(verifiedAtPulseRaw))
+        ? Number(verifiedAtPulseRaw)
+        : undefined;
 
   const proofCapsule =
     capsuleRaw &&
@@ -156,9 +239,11 @@ function toEmbeddedMetaFromUnknown(raw: unknown): EmbeddedMeta {
   const proofHints =
     "proofHints" in raw
       ? raw.proofHints
-      : decodedPayload && "proofHints" in decodedPayload
-        ? decodedPayload.proofHints
-        : undefined;
+      : transportRaw && "proofHints" in transportRaw
+        ? transportRaw.proofHints
+        : decodedPayload && "proofHints" in decodedPayload
+          ? decodedPayload.proofHints
+          : undefined;
   const zkPublicInputs =
     "zkPublicInputs" in raw
       ? raw.zkPublicInputs
@@ -169,9 +254,55 @@ function toEmbeddedMetaFromUnknown(raw: unknown): EmbeddedMeta {
   const capsuleHash = typeof raw.capsuleHash === "string" ? raw.capsuleHash : undefined;
   const svgHash = typeof raw.svgHash === "string" ? raw.svgHash : undefined;
   const bundleHash = typeof raw.bundleHash === "string" ? raw.bundleHash : undefined;
+  const mode = raw.mode === "receive" || raw.mode === "origin" ? raw.mode : undefined;
+  const originBundleHash = typeof raw.originBundleHash === "string" ? raw.originBundleHash : undefined;
+  const receiveBundleHash = typeof raw.receiveBundleHash === "string" ? raw.receiveBundleHash : undefined;
   const hashAlg = typeof raw.hashAlg === "string" ? raw.hashAlg : undefined;
   const canon = typeof raw.canon === "string" ? raw.canon : undefined;
+  const bindings = isRecord(raw.bindings) ? (raw.bindings as ProofBundleBindings) : undefined;
+  const zkStatement = isRecord(raw.zkStatement) ? (raw.zkStatement as ZkStatement) : undefined;
+  const bundleRoot = isRecord(raw.bundleRoot) ? (raw.bundleRoot as BundleRoot) : undefined;
+  const zkMeta = isRecord(raw.zkMeta) ? (raw.zkMeta as ZkMeta) : undefined;
+  const verificationCache = isRecord(raw.verificationCache)
+    ? (raw.verificationCache as VerificationCache)
+    : undefined;
+  const cacheKey =
+    typeof raw.cacheKey === "string"
+      ? raw.cacheKey
+      : typeof decodedPayload?.cacheKey === "string"
+        ? decodedPayload.cacheKey
+        : undefined;
+  const receipt =
+    isRecord(raw.receipt)
+      ? (raw.receipt as VerificationReceipt)
+      : decodedPayload && isRecord(decodedPayload.receipt)
+        ? (decodedPayload.receipt as VerificationReceipt)
+        : undefined;
+  const receiptHash =
+    typeof raw.receiptHash === "string"
+      ? raw.receiptHash
+      : typeof decodedPayload?.receiptHash === "string"
+        ? decodedPayload.receiptHash
+        : undefined;
+  const verificationSig =
+    isRecord(raw.verificationSig)
+      ? (raw.verificationSig as VerificationSig)
+      : decodedPayload && isRecord(decodedPayload.verificationSig)
+        ? (decodedPayload.verificationSig as VerificationSig)
+        : undefined;
+  const transport = isRecord(raw.transport) ? (raw.transport as ProofBundleTransport) : undefined;
   const authorSig = parseAuthorSig(raw.authorSig);
+  const originAuthorSig = parseAuthorSig(raw.originAuthorSig);
+  const receiveSig = isReceiveSig(raw.receiveSig) ? raw.receiveSig : undefined;
+  const receivePulseRaw = raw.receivePulse;
+  const receivePulse =
+    typeof receivePulseRaw === "number" && Number.isFinite(receivePulseRaw)
+      ? receivePulseRaw
+      : typeof receivePulseRaw === "string" && Number.isFinite(Number(receivePulseRaw))
+        ? Number(receivePulseRaw)
+        : undefined;
+  const ownerPhiKey = typeof raw.ownerPhiKey === "string" ? raw.ownerPhiKey : undefined;
+  const ownerKeyDerivation = parseOwnerKeyDerivation(raw.ownerKeyDerivation);
 
   return {
     pulse,
@@ -186,13 +317,34 @@ function toEmbeddedMetaFromUnknown(raw: unknown): EmbeddedMeta {
     timestamp,
     shareUrl,
     verifierUrl,
+    verifier,
+    verificationVersion,
+    verifiedAtPulse,
     proofCapsule,
     capsuleHash,
     svgHash,
     bundleHash,
+    mode,
+    originBundleHash,
+    receiveBundleHash,
     hashAlg,
     canon,
+    bindings,
+    zkStatement,
+    bundleRoot,
+    zkMeta,
+    verificationCache,
+    cacheKey,
+    receipt,
+    receiptHash,
+    verificationSig,
+    transport,
     authorSig,
+    originAuthorSig,
+    receiveSig,
+    receivePulse,
+    ownerPhiKey,
+    ownerKeyDerivation,
     zkPoseidonHash,
     zkProof,
     proofHints,
@@ -310,12 +462,30 @@ function findProofBundleInText(text: string): ProofBundleMeta | null {
         capsuleHash: meta.capsuleHash,
         svgHash: meta.svgHash,
         bundleHash: meta.bundleHash,
+        mode: meta.mode,
+        originBundleHash: meta.originBundleHash,
+        receiveBundleHash: meta.receiveBundleHash,
         verifierUrl: meta.verifierUrl,
         authorSig: meta.authorSig,
+        originAuthorSig: meta.originAuthorSig,
+        receiveSig: meta.receiveSig,
+        receivePulse: meta.receivePulse,
+        ownerPhiKey: meta.ownerPhiKey,
+        ownerKeyDerivation: meta.ownerKeyDerivation,
         zkPoseidonHash: meta.zkPoseidonHash,
         zkProof: meta.zkProof,
         proofHints: meta.proofHints,
         zkPublicInputs: meta.zkPublicInputs,
+        bindings: meta.bindings,
+        zkStatement: meta.zkStatement,
+        bundleRoot: meta.bundleRoot,
+        zkMeta: meta.zkMeta,
+        verificationCache: meta.verificationCache,
+        cacheKey: meta.cacheKey,
+        receipt: meta.receipt,
+        receiptHash: meta.receiptHash,
+        verificationSig: meta.verificationSig,
+        transport: meta.transport,
         raw: parsed,
       };
     }
@@ -340,12 +510,30 @@ function findProofBundleInText(text: string): ProofBundleMeta | null {
         capsuleHash: meta.capsuleHash,
         svgHash: meta.svgHash,
         bundleHash: meta.bundleHash,
+        mode: meta.mode,
+        originBundleHash: meta.originBundleHash,
+        receiveBundleHash: meta.receiveBundleHash,
         verifierUrl: meta.verifierUrl,
         authorSig: meta.authorSig,
+        originAuthorSig: meta.originAuthorSig,
+        receiveSig: meta.receiveSig,
+        receivePulse: meta.receivePulse,
+        ownerPhiKey: meta.ownerPhiKey,
+        ownerKeyDerivation: meta.ownerKeyDerivation,
         zkPoseidonHash: meta.zkPoseidonHash,
         zkProof: meta.zkProof,
         proofHints: meta.proofHints,
         zkPublicInputs: meta.zkPublicInputs,
+        bindings: meta.bindings,
+        zkStatement: meta.zkStatement,
+        bundleRoot: meta.bundleRoot,
+        zkMeta: meta.zkMeta,
+        verificationCache: meta.verificationCache,
+        cacheKey: meta.cacheKey,
+        receipt: meta.receipt,
+        receiptHash: meta.receiptHash,
+        verificationSig: meta.verificationSig,
+        transport: meta.transport,
         raw: blobParsed,
       };
     }
@@ -452,13 +640,34 @@ export function extractEmbeddedMetaFromSvg(svgText: string): EmbeddedMeta {
 export type ProofBundleMeta = {
   hashAlg?: string;
   canon?: string;
+  bindings?: ProofBundleBindings;
+  zkStatement?: ZkStatement;
+  bundleRoot?: BundleRoot;
+  zkMeta?: ZkMeta;
+  verificationCache?: VerificationCache;
+  cacheKey?: string;
+  receipt?: VerificationReceipt;
+  receiptHash?: string;
+  verificationSig?: VerificationSig;
+  transport?: ProofBundleTransport;
   proofCapsule?: ProofCapsuleV1;
   capsuleHash?: string;
   svgHash?: string;
   bundleHash?: string;
   shareUrl?: string;
   verifierUrl?: string;
+  verifier?: VerificationSource;
+  verificationVersion?: string;
+  verifiedAtPulse?: number;
   authorSig?: AuthorSig | null;
+  mode?: "origin" | "receive";
+  originBundleHash?: string;
+  receiveBundleHash?: string;
+  originAuthorSig?: AuthorSig | null;
+  receiveSig?: ReceiveSig | null;
+  receivePulse?: number;
+  ownerPhiKey?: string;
+  ownerKeyDerivation?: OwnerKeyDerivation;
   zkPoseidonHash?: string;
   zkProof?: unknown;
   proofHints?: unknown;
@@ -480,13 +689,34 @@ export function extractProofBundleMetaFromSvg(svgText: string): ProofBundleMeta 
         return {
           hashAlg: meta.hashAlg,
           canon: meta.canon,
+          bindings: meta.bindings,
+          zkStatement: meta.zkStatement,
+          bundleRoot: meta.bundleRoot,
+          zkMeta: meta.zkMeta,
+          verificationCache: meta.verificationCache,
+          cacheKey: meta.cacheKey,
+          receipt: meta.receipt,
+          receiptHash: meta.receiptHash,
+          verificationSig: meta.verificationSig,
+          transport: meta.transport,
           proofCapsule: meta.proofCapsule,
           capsuleHash: meta.capsuleHash,
           svgHash: meta.svgHash,
           bundleHash: meta.bundleHash,
           shareUrl: meta.shareUrl,
           verifierUrl: meta.verifierUrl,
+          verifier: meta.verifier,
+          verificationVersion: meta.verificationVersion,
+          verifiedAtPulse: meta.verifiedAtPulse,
           authorSig: meta.authorSig,
+          mode: meta.mode,
+          originBundleHash: meta.originBundleHash,
+          receiveBundleHash: meta.receiveBundleHash,
+          originAuthorSig: meta.originAuthorSig,
+          receiveSig: meta.receiveSig,
+          receivePulse: meta.receivePulse,
+          ownerPhiKey: meta.ownerPhiKey,
+          ownerKeyDerivation: meta.ownerKeyDerivation,
           zkPoseidonHash: meta.zkPoseidonHash,
           zkProof: meta.zkProof,
           proofHints: meta.proofHints,
@@ -510,13 +740,34 @@ export function extractProofBundleMetaFromSvg(svgText: string): ProofBundleMeta 
         return {
           hashAlg: meta.hashAlg,
           canon: meta.canon,
+          bindings: meta.bindings,
+          zkStatement: meta.zkStatement,
+          bundleRoot: meta.bundleRoot,
+          zkMeta: meta.zkMeta,
+          verificationCache: meta.verificationCache,
+          cacheKey: meta.cacheKey,
+          receipt: meta.receipt,
+          receiptHash: meta.receiptHash,
+          verificationSig: meta.verificationSig,
+          transport: meta.transport,
           proofCapsule: meta.proofCapsule,
           capsuleHash: meta.capsuleHash,
           svgHash: meta.svgHash,
           bundleHash: meta.bundleHash,
           shareUrl: meta.shareUrl,
           verifierUrl: meta.verifierUrl,
+          verifier: meta.verifier,
+          verificationVersion: meta.verificationVersion,
+          verifiedAtPulse: meta.verifiedAtPulse,
           authorSig: meta.authorSig,
+          mode: meta.mode,
+          originBundleHash: meta.originBundleHash,
+          receiveBundleHash: meta.receiveBundleHash,
+          originAuthorSig: meta.originAuthorSig,
+          receiveSig: meta.receiveSig,
+          receivePulse: meta.receivePulse,
+          ownerPhiKey: meta.ownerPhiKey,
+          ownerKeyDerivation: meta.ownerKeyDerivation,
           zkPoseidonHash: meta.zkPoseidonHash,
           zkProof: meta.zkProof,
           proofHints: meta.proofHints,

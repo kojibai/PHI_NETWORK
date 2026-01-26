@@ -1,10 +1,12 @@
 import { derivePhiKeyFromSig } from "../components/VerifierStamper/sigilUtils";
 import { extractEmbeddedMetaFromSvg, type EmbeddedMeta } from "./sigilMetadata";
+import { assertReceiptHashMatch } from "./verificationReceipt";
 
 export type SlugInfo = {
   raw: string;
   pulse: number | null;
   shortSig: string | null;
+  verifiedAtPulse: number | null;
 };
 
 export type VerifyChecks = {
@@ -32,18 +34,21 @@ export type VerifyResult =
       embedded: EmbeddedMeta;
       derivedPhiKey: string;
       checks: VerifyChecks;
+      verifiedAtPulse: number | null;
     };
 
 export function parseSlug(rawSlug: string): SlugInfo {
   const raw = decodeURIComponent(rawSlug || "").trim();
-  const m = raw.match(/^(\d+)-([A-Za-z0-9]+)$/);
-  if (!m) return { raw, pulse: null, shortSig: null };
+  const m = raw.match(/^(\d+)-([A-Za-z0-9]+)(?:-(\d+))?$/);
+  if (!m) return { raw, pulse: null, shortSig: null, verifiedAtPulse: null };
 
   const pulseNum = Number(m[1]);
   const pulse = Number.isFinite(pulseNum) && pulseNum > 0 ? pulseNum : null;
   const shortSig = m[2] ? String(m[2]) : null;
+  const verifiedAtPulseNum = m[3] ? Number(m[3]) : Number.NaN;
+  const verifiedAtPulse = Number.isFinite(verifiedAtPulseNum) && verifiedAtPulseNum > 0 ? verifiedAtPulseNum : null;
 
-  return { raw, pulse, shortSig };
+  return { raw, pulse, shortSig, verifiedAtPulse };
 }
 
 function firstN(s: string, n: number): string {
@@ -51,9 +56,12 @@ function firstN(s: string, n: number): string {
   return s.slice(0, n);
 }
 
-export async function verifySigilSvg(slug: SlugInfo, svgText: string): Promise<VerifyResult> {
+export async function verifySigilSvg(slug: SlugInfo, svgText: string, verifiedAtPulse?: number): Promise<VerifyResult> {
   try {
     const embedded = extractEmbeddedMetaFromSvg(svgText);
+    if (embedded.receiptHash) {
+      await assertReceiptHashMatch(embedded.receipt, embedded.receiptHash);
+    }
     const sig = (embedded.kaiSignature ?? "").trim();
     if (!sig) {
       return {
@@ -118,6 +126,8 @@ export async function verifySigilSvg(slug: SlugInfo, svgText: string): Promise<V
       },
       derivedPhiKey,
       checks,
+      verifiedAtPulse:
+        typeof verifiedAtPulse === "number" && Number.isFinite(verifiedAtPulse) ? verifiedAtPulse : null,
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Verification failed.";
