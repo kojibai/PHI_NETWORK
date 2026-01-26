@@ -37,7 +37,13 @@ function exportHeightPx(): number {
 export async function downloadVerifiedCardPng(data: VerifiedCardData): Promise<void> {
   const filename = fileNameForCapsule(data.capsuleHash, data.verifiedAtPulse);
   const qrPayload = data.shareReceiptUrl ?? data.verifierUrl ?? buildPointerPayload(data);
-  const qrDataUrl = await qrDataURL(qrPayload, { size: 360, margin: 1, ecc: "M" });
+  let qrDataUrl = "";
+  try {
+    qrDataUrl = await qrDataURL(qrPayload, { size: 360, margin: 1, ecc: "M" });
+  } catch {
+    const fallbackPayload = buildPointerPayload(data);
+    qrDataUrl = await qrDataURL(fallbackPayload, { size: 360, margin: 1, ecc: "M" });
+  }
 
   const svg = buildVerifiedCardSvg({ ...data, qrDataUrl });
   const pngBlob = await svgToPngBlob(svg, exportWidthPx(), exportHeightPx());
