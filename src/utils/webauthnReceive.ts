@@ -36,6 +36,11 @@ type ChallengePayload = {
 
 const RECEIVE_PASSKEY_KEY = "kai:receive:passkey";
 const KAS_PASSKEY_PREFIX = "kai:kas1:passkey:";
+const PASSKEY_GLOBAL_KEY = "passkeys";
+
+type PasskeyGlobal = {
+  [PASSKEY_GLOBAL_KEY]?: Record<string, StoredPasskey>;
+};
 
 type AuthData = {
   credentialId: Uint8Array;
@@ -56,6 +61,93 @@ function isP256Jwk(value: unknown): value is ReceiveSig["pubKeyJwk"] {
 function isStoredPasskey(value: unknown): value is StoredPasskey {
   if (!isRecord(value)) return false;
   return typeof value.credId === "string" && isRecord(value.pubKeyJwk);
+}
+
+async function requestPersistentStorage(): Promise<void> {
+  try {
+    if (typeof navigator === "undefined") return;
+    if (!navigator.storage?.persist) return;
+    const alreadyPersisted = await navigator.storage.persisted?.();
+    if (alreadyPersisted) return;
+    await navigator.storage.persist();
+  } catch {
+    // best-effort only
+  }
+}
+
+function getGlobalPasskeyStore(): Record<string, StoredPasskey> {
+  if (typeof window === "undefined") return {};
+  const w = window as unknown as { __SIGIL__?: PasskeyGlobal };
+  if (!w.__SIGIL__) w.__SIGIL__ = {};
+  if (!w.__SIGIL__?.[PASSKEY_GLOBAL_KEY]) {
+    w.__SIGIL__![PASSKEY_GLOBAL_KEY] = {};
+  }
+  return w.__SIGIL__![PASSKEY_GLOBAL_KEY] as Record<string, StoredPasskey>;
+}
+
+function readPasskeyRecord(storageKey: string): StoredPasskey | null {
+  if (typeof window === "undefined") return null;
+  const readFrom = (store: Storage | null): StoredPasskey | null => {
+    if (!store) return null;
+    const raw = store.getItem(storageKey);
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      return isStoredPasskey(parsed) ? parsed : null;
+    } catch {
+      return null;
+    }
+  };
+  return (
+    readFrom(window.localStorage) ??
+    readFrom(window.sessionStorage ?? null) ??
+    getGlobalPasskeyStore()[storageKey] ??
+    null
+  );
+}
+
+function writePasskeyRecord(storageKey: string, record: StoredPasskey): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(storageKey, JSON.stringify(record));
+  } catch {
+    // ignore
+  }
+  try {
+    window.sessionStorage?.setItem(storageKey, JSON.stringify(record));
+  } catch {
+    // ignore
+  }
+  const globalStore = getGlobalPasskeyStore();
+  globalStore[storageKey] = record;
+}
+
+function listStoredPasskeysByPrefix(prefix: string): StoredPasskey[] {
+  if (typeof window === "undefined") return [];
+  const seen = new Map<string, StoredPasskey>();
+  const collect = (store: Storage | null) => {
+    if (!store) return;
+    for (let i = 0; i < store.length; i += 1) {
+      const key = store.key(i);
+      if (!key || !key.startsWith(prefix)) continue;
+      const raw = store.getItem(key);
+      if (!raw) continue;
+      try {
+        const parsed = JSON.parse(raw) as unknown;
+        if (isStoredPasskey(parsed)) seen.set(parsed.credId, parsed);
+      } catch {
+        // ignore
+      }
+    }
+  };
+  collect(window.localStorage);
+  collect(window.sessionStorage ?? null);
+  const globalStore = getGlobalPasskeyStore();
+  for (const [key, value] of Object.entries(globalStore)) {
+    if (!key.startsWith(prefix)) continue;
+    if (isStoredPasskey(value)) seen.set(value.credId, value);
+  }
+  return Array.from(seen.values());
 }
 
 function randomNonceB64u(): string {
@@ -240,73 +332,47 @@ export async function verifyWebAuthnAssertion(args: {
 
 export function loadStoredReceiverPasskey(): StoredPasskey | null {
   if (typeof window === "undefined") return null;
-  const raw = window.localStorage.getItem(RECEIVE_PASSKEY_KEY);
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    return isStoredPasskey(parsed) ? parsed : null;
-  } catch {
-    return null;
-  }
+  return readPasskeyRecord(RECEIVE_PASSKEY_KEY);
 }
 
 export function findStoredKasPasskeyByCredId(credId: string): StoredPasskey | null {
   if (typeof window === "undefined") return null;
-  for (let i = 0; i < window.localStorage.length; i += 1) {
-    const key = window.localStorage.key(i);
-    if (!key || !key.startsWith(KAS_PASSKEY_PREFIX)) continue;
-    const raw = window.localStorage.getItem(key);
-    if (!raw) continue;
-    try {
-      const parsed = JSON.parse(raw) as unknown;
-      if (isStoredPasskey(parsed) && parsed.credId === credId) return parsed;
-    } catch {
-      // ignore invalid entry
-    }
-  }
-  return null;
+  const candidates = listStoredPasskeysByPrefix(KAS_PASSKEY_PREFIX);
+  return candidates.find((entry) => entry.credId === credId) ?? null;
 }
 
 export function findStoredKasPhiKeyByCredId(credId: string): string | null {
   if (typeof window === "undefined") return null;
+  const candidates = listStoredPasskeysByPrefix(KAS_PASSKEY_PREFIX);
+  for (const candidate of candidates) {
+    if (candidate.credId !== credId) continue;
+    const storageKey = Object.entries(getGlobalPasskeyStore()).find(([, value]) => value.credId === credId)?.[0];
+    if (storageKey && storageKey.startsWith(KAS_PASSKEY_PREFIX)) {
+      return storageKey.slice(KAS_PASSKEY_PREFIX.length);
+    }
+  }
   for (let i = 0; i < window.localStorage.length; i += 1) {
     const key = window.localStorage.key(i);
     if (!key || !key.startsWith(KAS_PASSKEY_PREFIX)) continue;
-    const raw = window.localStorage.getItem(key);
-    if (!raw) continue;
-    try {
-      const parsed = JSON.parse(raw) as unknown;
-      if (isStoredPasskey(parsed) && parsed.credId === credId) {
-        return key.slice(KAS_PASSKEY_PREFIX.length);
-      }
-    } catch {
-      // ignore invalid entry
-    }
+    const parsed = readPasskeyRecord(key);
+    if (parsed?.credId === credId) return key.slice(KAS_PASSKEY_PREFIX.length);
+  }
+  for (let i = 0; i < (window.sessionStorage?.length ?? 0); i += 1) {
+    const key = window.sessionStorage?.key(i);
+    if (!key || !key.startsWith(KAS_PASSKEY_PREFIX)) continue;
+    const parsed = readPasskeyRecord(key);
+    if (parsed?.credId === credId) return key.slice(KAS_PASSKEY_PREFIX.length);
   }
   return null;
 }
 
 function saveStoredReceiverPasskey(record: StoredPasskey): void {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(RECEIVE_PASSKEY_KEY, JSON.stringify(record));
+  writePasskeyRecord(RECEIVE_PASSKEY_KEY, record);
 }
 
 export function listStoredKasPasskeys(): StoredPasskey[] {
-  if (typeof window === "undefined") return [];
-  const keys: StoredPasskey[] = [];
-  for (let i = 0; i < window.localStorage.length; i += 1) {
-    const key = window.localStorage.key(i);
-    if (!key || !key.startsWith(KAS_PASSKEY_PREFIX)) continue;
-    const raw = window.localStorage.getItem(key);
-    if (!raw) continue;
-    try {
-      const parsed = JSON.parse(raw) as unknown;
-      if (isStoredPasskey(parsed)) keys.push(parsed);
-    } catch {
-      // ignore invalid entry
-    }
-  }
-  return keys;
+  return listStoredPasskeysByPrefix(KAS_PASSKEY_PREFIX);
 }
 
 function parseAuthData(authData: Uint8Array): AuthData {
@@ -362,6 +428,7 @@ function coseEc2ToJwk(coseKey: unknown): JsonWebKey {
 }
 
 export async function ensureReceiverPasskey(): Promise<StoredPasskey> {
+  await requestPersistentStorage();
   const existing = loadStoredReceiverPasskey();
   if (existing) return existing;
   const credentials = getNavigatorCredentials();

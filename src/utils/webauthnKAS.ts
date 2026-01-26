@@ -24,6 +24,11 @@ type AuthData = {
 };
 
 const STORE_PREFIX = "kai:kas1:passkey:";
+const PASSKEY_GLOBAL_KEY = "passkeys";
+
+type PasskeyGlobal = {
+  [PASSKEY_GLOBAL_KEY]?: Record<string, StoredPasskey>;
+};
 
 function isWebAuthnSupported(): boolean {
   return (
@@ -46,33 +51,74 @@ async function tryRequestPersistentStorage(): Promise<void> {
   }
 }
 
+function getGlobalPasskeyStore(): Record<string, StoredPasskey> {
+  if (typeof window === "undefined") return {};
+  const w = window as unknown as { __SIGIL__?: PasskeyGlobal };
+  if (!w.__SIGIL__) w.__SIGIL__ = {};
+  if (!w.__SIGIL__?.[PASSKEY_GLOBAL_KEY]) {
+    w.__SIGIL__![PASSKEY_GLOBAL_KEY] = {};
+  }
+  return w.__SIGIL__![PASSKEY_GLOBAL_KEY] as Record<string, StoredPasskey>;
+}
+
+function readPasskeyRecord(storageKey: string): StoredPasskey | null {
+  if (typeof window === "undefined") return null;
+  const readFrom = (store: Storage | null): StoredPasskey | null => {
+    if (!store) return null;
+    const raw = store.getItem(storageKey);
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (!parsed || typeof parsed !== "object") return null;
+      const rec = parsed as { credId?: unknown; pubKeyJwk?: unknown };
+      if (typeof rec.credId !== "string") return null;
+      if (!rec.pubKeyJwk || typeof rec.pubKeyJwk !== "object") return null;
+      return { credId: rec.credId, pubKeyJwk: rec.pubKeyJwk as JsonWebKey };
+    } catch {
+      return null;
+    }
+  };
+  return (
+    readFrom(window.localStorage) ??
+    readFrom(window.sessionStorage ?? null) ??
+    getGlobalPasskeyStore()[storageKey] ??
+    null
+  );
+}
+
+function writePasskeyRecord(storageKey: string, record: StoredPasskey): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(storageKey, JSON.stringify(record));
+  } catch {
+    // ignore
+  }
+  try {
+    window.sessionStorage?.setItem(storageKey, JSON.stringify(record));
+  } catch {
+    // ignore
+  }
+  const globalStore = getGlobalPasskeyStore();
+  globalStore[storageKey] = record;
+}
+
 function loadStored(phiKey: string): StoredPasskey | null {
   if (typeof window === "undefined") return null;
-  const raw = window.localStorage.getItem(`${STORE_PREFIX}${phiKey}`);
-  if (!raw) return null;
-
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (!parsed || typeof parsed !== "object") return null;
-
-    const rec = parsed as { credId?: unknown; pubKeyJwk?: unknown };
-    if (typeof rec.credId !== "string") return null;
-    if (!rec.pubKeyJwk || typeof rec.pubKeyJwk !== "object") return null;
-
-    return { credId: rec.credId, pubKeyJwk: rec.pubKeyJwk as JsonWebKey };
-  } catch (err) {
-    throw new Error(`Failed to read passkey cache: ${err instanceof Error ? err.message : String(err)}`);
-  }
+  return readPasskeyRecord(`${STORE_PREFIX}${phiKey}`);
 }
 
 function saveStored(phiKey: string, record: StoredPasskey): void {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(`${STORE_PREFIX}${phiKey}`, JSON.stringify(record));
+  writePasskeyRecord(`${STORE_PREFIX}${phiKey}`, record);
 }
 
 function clearStored(phiKey: string): void {
   if (typeof window === "undefined") return;
-  window.localStorage.removeItem(`${STORE_PREFIX}${phiKey}`);
+  const storageKey = `${STORE_PREFIX}${phiKey}`;
+  window.localStorage.removeItem(storageKey);
+  window.sessionStorage?.removeItem(storageKey);
+  const globalStore = getGlobalPasskeyStore();
+  delete globalStore[storageKey];
 }
 
 function parseAuthData(authData: Uint8Array): AuthData {
