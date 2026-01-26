@@ -49,14 +49,15 @@ function toPublicPath(file?: string): string | null {
 
 function buildSsrHead(): string {
   const parts: string[] = [];
-  const manifestPath = path.join(process.cwd(), "dist", "client", ".vite", "manifest.json");
+  const manifestPaths = [
+    path.join(process.cwd(), "dist", ".vite", "manifest.json"),
+    path.join(process.cwd(), "dist", "client", ".vite", "manifest.json"),
+  ];
 
   try {
-    if (fs.existsSync(manifestPath)) {
-      const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8")) as Record<
-        string,
-        ManifestEntry
-      >;
+    const manifestPath = manifestPaths.find((candidate) => fs.existsSync(candidate));
+    if (manifestPath) {
+      const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8")) as Record<string, ManifestEntry>;
       const entryKey =
         Object.keys(manifest).find((key) => manifest[key]?.src?.includes("entry-client")) ??
         Object.keys(manifest).find((key) => manifest[key]?.isEntry);
