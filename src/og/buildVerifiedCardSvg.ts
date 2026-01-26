@@ -6,6 +6,7 @@ import { buildProofOfBreathSeal } from "./proofOfBreathSeal";
 
 export const VERIFIED_CARD_W = 1200;
 export const VERIFIED_CARD_H = 630;
+const PHI = (1 + Math.sqrt(5)) / 2;
 const phiLogoDataUri = svgToDataUri(phiSvg);
 
 function hashStringToInt(value: string): number {
@@ -231,16 +232,28 @@ export function buildVerifiedCardSvg(data: VerifiedCardData): string {
 
   const proofSealLabel = "PROOF OF BREATH™";
   const proofSealMicro = `${shortHash(capsuleHash, 6, 4)} · ${shortHash(bundleHashValue, 6, 4)}`;
-  const proofSealMarkup = proofSeal.toSvg(600, 330, 260, id, proofSealLabel, proofSealMicro);
+  const proofSealSize = 260;
+  const proofSealX = 600;
+  const proofSealY = 320;
+  const proofSealMarkup = proofSeal.toSvg(proofSealX, proofSealY, proofSealSize, id, proofSealLabel, proofSealMicro);
   const sigilFrameX = 796;
   const sigilFrameY = 136;
   const sigilFrameSize = 348;
-  const qrBoxX = 96;
-  const qrBoxY = 330;
+  const unit = 22;
+  const phiGap = Math.round(unit * PHI);
+  const badgeLabelY = 262;
+  const valueLabelY = badgeLabelY + phiGap;
+  const valueY = valueLabelY + Math.round(unit * 1.4);
+  const usdLabelY = valueY + phiGap;
+  const usdValueY = usdLabelY + Math.round(unit * 1.4);
+  const qrBoxX = 128;
+  const qrBoxY = usdValueY + Math.round(phiGap * 0.8);
   const qrBoxW = 288;
   const qrBoxH = 140;
   const brandX = 320;
   const brandY = 206;
+  const phiKeyLabelY = Math.round(proofSealY + proofSealSize / 2 + phiGap * 0.7);
+  const phiKeyValueY = phiKeyLabelY + Math.round(unit * 1.9);
   const brandPalette = proofSeal.palette;
   const ornament = ornamentMarkup(810, 150, 320, 320, brandPalette, proofSeal.geometry);
   return `
@@ -326,30 +339,30 @@ export function buildVerifiedCardSvg(data: VerifiedCardData): string {
   ${sealBrandIcon(brandX - 18, brandY - 4, { primary: brandPalette.primary, accent: brandPalette.accent })}
   <text class="brand" x="${brandX}" y="${brandY}">SIGIL-SEAL</text>
 
-  <text class="label" x="320" y="260">ΦKEY</text>
-  <text class="phikey" x="320" y="300">${phiShort}</text>
+  <text class="label" x="${proofSealX}" y="${phiKeyLabelY}" text-anchor="middle">ΦKEY</text>
+  <text class="phikey" x="${proofSealX}" y="${phiKeyValueY}" text-anchor="middle">${phiShort}</text>
 
-  ${hasKas ? `<text class="label" x="320" y="350">KAS</text>` : ""}
+  ${hasKas ? `<text class="label" x="320" y="${badgeLabelY}">KAS</text>` : ""}
   ${
     hasKas
-      ? `<g transform="translate(380 324)" filter="url(#${badgeGlowId})">
+      ? `<g transform="translate(380 ${badgeLabelY - 26})" filter="url(#${badgeGlowId})">
     <rect width="54" height="54" rx="14" fill="rgba(10,16,22,0.9)" stroke="${kasOk ? "#38E4B6" : "#C86B6B"}" stroke-width="2" />
     <path d="${badgeMark(kasOk)}" fill="none" stroke="${kasOk ? "#38E4B6" : "#C86B6B"}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" />
   </g>`
       : ""
   }
 
-  <text class="label" x="${hasKas ? 470 : 320}" y="350">G16</text>
-  <g transform="translate(${hasKas ? 530 : 380} 324)" filter="url(#${badgeGlowId})">
+  <text class="label" x="${hasKas ? 470 : 320}" y="${badgeLabelY}">G16</text>
+  <g transform="translate(${hasKas ? 530 : 380} ${badgeLabelY - 26})" filter="url(#${badgeGlowId})">
     <rect width="54" height="54" rx="14" fill="rgba(10,16,22,0.9)" stroke="${g16Ok ? "#38E4B6" : "#C86B6B"}" stroke-width="2" />
     <path d="${badgeMark(g16Ok)}" fill="none" stroke="${g16Ok ? "#38E4B6" : "#C86B6B"}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" />
   </g>
 
-  <text class="label" x="320" y="420">Φ VALUE</text>
-  <text class="value" x="320" y="456">${valuationPhi}</text>
+  <text class="label" x="320" y="${valueLabelY}">Φ VALUE</text>
+  <text class="value" x="320" y="${valueY}">${valuationPhi}</text>
 
-  <text class="label" x="320" y="498">USD VALUE</text>
-  <text class="value" x="320" y="534">${valuationUsd}</text>
+  <text class="label" x="320" y="${usdLabelY}">USD VALUE</text>
+  <text class="value" x="320" y="${usdValueY}">${valuationUsd}</text>
 
   <g id="${sealId}" transform="translate(${seal.x} ${seal.y}) rotate(${seal.rotation})">
     <circle cx="0" cy="0" r="44" fill="rgba(12,14,18,0.72)" stroke="${accent}" stroke-width="2" filter="url(#${glowId})" stroke-dasharray="${seal.dash}" />

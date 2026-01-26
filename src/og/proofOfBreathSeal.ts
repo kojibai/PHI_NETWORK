@@ -25,6 +25,8 @@ type SealGeometry = {
   rosetteC: number;
   dashPattern: string;
   glowAlpha: number;
+  gradientAngle: number;
+  glassOpacity: number;
 };
 
 export type ProofOfBreathSeal = {
@@ -101,6 +103,7 @@ export function buildProofOfBreathSeal(input: ProofSealInput): ProofOfBreathSeal
   );
   const seed = seedFromBytes(seedBytes);
   const rand = mulberry32(seed);
+  const pulseShift = typeof input.pulse === "number" && Number.isFinite(input.pulse) ? Math.abs(input.pulse) % 360 : 0;
   const baseHue = randInt(rand, 0, 359);
   const accentHue = (baseHue + randInt(rand, 24, 160)) % 360;
   const secondaryHue = (baseHue + randInt(rand, 180, 260)) % 360;
@@ -121,16 +124,29 @@ export function buildProofOfBreathSeal(input: ProofSealInput): ProofOfBreathSeal
     rosetteC: randInt(rand, 2, 5),
     dashPattern: `${randInt(rand, 4, 8)} ${randInt(rand, 2, 6)}`,
     glowAlpha: 0.28 + rand() * 0.3,
+    gradientAngle: (baseHue + accentHue + pulseShift) % 360,
+    glassOpacity: 0.42 + rand() * 0.2,
   };
 
   const draw = (ctx: CanvasRenderingContext2D, x: number, y: number, size: number) => {
     const radius = size / 2;
+    const angle = (geometry.gradientAngle * Math.PI) / 180;
+    const gradX = Math.cos(angle) * radius;
+    const gradY = Math.sin(angle) * radius;
+    const strokeGradient = ctx.createLinearGradient(-gradX, -gradY, gradX, gradY);
+    strokeGradient.addColorStop(0, palette.primary);
+    strokeGradient.addColorStop(0.55, palette.accent);
+    strokeGradient.addColorStop(1, palette.secondary);
+    const glassGradient = ctx.createRadialGradient(0, 0, radius * 0.1, 0, 0, radius);
+    glassGradient.addColorStop(0, palette.accent);
+    glassGradient.addColorStop(0.5, palette.primary);
+    glassGradient.addColorStop(1, "rgba(10,12,18,0.7)");
     ctx.save();
     ctx.translate(x, y);
     ctx.lineCap = "round";
     for (let i = 0; i < geometry.ringCount; i += 1) {
       const ringR = radius * (0.92 - i * 0.12);
-      ctx.strokeStyle = i % 2 === 0 ? palette.primary : palette.secondary;
+      ctx.strokeStyle = i % 2 === 0 ? strokeGradient : palette.secondary;
       ctx.lineWidth = 1.6 - i * 0.2;
       ctx.beginPath();
       ctx.setLineDash(i === 0 ? geometry.dashPattern.split(" ").map(Number) : []);
@@ -168,8 +184,8 @@ export function buildProofOfBreathSeal(input: ProofSealInput): ProofOfBreathSeal
       ctx.closePath();
       ctx.stroke();
     }
-    ctx.fillStyle = "rgba(10,12,18,0.6)";
-    ctx.strokeStyle = palette.primary;
+    ctx.fillStyle = glassGradient;
+    ctx.strokeStyle = strokeGradient;
     ctx.lineWidth = 1.4;
     ctx.beginPath();
     const poly = geometry.polygonSides;
@@ -190,9 +206,12 @@ export function buildProofOfBreathSeal(input: ProofSealInput): ProofOfBreathSeal
     const radius = size / 2;
     const ringR = radius * 0.92;
     const textR = radius * 0.72;
+    const gradId = `${idPrefix}-pob-grad`;
+    const glassId = `${idPrefix}-pob-glass`;
+    const frostId = `${idPrefix}-pob-frost`;
     const ringPaths = Array.from({ length: geometry.ringCount }).map((_, idx) => {
       const r = ringR - idx * radius * 0.12;
-      const stroke = idx % 2 === 0 ? palette.primary : palette.secondary;
+      const stroke = idx % 2 === 0 ? `url(#${gradId})` : palette.secondary;
       const dash = idx === 0 ? `stroke-dasharray="${geometry.dashPattern}"` : "";
       const width = (1.8 - idx * 0.22).toFixed(2);
       return `<circle cx="0" cy="0" r="${r.toFixed(2)}" fill="none" stroke="${stroke}" stroke-width="${width}" ${dash} opacity="0.9" />`;
@@ -228,14 +247,32 @@ export function buildProofOfBreathSeal(input: ProofSealInput): ProofOfBreathSeal
     return `
       <g transform="translate(${x} ${y})">
         <defs>
+          <linearGradient id="${gradId}" x1="0%" y1="0%" x2="100%" y2="100%" gradientTransform="rotate(${geometry.gradientAngle})">
+            <stop offset="0%" stop-color="${palette.primary}" stop-opacity="0.95" />
+            <stop offset="55%" stop-color="${palette.accent}" stop-opacity="0.75" />
+            <stop offset="100%" stop-color="${palette.secondary}" stop-opacity="0.9" />
+          </linearGradient>
+          <radialGradient id="${glassId}" cx="50%" cy="45%" r="70%">
+            <stop offset="0%" stop-color="${palette.accent}" stop-opacity="0.35" />
+            <stop offset="45%" stop-color="${palette.primary}" stop-opacity="${geometry.glassOpacity.toFixed(2)}" />
+            <stop offset="100%" stop-color="rgba(10,12,18,0.6)" stop-opacity="0.9" />
+          </radialGradient>
+          <filter id="${frostId}" x="-40%" y="-40%" width="180%" height="180%">
+            <feGaussianBlur stdDeviation="3" result="blur" />
+            <feColorMatrix in="blur" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 0.55 0" />
+            <feMerge>
+              <feMergeNode />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
           <path id="${textPathId}" d="${topArc}" />
           <path id="${microPathId}" d="${bottomArc}" />
         </defs>
-        <circle cx="0" cy="0" r="${(radius * 0.98).toFixed(2)}" fill="rgba(10,12,18,0.62)" stroke="${palette.primary}" stroke-width="1.2" opacity="0.85" />
+        <circle cx="0" cy="0" r="${(radius * 0.98).toFixed(2)}" fill="url(#${glassId})" stroke="url(#${gradId})" stroke-width="1.4" opacity="0.92" filter="url(#${frostId})" />
         ${ringPaths.join("\n")}
         ${ticks.join("\n")}
         ${rosettes.join("\n")}
-        <path d="${polyPath}" fill="rgba(10,12,18,0.75)" stroke="${palette.primary}" stroke-width="1.3" />
+        <path d="${polyPath}" fill="rgba(10,12,18,0.7)" stroke="url(#${gradId})" stroke-width="1.3" />
         <text font-family="Inter, Segoe UI, Helvetica Neue, Arial, sans-serif" font-size="14" font-weight="700" letter-spacing="0.18em" fill="${palette.primary}">
           <textPath href="#${textPathId}" startOffset="50%" text-anchor="middle">${label}</textPath>
         </text>
