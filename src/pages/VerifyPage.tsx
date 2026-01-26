@@ -137,7 +137,7 @@ function normalizeRawDeclaredPhiKey(raw: string | null | undefined): string | nu
   return value;
 }
 
-function hasRequiredKasAuthorSig(authorSig: KASAuthorSig | null | undefined): boolean {
+function hasRequiredKasAuthorSig(authorSig: unknown): authorSig is KASAuthorSig {
   if (!authorSig) return false;
   if (!isKASAuthorSig(authorSig)) return false;
   const credId = authorSig.credId || (authorSig as { rawId?: string }).rawId;
@@ -838,15 +838,11 @@ export default function VerifyPage(): ReactElement {
     [provenanceAuthorSig],
   );
   const ownerAuthorSig = useMemo(
-    () => embeddedProof?.authorSig ?? (result.status === "ok" ? (result.embedded.authorSig as KASAuthorSig | null) : null),
+    () => embeddedProof?.authorSig ?? (result.status === "ok" ? result.embedded.authorSig ?? null : null),
     [embeddedProof?.authorSig, result],
   );
   const hasKASOwnerSig = useMemo(
-    () =>
-      hasRequiredKasAuthorSig(
-        (embeddedProof?.authorSig ??
-          (result.status === "ok" ? (result.embedded.authorSig as KASAuthorSig | null) : null)) as KASAuthorSig | null,
-      ),
+    () => hasRequiredKasAuthorSig(embeddedProof?.authorSig ?? (result.status === "ok" ? result.embedded.authorSig : null)),
     [embeddedProof?.authorSig, result],
   );
   const effectiveOwnerSig = ownerAuthorSig;
@@ -1272,12 +1268,8 @@ if (receipt.receiptHash) {
       setResult(next);
       if (next.status === "ok") {
         const embeddedProofMeta = extractProofBundleMetaFromSvg(raw);
-        const ownerAuthorSig = (embeddedProofMeta?.authorSig ?? next.embedded.authorSig ?? null) as KASAuthorSig | null;
-        const hasKASOwnerSig =
-          !!ownerAuthorSig &&
-          isKASAuthorSig(ownerAuthorSig) &&
-          !!(ownerAuthorSig.credId || (ownerAuthorSig as { rawId?: string }).rawId) &&
-          !!ownerAuthorSig.pubKeyJwk;
+        const ownerAuthorSig = embeddedProofMeta?.authorSig ?? next.embedded.authorSig ?? null;
+        const hasKASOwnerSig = hasRequiredKasAuthorSig(ownerAuthorSig);
         const rawEmbeddedPhiKey = next.embeddedRawPhiKey ?? null;
         const glyphPhiKeyDeclared = normalizeRawDeclaredPhiKey(rawEmbeddedPhiKey);
         const glyphPhiKeyFallback = glyphPhiKeyDeclared ? null : next.derivedPhiKey ?? null;
