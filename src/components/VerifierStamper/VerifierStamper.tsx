@@ -1193,6 +1193,10 @@ const VerifierStamperInner: React.FC = () => {
       if (receiveFromBundle) {
         metaNext = { ...metaNext, receiveSig: receiveFromBundle };
       }
+      const receiveBundleHashFromBundle = readReceiveBundleHashFromBundle(proofMetaNext?.raw);
+      if (receiveBundleHashFromBundle && !metaNext.receiveBundleHash) {
+        metaNext = { ...metaNext, receiveBundleHash: receiveBundleHashFromBundle };
+      }
       if (proofMetaNext?.raw && isRecord(proofMetaNext.raw)) {
         metaNext = { ...metaNext, proofBundleRaw: proofMetaNext.raw };
       }
