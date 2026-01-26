@@ -1027,7 +1027,7 @@ export default function VerifyPage(): ReactElement {
   const onPickFile = useCallback(
     async (file: File): Promise<void> => {
       if (!isSvgFile(file)) {
-        setResult({ status: "error", message: "Upload a sealed .svg (embedded <metadata> JSON).", slug });
+        setResult({ status: "error", message: "inhale a sealed .svg (embedded <metadata> JSON).", slug });
         return;
       }
       const text = await readFileText(file);
@@ -1063,7 +1063,7 @@ export default function VerifyPage(): ReactElement {
 
       const ownerAuthorSig = args.ownerAuthorSig;
       if (!ownerAuthorSig || !isKASAuthorSig(ownerAuthorSig)) {
-        setOwnerAuthStatus("Owner/Auth Signer: Missing on glyph");
+        setOwnerAuthStatus("Owner/Auth Steward: Missing on glyph");
         return;
       }
 
@@ -1077,12 +1077,12 @@ export default function VerifyPage(): ReactElement {
         ownerAuthorSig.credId || (ownerAuthorSig as { rawId?: string }).rawId || "";
       if (!expectedCredId) {
         setOwnerAuthVerified(false);
-        setOwnerAuthStatus("Signer mismatch.");
+        setOwnerAuthStatus("Steward mismatch.");
         return;
       }
 
       setOwnerAuthBusy(true);
-      setOwnerAuthStatus("Waiting for signer authentication…");
+      setOwnerAuthStatus("Waiting for steward authentication…");
       const challengeBytes = crypto.getRandomValues(new Uint8Array(32));
       const requestAssertion = async (
         allowCredentials?: PublicKeyCredentialDescriptor[]
@@ -1153,13 +1153,13 @@ export default function VerifyPage(): ReactElement {
           });
         }
         setOwnerAuthVerified(true);
-        setOwnerAuthStatus("Signer verified.");
+        setOwnerAuthStatus("Steward verified");
         setOwnerAuthBusy(false);
         return;
       }
 
       setOwnerAuthVerified(false);
-      setOwnerAuthStatus("Signer credential not found on this device.");
+      setOwnerAuthStatus("Steward credential not found on this device.");
       setOwnerAuthBusy(false);
     },
     [ownerAuthBusy],
@@ -1199,7 +1199,7 @@ export default function VerifyPage(): ReactElement {
   const runVerify = useCallback(async (): Promise<void> => {
     const raw = svgText.trim();
     if (!raw) {
-      setResult({ status: "error", message: "Inhale or paste the sealed SVG (ΦKey).", slug });
+      setResult({ status: "error", message: "Inhale or remember the sealed SVG (ΦKey).", slug });
       return;
     }
     const receipt = parseSharedReceiptFromText(raw);
