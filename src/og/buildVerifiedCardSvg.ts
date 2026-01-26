@@ -75,14 +75,14 @@ function sigilImageMarkup(sigilSvg: string | undefined, clipId: string): string 
 function qrImageMarkup(qrDataUrl: string | undefined, clipId: string): string {
   if (!qrDataUrl) {
     return `
-      <rect x="860" y="462" width="240" height="140" rx="16" fill="rgba(10,12,18,0.7)" stroke="rgba(255,255,255,0.08)" />
-      <text x="980" y="542" text-anchor="middle" font-size="18" font-weight="600" fill="#B7C6E3">QR unavailable</text>
+      <rect x="848" y="492" width="264" height="124" rx="16" fill="rgba(10,12,18,0.7)" stroke="rgba(255,255,255,0.08)" />
+      <text x="980" y="564" text-anchor="middle" font-size="18" font-weight="600" fill="#B7C6E3">QR unavailable</text>
     `;
   }
   return `
     <image
-      x="868" y="470"
-      width="224" height="124"
+      x="864" y="500"
+      width="232" height="108"
       href="${qrDataUrl}"
       preserveAspectRatio="xMidYMid meet"
       clip-path="url(#${clipId})"
@@ -98,12 +98,12 @@ function shortHash(value: string | undefined, head = 10, tail = 8): string {
 
 function sealPlacement(seedValue: string): { x: number; y: number; rotation: number; dash: string } {
   const hash = hashStringToInt(seedValue);
-  const offsetX = (hash % 60) - 30;
-  const offsetY = ((hash >> 6) % 32) - 16;
-  const rotation = (hash % 360) - 180;
+  const offsetX = (hash % 48) - 24;
+  const offsetY = ((hash >> 6) % 24) - 12;
+  const rotation = ((hash % 41) - 20) * 0.5;
   const dashA = 4 + (hash % 5);
   const dashB = 3 + ((hash >> 3) % 4);
-  return { x: 1000 + offsetX, y: 96 + offsetY, rotation, dash: `${dashA} ${dashB}` };
+  return { x: 1008 + offsetX, y: 92 + offsetY, rotation, dash: `${dashA} ${dashB}` };
 }
 
 export function buildVerifiedCardSvg(data: VerifiedCardData): string {
@@ -207,7 +207,7 @@ export function buildVerifiedCardSvg(data: VerifiedCardData): string {
       <rect x="810" y="150" width="320" height="320" rx="26" />
     </clipPath>
     <clipPath id="${qrClipId}">
-      <rect x="860" y="462" width="240" height="140" rx="16" />
+      <rect x="848" y="492" width="264" height="124" rx="16" />
     </clipPath>
     <style>
       .headline { font: 800 56px "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif; letter-spacing: 0.12em; fill: #F4F6FB; }
@@ -285,7 +285,7 @@ export function buildVerifiedCardSvg(data: VerifiedCardData): string {
   <rect x="810" y="150" width="320" height="320" rx="26" fill="rgba(10,14,20,0.6)" />
   ${sigilImageMarkup(sigilSvg, sigilClipId)}
 
-  <rect x="844" y="448" width="272" height="164" rx="18" fill="rgba(10,12,18,0.62)" stroke="rgba(255,255,255,0.12)" />
+  <rect x="836" y="484" width="288" height="140" rx="18" fill="rgba(10,12,18,0.62)" stroke="rgba(255,255,255,0.12)" />
   ${qrImageMarkup(qrDataUrl, qrClipId)}
 
   <g opacity="0.9">
