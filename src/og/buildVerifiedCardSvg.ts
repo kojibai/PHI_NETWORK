@@ -117,6 +117,7 @@ export function buildVerifiedCardSvg(data: VerifiedCardData): string {
   const waveId = `${id}-wave`;
   const badgeGlowId = `${id}-badge-glow`;
   const sealId = `${id}-seal`;
+  const sealRingId = `${id}-seal-ring`;
   const hasKas = typeof kasOk === "boolean";
   const sealSeed = `${capsuleHash}|${svgHash ?? ""}|${verifiedAtPulse}`;
   const seal = sealPlacement(sealSeed);
@@ -218,7 +219,8 @@ export function buildVerifiedCardSvg(data: VerifiedCardData): string {
       .value { font: 700 30px "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif; fill: #F2F5FB; }
       .mode-label { font: 800 18px "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif; fill: #94BCEB; letter-spacing: 0.24em; }
       .micro { font: 500 12px "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif; fill: #8FA3C5; letter-spacing: 0.12em; }
-      .seal { font: 700 16px "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif; letter-spacing: 0.24em; }
+      .seal { font: 700 13px "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif; letter-spacing: 0.16em; }
+      .seal-sub { font: 600 10px "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif; letter-spacing: 0.28em; }
     </style>
   </defs>
 
@@ -276,10 +278,20 @@ export function buildVerifiedCardSvg(data: VerifiedCardData): string {
   <text class="value" x="320" y="534">${valuationUsd}</text>
 
   <g id="${sealId}" transform="translate(${seal.x} ${seal.y}) rotate(${seal.rotation})">
-    <circle cx="0" cy="0" r="44" fill="rgba(12,14,18,0.72)" stroke="${accent}" stroke-width="2" filter="url(#${glowId})" stroke-dasharray="${seal.dash}" />
-    <circle cx="0" cy="0" r="30" fill="none" stroke="${accentSoft}" stroke-width="1.2" opacity="0.7" />
-    <text x="0" y="-2" text-anchor="middle" class="seal" fill="${accent}">VERIFIED</text>
-    <text x="0" y="16" text-anchor="middle" class="seal" fill="${accentSoft}">${shortHash(capsuleHash, 6, 4)}</text>
+    <defs>
+      <linearGradient id="${sealRingId}" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0%" stop-color="${accent}" />
+        <stop offset="48%" stop-color="#4dc4ff" />
+        <stop offset="100%" stop-color="${accentSoft}" />
+      </linearGradient>
+    </defs>
+    <circle cx="0" cy="0" r="48" fill="rgba(12,14,18,0.78)" stroke="url(#${sealRingId})" stroke-width="2.4" filter="url(#${glowId})" stroke-dasharray="${seal.dash}" />
+    <circle cx="0" cy="0" r="36" fill="none" stroke="${accentSoft}" stroke-width="1.1" opacity="0.65" />
+    <rect x="-6" y="-34" width="12" height="68" rx="5" fill="#3da7ff" opacity="0.88" />
+    <rect x="-3" y="-32" width="6" height="64" rx="3" fill="#8fd6ff" opacity="0.65" />
+    <text x="0" y="-8" text-anchor="middle" class="seal" fill="${accent}">PROOF OF BREATH™</text>
+    <text x="0" y="10" text-anchor="middle" class="seal-sub" fill="${accentSoft}">CRYPTOGRAPHIC</text>
+    <text x="0" y="24" text-anchor="middle" class="seal-sub" fill="${accentSoft}">STAMP</text>
   </g>
 
   <rect x="796" y="136" width="348" height="348" rx="30" fill="rgba(6,8,12,0.75)" stroke="${accent}" stroke-width="2.4" filter="url(#${glowId})" />
@@ -291,9 +303,10 @@ export function buildVerifiedCardSvg(data: VerifiedCardData): string {
 
   <g opacity="0.9">
     <text class="micro" x="80" y="570">BUNDLE ${shortHash(bundleHashValue)}</text>
-    <text class="micro" x="80" y="588">RECEIPT ${shortHash(receiptHash)}</text>
+    <text class="micro" x="80" y="588">VERIFY PROOF OF BREATH ${shortHash(receiptHash)}</text>
     <text class="micro" x="320" y="570">SVG ${shortHash(svgHash)}</text>
     <text class="micro" x="320" y="588">CAPSULE ${shortHash(capsuleHash)}</text>
+    <text class="micro" x="1120" y="594" text-anchor="end">phi.network</text>
   </g>
 </svg>
   `.trim();
