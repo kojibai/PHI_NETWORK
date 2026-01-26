@@ -130,16 +130,6 @@ function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   return buf;
 }
 
-function normalizeP256Jwk(jwk: JsonWebKey): string {
-  const normalized = {
-    kty: jwk.kty,
-    crv: jwk.crv,
-    x: jwk.x,
-    y: jwk.y,
-    ext: jwk.ext,
-  };
-  return jcsCanonicalize(normalized as Parameters<typeof jcsCanonicalize>[0]);
-}
 
 function isChildGlyph(raw: unknown): boolean {
   if (!isRecord(raw)) return false;
@@ -1199,7 +1189,7 @@ if (receipt.receiptHash) {
       if (next.status === "ok") {
         const embeddedProofMeta = extractProofBundleMetaFromSvg(raw);
         const ownerAuthorSig = (embeddedProofMeta?.authorSig ?? next.embedded.authorSig ?? null) as KASAuthorSig | null;
-        const glyphPhiKey = next.embedded.phiKey ?? next.derivedPhiKey ?? "";
+        const glyphPhiKey = next.embedded.phiKey ?? "";
         await runOwnerAuthFlow({ ownerAuthorSig, glyphPhiKey });
       } else {
         setOwnerAuthVerified(null);
