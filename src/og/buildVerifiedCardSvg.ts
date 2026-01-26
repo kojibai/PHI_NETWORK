@@ -247,10 +247,10 @@ export function buildVerifiedCardSvg(data: VerifiedCardData): string {
   const usdLabelY = valueY + phiGap;
   const usdValueY = usdLabelY + Math.round(unit * 1.4);
   const qrBoxX = 128;
-  const qrBoxY = usdValueY + Math.round(phiGap * 0.8);
+  const qrBoxY = usdValueY + Math.round(phiGap * 0.45);
   const qrBoxW = 288;
   const qrBoxH = 140;
-  const brandX = 320;
+  const brandX = 420;
   const brandY = 206;
   const phiKeyLabelY = Math.round(proofSealY + proofSealSize / 2 + phiGap * 0.7);
   const phiKeyValueY = phiKeyLabelY + Math.round(unit * 1.9);
@@ -353,9 +353,11 @@ export function buildVerifiedCardSvg(data: VerifiedCardData): string {
   }
 
   <text class="label" x="${hasKas ? 470 : 320}" y="${badgeLabelY}">G16</text>
-  <g transform="translate(${hasKas ? 530 : 380} ${badgeLabelY - 26})" filter="url(#${badgeGlowId})">
-    <rect width="54" height="54" rx="14" fill="rgba(10,16,22,0.9)" stroke="${g16Ok ? "#38E4B6" : "#C86B6B"}" stroke-width="2" />
-    <path d="${badgeMark(g16Ok)}" fill="none" stroke="${g16Ok ? "#38E4B6" : "#C86B6B"}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" />
+  <g transform="translate(${hasKas ? 520 : 370} ${badgeLabelY - 22})" filter="url(#${badgeGlowId})">
+    <g transform="translate(4 4) scale(0.85)">
+      <rect width="54" height="54" rx="14" fill="rgba(10,16,22,0.9)" stroke="${g16Ok ? "#38E4B6" : "#C86B6B"}" stroke-width="1.8" />
+      <path d="${badgeMark(g16Ok)}" fill="none" stroke="${g16Ok ? "#38E4B6" : "#C86B6B"}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
+    </g>
   </g>
 
   <text class="label" x="320" y="${valueLabelY}">Φ VALUE</text>
