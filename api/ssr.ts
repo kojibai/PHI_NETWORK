@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { PassThrough } from "node:stream";
+import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { PipeableStream } from "react-dom/server";
 
@@ -128,28 +129,77 @@ function formatErrorForDebug(err: unknown): string {
   }
 }
 
+type TemplateParts = { head: string; tail: string };
+
+function minimalTemplate(): TemplateParts {
+  return {
+    head:
+      "<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"></head><body><div id=\"root\">",
+    tail: "</div></body></html>",
+  };
+}
+
+function loadTemplate(): TemplateParts {
+  const templatePath = path.join(process.cwd(), "dist", "server", "template.html");
+  try {
+    const template = fs.readFileSync(templatePath, "utf8");
+    const templateWithHead = template.replace("<!--ssr-head-->", buildSsrHead());
+    return splitTemplate(templateWithHead);
+  } catch (err) {
+    console.error("SSR template load failed:", err);
+    return minimalTemplate();
+  }
+}
+
+function respondWithShell(
+  res: ServerResponse,
+  parts: TemplateParts,
+  requestId: string,
+  opts: { debug: boolean; error?: unknown }
+) {
+  if (!res.headersSent) {
+    res.statusCode = 200;
+    res.setHeader("content-type", "text/html; charset=utf-8");
+    res.setHeader("cache-control", "no-store");
+    res.setHeader("x-ssr", "0");
+    res.setHeader("x-ssr-request-id", requestId);
+  }
+
+  if (opts.debug && opts.error) {
+    const payload = escapeHtml(formatErrorForDebug(opts.error));
+    res.end(`${parts.head}<pre>${payload}</pre>${parts.tail}`);
+    return;
+  }
+
+  res.end(parts.head + parts.tail);
+}
+
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
   const ABORT_DELAY_MS = 10_000;
+  const requestId = randomUUID();
 
   try {
     const url = absoluteUrl(req);
-    const DEBUG = url.searchParams.has("__ssr_debug");
-
-    const templatePath = path.join(process.cwd(), "dist", "server", "template.html");
-    const template = fs.readFileSync(templatePath, "utf8");
-    const templateWithHead = template.replace("<!--ssr-head-->", buildSsrHead());
-    const { head, tail } = splitTemplate(templateWithHead);
+    const DEBUG = url.searchParams.has("__ssr_debug") || req.headers["x-ssr-debug"] === "1";
+    const templateParts = loadTemplate();
+    const { head, tail } = templateParts;
 
     const entryPath = path.join(process.cwd(), "dist", "server", "entry-server.js");
     const entryUrl = pathToFileURL(entryPath).href;
 
-    const mod = (await import(entryUrl)) as unknown;
-    const render = pickRender(mod);
+    let render: RenderFn | null = null;
+    try {
+      const mod = (await import(entryUrl)) as unknown;
+      render = pickRender(mod);
+    } catch (err) {
+      console.error(`[SSR ${requestId}] entry import failed:`, err);
+      respondWithShell(res, templateParts, requestId, { debug: DEBUG, error: err });
+      return;
+    }
 
     if (!render) {
-      res.statusCode = 500;
-      res.setHeader("content-type", "text/plain; charset=utf-8");
-      res.end("SSR entry missing render() export");
+      console.error(`[SSR ${requestId}] entry missing render() export`);
+      respondWithShell(res, templateParts, requestId, { debug: DEBUG });
       return;
     }
 
@@ -159,6 +209,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     res.setHeader("content-type", "text/html; charset=utf-8");
     res.setHeader("cache-control", "no-store");
     res.setHeader("x-ssr", "1");
+    res.setHeader("x-ssr-request-id", requestId);
 
     let shellFlushed = false;
     let pipeable: PipeableStream | null = null;
@@ -214,10 +265,8 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
         // If shell failed before onShellReady, we still want to return an HTML document.
         // Debug mode: show error details in the browser.
         if (!shellFlushed) {
-          if (DEBUG) {
-            if (!res.writableEnded) res.end(`<pre>${escapeHtml(formatErrorForDebug(err))}</pre>`);
-          } else {
-            if (!res.writableEnded) res.end(head + tail);
+          if (!res.writableEnded) {
+            respondWithShell(res, templateParts, requestId, { debug: DEBUG, error: err });
           }
           return;
         }
@@ -234,12 +283,16 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     };
 
     // Start React SSR stream
-    pipeable = render(url.pathname + url.search, null, opts);
+    try {
+      pipeable = render(url.pathname + url.search, null, opts);
+    } catch (err) {
+      console.error(`[SSR ${requestId}] render crashed:`, err);
+      respondWithShell(res, templateParts, requestId, { debug: DEBUG, error: err });
+    }
   } catch (err) {
-    console.error("SSR function crashed:", err);
-    res.statusCode = 500;
-    res.setHeader("content-type", "text/plain; charset=utf-8");
-    res.end("SSR function crashed");
+    console.error(`[SSR ${requestId}] function crashed:`, err);
+    const DEBUG = req.headers["x-ssr-debug"] === "1";
+    respondWithShell(res, loadTemplate(), requestId, { debug: DEBUG, error: err });
   }
 }
 
