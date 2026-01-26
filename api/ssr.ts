@@ -1,7 +1,7 @@
 // api/ssr.ts
 import fs from "node:fs";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { PassThrough } from "node:stream";
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -32,6 +32,8 @@ type ManifestEntry = {
   src?: string;
 };
 
+const ROOT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
 function pickRender(mod: unknown): RenderFn | null {
   if (!mod || typeof mod !== "object") return null;
   const m = mod as SsrModule;
@@ -51,8 +53,8 @@ function toPublicPath(file?: string): string | null {
 function buildSsrHead(): string {
   const parts: string[] = [];
   const manifestPaths = [
-    path.join(process.cwd(), "dist", ".vite", "manifest.json"),
-    path.join(process.cwd(), "dist", "client", ".vite", "manifest.json"),
+    path.join(ROOT_DIR, "dist", ".vite", "manifest.json"),
+    path.join(ROOT_DIR, "dist", "client", ".vite", "manifest.json"),
   ];
 
   try {
@@ -140,7 +142,7 @@ function minimalTemplate(): TemplateParts {
 }
 
 function loadTemplate(): TemplateParts {
-  const templatePath = path.join(process.cwd(), "dist", "server", "template.html");
+  const templatePath = path.join(ROOT_DIR, "dist", "server", "template.html");
   try {
     const template = fs.readFileSync(templatePath, "utf8");
     const templateWithHead = template.replace("<!--ssr-head-->", buildSsrHead());
@@ -152,7 +154,7 @@ function loadTemplate(): TemplateParts {
 }
 
 function resolveEntryServerPath(): string | null {
-  const serverDir = path.join(process.cwd(), "dist", "server");
+  const serverDir = path.join(ROOT_DIR, "dist", "server");
   const candidates = ["entry-server.js", "entry-server.mjs", "entry-server.cjs"];
 
   for (const name of candidates) {
