@@ -39,8 +39,6 @@ import { derivePhiKeyFromSig } from "../components/VerifierStamper/sigilUtils";
 import { tryVerifyGroth16 } from "../components/VerifierStamper/zk";
 import { isKASAuthorSig, type KASAuthorSig } from "../utils/authorSig";
 import {
-  createPasskeyForPhiKey,
-  derivePhiKeyFromPubKeyJwk,
   isWebAuthnAvailable,
   signBundleHash,
   storePasskey,
@@ -1086,12 +1084,6 @@ export default function VerifyPage(): ReactElement {
         return;
       }
 
-      if (!args.glyphPhiKey) {
-        setOwnerAuthVerified(false);
-        setOwnerAuthStatus("Signer mismatch.");
-        return;
-      }
-
       if (!isWebAuthnAvailable()) {
         setOwnerAuthStatus("Authentication not completed.");
         setNotice("WebAuthn is not available in this browser. Please verify on a device with passkeys enabled.");
@@ -1109,21 +1101,32 @@ export default function VerifyPage(): ReactElement {
       setOwnerAuthBusy(true);
       setOwnerAuthStatus("Waiting for signer authentication…");
       const challengeBytes = crypto.getRandomValues(new Uint8Array(32));
-      let assertion: PublicKeyCredential | null = null;
+      const requestAssertion = async (
+        allowCredentials?: PublicKeyCredentialDescriptor[]
+      ): Promise<PublicKeyCredential | null> => {
+        try {
+          const got = await navigator.credentials.get({
+            publicKey: {
+              challenge: challengeBytes,
+              userVerification: "required",
+              timeout: 60_000,
+              ...(allowCredentials ? { allowCredentials } : {}),
+            },
+          });
+          return (got ?? null) as PublicKeyCredential | null;
+        } catch {
+          return null;
+        }
+      };
 
-      try {
-        const allowId = toArrayBuffer(base64UrlDecode(expectedCredId));
-        const got = await navigator.credentials.get({
-          publicKey: {
-            challenge: challengeBytes,
-            userVerification: "required",
-            timeout: 60_000,
-            allowCredentials: [{ type: "public-key", id: allowId }],
-          },
-        });
-        assertion = (got ?? null) as PublicKeyCredential | null;
-      } catch {
-        assertion = null;
+      const allowCredentials = expectedCredId
+        ? [{ type: "public-key" as const, id: toArrayBuffer(base64UrlDecode(expectedCredId)) }]
+        : undefined;
+
+      let assertion = await requestAssertion(allowCredentials);
+      if (!assertion) {
+        setOwnerAuthStatus("Searching for signer passkey…");
+        assertion = await requestAssertion();
       }
 
       if (assertion) {
@@ -1142,51 +1145,21 @@ export default function VerifyPage(): ReactElement {
           return;
         }
 
-        const derivedPhiKey = await derivePhiKeyFromPubKeyJwk(ownerAuthorSig.pubKeyJwk);
-        if (!args.glyphPhiKey || derivedPhiKey !== args.glyphPhiKey) {
-          setOwnerAuthVerified(false);
-          setOwnerAuthStatus("Signer mismatch.");
-          setOwnerAuthBusy(false);
-          return;
+        if (args.glyphPhiKey) {
+          storePasskey(args.glyphPhiKey, {
+            credId: assertionJson.rawId,
+            pubKeyJwk: ownerAuthorSig.pubKeyJwk,
+          });
         }
-
-        storePasskey(args.glyphPhiKey, {
-          credId: assertionJson.rawId,
-          pubKeyJwk: ownerAuthorSig.pubKeyJwk,
-        });
         setOwnerAuthVerified(true);
         setOwnerAuthStatus("Signer verified.");
         setOwnerAuthBusy(false);
         return;
       }
 
-      setOwnerAuthStatus("Restoring signer credential…");
-      try {
-        const created = await createPasskeyForPhiKey({
-          phiKey: args.glyphPhiKey,
-          residentKey: "preferred",
-          timeoutMs: 60_000,
-        });
-        const createdPhiKey = await derivePhiKeyFromPubKeyJwk(created.pubKeyJwk);
-        const phiKeyMatches = createdPhiKey === args.glyphPhiKey;
-        const jwkMatches =
-          normalizeP256Jwk(created.pubKeyJwk) === normalizeP256Jwk(ownerAuthorSig.pubKeyJwk);
-
-        if (!phiKeyMatches || !jwkMatches) {
-          setOwnerAuthVerified(false);
-          setOwnerAuthStatus("Signer mismatch.");
-          return;
-        }
-
-        storePasskey(args.glyphPhiKey, created);
-        setOwnerAuthVerified(true);
-        setOwnerAuthStatus("Signer verified (restored).");
-      } catch {
-        setOwnerAuthVerified(null);
-        setOwnerAuthStatus("Authentication not completed.");
-      } finally {
-        setOwnerAuthBusy(false);
-      }
+      setOwnerAuthVerified(false);
+      setOwnerAuthStatus("Signer credential not found on this device.");
+      setOwnerAuthBusy(false);
     },
     [ownerAuthBusy],
   );
