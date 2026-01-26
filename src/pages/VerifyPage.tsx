@@ -1482,6 +1482,7 @@ if (receipt.receiptHash) {
               embedded: baseEmbedded,
               derivedPhiKey,
               checks,
+              embeddedRawPhiKey: null,
             }
           : {
               status: "ok",
@@ -1490,6 +1491,7 @@ if (receipt.receiptHash) {
               derivedPhiKey,
               checks,
               verifiedAtPulse,
+              embeddedRawPhiKey: null,
             },
       );
       setEmbeddedProof(embed);
@@ -2260,7 +2262,8 @@ if (verified && typeof cacheBundleHash === "string" && cacheBundleHash.trim().le
     }
     setVerificationSigBusy(true);
     try {
-      const kasSig = await signBundleHash(proofCapsule.phiKey, receiptHash);
+      const kasPhiKey = effectiveOwnerPhiKey ?? proofCapsule.phiKey;
+      const kasSig = await signBundleHash(kasPhiKey, receiptHash);
       const nextSig = verificationSigFromKas(kasSig);
       const ok = await verifyVerificationSig(receiptHash, nextSig);
       setVerificationSig(nextSig);
@@ -2272,7 +2275,7 @@ if (verified && typeof cacheBundleHash === "string" && cacheBundleHash.trim().le
     } finally {
       setVerificationSigBusy(false);
     }
-  }, [proofCapsule, receiptHash, verificationSigBusy]);
+  }, [effectiveOwnerPhiKey, proofCapsule, receiptHash, verificationSigBusy]);
 
   const onReceiveGlyph = useCallback(async () => {
     if (!bundleHash || !proofCapsule || !capsuleHash || !svgHash) return;
