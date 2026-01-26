@@ -151,6 +151,24 @@ function loadTemplate(): TemplateParts {
   }
 }
 
+function resolveEntryServerPath(): string | null {
+  const serverDir = path.join(process.cwd(), "dist", "server");
+  const candidates = ["entry-server.js", "entry-server.mjs", "entry-server.cjs"];
+
+  for (const name of candidates) {
+    const candidate = path.join(serverDir, name);
+    if (fs.existsSync(candidate)) return candidate;
+  }
+
+  try {
+    const files = fs.readdirSync(serverDir);
+    const match = files.find((file) => /^entry-server\.(mjs|cjs|js)$/i.test(file));
+    return match ? path.join(serverDir, match) : null;
+  } catch {
+    return null;
+  }
+}
+
 function respondWithShell(
   res: ServerResponse,
   parts: TemplateParts,
@@ -190,7 +208,13 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     const templateParts = loadTemplate();
     const { head, tail } = templateParts;
 
-    const entryPath = path.join(process.cwd(), "dist", "server", "entry-server.js");
+    const entryPath = resolveEntryServerPath();
+    if (!entryPath) {
+      const err = new Error("SSR entry-server bundle not found in dist/server");
+      console.error(`[SSR ${requestId}] entry not found`);
+      respondWithShell(res, templateParts, requestId, { debug: DEBUG, error: err });
+      return;
+    }
     const entryUrl = pathToFileURL(entryPath).href;
 
     let render: RenderFn | null = null;
