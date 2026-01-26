@@ -1856,8 +1856,14 @@ if (verified && typeof cacheBundleHash === "string" && cacheBundleHash.trim().le
       localReceiveBundle?.ownerPhiKey ??
       embeddedProof?.ownerPhiKey ??
       sharedReceipt?.ownerPhiKey ??
-      undefined,
-    [embeddedProof?.ownerPhiKey, localReceiveBundle?.ownerPhiKey, sharedReceipt?.ownerPhiKey],
+      (effectiveReceiveSig ? undefined : result.status === "ok" ? result.derivedPhiKey : undefined),
+    [
+      embeddedProof?.ownerPhiKey,
+      localReceiveBundle?.ownerPhiKey,
+      sharedReceipt?.ownerPhiKey,
+      effectiveReceiveSig,
+      result,
+    ],
   );
   const effectiveOwnerKeyDerivation = useMemo(
     () =>
@@ -1916,12 +1922,32 @@ if (verified && typeof cacheBundleHash === "string" && cacheBundleHash.trim().le
     const receiveMode = effectiveReceiveMode === "receive";
 
     if (!receiveMode && !effectiveReceiveSig) {
+      if (ownerAuthVerified === true) {
+        setOwnerPhiKeyVerified(true);
+        setOwnershipAttested(true);
+        return;
+      }
+      if (ownerAuthVerified === false) {
+        setOwnerPhiKeyVerified(false);
+        setOwnershipAttested(false);
+        return;
+      }
       setOwnerPhiKeyVerified(null);
       setOwnershipAttested("missing");
       return;
     }
 
     if (!effectiveReceiveSig) {
+      if (ownerAuthVerified === true) {
+        setOwnerPhiKeyVerified(true);
+        setOwnershipAttested(true);
+        return;
+      }
+      if (ownerAuthVerified === false) {
+        setOwnerPhiKeyVerified(false);
+        setOwnershipAttested(false);
+        return;
+      }
       setOwnerPhiKeyVerified(null);
       setOwnershipAttested("missing");
       return;
@@ -2012,6 +2038,7 @@ if (verified && typeof cacheBundleHash === "string" && cacheBundleHash.trim().le
     effectiveReceiveSig,
     receiveBundleRoot,
     receiveSigVerified,
+    ownerAuthVerified,
   ]);
 
   React.useEffect(() => {
