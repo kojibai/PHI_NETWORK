@@ -1679,20 +1679,6 @@ if (verified && typeof cacheBundleHash === "string" && cacheBundleHash.trim().le
     },
     [identityScanBusy]
   );
-  const requestIdentityScan = useCallback(() => {
-    if (identityScanBusy) return;
-    const authorSig = effectiveOriginAuthorSig ?? embeddedProof?.authorSig;
-    if (!authorSig || !isKASAuthorSig(authorSig)) {
-      setNotice("No author passkey is available for identity scan.");
-      return;
-    }
-    if (!bundleHash) {
-      setNotice("Bundle hash unavailable. Verify the ΦKey first.");
-      return;
-    }
-    setIdentityAttested("missing");
-    setIdentityScanRequested(true);
-  }, [bundleHash, effectiveOriginAuthorSig, embeddedProof?.authorSig, identityScanBusy]);
   const verificationReceipt = useMemo<VerificationReceipt | null>(() => {
     if (!bundleHash || !zkMeta?.zkPoseidonHash || stewardVerifiedPulse == null) return null;
     const valuationPayload = valuationSnapshot && valuationHash ? { valuation: valuationSnapshot, valuationHash } : undefined;
@@ -1727,45 +1713,6 @@ if (verified && typeof cacheBundleHash === "string" && cacheBundleHash.trim().le
     return effectiveReceiveSig ? "receive" : undefined;
   }, [embeddedProof?.mode, effectiveReceiveSig, localReceiveBundle?.mode, sharedReceipt?.mode]);
 
-  React.useEffect(() => {
-    if (typeof window === "undefined") return;
-    const statusLabel = result.status === "ok" ? "VERIFIED" : result.status === "error" ? "FAILED" : "STANDBY";
-    const origin = window.location.origin;
-    const slugValue = slug.raw || slugRaw || "";
-    const ogUrl = new URL(`${origin}/verify/${encodeURIComponent(slugValue)}`);
-    const ogImageUrl = new URL(`${origin}/api/og/verify`);
-    ogImageUrl.searchParams.set("slug", slugValue);
-    ogImageUrl.searchParams.set("status", statusLabel.toLowerCase());
-    if (result.status === "ok") {
-      ogImageUrl.searchParams.set("pulse", String(result.embedded.pulse ?? slug.pulse ?? ""));
-      const ogPhiKey = effectivePhiKey !== "—" ? effectivePhiKey : result.derivedPhiKey ?? "";
-      ogImageUrl.searchParams.set("phiKey", ogPhiKey);
-      if (result.embedded.chakraDay) ogImageUrl.searchParams.set("chakraDay", result.embedded.chakraDay);
-      const kasStatus = effectiveReceiveSig ? receiveSigVerified : authorSigVerified;
-      if (kasStatus != null) ogImageUrl.searchParams.set("kas", kasStatus ? "1" : "0");
-      if (zkVerify != null) ogImageUrl.searchParams.set("g16", zkVerify ? "1" : "0");
-    }
-
-    document.title = `Proof of Breath™ — ${statusLabel}`;
-    ensureMetaTag("property", "og:title", `Proof of Breath™ — ${statusLabel}`);
-    ensureMetaTag("property", "og:description", `Proof of Breath™ • ${statusLabel} • Pulse ${slug.pulse ?? "—"}`);
-    ensureMetaTag("property", "og:url", ogUrl.toString());
-    ensureMetaTag("property", "og:image", ogImageUrl.toString());
-    ensureMetaTag("name", "twitter:card", "summary_large_image");
-    ensureMetaTag("name", "twitter:title", `Proof of Breath™ — ${statusLabel}`);
-    ensureMetaTag("name", "twitter:description", `Proof of Breath™ • ${statusLabel} • Pulse ${slug.pulse ?? "—"}`);
-    ensureMetaTag("name", "twitter:image", ogImageUrl.toString());
-  }, [
-    authorSigVerified,
-    effectivePhiKey,
-    effectiveReceiveSig,
-    receiveSigVerified,
-    result,
-    slug.pulse,
-    slug.raw,
-    slugRaw,
-    zkVerify,
-  ]);
   const effectiveOriginBundleHash = useMemo(
     () =>
       localReceiveBundle?.originBundleHash ??
@@ -2062,6 +2009,20 @@ if (verified && typeof cacheBundleHash === "string" && cacheBundleHash.trim().le
     if (!provenanceSig || !isKASAuthorSig(provenanceSig)) return null;
     return findStoredKasPhiKeyByCredId(provenanceSig.credId);
   }, [provenanceSig]);
+  const requestIdentityScan = useCallback(() => {
+    if (identityScanBusy) return;
+    const authorSig = effectiveOriginAuthorSig ?? embeddedProof?.authorSig;
+    if (!authorSig || !isKASAuthorSig(authorSig)) {
+      setNotice("No author passkey is available for identity scan.");
+      return;
+    }
+    if (!bundleHash) {
+      setNotice("Bundle hash unavailable. Verify the ΦKey first.");
+      return;
+    }
+    setIdentityAttested("missing");
+    setIdentityScanRequested(true);
+  }, [bundleHash, effectiveOriginAuthorSig, embeddedProof?.authorSig, identityScanBusy]);
 
   const sealKAS: SealState = useMemo(() => {
     if (busy) return "busy";
@@ -2073,6 +2034,46 @@ if (verified && typeof cacheBundleHash === "string" && cacheBundleHash.trim().le
     if (authorSigVerified === null) return "na";
     return authorSigVerified ? "valid" : "invalid";
   }, [authorSigVerified, busy, effectiveReceiveSig, provenanceSig, receiveSigVerified]);
+
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+    const statusLabel = result.status === "ok" ? "VERIFIED" : result.status === "error" ? "FAILED" : "STANDBY";
+    const origin = window.location.origin;
+    const slugValue = slug.raw || slugRaw || "";
+    const ogUrl = new URL(`${origin}/verify/${encodeURIComponent(slugValue)}`);
+    const ogImageUrl = new URL(`${origin}/api/og/verify`);
+    ogImageUrl.searchParams.set("slug", slugValue);
+    ogImageUrl.searchParams.set("status", statusLabel.toLowerCase());
+    if (result.status === "ok") {
+      ogImageUrl.searchParams.set("pulse", String(result.embedded.pulse ?? slug.pulse ?? ""));
+      const ogPhiKey = effectivePhiKey !== "—" ? effectivePhiKey : result.derivedPhiKey ?? "";
+      ogImageUrl.searchParams.set("phiKey", ogPhiKey);
+      if (result.embedded.chakraDay) ogImageUrl.searchParams.set("chakraDay", result.embedded.chakraDay);
+      const kasStatus = effectiveReceiveSig ? receiveSigVerified : authorSigVerified;
+      if (kasStatus != null) ogImageUrl.searchParams.set("kas", kasStatus ? "1" : "0");
+      if (zkVerify != null) ogImageUrl.searchParams.set("g16", zkVerify ? "1" : "0");
+    }
+
+    document.title = `Proof of Breath™ — ${statusLabel}`;
+    ensureMetaTag("property", "og:title", `Proof of Breath™ — ${statusLabel}`);
+    ensureMetaTag("property", "og:description", `Proof of Breath™ • ${statusLabel} • Pulse ${slug.pulse ?? "—"}`);
+    ensureMetaTag("property", "og:url", ogUrl.toString());
+    ensureMetaTag("property", "og:image", ogImageUrl.toString());
+    ensureMetaTag("name", "twitter:card", "summary_large_image");
+    ensureMetaTag("name", "twitter:title", `Proof of Breath™ — ${statusLabel}`);
+    ensureMetaTag("name", "twitter:description", `Proof of Breath™ • ${statusLabel} • Pulse ${slug.pulse ?? "—"}`);
+    ensureMetaTag("name", "twitter:image", ogImageUrl.toString());
+  }, [
+    authorSigVerified,
+    effectivePhiKey,
+    effectiveReceiveSig,
+    receiveSigVerified,
+    result,
+    slug.pulse,
+    slug.raw,
+    slugRaw,
+    zkVerify,
+  ]);
 
   const sealZK: SealState = useMemo(() => {
     if (busy) return "busy";
