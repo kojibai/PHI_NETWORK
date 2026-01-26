@@ -1,4 +1,4 @@
-/* KAIKLOK SW — offline-first + route mapping for /s/* (sigil links)
+/* PHI NETWORK SW — offline-first + route mapping for /s/* (sigil links)
    - Canonical service worker (legacy /service-worker.js removed to avoid conflicts)
    - Instant offline boot (app-shell)
    - Seeds known sigil links from /sigils-index.json (optional)
@@ -14,7 +14,7 @@
 
 // Update this version string manually to keep the app + cache versions in sync.
 // The value is forwarded to the UI via the service worker "SW_ACTIVATED" message.
-const APP_VERSION = "41.9.9"; // update on release
+const APP_VERSION = "42.0.0"; // update on release
 const VERSION = new URL(self.location.href).searchParams.get("v") || APP_VERSION; // derived from build
 const PREFIX = "PHINETWORK";
 

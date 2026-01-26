@@ -2688,7 +2688,7 @@ const VerifierStamperInner: React.FC = () => {
       logError("receive.recordTransferMovement", err);
     }
 
-    let durl = await embedMetadata(svgURL, updated);
+    const durl = await embedMetadata(svgURL, updated);
     const baseSvg = await fetch(durl).then((r) => r.text());
     const svgHash = await hashSvgText(baseSvg);
     const proofCapsule = proofBundleMeta?.proofCapsule;
