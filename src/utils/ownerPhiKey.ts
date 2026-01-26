@@ -62,6 +62,13 @@ export async function deriveOwnerPhiKeyFromReceive(args: {
   return base58Check(payload, 0x00);
 }
 
+export async function derivePhiKeyFromAuthPubKeyJwk(pubKeyJwk: JsonWebKey): Promise<string> {
+  const receiverJson = jcsCanonicalize(pubKeyJwk as Parameters<typeof jcsCanonicalize>[0]);
+  const receiverId = await sha256Hex(receiverJson);
+  const payload = phiKeyPayloadFromHash(receiverId);
+  return base58Check(payload, 0x00);
+}
+
 export function buildOwnerKeyDerivation(args: {
   originPhiKey?: string;
   receivePulse: number;
