@@ -163,11 +163,17 @@ function respondWithShell(
     res.setHeader("cache-control", "no-store");
     res.setHeader("x-ssr", "0");
     res.setHeader("x-ssr-request-id", requestId);
+    if (opts.debug) {
+      res.setHeader("x-ssr-debug", "1");
+    }
   }
 
   if (opts.debug && opts.error) {
     const payload = escapeHtml(formatErrorForDebug(opts.error));
-    res.end(`${parts.head}<pre>${payload}</pre>${parts.tail}`);
+    const debugTemplate = minimalTemplate();
+    const style =
+      "<style>body{font-family:ui-monospace,Menlo,Monaco,Consolas,monospace;padding:24px;background:#0b0b0c;color:#f2f2f2;}pre{white-space:pre-wrap;word-break:break-word;background:#151519;border:1px solid #2a2a33;padding:16px;border-radius:8px;}</style>";
+    res.end(`${debugTemplate.head}${style}<pre>${payload}</pre>${debugTemplate.tail}`);
     return;
   }
 
