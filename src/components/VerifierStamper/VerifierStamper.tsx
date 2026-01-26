@@ -941,9 +941,10 @@ const VerifierStamperInner: React.FC = () => {
   );
 
   const hasReceiveLock = useCallback(
-    async (m: SigilMetadata): Promise<boolean> => {
+    async (m: SigilMetadata, options?: { includeRemote?: boolean }): Promise<boolean> => {
       if (await hasLocalReceiveLock(m)) return true;
       if (await hasRegistryReceiveLock(m)) return true;
+      if (options?.includeRemote === false) return false;
       return hasRemoteReceiveLock(m);
     },
     [hasLocalReceiveLock, hasRegistryReceiveLock, hasRemoteReceiveLock]
@@ -2256,7 +2257,7 @@ const VerifierStamperInner: React.FC = () => {
       return;
     }
 
-    if ((await hasLocalReceiveLock(meta)) || (await hasRegistryReceiveLock(meta))) {
+    if (await hasReceiveLock(meta, { includeRemote: false })) {
       setError("This transfer has already been received.");
       setReceiveStatus("already");
       return;
@@ -2526,6 +2527,7 @@ const VerifierStamperInner: React.FC = () => {
     }
     nextBundle.bundleHash = bundleHashNext;
     nextBundle.receiveBundleHash = receiveBundleHash;
+    nextBundle.receiveBundleRoot = receiveBundleRoot;
     if (receiveSigLocal) nextBundle.receiveSig = receiveSigLocal;
 
     if (receiveSigLocal) {
