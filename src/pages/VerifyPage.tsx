@@ -2170,7 +2170,8 @@ if (verified && typeof cacheBundleHash === "string" && cacheBundleHash.trim().le
   }, [effectiveOwnerPhiKey, result]);
   const kpiPhiKey = useMemo(() => effectivePhiKey, [effectivePhiKey]);
 
-  const provenanceSig = provenanceAuthorSig;
+  const provenanceSig = provenanceAuthorSig ?? (!isReceiveGlyph ? ownerAuthorSig : null);
+  const provenanceSigVerifiedValue = provenanceAuthorSig ? provenanceSigVerified : null;
 
   const ownerAuthSignerPresent = Boolean(effectiveOwnerSig || effectiveReceiveSig);
   const ownerAuthVerifiedValue = useMemo(() => {
@@ -3280,10 +3281,17 @@ React.useEffect(() => {
                     <MiniField label="Provenance/Origin signature" value={provenanceSig ? "present" : "—"} />
                   ) : null}
                   {!isReceiveGlyph ? (
-                    <MiniField label="Provenance/Origin verified" value={provenanceSigVerified === null ? "n/a" : provenanceSigVerified ? "true" : "false"} />
+                    <MiniField
+                      label="Provenance/Origin verified"
+                      value={provenanceSigVerifiedValue === null ? "n/a" : provenanceSigVerifiedValue ? "true" : "false"}
+                    />
                   ) : null}
-                  <MiniField label="Owner receive signature" value={effectiveReceiveSig ? "present" : "—"} />
-                  <MiniField label="Owner receive verified" value={receiveSigVerified === null ? "n/a" : receiveSigVerified ? "true" : "false"} />
+                  {isReceiveGlyph ? (
+                    <MiniField label="Owner receive signature" value={effectiveReceiveSig ? "present" : "—"} />
+                  ) : null}
+                  {isReceiveGlyph ? (
+                    <MiniField label="Owner receive verified" value={receiveSigVerified === null ? "n/a" : receiveSigVerified ? "true" : "false"} />
+                  ) : null}
                   <MiniField label="Owner ΦKey" value={effectiveOwnerPhiKey ? "present" : "—"} />
                   <MiniField label="Owner ΦKey verified" value={ownerPhiKeyVerified === null ? "n/a" : ownerPhiKeyVerified ? "true" : "false"} />
                   <MiniField label="Ownership attested" value={ownershipAttested === "missing" ? "missing" : ownershipAttested ? "true" : "false"} />
@@ -3292,15 +3300,17 @@ React.useEffect(() => {
                   <MiniField label="bundleHash parity" value={embeddedProof?.bundleHash ? String(embeddedProof.bundleHash === bundleHash) : "n/a"} />
                 </div>
 
-                <div className="vmini-grid vmini-grid--3" aria-label="Receive signature status">
-                  <MiniField
-                    label="Receive credId"
-                    value={receiveCredId ? ellipsizeMiddle(receiveCredId, 12, 10) : "—"}
-                    title={receiveCredId || "—"}
-                  />
-                </div>
+                {isReceiveGlyph ? (
+                  <div className="vmini-grid vmini-grid--3" aria-label="Receive signature status">
+                    <MiniField
+                      label="Receive credId"
+                      value={receiveCredId ? ellipsizeMiddle(receiveCredId, 12, 10) : "—"}
+                      title={receiveCredId || "—"}
+                    />
+                  </div>
+                ) : null}
 
-                {effectiveReceiveSig ? (
+                {isReceiveGlyph && effectiveReceiveSig ? (
                   <div className="vmini-grid vmini-grid--2" aria-label="Receive signature summary">
                     <MiniField
                       label="Receive nonce"
