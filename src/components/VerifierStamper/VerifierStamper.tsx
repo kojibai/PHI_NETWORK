@@ -2782,7 +2782,7 @@ const VerifierStamperInner: React.FC = () => {
       setError("Segmentation is disabled on SEND sigils.");
       return;
     }
-    let { meta: rolled, segmentFileBlob } = await sealCurrentWindowIntoSegment(meta);
+    const { meta: rolled, segmentFileBlob } = await sealCurrentWindowIntoSegment(meta);
     const nowPulse = kaiPulseNow();
     const rolledSendLock = (rolled as SigilMetadataWithOptionals).sendLock;
     if (rolledSendLock?.nonce) {
