@@ -3,8 +3,8 @@ import type { VerifiedCardData } from "./types";
 import { sanitizeSigilSvg, svgToDataUri } from "./sigilEmbed";
 import { currency as fmtPhi, usd as fmtUsd } from "../components/valuation/display";
 
-const WIDTH = 1200;
-const HEIGHT = 630;
+export const VERIFIED_CARD_W = 1200;
+export const VERIFIED_CARD_H = 630;
 const phiLogoDataUri = svgToDataUri(phiSvg);
 
 function hashStringToInt(value: string): number {
@@ -32,13 +32,9 @@ function shortPhiKey(phiKey: string): string {
 
 function badgeMark(ok: boolean): string {
   if (ok) {
-    return "M20 34 L28 42 L44 20";
+    return "M18 32 L28 42 L46 18";
   }
   return "M20 20 L44 44 M44 20 L20 44";
-}
-
-function headerCheckPath(): string {
-  return "M16 26 L26 36 L44 16";
 }
 
 function dropUndefined<T extends Record<string, unknown>>(value: T): T {
@@ -59,16 +55,16 @@ function formatUsdValue(value: number | null | undefined): string {
 function sigilImageMarkup(sigilSvg: string | undefined, clipId: string): string {
   if (!sigilSvg) {
     return `
-      <rect x="840" y="210" width="300" height="300" rx="28" fill="rgba(10,14,20,0.6)" />
-      <text x="990" y="370" text-anchor="middle" font-size="24" font-weight="700" fill="#B7C6E3">Sigil unavailable</text>
+      <rect x="810" y="150" width="320" height="320" rx="26" fill="rgba(14,16,20,0.7)" stroke="rgba(255,255,255,0.08)" />
+      <text x="970" y="330" text-anchor="middle" font-size="22" font-weight="600" fill="#C9D4E8">Sigil unavailable</text>
     `;
   }
   const sanitized = sanitizeSigilSvg(sigilSvg);
   const dataUri = svgToDataUri(sanitized);
   return `
     <image
-      x="840" y="210"
-      width="300" height="300"
+      x="810" y="150"
+      width="320" height="320"
       href="${dataUri}"
       preserveAspectRatio="xMidYMid meet"
       clip-path="url(#${clipId})"
@@ -76,26 +72,66 @@ function sigilImageMarkup(sigilSvg: string | undefined, clipId: string): string 
   `;
 }
 
+function qrImageMarkup(qrDataUrl: string | undefined, clipId: string): string {
+  if (!qrDataUrl) {
+    return `
+      <rect x="848" y="492" width="264" height="124" rx="16" fill="rgba(10,12,18,0.7)" stroke="rgba(255,255,255,0.08)" />
+      <text x="980" y="564" text-anchor="middle" font-size="18" font-weight="600" fill="#B7C6E3">QR unavailable</text>
+    `;
+  }
+  return `
+    <image
+      x="864" y="500"
+      width="232" height="108"
+      href="${qrDataUrl}"
+      preserveAspectRatio="xMidYMid meet"
+      clip-path="url(#${clipId})"
+    />
+  `;
+}
+
+function shortHash(value: string | undefined, head = 10, tail = 8): string {
+  if (!value) return "—";
+  if (value.length <= head + tail + 2) return value;
+  return `${value.slice(0, head)}…${value.slice(-tail)}`;
+}
+
+function sealPlacement(seedValue: string): { x: number; y: number; rotation: number; dash: string } {
+  const hash = hashStringToInt(seedValue);
+  const offsetX = (hash % 48) - 24;
+  const offsetY = ((hash >> 6) % 24) - 12;
+  const rotation = ((hash % 41) - 20) * 0.5;
+  const dashA = 4 + (hash % 5);
+  const dashB = 3 + ((hash >> 3) % 4);
+  return { x: 1008 + offsetX, y: 92 + offsetY, rotation, dash: `${dashA} ${dashB}` };
+}
+
 export function buildVerifiedCardSvg(data: VerifiedCardData): string {
-  const { capsuleHash, verifiedAtPulse, phikey, kasOk, g16Ok, sigilSvg } = data;
+  const { capsuleHash, verifiedAtPulse, phikey, kasOk, g16Ok, sigilSvg, qrDataUrl, svgHash, receiptHash } = data;
   const { accent, accentSoft, accentGlow } = accentFromHash(capsuleHash);
   const id = `og-${hashStringToInt(capsuleHash).toString(16)}`;
   const sigilClipId = `${id}-sigil-clip`;
+  const qrClipId = `${id}-qr-clip`;
   const ringGradientId = `${id}-ring`;
   const glowId = `${id}-glow`;
   const waveId = `${id}-wave`;
   const badgeGlowId = `${id}-badge-glow`;
+  const sealId = `${id}-seal`;
+  const hasKas = typeof kasOk === "boolean";
+  const sealSeed = `${capsuleHash}|${svgHash ?? ""}|${verifiedAtPulse}`;
+  const seal = sealPlacement(sealSeed);
 
   const phiShort = shortPhiKey(phikey);
-  const valuationSnapshot = data.valuation ? { ...data.valuation } : undefined;
+  const valuationSnapshot = data.valuation ? { ...data.valuation } : data.receipt?.valuation ? { ...data.receipt.valuation } : undefined;
   if (valuationSnapshot && "valuationHash" in valuationSnapshot) {
     delete (valuationSnapshot as { valuationHash?: string }).valuationHash;
   }
   const valuationHash = data.valuation?.valuationHash ?? data.receipt?.valuationHash;
   const valuationPhi = formatPhiValue(valuationSnapshot?.phiValue);
   const valuationUsd = formatUsdValue(valuationSnapshot?.usdValue);
-  const valuationModeLabel =
-    valuationSnapshot?.mode === "receive" ? "RECEIVE" : valuationSnapshot?.mode === "origin" ? "ORIGIN" : null;
+  const isReceiveMode = valuationSnapshot?.mode === "receive";
+  const valuationModeLabel = isReceiveMode ? "RECEIVE" : "ORIGIN";
+  const headlineText = isReceiveMode ? "VERIFIED RECEIVE" : "VERIFIED ORIGIN";
 
   const receiptPayload =
     data.receipt ??
@@ -110,11 +146,11 @@ export function buildVerifiedCardSvg(data: VerifiedCardData): string {
         }
       : undefined);
   const receiptMeta: Record<string, unknown> = {};
-  const bundleHash = receiptPayload?.bundleHash ?? data.bundleHash;
+  const bundleHashValue = receiptPayload?.bundleHash ?? data.bundleHash;
   const zkPoseidonHash = receiptPayload?.zkPoseidonHash ?? data.zkPoseidonHash;
   const verifier = receiptPayload?.verifier ?? data.verifier;
   const verificationVersion = receiptPayload?.verificationVersion ?? data.verificationVersion;
-  if (bundleHash) receiptMeta.bundleHash = bundleHash;
+  if (bundleHashValue) receiptMeta.bundleHash = bundleHashValue;
   if (zkPoseidonHash) receiptMeta.zkPoseidonHash = zkPoseidonHash;
   if (verifier) receiptMeta.verifier = verifier;
   if (verificationVersion) receiptMeta.verificationVersion = verificationVersion;
@@ -128,25 +164,25 @@ export function buildVerifiedCardSvg(data: VerifiedCardData): string {
     receiptHash: data.receiptHash,
     valuation: valuationSnapshot,
     valuationHash,
-    bundleHash,
+    bundleHash: bundleHashValue,
     zkPoseidonHash,
     verifiedAtPulse: receiptPayload?.verifiedAtPulse ?? verifiedAtPulse,
   });
   const auditJson = JSON.stringify(auditMeta);
 
   return `
-<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HEIGHT}">
+<svg xmlns="http://www.w3.org/2000/svg" width="${VERIFIED_CARD_W}" height="${VERIFIED_CARD_H}" viewBox="0 0 ${VERIFIED_CARD_W} ${VERIFIED_CARD_H}">
   <metadata id="kai-verified-receipt"><![CDATA[${receiptJson}]]></metadata>
   <metadata id="kai-verified-audit"><![CDATA[${auditJson}]]></metadata>
   <defs>
-    <linearGradient id="${id}-bg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#05060A" />
-      <stop offset="55%" stop-color="#07080C" />
-      <stop offset="100%" stop-color="#0B1222" />
+    <linearGradient id="${id}-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0E1118" />
+      <stop offset="55%" stop-color="#0B0E14" />
+      <stop offset="100%" stop-color="#141B26" />
     </linearGradient>
     <linearGradient id="${ringGradientId}" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0%" stop-color="${accent}" stop-opacity="0.95" />
-      <stop offset="50%" stop-color="#5fe3ff" stop-opacity="0.45" />
+      <stop offset="50%" stop-color="#9fe2ff" stop-opacity="0.45" />
       <stop offset="100%" stop-color="${accentSoft}" stop-opacity="0.85" />
     </linearGradient>
     <radialGradient id="${waveId}" cx="0.9" cy="0.2" r="0.8">
@@ -169,78 +205,96 @@ export function buildVerifiedCardSvg(data: VerifiedCardData): string {
       </feMerge>
     </filter>
     <clipPath id="${sigilClipId}">
-      <rect x="840" y="210" width="300" height="300" rx="28" />
+      <rect x="810" y="150" width="320" height="320" rx="26" />
+    </clipPath>
+    <clipPath id="${qrClipId}">
+      <rect x="848" y="492" width="264" height="124" rx="16" />
     </clipPath>
     <style>
-      .headline { font: 800 72px "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif; fill: #EEF2FF; }
-      .subhead { font: 600 30px "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif; fill: #DDE6FF; }
-      .phikey { font: 700 44px "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif; fill: #EEF2FF; }
-      .label { font: 800 34px "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif; fill: #DDE6FF; }
-      .value { font: 700 28px "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif; fill: #EEF2FF; }
-      .mode-label { font: 800 22px "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif; fill: #9FE7FF; letter-spacing: 0.08em; }
-      .footer { font: 700 30px "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif; fill: #EEF2FF; }
-      .footer-right { font: 600 22px "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif; fill: #B9C7E6; }
+      .headline { font: 800 56px "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif; letter-spacing: 0.12em; fill: #F4F6FB; }
+      .subhead { font: 600 26px "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif; fill: #DEE6F5; }
+      .phikey { font: 700 38px "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif; fill: #F2F5FB; }
+      .label { font: 700 22px "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif; fill: #C4D0E6; letter-spacing: 0.08em; }
+      .value { font: 700 30px "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif; fill: #F2F5FB; }
+      .mode-label { font: 800 18px "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif; fill: #94BCEB; letter-spacing: 0.24em; }
+      .micro { font: 500 12px "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif; fill: #8FA3C5; letter-spacing: 0.12em; }
+      .seal { font: 700 16px "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif; letter-spacing: 0.24em; }
     </style>
   </defs>
 
-  <rect width="${WIDTH}" height="${HEIGHT}" fill="url(#${id}-bg)" />
+  <rect width="${VERIFIED_CARD_W}" height="${VERIFIED_CARD_H}" fill="url(#${id}-bg)" />
 
-  <rect x="0" y="0" width="${WIDTH}" height="${HEIGHT}" fill="url(#${waveId})" opacity="0.35" />
+  <rect x="0" y="0" width="${VERIFIED_CARD_W}" height="${VERIFIED_CARD_H}" fill="url(#${waveId})" opacity="0.25" />
 
-  <g opacity="0.18" stroke="#C9D6FF" stroke-width="1" fill="none">
-    <path d="M620 120 C 760 60 960 90 1140 40" />
-    <path d="M640 200 C 760 140 980 170 1160 120" />
-    <path d="M660 280 C 820 240 1020 250 1180 210" />
-    <path d="M680 360 C 850 330 1040 330 1200 300" />
-    <path d="M700 440 C 870 420 1040 420 1200 410" />
+  <rect x="26" y="26" width="1148" height="578" rx="26" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="1.8" />
+  <rect x="40" y="40" width="1120" height="550" rx="22" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="1.2" />
+
+  <g opacity="0.12" stroke="#C9D6FF" stroke-width="1" fill="none">
+    <path d="M420 120 C 560 60 760 90 980 40" />
+    <path d="M440 200 C 560 140 780 170 1000 120" />
+    <path d="M460 280 C 640 240 820 250 1040 210" />
+    <path d="M480 360 C 670 330 860 330 1080 300" />
+    <path d="M500 440 C 690 420 860 420 1100 410" />
   </g>
 
-  <circle cx="240" cy="315" r="172" fill="none" stroke="url(#${ringGradientId})" stroke-width="8" filter="url(#${glowId})" />
-  <circle cx="240" cy="315" r="135" fill="rgba(11,15,24,0.92)" stroke="rgba(255,255,255,0.05)" />
+  <circle cx="220" cy="220" r="92" fill="none" stroke="url(#${ringGradientId})" stroke-width="6" filter="url(#${glowId})" />
+  <circle cx="220" cy="220" r="72" fill="rgba(11,14,20,0.85)" stroke="rgba(255,255,255,0.08)" />
   <image
-    x="160" y="235"
-    width="160" height="160"
+    x="180" y="180"
+    width="80" height="80"
     href="${phiLogoDataUri}"
     preserveAspectRatio="xMidYMid meet"
   />
 
-  <text class="headline" x="420" y="120">VERIFIED</text>
-  ${valuationModeLabel ? `<text class="mode-label" x="420" y="155">${valuationModeLabel}</text>` : ""}
-  <g transform="translate(800 78)">
-    <circle cx="28" cy="28" r="26" fill="rgba(14,40,24,0.9)" stroke="#4FFFA2" stroke-width="2" filter="url(#${badgeGlowId})" />
-    <path d="${headerCheckPath()}" fill="none" stroke="#4FFFA2" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" />
+  <text class="headline" x="320" y="120">${headlineText}</text>
+  <text class="subhead" x="320" y="162">Steward Verified @ Pulse ${verifiedAtPulse}</text>
+  ${valuationModeLabel ? `<text class="mode-label" x="320" y="196">${valuationModeLabel}</text>` : ""}
+
+  <text class="label" x="320" y="260">ΦKEY</text>
+  <text class="phikey" x="320" y="300">${phiShort}</text>
+
+  ${hasKas ? `<text class="label" x="320" y="350">KAS</text>` : ""}
+  ${
+    hasKas
+      ? `<g transform="translate(380 324)" filter="url(#${badgeGlowId})">
+    <rect width="54" height="54" rx="14" fill="rgba(10,16,22,0.9)" stroke="${kasOk ? "#38E4B6" : "#C86B6B"}" stroke-width="2" />
+    <path d="${badgeMark(kasOk)}" fill="none" stroke="${kasOk ? "#38E4B6" : "#C86B6B"}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" />
+  </g>`
+      : ""
+  }
+
+  <text class="label" x="${hasKas ? 470 : 320}" y="350">G16</text>
+  <g transform="translate(${hasKas ? 530 : 380} 324)" filter="url(#${badgeGlowId})">
+    <rect width="54" height="54" rx="14" fill="rgba(10,16,22,0.9)" stroke="${g16Ok ? "#38E4B6" : "#C86B6B"}" stroke-width="2" />
+    <path d="${badgeMark(g16Ok)}" fill="none" stroke="${g16Ok ? "#38E4B6" : "#C86B6B"}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" />
   </g>
 
-  <text class="subhead" x="420" y="215" textLength="360" lengthAdjust="spacingAndGlyphs">
-    Steward Verified @ Pulse ${verifiedAtPulse} • ΦKey
-  </text>
-  <text class="phikey" x="420" y="285">${phiShort}</text>
+  <text class="label" x="320" y="420">Φ VALUE</text>
+  <text class="value" x="320" y="456">${valuationPhi}</text>
 
-  <text class="label" x="420" y="360">KAS</text>
-  <g transform="translate(500 326)" filter="url(#${badgeGlowId})">
-    <rect width="64" height="64" rx="16" fill="rgba(10,16,22,0.9)" stroke="#35F2B8" stroke-width="2" />
-    <path d="${badgeMark(kasOk)}" fill="none" stroke="${kasOk ? "#35F2B8" : "#FF6F6F"}" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" />
+  <text class="label" x="320" y="498">USD VALUE</text>
+  <text class="value" x="320" y="534">${valuationUsd}</text>
+
+  <g id="${sealId}" transform="translate(${seal.x} ${seal.y}) rotate(${seal.rotation})">
+    <circle cx="0" cy="0" r="44" fill="rgba(12,14,18,0.72)" stroke="${accent}" stroke-width="2" filter="url(#${glowId})" stroke-dasharray="${seal.dash}" />
+    <circle cx="0" cy="0" r="30" fill="none" stroke="${accentSoft}" stroke-width="1.2" opacity="0.7" />
+    <text x="0" y="-2" text-anchor="middle" class="seal" fill="${accent}">VERIFIED</text>
+    <text x="0" y="16" text-anchor="middle" class="seal" fill="${accentSoft}">${shortHash(capsuleHash, 6, 4)}</text>
   </g>
 
-  <text class="label" x="620" y="360">G16</text>
-  <g transform="translate(700 326)" filter="url(#${badgeGlowId})">
-    <rect width="64" height="64" rx="16" fill="rgba(10,16,22,0.9)" stroke="#35F2B8" stroke-width="2" />
-    <path d="${badgeMark(g16Ok)}" fill="none" stroke="${g16Ok ? "#35F2B8" : "#FF6F6F"}" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" />
-  </g>
-
-  <text class="label" x="420" y="430">Φ VALUE (MINTED)</text>
-  <text class="value" x="420" y="468">${valuationPhi}</text>
-
-  <text class="label" x="420" y="510">USD VALUE (MINTED)</text>
-  <text class="value" x="420" y="546">${valuationUsd}</text>
-
-  <rect x="828" y="198" width="324" height="324" rx="34" fill="rgba(8,12,18,0.75)" stroke="${accent}" stroke-width="3" filter="url(#${glowId})" />
-  <rect x="840" y="210" width="300" height="300" rx="28" fill="rgba(10,14,20,0.65)" />
+  <rect x="796" y="136" width="348" height="348" rx="30" fill="rgba(6,8,12,0.75)" stroke="${accent}" stroke-width="2.4" filter="url(#${glowId})" />
+  <rect x="810" y="150" width="320" height="320" rx="26" fill="rgba(10,14,20,0.6)" />
   ${sigilImageMarkup(sigilSvg, sigilClipId)}
 
-  <rect x="40" y="560" width="1120" height="54" rx="20" fill="rgba(0,0,0,0.45)" stroke="rgba(255,255,255,0.12)" />
-  <text class="footer" x="70" y="596">Proof of Breath™ — VERIFIED</text>
-  <text class="footer-right" x="1110" y="596" text-anchor="end">phi.network</text>
+  <rect x="836" y="484" width="288" height="140" rx="18" fill="rgba(10,12,18,0.62)" stroke="rgba(255,255,255,0.12)" />
+  ${qrImageMarkup(qrDataUrl, qrClipId)}
+
+  <g opacity="0.9">
+    <text class="micro" x="80" y="570">BUNDLE ${shortHash(bundleHashValue)}</text>
+    <text class="micro" x="80" y="588">RECEIPT ${shortHash(receiptHash)}</text>
+    <text class="micro" x="320" y="570">SVG ${shortHash(svgHash)}</text>
+    <text class="micro" x="320" y="588">CAPSULE ${shortHash(capsuleHash)}</text>
+  </g>
 </svg>
   `.trim();
 }
