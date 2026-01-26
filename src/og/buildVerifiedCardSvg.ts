@@ -173,13 +173,6 @@ export function buildVerifiedCardSvg(data: VerifiedCardData): string {
   const hasKas = typeof kasOk === "boolean";
   const sealSeed = `${capsuleHash}|${svgHash ?? ""}|${verifiedAtPulse}`;
   const seal = sealPlacement(sealSeed);
-  const proofSeal = buildProofOfBreathSeal({
-    bundleHash: data.bundleHash,
-    capsuleHash,
-    svgHash,
-    receiptHash,
-    pulse: verifiedAtPulse,
-  });
 
   const phiShort = shortPhiKey(phikey);
   const valuationSnapshot = data.valuation ? { ...data.valuation } : data.receipt?.valuation ? { ...data.receipt.valuation } : undefined;
@@ -220,6 +213,14 @@ export function buildVerifiedCardSvg(data: VerifiedCardData): string {
   if (data.verificationSig) receiptMeta.verificationSig = data.verificationSig;
   const receiptJson = JSON.stringify(receiptMeta);
 
+  const proofSeal = buildProofOfBreathSeal({
+    bundleHash: bundleHashValue,
+    capsuleHash,
+    svgHash,
+    receiptHash,
+    pulse: verifiedAtPulse,
+  });
+
   const auditMeta = dropUndefined({
     receiptHash: data.receiptHash,
     valuation: valuationSnapshot,
@@ -232,9 +233,9 @@ export function buildVerifiedCardSvg(data: VerifiedCardData): string {
 
   const proofSealLabel = "PROOF OF BREATH™";
   const proofSealMicro = `${shortHash(capsuleHash, 6, 4)} · ${shortHash(bundleHashValue, 6, 4)}`;
-  const proofSealSize = 260;
+  const proofSealSize = 240;
   const proofSealX = 600;
-  const proofSealY = 320;
+  const proofSealY = 312;
   const proofSealMarkup = proofSeal.toSvg(proofSealX, proofSealY, proofSealSize, id, proofSealLabel, proofSealMicro);
   const sigilFrameX = 796;
   const sigilFrameY = 136;
@@ -345,18 +346,22 @@ export function buildVerifiedCardSvg(data: VerifiedCardData): string {
   ${hasKas ? `<text class="label" x="320" y="${badgeLabelY}">KAS</text>` : ""}
   ${
     hasKas
-      ? `<g transform="translate(380 ${badgeLabelY - 26})" filter="url(#${badgeGlowId})">
+      ? `<g transform="translate(368 ${badgeLabelY - 22})" filter="url(#${badgeGlowId})">
     <rect width="54" height="54" rx="14" fill="rgba(10,16,22,0.9)" stroke="${kasOk ? "#38E4B6" : "#C86B6B"}" stroke-width="2" />
-    <path d="${badgeMark(kasOk)}" fill="none" stroke="${kasOk ? "#38E4B6" : "#C86B6B"}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" />
+    <g transform="translate(13.5 13.5) scale(0.5)">
+      <path d="${badgeMark(kasOk)}" fill="none" stroke="${kasOk ? "#38E4B6" : "#C86B6B"}" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" />
+    </g>
   </g>`
       : ""
   }
 
   <text class="label" x="${hasKas ? 470 : 320}" y="${badgeLabelY}">G16</text>
-  <g transform="translate(${hasKas ? 520 : 370} ${badgeLabelY - 22})" filter="url(#${badgeGlowId})">
+  <g transform="translate(${hasKas ? 508 : 358} ${badgeLabelY - 22})" filter="url(#${badgeGlowId})">
     <g transform="translate(4 4) scale(0.85)">
       <rect width="54" height="54" rx="14" fill="rgba(10,16,22,0.9)" stroke="${g16Ok ? "#38E4B6" : "#C86B6B"}" stroke-width="1.8" />
-      <path d="${badgeMark(g16Ok)}" fill="none" stroke="${g16Ok ? "#38E4B6" : "#C86B6B"}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
+      <g transform="translate(13.5 13.5) scale(0.5)">
+        <path d="${badgeMark(g16Ok)}" fill="none" stroke="${g16Ok ? "#38E4B6" : "#C86B6B"}" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" />
+      </g>
     </g>
   </g>
 
