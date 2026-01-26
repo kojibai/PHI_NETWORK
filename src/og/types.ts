@@ -5,12 +5,14 @@ export type VerifiedCardValuation = ValuationSnapshot & { valuationHash?: string
 
 export type VerifiedCardData = {
   capsuleHash: string;
+  svgHash?: string;
   pulse: number;
   verifiedAtPulse: number;
   phikey: string;
   kasOk: boolean;
   g16Ok: boolean;
   verifierSlug?: string;
+  verifierUrl?: string;
   verifier?: string;
   verificationVersion?: string;
   bundleHash?: string;
@@ -20,4 +22,6 @@ export type VerifiedCardData = {
   verificationSig?: VerificationSig;
   sigilSvg?: string;
   valuation?: VerifiedCardValuation;
+  proofBundleJson?: string;
+  qrDataUrl?: string;
 };

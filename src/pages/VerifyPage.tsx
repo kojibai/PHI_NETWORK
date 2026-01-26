@@ -32,6 +32,7 @@ import {
   ZK_STATEMENT_DOMAIN,
   type VerificationSource,
   type ProofCapsuleV1,
+  type NormalizedBundle,
   type ProofBundleLike,
 } from "../components/KaiVoh/verifierProof";
 import { extractProofBundleMetaFromSvg, type ProofBundleMeta } from "../utils/sigilMetadata";
@@ -54,6 +55,7 @@ import {
 import { assertionToJson, verifyOwnerWebAuthnAssertion } from "../utils/webauthnOwner";
 import { deriveOwnerPhiKeyFromReceive, type OwnerKeyDerivation } from "../utils/ownerPhiKey";
 import { base64UrlDecode, base64UrlEncode, sha256Hex } from "../utils/sha256";
+import { readPngTextChunk } from "../utils/pngChunks";
 import { getKaiPulseEternalInt } from "../SovereignSolar";
 import { useKaiTicker } from "../hooks/useKaiTicker";
 import { useValuation } from "./SigilPage/useValuation";
@@ -273,6 +275,11 @@ type SharedReceipt = {
   verifiedAtPulse?: number;
 };
 
+type AuditBundlePayload = NormalizedBundle & {
+  verifiedAtPulse?: number;
+  zkVerified?: boolean;
+};
+
 function parseProofCapsule(raw: unknown): ProofCapsuleV1 | null {
   if (!isRecord(raw)) return null;
   if (raw.v !== "KPV-1") return null;
@@ -380,6 +387,19 @@ async function readFileText(file: File): Promise<string> {
   });
 }
 
+async function readFileArrayBuffer(file: File): Promise<ArrayBuffer> {
+  return await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Failed to read file."));
+    reader.onload = () => {
+      const result = reader.result;
+      if (result instanceof ArrayBuffer) resolve(result);
+      else reject(new Error("Failed to read file."));
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+
 function ellipsizeMiddle(s: string, head = 18, tail = 14): string {
   const t = (s || "").trim();
   if (!t) return "—";
@@ -413,6 +433,12 @@ function isSvgFile(file: File): boolean {
   const name = (file.name || "").toLowerCase();
   const type = (file.type || "").toLowerCase();
   return name.endsWith(".svg") || type === "image/svg+xml";
+}
+
+function isPngFile(file: File): boolean {
+  const name = (file.name || "").toLowerCase();
+  const type = (file.type || "").toLowerCase();
+  return name.endsWith(".png") || type === "image/png";
 }
 
 async function copyTextToClipboard(text: string): Promise<boolean> {
@@ -674,6 +700,7 @@ function Modal(props: { open: boolean; title: string; subtitle?: string; onClose
 
 export default function VerifyPage(): ReactElement {
   const fileRef = useRef<HTMLInputElement | null>(null);
+  const pngFileRef = useRef<HTMLInputElement | null>(null);
   const lastAutoScanKeyRef = useRef<string | null>(null);
 
   const slugRaw = useMemo(() => readSlugFromLocation(), []);
@@ -1084,18 +1111,54 @@ export default function VerifyPage(): ReactElement {
     [slug],
   );
 
+  const onPickReceiptPng = useCallback(
+    async (file: File): Promise<void> => {
+      if (!isPngFile(file)) {
+        setResult({ status: "error", message: "Select a receipt PNG with embedded proof metadata.", slug });
+        return;
+      }
+      try {
+        const buffer = await readFileArrayBuffer(file);
+        const text = readPngTextChunk(new Uint8Array(buffer), "phi_proof_bundle");
+        if (!text) {
+          setResult({ status: "error", message: "Receipt PNG is missing embedded proof metadata.", slug });
+          return;
+        }
+        const parsed = JSON.parse(text) as unknown;
+        const receipt = buildSharedReceiptFromObject(parsed);
+        if (!receipt) {
+          setResult({ status: "error", message: "Receipt PNG contains an invalid proof bundle.", slug });
+          return;
+        }
+        setSharedReceipt(receipt);
+        setSvgText("");
+        setResult({ status: "idle" });
+        setNotice("Receipt PNG loaded.");
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Failed to read receipt PNG.";
+        setResult({ status: "error", message: msg, slug });
+      }
+    },
+    [slug],
+  );
+
   const handleFiles = useCallback(
     (files: FileList | null | undefined): void => {
       if (!files || files.length === 0) return;
       const arr = Array.from(files);
+      const png = arr.find(isPngFile);
+      if (png) {
+        void onPickReceiptPng(png);
+        return;
+      }
       const svg = arr.find(isSvgFile);
       if (!svg) {
-        setResult({ status: "error", message: "Drop/select a sealed .svg file.", slug });
+        setResult({ status: "error", message: "Drop/select a sealed .svg file or receipt PNG.", slug });
         return;
       }
       void onPickFile(svg);
     },
-    [onPickFile, slug],
+    [onPickFile, onPickReceiptPng, slug],
   );
 
   const runOwnerAuthFlow = useCallback(
@@ -2268,61 +2331,6 @@ if (verified && typeof cacheBundleHash === "string" && cacheBundleHash.trim().le
     return `${zkStatementValue.publicInputsContract.arity} • ${zkStatementValue.publicInputsContract.invariant}`;
   }, [zkStatementValue?.publicInputsContract]);
 
-  const verifiedCardData = useMemo<VerifiedCardData | null>(() => {
-    if (result.status !== "ok" || !proofCapsule || !capsuleHash || stewardVerifiedPulse == null) return null;
-    const receiptValue = verificationReceipt ?? embeddedProof?.receipt ?? sharedReceipt?.receipt;
-    const receiptHashValue = receiptHash || embeddedProof?.receiptHash || sharedReceipt?.receiptHash;
-    const verificationSigValue = verificationSig ?? embeddedProof?.verificationSig ?? sharedReceipt?.verificationSig;
-    const valuationValue = valuationSnapshot && valuationHash ? { ...valuationSnapshot, valuationHash } : undefined;
-    return {
-      capsuleHash,
-      pulse: proofCapsule.pulse,
-      verifiedAtPulse: stewardVerifiedPulse,
-      phikey: effectivePhiKey !== "—" ? effectivePhiKey : proofCapsule.phiKey,
-      kasOk: sealKAS === "valid",
-      g16Ok: sealZK === "valid",
-      verifierSlug: proofCapsule.verifierSlug,
-      verifier: verificationSource,
-      verificationVersion,
-      bundleHash: bundleHash || undefined,
-      zkPoseidonHash: zkMeta?.zkPoseidonHash ?? undefined,
-      receipt: receiptValue ?? undefined,
-      receiptHash: receiptHashValue || undefined,
-      verificationSig: verificationSigValue ?? undefined,
-      sigilSvg: svgText.trim() ? svgText : undefined,
-      valuation: valuationValue,
-    };
-  }, [
-    bundleHash,
-    capsuleHash,
-    embeddedProof?.receipt,
-    embeddedProof?.receiptHash,
-    embeddedProof?.verificationSig,
-    proofCapsule,
-    receiptHash,
-    result.status,
-    effectivePhiKey,
-    sealKAS,
-    sealZK,
-    sharedReceipt?.receipt,
-    sharedReceipt?.receiptHash,
-    sharedReceipt?.verificationSig,
-    stewardVerifiedPulse,
-    svgText,
-    valuationHash,
-    valuationSnapshot,
-    verificationReceipt,
-    verificationSig,
-    verificationSource,
-    verificationVersion,
-    zkMeta?.zkPoseidonHash,
-  ]);
-
-  const onDownloadVerifiedCard = useCallback(async () => {
-    if (!verifiedCardData) return;
-    await downloadVerifiedCardPng(verifiedCardData);
-  }, [verifiedCardData]);
-
   const onSignVerification = useCallback(async () => {
     if (!proofCapsule || !receiptHash) return;
     if (verificationSigBusy) return;
@@ -2515,8 +2523,8 @@ React.useEffect(() => {
   };
 }, [bundleHash, cacheVerificationVersion, zkMeta?.zkPoseidonHash]);
 
-  const auditBundleText = useMemo(() => {
-    if (!proofCapsule) return "";
+  const auditBundlePayload = useMemo<AuditBundlePayload | null>(() => {
+    if (!proofCapsule) return null;
     const transport = {
       shareUrl: embeddedProof?.transport?.shareUrl ?? embeddedProof?.shareUrl,
       verifierUrl: embeddedProof?.transport?.verifierUrl ?? proofVerifierUrl,
@@ -2577,8 +2585,13 @@ React.useEffect(() => {
       transport,
     });
 
-    const withZkVerified = typeof zkVerified === "boolean" ? { ...normalized, zkVerified } : normalized;
-    return JSON.stringify(withZkVerified, null, 2);
+    const verifiedAtPulseValue =
+      typeof transport.verifiedAtPulse === "number" && Number.isFinite(transport.verifiedAtPulse)
+        ? transport.verifiedAtPulse
+        : stewardVerifiedPulse ?? undefined;
+    const withPulse =
+      typeof verifiedAtPulseValue === "number" ? { ...normalized, verifiedAtPulse: verifiedAtPulseValue } : normalized;
+    return typeof zkVerified === "boolean" ? { ...withPulse, zkVerified } : withPulse;
   }, [
     proofCapsule,
     capsuleHash,
@@ -2610,6 +2623,81 @@ React.useEffect(() => {
     verificationSig,
     zkVerifiedCached,
   ]);
+
+  const auditBundleText = useMemo(() => {
+    if (!auditBundlePayload) return "";
+    return JSON.stringify(auditBundlePayload, null, 2);
+  }, [auditBundlePayload]);
+
+  const proofBundleJson = useMemo(() => {
+    if (!auditBundlePayload) return "";
+    return JSON.stringify(auditBundlePayload);
+  }, [auditBundlePayload]);
+
+  const verifiedCardData = useMemo<VerifiedCardData | null>(() => {
+    if (result.status !== "ok" || !proofCapsule || !capsuleHash || stewardVerifiedPulse == null) return null;
+    const receiptValue = verificationReceipt ?? embeddedProof?.receipt ?? sharedReceipt?.receipt;
+    const receiptHashValue = receiptHash || embeddedProof?.receiptHash || sharedReceipt?.receiptHash;
+    const verificationSigValue = verificationSig ?? embeddedProof?.verificationSig ?? sharedReceipt?.verificationSig;
+    const valuationValue = valuationSnapshot && valuationHash ? { ...valuationSnapshot, valuationHash } : undefined;
+    const ownerPhiKeyValue = effectiveOwnerPhiKey ?? effectivePhiKey;
+    const verifierUrlValue = proofVerifierUrl || currentVerifyUrl;
+    return {
+      capsuleHash,
+      svgHash: svgHash || undefined,
+      pulse: proofCapsule.pulse,
+      verifiedAtPulse: stewardVerifiedPulse,
+      phikey: ownerPhiKeyValue && ownerPhiKeyValue !== "—" ? ownerPhiKeyValue : proofCapsule.phiKey,
+      kasOk: sealKAS === "valid",
+      g16Ok: sealZK === "valid",
+      verifierSlug: proofCapsule.verifierSlug,
+      verifierUrl: verifierUrlValue || undefined,
+      verifier: verificationSource,
+      verificationVersion,
+      bundleHash: bundleHash || undefined,
+      zkPoseidonHash: zkMeta?.zkPoseidonHash ?? undefined,
+      receipt: receiptValue ?? undefined,
+      receiptHash: receiptHashValue || undefined,
+      verificationSig: verificationSigValue ?? undefined,
+      sigilSvg: svgText.trim() ? svgText : undefined,
+      valuation: valuationValue,
+      proofBundleJson: proofBundleJson || undefined,
+    };
+  }, [
+    bundleHash,
+    capsuleHash,
+    currentVerifyUrl,
+    embeddedProof?.receipt,
+    embeddedProof?.receiptHash,
+    embeddedProof?.verificationSig,
+    effectiveOwnerPhiKey,
+    proofCapsule,
+    proofBundleJson,
+    proofVerifierUrl,
+    receiptHash,
+    result.status,
+    effectivePhiKey,
+    sealKAS,
+    sealZK,
+    sharedReceipt?.receipt,
+    sharedReceipt?.receiptHash,
+    sharedReceipt?.verificationSig,
+    stewardVerifiedPulse,
+    svgHash,
+    svgText,
+    valuationHash,
+    valuationSnapshot,
+    verificationReceipt,
+    verificationSig,
+    verificationSource,
+    verificationVersion,
+    zkMeta?.zkPoseidonHash,
+  ]);
+
+  const onDownloadVerifiedCard = useCallback(async () => {
+    if (!verifiedCardData) return;
+    await downloadVerifiedCardPng(verifiedCardData);
+  }, [verifiedCardData]);
 
   const receiptJson = useMemo(() => {
     if (!proofCapsule) return "";
@@ -2970,6 +3058,16 @@ React.useEffect(() => {
                       e.currentTarget.value = "";
                     }}
                   />
+                  <input
+                    ref={pngFileRef}
+                    className="vfile"
+                    type="file"
+                    accept=".png,image/png"
+                    onChange={(e) => {
+                      handleFiles(e.currentTarget.files);
+                      e.currentTarget.value = "";
+                    }}
+                  />
 
                   <div className="vgrid-2 vgrid-2--inhale">
                     {/* Control FIRST on mobile (CSS reorders) */}
@@ -2990,6 +3088,21 @@ React.useEffect(() => {
                           <span className="vdrop-mark-txt">ΦKey</span>
                         </span>
                       </button>
+                      <button
+                        type="button"
+                        className="vdrop vdrop--receipt"
+                        aria-label="Verify receipt PNG"
+                        title="Verify Receipt PNG"
+                        onClick={() => pngFileRef.current?.click()}
+                      >
+                        <span className="vdrop-ic" aria-hidden="true">
+                          <span className="vdrop-ink">PNG</span>
+                        </span>
+                        <span className="vdrop-txt">Verify Receipt</span>
+                        <span className="vdrop-mark">
+                          <span className="vdrop-mark-txt">Receipt PNG</span>
+                        </span>
+                      </button>
 
                       <div className="vcontrol-row" aria-label="Quick actions">
                         <IconBtn icon="⟡" title={busy ? "Verifying…" : "Verify"} ariaLabel="Verify" onClick={() => void runVerify()} disabled={busy} kind="primary" />
@@ -3005,7 +3118,7 @@ React.useEffect(() => {
                             setResult({ status: "idle" });
                             setNotice("");
                           }}
-                          disabled={!svgText.trim()}
+                          disabled={!svgText.trim() && !sharedReceipt}
                         />
                       </div>
                       {hasKASOwnerSig ? (
@@ -3041,7 +3154,7 @@ React.useEffect(() => {
                   </div>
 
                   <div className="vdropzone-hint" aria-hidden="true">
-                    Drag & drop ΦKey anywhere in this panel
+                    Drag & drop ΦKey or receipt PNG anywhere in this panel
                   </div>
                 </div>
 
@@ -3214,29 +3327,27 @@ React.useEffect(() => {
                   </div>
                 </div>
 
+                {result.status === "ok" && displayPhi != null ? (
+                  <div className="vmini-grid vmini-grid--2 vvaluation-dashboard" aria-label="Live valuation">
+                    <MiniField
+                      label={displaySource === "balance" ? "Glyph Φ balance" : displaySource === "embedded" ? "Glyph Φ value" : "Live Φ value"}
+                      value={fmtPhi(displayPhi)}
+                      onClick={() => openChartPopover("phi")}
+                      ariaLabel="Open live chart for Φ value"
+                    />
+                    <MiniField
+                      label={displaySource === "balance" ? "Glyph USD balance" : displaySource === "embedded" ? "Glyph USD value" : "Live USD value"}
+                      value={displayUsd == null ? "—" : fmtUsd(displayUsd)}
+                      onClick={displayUsd == null ? undefined : () => openChartPopover("usd")}
+                      ariaLabel="Open live chart for USD value"
+                    />
+                  </div>
+                ) : null}
 
-
-              {result.status === "ok" && displayPhi != null ? (
-                <div className="vmini-grid vmini-grid--2 vvaluation-dashboard" aria-label="Live valuation">
-                  <MiniField
-                    label={displaySource === "balance" ? "Glyph Φ balance" : displaySource === "embedded" ? "Glyph Φ value" : "Live Φ value"}
-                    value={fmtPhi(displayPhi)}
-                    onClick={() => openChartPopover("phi")}
-                    ariaLabel="Open live chart for Φ value"
-                  />
-                  <MiniField
-                    label={displaySource === "balance" ? "Glyph USD balance" : displaySource === "embedded" ? "Glyph USD value" : "Live USD value"}
-                    value={displayUsd == null ? "—" : fmtUsd(displayUsd)}
-                    onClick={displayUsd == null ? undefined : () => openChartPopover("usd")}
-                    ariaLabel="Open live chart for USD value"
-                  />
-                </div>
-              ) : null}
-
-              <div className="vfoot" aria-label="Proof actions">
-                <div className="vfoot-left">
-                  <div className="vchip" title="Canonical audit payload">
-                    Audit JSON
+                <div className="vfoot" aria-label="Proof actions">
+                  <div className="vfoot-left">
+                    <div className="vchip" title="Canonical audit payload">
+                      Audit JSON
                     </div>
                   </div>
                   <div className="vfoot-right">

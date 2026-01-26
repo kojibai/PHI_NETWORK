@@ -631,6 +631,10 @@ html.verify-shell, body.verify-shell{
   color: inherit;
   text-align: left;
 }
+.vdrop--receipt{
+  border-color: rgba(136,190,255,0.28);
+  background: linear-gradient(180deg, rgba(118,170,255,0.18), rgba(118,170,255,0.08));
+}
 .vdrop:focus-visible{
   outline: none;
   box-shadow:
@@ -639,6 +643,19 @@ html.verify-shell, body.verify-shell{
 }
 
 .vdrop-ic{ display:grid; place-items:center; }
+.vdrop-ink{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.2);
+  background: rgba(0,0,0,0.18);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+}
 .vphi-ic{ width: 16px; height: 16px; display:block; opacity: 0.95; }
 
 .vdrop-txt{
