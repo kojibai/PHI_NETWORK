@@ -3092,17 +3092,83 @@ React.useEffect(() => {
                       <button
                         type="button"
                         className="vdrop vdrop--receipt"
-                        aria-label="Verify receipt PNG"
-                        title="Verify Receipt PNG"
+                        aria-label="Verify SigilSeal PNG"
+                        title="Verify SigilSeal PNG"
                         onClick={() => pngFileRef.current?.click()}
                       >
-                        <span className="vdrop-ic" aria-hidden="true">
-                          <span className="vdrop-ink">PNG</span>
-                        </span>
-                        <span className="vdrop-txt">Verify Receipt</span>
-                        <span className="vdrop-mark">
-                          <span className="vdrop-mark-txt">Receipt PNG</span>
-                        </span>
+<span className="vdrop-ic" aria-hidden="true">
+  <svg
+    className="vdrop-seal"
+    viewBox="0 0 64 64"
+    width="22"
+    height="22"
+    role="presentation"
+    focusable="false"
+  >
+    {/* Outer ring */}
+    <circle cx="32" cy="32" r="26" fill="none" stroke="currentColor" strokeWidth="2" opacity="0.9" />
+    <circle cx="32" cy="32" r="22" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.55" />
+
+    {/* Ticks */}
+    {Array.from({ length: 16 }).map((_, i) => {
+      const a = (i * Math.PI * 2) / 16;
+      const x1 = 32 + Math.cos(a) * 24;
+      const y1 = 32 + Math.sin(a) * 24;
+      const x2 = 32 + Math.cos(a) * 26;
+      const y2 = 32 + Math.sin(a) * 26;
+      return (
+        <line
+          key={i}
+          x1={x1}
+          y1={y1}
+          x2={x2}
+          y2={y2}
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          opacity="0.85"
+        />
+      );
+    })}
+
+    {/* Inner “breath” rosette */}
+    <path
+      d="M32 16
+         C38 16 44 22 44 28
+         C44 34 38 40 32 40
+         C26 40 20 34 20 28
+         C20 22 26 16 32 16
+         Z"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      opacity="0.8"
+      strokeLinejoin="round"
+    />
+    <path
+      d="M32 22
+         C35.5 22 39 25.5 39 29
+         C39 32.5 35.5 36 32 36
+         C28.5 36 25 32.5 25 29
+         C25 25.5 28.5 22 32 22
+         Z"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      opacity="0.7"
+      strokeLinejoin="round"
+    />
+
+    {/* Center dot */}
+    <circle cx="32" cy="32" r="2.2" fill="currentColor" opacity="0.9" />
+  </svg>
+</span>
+<span className="vdrop-txt">Proof Of Breath™</span>
+<span className="vdrop-mark">
+  <span className="vdrop-mark-txt">Sigil-Seal</span>
+</span>
+
+
                       </button>
 
                       <div className="vcontrol-row" aria-label="Quick actions">
