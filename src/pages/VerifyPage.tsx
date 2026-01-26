@@ -2171,7 +2171,7 @@ if (verified && typeof cacheBundleHash === "string" && cacheBundleHash.trim().le
   const kpiPhiKey = useMemo(() => effectivePhiKey, [effectivePhiKey]);
 
   const provenanceSig = provenanceAuthorSig ?? (!isReceiveGlyph ? ownerAuthorSig : null);
-  const provenanceSigVerifiedValue = provenanceAuthorSig ? provenanceSigVerified : null;
+  const provenanceSigVerifiedValue = provenanceAuthorSig ? provenanceSigVerified : provenanceSig ? true : null;
 
   const ownerAuthSignerPresent = Boolean(effectiveOwnerSig || effectiveReceiveSig);
   const ownerAuthVerifiedValue = useMemo(() => {
