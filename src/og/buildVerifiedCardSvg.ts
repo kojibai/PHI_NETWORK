@@ -129,8 +129,9 @@ export function buildVerifiedCardSvg(data: VerifiedCardData): string {
   const valuationHash = data.valuation?.valuationHash ?? data.receipt?.valuationHash;
   const valuationPhi = formatPhiValue(valuationSnapshot?.phiValue);
   const valuationUsd = formatUsdValue(valuationSnapshot?.usdValue);
-  const valuationModeLabel =
-    valuationSnapshot?.mode === "receive" ? "RECEIVE" : valuationSnapshot?.mode === "origin" ? "ORIGIN" : "ORIGIN";
+  const isReceiveMode = valuationSnapshot?.mode === "receive";
+  const valuationModeLabel = isReceiveMode ? "RECEIVE" : "ORIGIN";
+  const headlineText = isReceiveMode ? "VERIFIED RECEIVE" : "VERIFIED ORIGIN";
 
   const receiptPayload =
     data.receipt ??
@@ -245,7 +246,7 @@ export function buildVerifiedCardSvg(data: VerifiedCardData): string {
     preserveAspectRatio="xMidYMid meet"
   />
 
-  <text class="headline" x="320" y="120">VERIFIED ORIGIN</text>
+  <text class="headline" x="320" y="120">${headlineText}</text>
   <text class="subhead" x="320" y="162">Steward Verified @ Pulse ${verifiedAtPulse}</text>
   ${valuationModeLabel ? `<text class="mode-label" x="320" y="196">${valuationModeLabel}</text>` : ""}
 
