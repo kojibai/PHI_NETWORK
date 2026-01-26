@@ -2,6 +2,7 @@ import phiSvg from "../assets/phi.svg?raw";
 import type { VerifiedCardData } from "./types";
 import { sanitizeSigilSvg, svgToDataUri } from "./sigilEmbed";
 import { currency as fmtPhi, usd as fmtUsd } from "../components/valuation/display";
+import { buildProofOfBreathSeal } from "./proofOfBreathSeal";
 
 export const VERIFIED_CARD_W = 1200;
 export const VERIFIED_CARD_H = 630;
@@ -72,16 +73,16 @@ function sigilImageMarkup(sigilSvg: string | undefined, clipId: string): string 
   `;
 }
 
-function qrImageMarkup(qrDataUrl: string | undefined, clipId: string): string {
+function qrImageMarkup(qrDataUrl: string | undefined, clipId: string, x: number, y: number): string {
   if (!qrDataUrl) {
     return `
-      <rect x="848" y="492" width="264" height="124" rx="16" fill="rgba(10,12,18,0.7)" stroke="rgba(255,255,255,0.08)" />
-      <text x="980" y="564" text-anchor="middle" font-size="18" font-weight="600" fill="#B7C6E3">QR unavailable</text>
+      <rect x="${x}" y="${y}" width="264" height="124" rx="16" fill="rgba(10,12,18,0.7)" stroke="rgba(255,255,255,0.08)" />
+      <text x="${x + 132}" y="${y + 72}" text-anchor="middle" font-size="18" font-weight="600" fill="#B7C6E3">QR unavailable</text>
     `;
   }
   return `
     <image
-      x="864" y="500"
+      x="${x + 16}" y="${y + 8}"
       width="232" height="108"
       href="${qrDataUrl}"
       preserveAspectRatio="xMidYMid meet"
@@ -106,6 +107,57 @@ function sealPlacement(seedValue: string): { x: number; y: number; rotation: num
   return { x: 1008 + offsetX, y: 92 + offsetY, rotation, dash: `${dashA} ${dashB}` };
 }
 
+function sealBrandIcon(x: number, y: number, palette: { primary: string; accent: string }): string {
+  return `
+    <g transform="translate(${x} ${y})">
+      <circle cx="0" cy="0" r="6" fill="none" stroke="${palette.primary}" stroke-width="1.2" />
+      <circle cx="0" cy="0" r="1.8" fill="${palette.accent}" />
+    </g>
+  `;
+}
+
+function ornamentMarkup(
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  palette: { primary: string; secondary: string; accent: string },
+  geometry: { tickCount: number; polygonSides: number },
+): string {
+  const inset = 16;
+  const left = x + inset;
+  const right = x + width - inset;
+  const top = y + inset;
+  const bottom = y + height - inset;
+  const cx = x + width - inset - 24;
+  const cy = y + inset + 24;
+  const ticks = Array.from({ length: Math.min(geometry.tickCount, 18) }).map((_, idx) => {
+    const t = (idx / Math.min(geometry.tickCount, 18)) * Math.PI * 0.6 + Math.PI * 1.2;
+    const inner = 18;
+    const outer = 26;
+    const x1 = cx + Math.cos(t) * inner;
+    const y1 = cy + Math.sin(t) * inner;
+    const x2 = cx + Math.cos(t) * outer;
+    const y2 = cy + Math.sin(t) * outer;
+    return `<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" stroke="${palette.accent}" stroke-width="0.9" opacity="0.5" />`;
+  });
+  const poly = Array.from({ length: geometry.polygonSides }).map((_, idx) => {
+    const t = (idx / geometry.polygonSides) * Math.PI * 2 - Math.PI / 2;
+    const px = cx + Math.cos(t) * 12;
+    const py = cy + Math.sin(t) * 12;
+    return `${idx === 0 ? "M" : "L"}${px.toFixed(2)} ${py.toFixed(2)}`;
+  });
+  return `
+    <g opacity="0.6">
+      <path d="M ${left} ${top} L ${left + 36} ${top} L ${left + 46} ${top + 10}" stroke="${palette.secondary}" stroke-width="1" fill="none" />
+      <path d="M ${right} ${bottom} L ${right - 32} ${bottom} L ${right - 42} ${bottom - 12}" stroke="${palette.secondary}" stroke-width="1" fill="none" />
+      <circle cx="${cx}" cy="${cy}" r="20" fill="none" stroke="${palette.primary}" stroke-width="1" opacity="0.5" />
+      ${ticks.join("\n")}
+      <path d="${poly.join(" ")} Z" fill="none" stroke="${palette.primary}" stroke-width="0.9" opacity="0.55" />
+    </g>
+  `;
+}
+
 export function buildVerifiedCardSvg(data: VerifiedCardData): string {
   const { capsuleHash, verifiedAtPulse, phikey, kasOk, g16Ok, sigilSvg, qrDataUrl, svgHash, receiptHash } = data;
   const { accent, accentSoft, accentGlow } = accentFromHash(capsuleHash);
@@ -120,6 +172,13 @@ export function buildVerifiedCardSvg(data: VerifiedCardData): string {
   const hasKas = typeof kasOk === "boolean";
   const sealSeed = `${capsuleHash}|${svgHash ?? ""}|${verifiedAtPulse}`;
   const seal = sealPlacement(sealSeed);
+  const proofSeal = buildProofOfBreathSeal({
+    bundleHash: data.bundleHash,
+    capsuleHash,
+    svgHash,
+    receiptHash,
+    pulse: verifiedAtPulse,
+  });
 
   const phiShort = shortPhiKey(phikey);
   const valuationSnapshot = data.valuation ? { ...data.valuation } : data.receipt?.valuation ? { ...data.receipt.valuation } : undefined;
@@ -170,6 +229,20 @@ export function buildVerifiedCardSvg(data: VerifiedCardData): string {
   });
   const auditJson = JSON.stringify(auditMeta);
 
+  const proofSealLabel = "PROOF OF BREATH™";
+  const proofSealMicro = `${shortHash(capsuleHash, 6, 4)} · ${shortHash(bundleHashValue, 6, 4)}`;
+  const proofSealMarkup = proofSeal.toSvg(600, 330, 260, id, proofSealLabel, proofSealMicro);
+  const sigilFrameX = 796;
+  const sigilFrameY = 136;
+  const sigilFrameSize = 348;
+  const qrBoxX = 96;
+  const qrBoxY = 330;
+  const qrBoxW = 288;
+  const qrBoxH = 140;
+  const brandX = 320;
+  const brandY = 206;
+  const brandPalette = proofSeal.palette;
+  const ornament = ornamentMarkup(810, 150, 320, 320, brandPalette, proofSeal.geometry);
   return `
 <svg xmlns="http://www.w3.org/2000/svg" width="${VERIFIED_CARD_W}" height="${VERIFIED_CARD_H}" viewBox="0 0 ${VERIFIED_CARD_W} ${VERIFIED_CARD_H}">
   <metadata id="kai-verified-receipt"><![CDATA[${receiptJson}]]></metadata>
@@ -204,11 +277,11 @@ export function buildVerifiedCardSvg(data: VerifiedCardData): string {
         <feMergeNode in="SourceGraphic" />
       </feMerge>
     </filter>
-    <clipPath id="${sigilClipId}">
+  <clipPath id="${sigilClipId}">
       <rect x="810" y="150" width="320" height="320" rx="26" />
     </clipPath>
     <clipPath id="${qrClipId}">
-      <rect x="848" y="492" width="264" height="124" rx="16" />
+      <rect x="${qrBoxX + 12}" y="${qrBoxY + 8}" width="264" height="124" rx="16" />
     </clipPath>
     <style>
       .headline { font: 800 56px "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif; letter-spacing: 0.12em; fill: #F4F6FB; }
@@ -218,6 +291,7 @@ export function buildVerifiedCardSvg(data: VerifiedCardData): string {
       .value { font: 700 30px "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif; fill: #F2F5FB; }
       .mode-label { font: 800 18px "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif; fill: #94BCEB; letter-spacing: 0.24em; }
       .micro { font: 500 12px "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif; fill: #8FA3C5; letter-spacing: 0.12em; }
+      .brand { font: 600 14px "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif; fill: #9FB5DA; letter-spacing: 0.42em; }
       .seal { font: 700 16px "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif; letter-spacing: 0.24em; }
     </style>
   </defs>
@@ -249,6 +323,8 @@ export function buildVerifiedCardSvg(data: VerifiedCardData): string {
   <text class="headline" x="320" y="120">${headlineText}</text>
   <text class="subhead" x="320" y="162">Steward Verified @ Pulse ${verifiedAtPulse}</text>
   ${valuationModeLabel ? `<text class="mode-label" x="320" y="196">${valuationModeLabel}</text>` : ""}
+  ${sealBrandIcon(brandX - 18, brandY - 4, { primary: brandPalette.primary, accent: brandPalette.accent })}
+  <text class="brand" x="${brandX}" y="${brandY}">SIGIL-SEAL</text>
 
   <text class="label" x="320" y="260">ΦKEY</text>
   <text class="phikey" x="320" y="300">${phiShort}</text>
@@ -282,18 +358,22 @@ export function buildVerifiedCardSvg(data: VerifiedCardData): string {
     <text x="0" y="16" text-anchor="middle" class="seal" fill="${accentSoft}">${shortHash(capsuleHash, 6, 4)}</text>
   </g>
 
-  <rect x="796" y="136" width="348" height="348" rx="30" fill="rgba(6,8,12,0.75)" stroke="${accent}" stroke-width="2.4" filter="url(#${glowId})" />
+  ${proofSealMarkup}
+
+  <rect x="${sigilFrameX}" y="${sigilFrameY}" width="${sigilFrameSize}" height="${sigilFrameSize}" rx="30" fill="rgba(6,8,12,0.75)" stroke="${accent}" stroke-width="2.4" filter="url(#${glowId})" />
   <rect x="810" y="150" width="320" height="320" rx="26" fill="rgba(10,14,20,0.6)" />
   ${sigilImageMarkup(sigilSvg, sigilClipId)}
+  ${ornament}
 
-  <rect x="836" y="484" width="288" height="140" rx="18" fill="rgba(10,12,18,0.62)" stroke="rgba(255,255,255,0.12)" />
-  ${qrImageMarkup(qrDataUrl, qrClipId)}
+  <rect x="${qrBoxX}" y="${qrBoxY}" width="${qrBoxW}" height="${qrBoxH}" rx="18" fill="rgba(10,12,18,0.62)" stroke="rgba(255,255,255,0.12)" />
+  ${qrImageMarkup(qrDataUrl, qrClipId, qrBoxX + 12, qrBoxY + 8)}
 
   <g opacity="0.9">
     <text class="micro" x="80" y="570">BUNDLE ${shortHash(bundleHashValue)}</text>
     <text class="micro" x="80" y="588">RECEIPT ${shortHash(receiptHash)}</text>
     <text class="micro" x="320" y="570">SVG ${shortHash(svgHash)}</text>
     <text class="micro" x="320" y="588">CAPSULE ${shortHash(capsuleHash)}</text>
+    <text class="micro" x="820" y="588">phi.network</text>
   </g>
 </svg>
   `.trim();
