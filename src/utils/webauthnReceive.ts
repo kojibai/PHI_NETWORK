@@ -42,6 +42,8 @@ type AuthData = {
   credentialPublicKey: Uint8Array;
 };
 
+type NavigatorWithCredentials = Navigator & { credentials: CredentialsContainer };
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -65,6 +67,15 @@ function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   const buf = new ArrayBuffer(bytes.byteLength);
   new Uint8Array(buf).set(bytes);
   return buf;
+}
+
+function getNavigatorCredentials(): CredentialsContainer | null {
+  if (typeof navigator === "undefined") return null;
+  if ("credentials" in navigator) {
+    const nav = navigator as NavigatorWithCredentials;
+    return nav.credentials ?? null;
+  }
+  return null;
 }
 
 export function isReceiveSig(value: unknown): value is ReceiveSig {
@@ -99,7 +110,8 @@ export async function getWebAuthnAssertionJson(args: {
   allowCredIds?: string[];
   preferInternal?: boolean;
 }): Promise<WebAuthnAssertionJSON> {
-  if (typeof navigator === "undefined" || !navigator.credentials?.get) {
+  const credentials = getNavigatorCredentials();
+  if (!credentials?.get) {
     throw new Error("WebAuthn is not available in this environment.");
   }
 
@@ -119,7 +131,7 @@ export async function getWebAuthnAssertionJson(args: {
       }))
     : undefined;
 
-  const assertion = (await navigator.credentials.get({
+  const assertion = (await credentials.get({
     publicKey: {
       challenge: toArrayBuffer(args.challenge),
       allowCredentials,
@@ -333,7 +345,8 @@ function coseEc2ToJwk(coseKey: unknown): JsonWebKey {
 export async function ensureReceiverPasskey(): Promise<StoredPasskey> {
   const existing = loadStoredReceiverPasskey();
   if (existing) return existing;
-  if (typeof navigator === "undefined" || !navigator.credentials?.create) {
+  const credentials = getNavigatorCredentials();
+  if (!credentials?.create) {
     throw new Error("WebAuthn is not available in this browser.");
   }
 
@@ -341,7 +354,7 @@ export async function ensureReceiverPasskey(): Promise<StoredPasskey> {
   const userId = userIdFull.slice(0, 16);
   const challenge = crypto.getRandomValues(new Uint8Array(32));
 
-  const credential = (await navigator.credentials.create({
+  const credential = (await credentials.create({
     publicKey: {
       challenge,
       rp: {
