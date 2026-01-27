@@ -2,7 +2,6 @@ import { PNG } from "pngjs";
 import QRCode from "qrcode";
 
 import { parseSlug } from "../../src/utils/verifySigil";
-import { decodeShareBundleFromParams, readSharePayloadParam } from "../shareBundle";
 
 type PngInstance = InstanceType<typeof PNG> & { data: Buffer };
 type PngSyncWriter = { sync: { write: (png: PngInstance) => Buffer } };
@@ -201,24 +200,15 @@ export default async function handler(
 ): Promise<void> {
   const base = requestOrigin(req);
   const url = new URL(req.url ?? "/", base);
-  const shareParam = readSharePayloadParam(url.searchParams);
-  const shareInfo = decodeShareBundleFromParams(url.searchParams);
-  const slugRaw = shareInfo?.verifierSlug ?? url.searchParams.get("slug") ?? "";
+  const slugRaw = url.searchParams.get("slug") ?? "";
   const slug = parseSlug(slugRaw);
 
-  const pulse = shareInfo?.pulse
-    ? String(shareInfo.pulse)
-    : url.searchParams.get("pulse") ?? (slug.pulse ? String(slug.pulse) : "NA");
+  const pulse = url.searchParams.get("pulse") ?? (slug.pulse ? String(slug.pulse) : "NA");
   const chakraDay = url.searchParams.get("chakraDay") ?? "";
-  const phiKey =
-    shareInfo?.phiKey ??
-    shareInfo?.keyShort ??
-    url.searchParams.get("phiKey") ??
-    slug.shortSig ??
-    "NA";
-  const kasOk = shareInfo?.checks.kas ?? parseBool(url.searchParams.get("kas"));
-  const g16Ok = shareInfo?.checks.g16 ?? parseBool(url.searchParams.get("g16"));
-  const status = shareInfo ? (shareInfo.isVerified ? "verified" : "standby") : statusFromQuery(url.searchParams.get("status"));
+  const phiKey = url.searchParams.get("phiKey") ?? slug.shortSig ?? "NA";
+  const kasOk = parseBool(url.searchParams.get("kas"));
+  const g16Ok = parseBool(url.searchParams.get("g16"));
+  const status = statusFromQuery(url.searchParams.get("status"));
 
   const statusLabel = status === "verified" ? "VERIFIED" : status === "failed" ? "FAILED" : "STANDBY";
   const statusColor: Rgba = status === "verified" ? [56, 231, 166, 255] : status === "failed" ? [255, 107, 107, 255] : [181, 199, 221, 255];
@@ -255,11 +245,8 @@ export default async function handler(
   drawText(png, g16Label, 240, 360, 2, textColor);
   drawBadge(png, 240 + measureText(g16Label, 2) + 12, 356, g16Ok);
 
-  const verifyUrl = new URL(`${url.origin}/verify/${encodeURIComponent(slug.raw || slugRaw)}`);
-  if (shareParam) {
-    verifyUrl.searchParams.set(shareParam.param, shareParam.value);
-  }
-  const qr = await makeQrMatrix(verifyUrl.toString());
+  const verifyUrl = `${url.origin}/verify/${encodeURIComponent(slug.raw || slugRaw)}`;
+  const qr = await makeQrMatrix(verifyUrl);
   const moduleSize = Math.floor(220 / qr.size);
   const qrSize = qr.size * moduleSize;
   const qrX = 880;
