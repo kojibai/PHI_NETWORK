@@ -7,7 +7,7 @@ import { buildProofOfBreathSeal } from "./proofOfBreathSeal";
 export const VERIFIED_CARD_W = 1200;
 export const VERIFIED_CARD_H = 630;
 
-const NOTE_TITLE_TEXT = "KAIROS NOTE";
+const NOTE_TITLE_TEXT = "KAIROS NOTE - Legal Tender of ☤KAI";
 const NOTE_SUBTITLE_TEXT = "ISSUED UNDER YAHUAH’S LAW OF ETERNAL LIGHT — Φ • KAI-TURAH";
 
 const PHI = (1 + Math.sqrt(5)) / 2;
