@@ -47,6 +47,12 @@ const shortPhiKey = (phiKey) => {
   return `${trimmed.slice(0, 6)}…${trimmed.slice(-4)}`;
 };
 
+const baseVerifierSlug = (value) => {
+  const match = String(value || "").trim().match(/^(\d+)-([A-Za-z0-9]+)(?:-(\d+))?$/);
+  if (!match) return null;
+  return `${match[1]}-${match[2]}`;
+};
+
 const stripQuotes = (value) => String(value || "").replace(/\"/g, "");
 
 const sendFile = (res, filePath, cacheControl) => {
@@ -124,7 +130,11 @@ async function createServer() {
     }
     let record = null;
     if (pathname.startsWith("/verify/")) {
-      record = og.getCapsuleByVerifierSlug(slug) ?? og.getCapsuleByHash(slug);
+      const baseSlug = baseVerifierSlug(slug);
+      record =
+        og.getCapsuleByVerifierSlug(slug) ??
+        (baseSlug ? og.getCapsuleByVerifierSlug(baseSlug) : null) ??
+        og.getCapsuleByHash(slug);
     } else {
       record = og.getCapsuleByHash(slug);
     }

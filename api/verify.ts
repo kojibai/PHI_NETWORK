@@ -1,11 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-
-type SlugInfo = {
-  raw: string;
-  pulse: number | null;
-  shortSig: string | null;
-};
+import { parseSlug } from "../src/utils/verifySigil";
+import { getCapsuleByHash, getCapsuleByVerifierSlug } from "../src/og/capsuleStore";
 
 type ProofCapsule = {
   v: "KPV-1";
@@ -22,28 +18,54 @@ type SharedReceipt = {
   zkVerified?: boolean;
 };
 
-function parseSlug(rawSlug: string): SlugInfo {
-  let raw = (rawSlug || "").trim();
-  try {
-    raw = decodeURIComponent(raw);
-  } catch {
-    // Keep raw as-is when decoding fails (avoid crashing the function).
-  }
-  const m = raw.match(/^(\d+)-([A-Za-z0-9]+)$/);
-  if (!m) return { raw, pulse: null, shortSig: null };
-
-  const pulseNum = Number(m[1]);
-  const pulse = Number.isFinite(pulseNum) && pulseNum > 0 ? pulseNum : null;
-  const shortSig = m[2] ? String(m[2]) : null;
-
-  return { raw, pulse, shortSig };
-}
-
 function statusFromQuery(value: string | null): "verified" | "failed" | "standby" {
   const v = value?.toLowerCase().trim();
   if (v === "verified" || v === "ok" || v === "valid") return "verified";
   if (v === "failed" || v === "error" || v === "invalid") return "failed";
   return "standby";
+}
+
+function safeParseSlug(raw: string) {
+  try {
+    return parseSlug(raw);
+  } catch {
+    const cleaned = raw.trim();
+    return { raw: cleaned, pulse: null, shortSig: null, verifiedAtPulse: null };
+  }
+}
+
+function buildSlugCandidates(
+  slugRaw: string,
+  slug: { raw: string; pulse: number | null; shortSig: string | null },
+  extra?: string,
+): string[] {
+  const set = new Set<string>();
+  const rawTrim = slugRaw.trim();
+  if (rawTrim) set.add(rawTrim);
+  if (slug.raw) set.add(slug.raw);
+  if (slug.pulse != null && slug.shortSig) {
+    set.add(`${slug.pulse}-${slug.shortSig}`);
+  }
+  if (extra) {
+    const extraTrim = extra.trim();
+    if (extraTrim) set.add(extraTrim);
+  }
+  return Array.from(set);
+}
+
+function findCapsuleBySlug(
+  slugRaw: string,
+  slug: { raw: string; pulse: number | null; shortSig: string | null },
+  extra?: string,
+) {
+  const candidates = buildSlugCandidates(slugRaw, slug, extra);
+  for (const candidate of candidates) {
+    const bySlug = getCapsuleByVerifierSlug(candidate);
+    if (bySlug) return bySlug;
+    const byHash = getCapsuleByHash(candidate);
+    if (byHash) return byHash;
+  }
+  return null;
 }
 
 function parseProofCapsule(raw: unknown): ProofCapsule | null {
@@ -217,25 +239,37 @@ export default async function handler(
 
   const requestUrl = new URL(req.url ?? "/", origin);
   const slugRaw = requestUrl.searchParams.get("slug") ?? "";
-  const slug = parseSlug(slugRaw);
+  const slug = safeParseSlug(slugRaw);
   const receipt = readReceiptFromParams(requestUrl.searchParams);
   const receiptSlug = receipt?.proofCapsule.verifierSlug ?? "";
   const canonicalSlug = slug.raw || slugRaw || receiptSlug;
+  const capsule = findCapsuleBySlug(canonicalSlug, slug, receiptSlug);
   const receiptMatchesSlug =
     receipt != null && (!canonicalSlug || receipt.proofCapsule.verifierSlug === canonicalSlug);
   const statusParam = statusFromQuery(requestUrl.searchParams.get("status"));
-  const status = receiptMatchesSlug && statusParam === "standby" ? "verified" : statusParam;
+  const hasVerifiedSignal = Boolean(capsule) || receiptMatchesSlug || slug.verifiedAtPulse != null;
+  const status = statusParam === "standby" && hasVerifiedSignal ? "verified" : statusParam;
 
   const statusLabel = status === "verified" ? "VERIFIED" : status === "failed" ? "FAILED" : "STANDBY";
   const receiptPulse = receiptMatchesSlug ? receipt?.proofCapsule.pulse : null;
-  const pulseLabel = receiptPulse ? String(receiptPulse) : slug.pulse ? String(slug.pulse) : "—";
+  const pulseLabel =
+    receiptPulse != null
+      ? String(receiptPulse)
+      : capsule?.verifiedAtPulse != null
+      ? String(capsule.verifiedAtPulse)
+      : slug.verifiedAtPulse != null
+      ? String(slug.verifiedAtPulse)
+      : slug.pulse
+      ? String(slug.pulse)
+      : "—";
   const title = `Proof of Breath™ — ${statusLabel}`;
   const description = `Proof of Breath™ • ${statusLabel} • Pulse ${pulseLabel}`;
 
-  const verifyUrl = `${origin}/verify/${encodeURIComponent(canonicalSlug)}`;
+  const ogSlug = canonicalSlug || capsule?.verifierSlug || slugRaw;
+  const verifyUrl = `${origin}/verify/${encodeURIComponent(ogSlug)}`;
 
   const ogUrl = new URL(`${origin}/api/og/verify`);
-  ogUrl.searchParams.set("slug", canonicalSlug);
+  ogUrl.searchParams.set("slug", ogSlug);
   ogUrl.searchParams.set("status", status);
   if (receiptMatchesSlug && receipt) {
     ogUrl.searchParams.set("pulse", String(receipt.proofCapsule.pulse));
