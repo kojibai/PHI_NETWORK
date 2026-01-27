@@ -2387,10 +2387,11 @@ if (verified && typeof cacheBundleHash === "string" && cacheBundleHash.trim().le
         title: "Proof of Breath™",
         status: result.status === "ok" ? "VERIFIED" : result.status === "error" ? "FAILED" : "STANDBY",
 body: [
-  "Proof of Breath™ is the sovereign attestation that a ΦKey originates from a living human signature rail and that its integrity chain remains unbroken.",
-  "This badge is issued only when the inhaled ΦKey, its vessel hash, sigil hash, and attestation bundle collapse into a deterministic, recomputable proof capsule under canonical rules.",
+  "Proof of Breath™ is the sovereign attestation that a ΦKey originates from a living human presence-seal and that its proof stream remains unbroken.",
+  "This badge is issued only when the inhaled ΦKey, its vessel hash, sigil hash, and attestation bundle converge into a deterministic, recomputable proof capsule under canonical rules.",
   "No simulacra, no mutable links, no soft checks—only canonicalization, cryptographic determinism, and verifiable coherence.",
 ],
+
 
       };
     }
