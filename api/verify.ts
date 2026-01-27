@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { decodeVerifyShareR_SSR } from "../src/utils/verifyShareR.ssr";
+import { decodeVerifyShareP_SSR, decodeVerifyShareR_SSR } from "../src/utils/verifyShareR.ssr";
 
 type SlugInfo = {
   raw: string;
@@ -71,6 +71,12 @@ function shortPhiKey(phiKey: string): string {
 }
 
 function readReceiptFromParams(params: URLSearchParams): SharedReceipt | null {
+  const payloadParam = params.get("p");
+  if (payloadParam) {
+    const decoded = decodeVerifyShareP_SSR(payloadParam);
+    const parsed = parseSharedReceipt(decoded);
+    if (parsed) return parsed;
+  }
   const encoded = params.get("r") ?? params.get("receipt");
   if (!encoded) return null;
   const decoded = decodeVerifyShareR_SSR(encoded);
@@ -288,7 +294,9 @@ export default async function handler(
   const receiptMatchesSlug =
     receipt != null && (!canonicalSlug || receipt.proofCapsule.verifierSlug === canonicalSlug);
 
-  const payloadRaw = decodeVerifyShareR_SSR(requestUrl.searchParams.get("r") ?? "");
+  const payloadRaw =
+    decodeVerifyShareP_SSR(requestUrl.searchParams.get("p") ?? "") ??
+    decodeVerifyShareR_SSR(requestUrl.searchParams.get("r") ?? "");
   const payload = isRecord(payloadRaw) ? payloadRaw : null;
 
   const isZkVerified =
@@ -324,8 +332,10 @@ export default async function handler(
   const verifyUrl = `${origin}/verify/${encodeURIComponent(canonicalSlug)}`;
   const canonicalUrl = (() => {
     const url = new URL(verifyUrl);
+    const pParam = requestUrl.searchParams.get("p");
     const rParam = requestUrl.searchParams.get("r");
-    if (rParam) url.searchParams.set("r", rParam);
+    if (pParam) url.searchParams.set("p", pParam);
+    else if (rParam) url.searchParams.set("r", rParam);
     return url.toString();
   })();
 

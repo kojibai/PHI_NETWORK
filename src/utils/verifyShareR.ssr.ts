@@ -3,6 +3,7 @@ import { TextDecoder } from "node:util";
 import { Inflate } from "fflate";
 
 const MAX_R_CHARS = 30_000;
+const MAX_P_CHARS = 18_000;
 const MAX_COMPRESSED_BYTES = 64 * 1024;
 const MAX_INFLATED_BYTES = 1024 * 1024;
 
@@ -67,6 +68,26 @@ export function decodeVerifyShareR_SSR(rRaw: string): unknown | null {
     const decoded = base64UrlDecode(trimmed);
     if (decoded.length > MAX_INFLATED_BYTES) return null;
     const json = TD.decode(decoded);
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
+}
+
+export function decodeVerifyShareP_SSR(pRaw: string): unknown | null {
+  if (!pRaw) return null;
+  const trimmed = String(pRaw).trim();
+  if (!trimmed) return null;
+  if (!trimmed.startsWith("c1:")) return null;
+  if (trimmed.length > MAX_P_CHARS) return null;
+
+  try {
+    const encoded = trimmed.slice(3);
+    if (!encoded) return null;
+    const compressed = base64UrlDecode(encoded);
+    if (compressed.length > MAX_COMPRESSED_BYTES) return null;
+    const inflated = inflateRawLimited(compressed, MAX_INFLATED_BYTES);
+    const json = TD.decode(inflated);
     return JSON.parse(json);
   } catch {
     return null;
