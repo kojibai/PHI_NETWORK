@@ -54,7 +54,7 @@ import {
 } from "../utils/webauthnReceive";
 import { assertionToJson, verifyOwnerWebAuthnAssertion } from "../utils/webauthnOwner";
 import { deriveOwnerPhiKeyFromReceive, type OwnerKeyDerivation } from "../utils/ownerPhiKey";
-import { base64UrlDecode, base64UrlEncode, sha256Hex } from "../utils/sha256";
+import { base64UrlDecode, sha256Hex } from "../utils/sha256";
 import { readPngTextChunk } from "../utils/pngChunks";
 import { getKaiPulseEternalInt } from "../SovereignSolar";
 import { useKaiTicker } from "../hooks/useKaiTicker";
@@ -90,6 +90,7 @@ import {
   type ValuationSnapshotInput,
   type ValuationSnapshotState,
 } from "../utils/valuationSnapshot";
+import { decodeSharePayload, encodeSharePayload } from "../utils/shareBundleCodec";
 
 /* ────────────────────────────────────────────────────────────────
    Utilities
@@ -342,17 +343,30 @@ function buildSharedReceiptFromObject(raw: unknown): SharedReceipt | null {
   };
 }
 
-function readSharedReceiptFromLocation(): SharedReceipt | null {
-  if (typeof window === "undefined") return null;
+function readSharedReceiptFromLocation(): { receipt: SharedReceipt | null; error?: string } {
+  if (typeof window === "undefined") return { receipt: null };
   const params = new URLSearchParams(window.location.search);
+  const payload = params.get("p");
+  if (payload) {
+    try {
+      const raw = decodeSharePayload(payload);
+      const receipt = buildSharedReceiptFromObject(raw);
+      if (!receipt) return { receipt: null, error: "Invalid share payload." };
+      return { receipt };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unable to decode share payload.";
+      return { receipt: null, error: message };
+    }
+  }
+
   const encoded = params.get("r") ?? params.get("receipt");
-  if (!encoded) return null;
+  if (!encoded) return { receipt: null };
   try {
     const decoded = new TextDecoder().decode(base64UrlDecode(encoded));
     const raw = JSON.parse(decoded);
-    return buildSharedReceiptFromObject(raw);
+    return { receipt: buildSharedReceiptFromObject(raw) };
   } catch {
-    return null;
+    return { receipt: null };
   }
 }
 
@@ -366,15 +380,10 @@ function parseSharedReceiptFromText(text: string): SharedReceipt | null {
   }
 }
 
-function encodeReceiptParam(receiptJson: string): string {
-  const bytes = new TextEncoder().encode(receiptJson);
-  return base64UrlEncode(bytes);
-}
-
-function buildReceiptShareUrl(baseUrl: string, receiptJson: string): string {
+function buildReceiptShareUrl(baseUrl: string, receipt: Record<string, unknown>): string {
   const base = baseUrl || "/verify";
   const url = new URL(base, typeof window !== "undefined" ? window.location.origin : "http://localhost");
-  url.searchParams.set("r", encodeReceiptParam(receiptJson));
+  url.searchParams.set("p", encodeSharePayload(receipt));
   return url.toString();
 }
 
@@ -705,14 +714,14 @@ export default function VerifyPage(): ReactElement {
 
   const slugRaw = useMemo(() => readSlugFromLocation(), []);
   const slug = useMemo(() => parseSlug(slugRaw), [slugRaw]);
-  const initialReceipt = useMemo(() => readSharedReceiptFromLocation(), []);
+  const initialReceiptResult = useMemo(() => readSharedReceiptFromLocation(), []);
 
   const [panel, setPanel] = useState<PanelKey>("inhale");
 
   const [svgText, setSvgText] = useState<string>("");
   const [result, setResult] = useState<VerifyResult>({ status: "idle" });
   const [busy, setBusy] = useState<boolean>(false);
-  const [sharedReceipt, setSharedReceipt] = useState<SharedReceipt | null>(initialReceipt);
+  const [sharedReceipt, setSharedReceipt] = useState<SharedReceipt | null>(initialReceiptResult.receipt);
 
   const [proofCapsule, setProofCapsule] = useState<ProofCapsuleV1 | null>(null);
   const [capsuleHash, setCapsuleHash] = useState<string>("");
@@ -722,7 +731,7 @@ export default function VerifyPage(): ReactElement {
   const [svgBytesHash, setSvgBytesHash] = useState<string>("");
 
   const [embeddedProof, setEmbeddedProof] = useState<ProofBundleMeta | null>(null);
-  const [notice, setNotice] = useState<string>("");
+  const [notice, setNotice] = useState<string>(initialReceiptResult.error ?? "");
 
   const [ownerAuthVerified, setOwnerAuthVerified] = useState<boolean | null>(null);
   const [ownerAuthStatus, setOwnerAuthStatus] = useState<string>("Not present");
@@ -2700,8 +2709,8 @@ React.useEffect(() => {
     await downloadVerifiedCardPng(verifiedCardData);
   }, [verifiedCardData]);
 
-  const receiptJson = useMemo(() => {
-    if (!proofCapsule) return "";
+  const receiptPayload = useMemo(() => {
+    if (!proofCapsule) return null;
     const receipt = {
       hashAlg: PROOF_HASH_ALG,
       canon: PROOF_CANON,
@@ -2761,7 +2770,7 @@ React.useEffect(() => {
     if (receiptHashValue) extended.receiptHash = receiptHashValue;
     if (verificationSigValue) extended.verificationSig = verificationSigValue;
 
-    return jcsCanonicalize(extended as Parameters<typeof jcsCanonicalize>[0]);
+    return extended;
   }, [
     bundleHash,
     capsuleHash,
@@ -2801,12 +2810,17 @@ React.useEffect(() => {
     zkVerifiedCached,
   ]);
 
+  const receiptJson = useMemo(() => {
+    if (!receiptPayload) return "";
+    return jcsCanonicalize(receiptPayload as Parameters<typeof jcsCanonicalize>[0]);
+  }, [receiptPayload]);
+
   const shareReceiptUrl = useMemo(() => {
-    if (!receiptJson) return "";
+    if (!receiptPayload) return "";
     const base = proofVerifierUrl || currentVerifyUrl;
     if (!base) return "";
-    return buildReceiptShareUrl(base, receiptJson);
-  }, [currentVerifyUrl, proofVerifierUrl, receiptJson]);
+    return buildReceiptShareUrl(base, receiptPayload);
+  }, [currentVerifyUrl, proofVerifierUrl, receiptPayload]);
 
   const onShareReceipt = useCallback(async () => {
     const url = shareReceiptUrl || proofVerifierUrl || currentVerifyUrl;
