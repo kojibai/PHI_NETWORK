@@ -1987,18 +1987,9 @@ if (verified && typeof cacheBundleHash === "string" && cacheBundleHash.trim().le
     const origin = window.location.origin;
     const slugValue = slug.raw || slugRaw || "";
     const ogUrl = new URL(`${origin}/verify/${encodeURIComponent(slugValue)}`);
-    const searchParams = new URLSearchParams(window.location.search);
-    const shareParam = searchParams.get("p")
-      ? { key: "p", value: searchParams.get("p") ?? "" }
-      : searchParams.get("r") || searchParams.get("receipt")
-        ? { key: "r", value: (searchParams.get("r") ?? searchParams.get("receipt") ?? "") }
-        : null;
-    const ogImageUrl = new URL(`${origin}/og/verify/${encodeURIComponent(slugValue)}.png`);
-    if (shareParam?.value) {
-      ogImageUrl.searchParams.set(shareParam.key, shareParam.value);
-    } else {
-      ogImageUrl.searchParams.set("status", statusLabel.toLowerCase());
-    }
+    const ogImageUrl = new URL(`${origin}/api/og/verify`);
+    ogImageUrl.searchParams.set("slug", slugValue);
+    ogImageUrl.searchParams.set("status", statusLabel.toLowerCase());
     if (result.status === "ok") {
       ogImageUrl.searchParams.set("pulse", String(result.embedded.pulse ?? slug.pulse ?? ""));
       const ogPhiKey =
