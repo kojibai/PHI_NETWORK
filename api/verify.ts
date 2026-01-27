@@ -214,6 +214,12 @@ function readBoolField(value: unknown, key: string): boolean {
   return value[key] === true;
 }
 
+function readKasVersion(value: unknown): string | null {
+  if (!value) return null;
+  if (typeof value === "string") return value;
+  return readStringField(value, "v");
+}
+
 function pickSocialImageUrl(payload: RecordValue | null): string | null {
   if (!payload) return null;
   const proofHints = readNestedRecord(payload, "proofHints");
@@ -290,9 +296,9 @@ export default async function handler(
     readBoolField(readNestedRecord(payload, "zk"), "zkVerified") ||
     readBoolField(readNestedRecord(payload, "zkProofBundle"), "zkVerified");
   const isKasPresent =
-    readStringField(readNestedRecord(payload, "authorSig"), "v") === "KAS-1" ||
-    readStringField(readNestedRecord(payload, "originAuthorSig"), "v") === "KAS-1" ||
-    readStringField(readNestedRecord(payload, "kas"), "v") === "KAS-1";
+    readKasVersion(payload?.authorSig) === "KAS-1" ||
+    readKasVersion(payload?.originAuthorSig) === "KAS-1" ||
+    readKasVersion(payload?.kas) === "KAS-1";
 
   const isVerifiedForPreview = isZkVerified === true;
   const statusLabel = isVerifiedForPreview ? "VERIFIED" : "STANDBY";

@@ -1,3 +1,5 @@
+import { Buffer } from "node:buffer";
+import { TextDecoder } from "node:util";
 import { Inflate } from "fflate";
 
 const MAX_R_CHARS = 30_000;
