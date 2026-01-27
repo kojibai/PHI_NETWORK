@@ -23,7 +23,7 @@ function stripUnsafeHrefs(svg: string): string {
   return svg.replace(JS_PROTOCOL_ATTR, (match, attr, value) => {
     const sanitized = sanitizeHrefValue(String(value));
     if (!sanitized) return "";
-    return ` ${String(attr)}=\"${sanitized}\"`;
+    return ` ${String(attr)}="${sanitized}"`;
   });
 }
 
