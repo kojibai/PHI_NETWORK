@@ -21,6 +21,8 @@
     { "source": "/pulse.html", "destination": "/pulse.html" },
     { "source": "/pulse-core.js", "destination": "/pulse-core.js" },
 
+    { "source": "/og/verify/:slug.png", "destination": "/api/og/verify?slug=:slug" },
+
     { "source": "/verify/:slug", "destination": "/api/verify?slug=:slug" },
 
     { "source": "/verifier", "destination": "/verifier.html" },

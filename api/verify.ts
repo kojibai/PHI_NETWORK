@@ -1,25 +1,11 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { decodeShareBundleFromParams, formatCheck, readSharePayloadParam } from "./shareBundle";
 
 type SlugInfo = {
   raw: string;
   pulse: number | null;
   shortSig: string | null;
-};
-
-type ProofCapsule = {
-  v: "KPV-1";
-  pulse: number;
-  chakraDay: string;
-  kaiSignature: string;
-  phiKey: string;
-  verifierSlug: string;
-};
-
-type SharedReceipt = {
-  proofCapsule: ProofCapsule;
-  authorSig?: unknown;
-  zkVerified?: boolean;
 };
 
 function parseSlug(rawSlug: string): SlugInfo {
@@ -46,66 +32,23 @@ function statusFromQuery(value: string | null): "verified" | "failed" | "standby
   return "standby";
 }
 
-function parseProofCapsule(raw: unknown): ProofCapsule | null {
-  if (!raw || typeof raw !== "object") return null;
-  const record = raw as Record<string, unknown>;
-  if (record.v !== "KPV-1") return null;
-  if (typeof record.pulse !== "number" || !Number.isFinite(record.pulse)) return null;
-  if (typeof record.chakraDay !== "string") return null;
-  if (typeof record.kaiSignature !== "string") return null;
-  if (typeof record.phiKey !== "string") return null;
-  if (typeof record.verifierSlug !== "string") return null;
-  return record as ProofCapsule;
-}
-
-function parseSharedReceipt(raw: unknown): SharedReceipt | null {
-  if (!raw || typeof raw !== "object") return null;
-  const record = raw as Record<string, unknown>;
-  const proofCapsule = parseProofCapsule(record.proofCapsule);
-  if (!proofCapsule) return null;
-  return {
-    proofCapsule,
-    authorSig: record.authorSig,
-    zkVerified: typeof record.zkVerified === "boolean" ? record.zkVerified : undefined,
-  };
-}
-
-function decodeBase64Url(input: string): string | null {
-  try {
-    const base64 = input.replace(/-/g, "+").replace(/_/g, "/");
-    const pad = base64.length % 4 === 0 ? "" : "=".repeat(4 - (base64.length % 4));
-    return Buffer.from(`${base64}${pad}`, "base64").toString("utf-8");
-  } catch {
-    return null;
-  }
-}
-
-function readReceiptFromParams(params: URLSearchParams): SharedReceipt | null {
-  const encoded = params.get("r") ?? params.get("receipt");
-  if (!encoded) return null;
-  const decoded = decodeBase64Url(encoded);
-  if (!decoded) return null;
-  try {
-    const raw = JSON.parse(decoded);
-    return parseSharedReceipt(raw);
-  } catch {
-    return null;
-  }
-}
-
 function buildMetaTags(params: {
   title: string;
   description: string;
   url: string;
   image: string;
+  imageWidth: string;
+  imageHeight: string;
 }): string {
-  const { title, description, url, image } = params;
+  const { title, description, url, image, imageWidth, imageHeight } = params;
   return [
     `<title>${title}</title>`,
     `<meta property="og:title" content="${title}" />`,
     `<meta property="og:description" content="${description}" />`,
     `<meta property="og:url" content="${url}" />`,
     `<meta property="og:image" content="${image}" />`,
+    `<meta property="og:image:width" content="${imageWidth}" />`,
+    `<meta property="og:image:height" content="${imageHeight}" />`,
     `<meta name="twitter:card" content="summary_large_image" />`,
     `<meta name="twitter:title" content="${title}" />`,
     `<meta name="twitter:description" content="${description}" />`,
@@ -218,31 +161,31 @@ export default async function handler(
   const requestUrl = new URL(req.url ?? "/", origin);
   const slugRaw = requestUrl.searchParams.get("slug") ?? "";
   const slug = parseSlug(slugRaw);
-  const receipt = readReceiptFromParams(requestUrl.searchParams);
-  const receiptSlug = receipt?.proofCapsule.verifierSlug ?? "";
-  const canonicalSlug = slug.raw || slugRaw || receiptSlug;
-  const receiptMatchesSlug =
-    receipt != null && (!canonicalSlug || receipt.proofCapsule.verifierSlug === canonicalSlug);
+  const shareParam = readSharePayloadParam(requestUrl.searchParams);
+  const shareInfo = decodeShareBundleFromParams(requestUrl.searchParams);
+  const canonicalSlug = slug.raw || slugRaw || shareInfo?.verifierSlug || "";
   const statusParam = statusFromQuery(requestUrl.searchParams.get("status"));
-  const status = receiptMatchesSlug && statusParam === "standby" ? "verified" : statusParam;
+  const status = shareInfo ? (shareInfo.isVerified ? "verified" : "standby") : statusParam;
 
   const statusLabel = status === "verified" ? "VERIFIED" : status === "failed" ? "FAILED" : "STANDBY";
-  const receiptPulse = receiptMatchesSlug ? receipt?.proofCapsule.pulse : null;
-  const pulseLabel = receiptPulse ? String(receiptPulse) : slug.pulse ? String(slug.pulse) : "—";
+  const pulseLabel = shareInfo?.pulse ? String(shareInfo.pulse) : slug.pulse ? String(slug.pulse) : "—";
+  const phiLabel = shareInfo?.keyShort ?? (slug.shortSig || "—");
   const title = `Proof of Breath™ — ${statusLabel}`;
-  const description = `Proof of Breath™ • ${statusLabel} • Pulse ${pulseLabel}`;
+  const description = shareInfo
+    ? `Pulse ${pulseLabel} · ΦKey ${phiLabel} · KAS ${formatCheck(shareInfo.checks.kas)} · G16 ${formatCheck(shareInfo.checks.g16)}`
+    : `Proof of Breath™ • ${statusLabel} • Pulse ${pulseLabel}`;
 
   const verifyUrl = `${origin}/verify/${encodeURIComponent(canonicalSlug)}`;
 
-  const ogUrl = new URL(`${origin}/api/og/verify`);
-  ogUrl.searchParams.set("slug", canonicalSlug);
-  ogUrl.searchParams.set("status", status);
-  if (receiptMatchesSlug && receipt) {
-    ogUrl.searchParams.set("pulse", String(receipt.proofCapsule.pulse));
-    ogUrl.searchParams.set("phiKey", receipt.proofCapsule.phiKey);
-    if (receipt.proofCapsule.chakraDay) ogUrl.searchParams.set("chakraDay", receipt.proofCapsule.chakraDay);
-    if (receipt.authorSig) ogUrl.searchParams.set("kas", "1");
-    if (receipt.zkVerified != null) ogUrl.searchParams.set("g16", receipt.zkVerified ? "1" : "0");
+  const ogUrl = new URL(`${origin}/og/verify/${encodeURIComponent(canonicalSlug)}.png`);
+  if (shareParam) {
+    ogUrl.searchParams.set(shareParam.param, shareParam.value);
+  } else {
+    ogUrl.searchParams.set("status", status);
+    if (shareInfo?.pulse != null) ogUrl.searchParams.set("pulse", String(shareInfo.pulse));
+    if (shareInfo?.phiKey) ogUrl.searchParams.set("phiKey", shareInfo.phiKey);
+    if (shareInfo?.checks.kas != null) ogUrl.searchParams.set("kas", shareInfo.checks.kas ? "1" : "0");
+    if (shareInfo?.checks.g16 != null) ogUrl.searchParams.set("g16", shareInfo.checks.g16 ? "1" : "0");
   }
 
   const meta = buildMetaTags({
@@ -250,6 +193,8 @@ export default async function handler(
     description: escapeHtml(description),
     url: escapeHtml(verifyUrl),
     image: escapeHtml(ogUrl.toString()),
+    imageWidth: "1200",
+    imageHeight: "630",
   });
 
   const html = await readIndexHtml(origin);
