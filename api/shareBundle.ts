@@ -92,7 +92,7 @@ export function decodeShareBundleFromParams(params: URLSearchParams): ShareBundl
   const zkProof = readZkField(bundle, "zkProof");
   const zkInputs = readZkField(bundle, "zkPublicInputs");
   const hasProof = zkProof != null && zkInputs != null;
-  const modeOk = mode === "receive" || mode === "verify" || mode === "origin";
+  const modeOk = mode === "receive" || mode === "verify";
   const inferredVerified = Boolean(verifierSlug && hasProof && modeOk && zkpVerified !== false);
   const isVerified = typeof explicitZkVerified === "boolean" ? explicitZkVerified : inferredVerified;
 
@@ -101,7 +101,14 @@ export function decodeShareBundleFromParams(params: URLSearchParams): ShareBundl
   const keyShort = shortPhiKey(phiKey);
 
   const kasOk = bundle.authorSig ? true : null;
-  const g16Ok = typeof explicitZkVerified === "boolean" ? explicitZkVerified : hasProof ? true : null;
+  const g16Ok =
+    typeof explicitZkVerified === "boolean"
+      ? explicitZkVerified
+      : zkpVerified === false
+        ? false
+        : hasProof
+          ? true
+          : null;
 
   return {
     bundle,
