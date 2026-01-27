@@ -2,6 +2,9 @@ import { PNG } from "pngjs";
 import QRCode from "qrcode";
 
 import { parseSlug } from "../../src/utils/verifySigil";
+import { renderVerifiedOgPng } from "../../src/og/renderVerifiedOg";
+import { getCapsuleByHash, getCapsuleByVerifierSlug } from "../../src/og/capsuleStore";
+import { qrDataURL } from "../../src/lib/qr";
 
 type PngInstance = InstanceType<typeof PNG> & { data: Buffer };
 type PngSyncWriter = { sync: { write: (png: PngInstance) => Buffer } };
@@ -169,6 +172,37 @@ function statusFromQuery(value: string | null): "verified" | "failed" | "standby
   return "standby";
 }
 
+function safeParseSlug(raw: string) {
+  try {
+    return parseSlug(raw);
+  } catch {
+    const cleaned = raw.trim();
+    return { raw: cleaned, pulse: null, shortSig: null, verifiedAtPulse: null };
+  }
+}
+
+function buildSlugCandidates(slugRaw: string, slug: { raw: string; pulse: number | null; shortSig: string | null }): string[] {
+  const set = new Set<string>();
+  const rawTrim = slugRaw.trim();
+  if (rawTrim) set.add(rawTrim);
+  if (slug.raw) set.add(slug.raw);
+  if (slug.pulse != null && slug.shortSig) {
+    set.add(`${slug.pulse}-${slug.shortSig}`);
+  }
+  return Array.from(set);
+}
+
+function findCapsuleBySlug(slugRaw: string, slug: { raw: string; pulse: number | null; shortSig: string | null }) {
+  const candidates = buildSlugCandidates(slugRaw, slug);
+  for (const candidate of candidates) {
+    const bySlug = getCapsuleByVerifierSlug(candidate);
+    if (bySlug) return bySlug;
+    const byHash = getCapsuleByHash(candidate);
+    if (byHash) return byHash;
+  }
+  return null;
+}
+
 async function makeQrMatrix(text: string): Promise<{ size: number; data: boolean[] }> {
   const qr = QRCode.create(text, { errorCorrectionLevel: "M" });
   const data = Array.from(qr.modules.data, (value) => value === 1);
@@ -201,7 +235,9 @@ export default async function handler(
   const base = requestOrigin(req);
   const url = new URL(req.url ?? "/", base);
   const slugRaw = url.searchParams.get("slug") ?? "";
-  const slug = parseSlug(slugRaw);
+  const slug = safeParseSlug(slugRaw);
+  const slugValue = slug.raw || slugRaw;
+  const capsule = findCapsuleBySlug(slugValue, slug);
 
   const pulse = url.searchParams.get("pulse") ?? (slug.pulse ? String(slug.pulse) : "NA");
   const chakraDay = url.searchParams.get("chakraDay") ?? "";
@@ -210,8 +246,25 @@ export default async function handler(
   const g16Ok = parseBool(url.searchParams.get("g16"));
   const status = statusFromQuery(url.searchParams.get("status"));
 
+  if (capsule) {
+    const verifyUrl = `${url.origin}/verify/${encodeURIComponent(capsule.verifierSlug ?? slugValue ?? capsule.capsuleHash)}`;
+    let qrDataUrl: string | undefined;
+    try {
+      qrDataUrl = await qrDataURL(verifyUrl, { size: 280, margin: 1, ecc: "M" });
+    } catch {
+      qrDataUrl = undefined;
+    }
+    const pngBuffer = renderVerifiedOgPng({ ...capsule, qrDataUrl });
+    res.statusCode = 200;
+    res.setHeader("Content-Type", "image/png");
+    res.setHeader("Cache-Control", "public, max-age=3600, s-maxage=86400");
+    res.end(pngBuffer);
+    return;
+  }
+
   const statusLabel = status === "verified" ? "VERIFIED" : status === "failed" ? "FAILED" : "STANDBY";
-  const statusColor: Rgba = status === "verified" ? [56, 231, 166, 255] : status === "failed" ? [255, 107, 107, 255] : [181, 199, 221, 255];
+  const statusColor: Rgba =
+    status === "verified" ? [56, 231, 166, 255] : status === "failed" ? [255, 107, 107, 255] : [181, 199, 221, 255];
   const textColor: Rgba = [230, 242, 255, 255];
 
   const png = new PNG({ width: 1200, height: 630 }) as PngInstance;
