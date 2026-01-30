@@ -232,10 +232,17 @@ async function flushInhaleQueue(): Promise<void> {
     fd.append("file", blob, `sigils_${randId()}.json`);
 
     const makeUrl = (base: string) => {
-      const url = new URL(API_INHALE_PATH, base);
+      if (base) {
+        const url = new URL(API_INHALE_PATH, base);
+        url.searchParams.set("include_state", "false");
+        url.searchParams.set("include_urls", "false");
+        return url.toString();
+      }
+
+      const url = new URL(API_INHALE_PATH, "http://placeholder");
       url.searchParams.set("include_state", "false");
       url.searchParams.set("include_urls", "false");
-      return url.toString();
+      return `${API_INHALE_PATH}${url.search}`;
     };
 
     const res = await apiFetchWithFailover(makeUrl, { method: "POST", body: fd });

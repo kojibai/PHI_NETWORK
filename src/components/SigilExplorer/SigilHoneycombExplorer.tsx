@@ -926,7 +926,7 @@ export default function SigilHoneycombExplorer({
       syncInFlightRef.current = true;
       try {
         const res = await apiFetchWithFailover(
-          (base) => new URL(API_SEAL_PATH, base).toString(),
+          (base) => (base ? new URL(API_SEAL_PATH, base).toString() : API_SEAL_PATH),
           { method: "GET", cache: "no-store", signal, headers: undefined },
         );
 

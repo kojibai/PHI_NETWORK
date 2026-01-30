@@ -1844,12 +1844,15 @@ const SigilExplorer: React.FC = () => {
       try {
         const prevSeal = remoteSealRef.current;
 
-        const res = await apiFetchWithFailover((base) => new URL(API_SEAL_PATH, base).toString(), {
-          method: "GET",
-          cache: "no-store",
-          signal: ac.signal,
-          headers: undefined,
-        });
+        const res = await apiFetchWithFailover(
+          (base) => (base ? new URL(API_SEAL_PATH, base).toString() : API_SEAL_PATH),
+          {
+            method: "GET",
+            cache: "no-store",
+            signal: ac.signal,
+            headers: undefined,
+          },
+        );
 
         if (!res) return;
         if (res.status === 304) return;
