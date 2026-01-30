@@ -19,6 +19,7 @@ export interface BuildBanknoteSvgOpts {
 
   // identity / valuation (appears in note + proof pages)
   valuePhi?: string;
+  valueUsd?: string;
   premiumPhi?: string;
   computedPulse?: string; // frozen pulse
   nowPulse?: string;      // fallback pulse
@@ -48,6 +49,7 @@ export function buildBanknoteSVG(opts: BuildBanknoteSvgOpts): string {
     remark = "In Yahuah We Trust — Secured by Φ, not man-made law",
 
     valuePhi = "0",
+    valueUsd = "—",
     premiumPhi = "0",
     computedPulse = "",
     nowPulse = "",
@@ -77,6 +79,7 @@ export function buildBanknoteSVG(opts: BuildBanknoteSvgOpts): string {
   const serialCore = (kaiSignature ? kaiSignature.slice(0, 12).toUpperCase() : "Φ".repeat(12))
     .replace(/[^0-9A-F]/g, "Φ");
   const serial = `K℞K-${serialCore}-${pulseRendered}`;
+  const ValueUsd = valueUsd?.trim() ? valueUsd : "—";
 
   // Guilloché rosette
   const rosette = (() => {
@@ -263,6 +266,7 @@ export function buildBanknoteSVG(opts: BuildBanknoteSvgOpts): string {
       <text x="0" y="22" fill="#bff" font-size="22" font-family="ui-sans-serif">VALUE</text>
       <text x="0" y="52" fill="#cfe" font-size="20" font-family="ui-monospace,monospace">Φ${esc(valuePhi)}</text>
       <text x="0" y="82" fill="#bfe" font-size="12" font-family="ui-monospace,monospace">PREMIUM Φ${esc(premiumPhi)}</text>
+      <text x="0" y="102" fill="#bfe" font-size="12" font-family="ui-monospace,monospace">≈ ${esc(ValueUsd)} USD</text>
     </g>
   </g>
 
