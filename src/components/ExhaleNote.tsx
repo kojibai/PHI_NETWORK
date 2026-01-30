@@ -158,39 +158,10 @@ function buildQrPayload(
   input: {
     verifyUrl: string;
     proofBundleJson?: string;
-    bundleHash?: string;
-    receiptHash?: string;
-    verifiedAtPulse?: number;
-    capsuleHash?: string;
-    svgHash?: string;
   }
 ): string {
   const parsed = parseProofBundleJson(input.proofBundleJson);
-  const verifierUrl = parsed.verifierUrl ?? input.verifyUrl;
-  const bundleHash = input.bundleHash || parsed.bundleHash;
-  const receiptHash = input.receiptHash || parsed.receiptHash;
-  const verifiedAtPulse =
-    typeof input.verifiedAtPulse === "number"
-      ? input.verifiedAtPulse
-      : parsed.verifiedAtPulse;
-  const capsuleHash = input.capsuleHash || parsed.capsuleHash;
-  const svgHash = input.svgHash || parsed.svgHash;
-
-  const hasPointer =
-    Boolean(bundleHash || receiptHash || capsuleHash || svgHash) ||
-    typeof verifiedAtPulse === "number";
-  if (!hasPointer) return verifierUrl;
-
-  const payload: Record<string, unknown> = {
-    v: "KVB-PTR-1",
-    verifierUrl,
-  };
-  if (bundleHash) payload.bundleHash = bundleHash;
-  if (receiptHash) payload.receiptHash = receiptHash;
-  if (typeof verifiedAtPulse === "number") payload.verifiedAtPulse = verifiedAtPulse;
-  if (capsuleHash) payload.capsuleHash = capsuleHash;
-  if (svgHash) payload.svgHash = svgHash;
-  return JSON.stringify(payload);
+  return parsed.verifierUrl ?? input.verifyUrl;
 }
 
 /** Inject preview CSS once so the SVG scales on mobile (kept defensive even if ExhaleNote.css exists). */
@@ -655,11 +626,6 @@ const ExhaleNote: React.FC<NoteProps> = ({
     const qrPayload = buildQrPayload({
       verifyUrl,
       proofBundleJson: form.proofBundleJson,
-      bundleHash: form.bundleHash,
-      receiptHash: form.receiptHash,
-      verifiedAtPulse: form.verifiedAtPulse,
-      capsuleHash: form.capsuleHash,
-      svgHash: form.svgHash,
     });
 
     return buildBanknoteSVG({
@@ -871,11 +837,6 @@ const ExhaleNote: React.FC<NoteProps> = ({
     const qrPayload = buildQrPayload({
       verifyUrl,
       proofBundleJson: form.proofBundleJson,
-      bundleHash: form.bundleHash,
-      receiptHash: form.receiptHash,
-      verifiedAtPulse: form.verifiedAtPulse,
-      capsuleHash: form.capsuleHash,
-      svgHash: form.svgHash,
     });
 
     const banknote = buildBanknoteSVG({
@@ -932,11 +893,6 @@ const ExhaleNote: React.FC<NoteProps> = ({
       const qrPayload = buildQrPayload({
         verifyUrl,
         proofBundleJson: form.proofBundleJson,
-        bundleHash: form.bundleHash,
-        receiptHash: form.receiptHash,
-        verifiedAtPulse: form.verifiedAtPulse,
-        capsuleHash: form.capsuleHash,
-        svgHash: form.svgHash,
       });
 
       const banknote = buildBanknoteSVG({
