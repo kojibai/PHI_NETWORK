@@ -617,6 +617,7 @@ const ExhaleNote: React.FC<NoteProps> = ({
     const usingLocked = Boolean(locked);
 
     const valuePhiStr = usingLocked ? fTiny(locked!.valuePhi) : fTiny(liveValuePhi);
+    const valueUsdStr = usingLocked ? fUsd(locked!.valueUsdIndicative) : fUsd(valueUsdIndicative);
     const premiumPhiStr = usingLocked ? form.premiumPhi || fTiny(livePremium) : fTiny(livePremium);
 
     const lockedPulseStr = usingLocked ? String(locked!.lockedPulse) : "";
@@ -638,6 +639,7 @@ const ExhaleNote: React.FC<NoteProps> = ({
       remark: form.remark,
 
       valuePhi: valuePhiStr,
+      valueUsd: valueUsdStr,
       premiumPhi: premiumPhiStr,
 
       computedPulse: lockedPulseStr,
@@ -653,7 +655,7 @@ const ExhaleNote: React.FC<NoteProps> = ({
       qrPayload,
       provenance: form.provenance ?? [],
     });
-  }, [form, liveValuePhi, livePremium, nowFloor, liveAlgString, locked, defaultVerifyUrl]);
+  }, [form, liveValuePhi, livePremium, valueUsdIndicative, nowFloor, liveAlgString, locked, defaultVerifyUrl]);
 
   const renderPreviewThrottled = useRafThrottle(() => {
     const host = previewHostRef.current;
@@ -842,6 +844,7 @@ const ExhaleNote: React.FC<NoteProps> = ({
     const banknote = buildBanknoteSVG({
       ...form,
       valuePhi: form.valuePhi || fTiny(locked.valuePhi),
+      valueUsd: fUsd(locked.valueUsdIndicative),
       premiumPhi: form.premiumPhi || fTiny(livePremium),
       computedPulse: String(locked.lockedPulse),
       nowPulse: String(locked.lockedPulse),
@@ -898,6 +901,7 @@ const ExhaleNote: React.FC<NoteProps> = ({
       const banknote = buildBanknoteSVG({
         ...form,
         valuePhi: form.valuePhi || fTiny(locked.valuePhi),
+        valueUsd: fUsd(locked.valueUsdIndicative),
         premiumPhi: form.premiumPhi || fTiny(livePremium),
         computedPulse: String(locked.lockedPulse),
         nowPulse: String(locked.lockedPulse),
