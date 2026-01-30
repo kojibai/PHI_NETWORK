@@ -9,6 +9,7 @@ import { memoryRegistry, isOnline } from "./registryStore";
 const hasWindow = typeof window !== "undefined";
 
 const INHALE_BATCH_MAX = 200;
+const INHALE_BATCH_MAX_BYTES = 220_000;
 const INHALE_DEBOUNCE_MS = 180;
 const INHALE_RETRY_BASE_MS = 1200;
 const INHALE_RETRY_MAX_MS = 12000;
@@ -219,11 +220,31 @@ async function flushInhaleQueue(): Promise<void> {
   try {
     const batch: Record<string, unknown>[] = [];
     const keys: string[] = [];
+    const encoder = typeof TextEncoder !== "undefined" ? new TextEncoder() : null;
+    let currentBytes = 2;
 
     for (const [k, v] of inhaleQueue) {
+      const next = [...batch, v];
+      const jsonPreview = JSON.stringify(next);
+      const size =
+        encoder != null
+          ? encoder.encode(jsonPreview).byteLength
+          : new Blob([jsonPreview]).size;
+
+      if (
+        batch.length > 0 &&
+        (batch.length >= INHALE_BATCH_MAX || size > INHALE_BATCH_MAX_BYTES)
+      ) {
+        break;
+      }
+
       batch.push(v);
       keys.push(k);
-      if (batch.length >= INHALE_BATCH_MAX) break;
+      currentBytes = size;
+
+      if (batch.length >= INHALE_BATCH_MAX || currentBytes >= INHALE_BATCH_MAX_BYTES) {
+        break;
+      }
     }
 
     const json = JSON.stringify(batch);
