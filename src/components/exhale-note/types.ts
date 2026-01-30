@@ -64,6 +64,14 @@ export type BanknoteInputs = {
   // sigil + verify
   sigilSvg?: string;   // raw SVG for slot
   verifyUrl?: string;  // used for QR & clickable slot
+
+  // verifier receipt bundle (for PNG embeds/QR payload)
+  proofBundleJson?: string;
+  bundleHash?: string;
+  receiptHash?: string;
+  verifiedAtPulse?: number;
+  capsuleHash?: string;
+  svgHash?: string;
 };
 
 export type VerifierBridge = {

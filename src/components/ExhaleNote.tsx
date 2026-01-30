@@ -16,6 +16,7 @@ import { printWithTempTitle, renderIntoPrintRoot } from "./exhale-note/printer";
 import { fPhi, fUsd, fTiny } from "./exhale-note/format";
 import { fetchFromVerifierBridge } from "./exhale-note/bridge";
 import { svgStringToPngBlob, triggerDownload } from "./exhale-note/svgToPng";
+import { insertPngTextChunks } from "../utils/pngChunks";
 
 import type {
   NoteProps,
@@ -108,6 +109,59 @@ function resolveVerifyUrl(raw: string | undefined, fallbackAbs: string): string 
   }
 
   return candidate;
+}
+
+type NoteProofBundleFields = {
+  verifierUrl?: string;
+  bundleHash?: string;
+  receiptHash?: string;
+  verifiedAtPulse?: number;
+  capsuleHash?: string;
+  svgHash?: string;
+};
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function readOptionalString(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function readOptionalNumber(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() && Number.isFinite(Number(value))) return Number(value);
+  return undefined;
+}
+
+function parseProofBundleJson(raw: string | undefined): NoteProofBundleFields {
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!isPlainRecord(parsed)) return {};
+    return {
+      verifierUrl: readOptionalString(parsed.verifierUrl),
+      bundleHash: readOptionalString(parsed.bundleHash),
+      receiptHash: readOptionalString(parsed.receiptHash),
+      verifiedAtPulse: readOptionalNumber(parsed.verifiedAtPulse),
+      capsuleHash: readOptionalString(parsed.capsuleHash),
+      svgHash: readOptionalString(parsed.svgHash),
+    };
+  } catch {
+    return {};
+  }
+}
+
+function buildQrPayload(
+  input: {
+    verifyUrl: string;
+    proofBundleJson?: string;
+  }
+): string {
+  const parsed = parseProofBundleJson(input.proofBundleJson);
+  return parsed.verifierUrl ?? input.verifyUrl;
 }
 
 /** Inject preview CSS once so the SVG scales on mobile (kept defensive even if ExhaleNote.css exists). */
@@ -500,6 +554,12 @@ const ExhaleNote: React.FC<NoteProps> = ({
       zk: undefined,
       sigilSvg: "",
       verifyUrl: defaultVerifyUrl,
+      proofBundleJson: "",
+      bundleHash: "",
+      receiptHash: "",
+      verifiedAtPulse: undefined,
+      capsuleHash: "",
+      svgHash: "",
       ...(initial ?? {}),
     };
 
@@ -563,6 +623,10 @@ const ExhaleNote: React.FC<NoteProps> = ({
     const valuationStampStr = usingLocked ? form.valuationStamp || locked!.seal.stamp : "";
 
     const verifyUrl = resolveVerifyUrl(form.verifyUrl, defaultVerifyUrl);
+    const qrPayload = buildQrPayload({
+      verifyUrl,
+      proofBundleJson: form.proofBundleJson,
+    });
 
     return buildBanknoteSVG({
       purpose: form.purpose,
@@ -586,6 +650,7 @@ const ExhaleNote: React.FC<NoteProps> = ({
 
       sigilSvg: form.sigilSvg || "",
       verifyUrl,
+      qrPayload,
       provenance: form.provenance ?? [],
     });
   }, [form, liveValuePhi, livePremium, nowFloor, liveAlgString, locked, defaultVerifyUrl]);
@@ -717,6 +782,12 @@ const ExhaleNote: React.FC<NoteProps> = ({
             "provenance",
             "sigilSvg",
             "verifyUrl",
+            "proofBundleJson",
+            "bundleHash",
+            "receiptHash",
+            "verifiedAtPulse",
+            "capsuleHash",
+            "svgHash",
           ];
 
           const safe = normalizeIncoming(
@@ -763,6 +834,10 @@ const ExhaleNote: React.FC<NoteProps> = ({
     }
 
     const verifyUrl = resolveVerifyUrl(form.verifyUrl, defaultVerifyUrl);
+    const qrPayload = buildQrPayload({
+      verifyUrl,
+      proofBundleJson: form.proofBundleJson,
+    });
 
     const banknote = buildBanknoteSVG({
       ...form,
@@ -776,6 +851,7 @@ const ExhaleNote: React.FC<NoteProps> = ({
       valuationStamp: form.valuationStamp || locked.seal.stamp,
       sigilSvg: form.sigilSvg || "",
       verifyUrl,
+      qrPayload,
       provenance: form.provenance ?? [],
     });
 
@@ -814,6 +890,10 @@ const ExhaleNote: React.FC<NoteProps> = ({
       }
 
       const verifyUrl = resolveVerifyUrl(form.verifyUrl, defaultVerifyUrl);
+      const qrPayload = buildQrPayload({
+        verifyUrl,
+        proofBundleJson: form.proofBundleJson,
+      });
 
       const banknote = buildBanknoteSVG({
         ...form,
@@ -827,10 +907,15 @@ const ExhaleNote: React.FC<NoteProps> = ({
         valuationStamp: form.valuationStamp || locked.seal.stamp,
         sigilSvg: form.sigilSvg || "",
         verifyUrl,
+        qrPayload,
         provenance: form.provenance ?? [],
       });
 
       const png = await svgStringToPngBlob(banknote, 2400);
+      const proofBundleJson = form.proofBundleJson?.trim() || "";
+      const proofFields = parseProofBundleJson(proofBundleJson);
+      const bundleHash = form.bundleHash || proofFields.bundleHash;
+      const receiptHash = form.receiptHash || proofFields.receiptHash;
 
       const title = makeFileTitle(
         form.kaiSignature || "",
@@ -838,7 +923,26 @@ const ExhaleNote: React.FC<NoteProps> = ({
         form.valuationStamp || locked.seal.stamp || ""
       );
 
-      triggerDownload(`${title}.png`, png, "image/png");
+      if (!proofBundleJson) {
+        triggerDownload(`${title}.png`, png, "image/png");
+        return;
+      }
+
+      const entries = [
+        proofBundleJson ? { keyword: "phi_proof_bundle", text: proofBundleJson } : null,
+        bundleHash ? { keyword: "phi_bundle_hash", text: bundleHash } : null,
+        receiptHash ? { keyword: "phi_receipt_hash", text: receiptHash } : null,
+      ].filter((entry): entry is { keyword: string; text: string } => Boolean(entry));
+
+      if (entries.length === 0) {
+        triggerDownload(`${title}.png`, png, "image/png");
+        return;
+      }
+
+      const bytes = new Uint8Array(await png.arrayBuffer());
+      const enriched = insertPngTextChunks(bytes, entries);
+      const finalBlob = new Blob([enriched as BlobPart], { type: "image/png" });
+      triggerDownload(`${title}.png`, finalBlob, "image/png");
     } catch (err) {
       window.alert("Save PNG failed: " + (err instanceof Error ? err.message : String(err)));
       // eslint-disable-next-line no-console

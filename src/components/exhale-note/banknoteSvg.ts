@@ -30,6 +30,7 @@ export interface BuildBanknoteSvgOpts {
   // sigil + verify
   sigilSvg?: string;      // raw SVG for slot
   verifyUrl?: string;     // used for QR & clickable slot
+  qrPayload?: string;     // optional QR payload (e.g. verifier pointer)
 
   // provenance (optional)
   provenance?: ProvenanceRow[];
@@ -57,6 +58,7 @@ export function buildBanknoteSVG(opts: BuildBanknoteSvgOpts): string {
 
     sigilSvg = "",
     verifyUrl = "/",
+    qrPayload,
 
     provenance = [],
   } = opts;
@@ -98,7 +100,7 @@ export function buildBanknoteSVG(opts: BuildBanknoteSvgOpts): string {
   const sigilEmbed = embedSigilIntoSlotClickable(sigilInner, slot.x, slot.y, slot.w, slot.h, verifyUrl);
 
   // QR block (avoid 8-digit hex colors; use stroke-opacity instead)
-  const qrSvg = makeQrSvgTagSafe(verifyUrl, 110, 2);
+  const qrSvg = makeQrSvgTagSafe(qrPayload || verifyUrl, 110, 2);
   const qrBlock = `
     <g transform="translate(828,346)">
       <rect x="-8" y="-8" width="126" height="142" rx="10" fill="#0a1013" stroke="#2ad6c7" stroke-opacity=".20"/>

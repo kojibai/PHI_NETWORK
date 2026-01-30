@@ -647,26 +647,73 @@ const VerifierStamperInner: React.FC = () => {
   };
 
   const noteInitial = useMemo<NoteBanknoteInputs>(
-    () =>
-      buildNotePayload({
+    () => {
+      const base = buildNotePayload({
         meta,
         sigilSvgRaw,
         verifyUrl: sealUrl || (typeof window !== "undefined" ? window.location.href : ""),
         pulseNow,
-      }),
-    [meta, sigilSvgRaw, sealUrl, pulseNow]
+      });
+
+      const rawBundle = proofBundleMeta?.raw;
+      const rawRecord = isRecord(rawBundle) ? rawBundle : null;
+      const proofBundleJson = rawRecord ? JSON.stringify(rawRecord) : "";
+      const bundleHash = proofBundleMeta?.bundleHash ?? (rawRecord && typeof rawRecord.bundleHash === "string" ? rawRecord.bundleHash : "");
+      const receiptHash = proofBundleMeta?.receiptHash ?? (rawRecord && typeof rawRecord.receiptHash === "string" ? rawRecord.receiptHash : "");
+      const verifiedAtPulse =
+        typeof proofBundleMeta?.verifiedAtPulse === "number"
+          ? proofBundleMeta.verifiedAtPulse
+          : rawRecord && typeof rawRecord.verifiedAtPulse === "number"
+            ? rawRecord.verifiedAtPulse
+            : undefined;
+      const capsuleHash = proofBundleMeta?.capsuleHash ?? (rawRecord && typeof rawRecord.capsuleHash === "string" ? rawRecord.capsuleHash : "");
+      const svgHash = proofBundleMeta?.svgHash ?? (rawRecord && typeof rawRecord.svgHash === "string" ? rawRecord.svgHash : "");
+
+      return {
+        ...base,
+        proofBundleJson,
+        bundleHash,
+        receiptHash,
+        verifiedAtPulse,
+        capsuleHash,
+        svgHash,
+      };
+    },
+    [meta, sigilSvgRaw, sealUrl, pulseNow, proofBundleMeta]
   );
 
   const openNote = () =>
     switchModal(dlgRef.current, () => {
       const d = noteDlgRef.current;
       if (!d) return;
-      const p = buildNotePayload({
+      const base = buildNotePayload({
         meta,
         sigilSvgRaw,
         verifyUrl: sealUrl || (typeof window !== "undefined" ? window.location.href : ""),
         pulseNow,
       });
+      const rawBundle = proofBundleMeta?.raw;
+      const rawRecord = isRecord(rawBundle) ? rawBundle : null;
+      const proofBundleJson = rawRecord ? JSON.stringify(rawRecord) : "";
+      const bundleHash = proofBundleMeta?.bundleHash ?? (rawRecord && typeof rawRecord.bundleHash === "string" ? rawRecord.bundleHash : "");
+      const receiptHash = proofBundleMeta?.receiptHash ?? (rawRecord && typeof rawRecord.receiptHash === "string" ? rawRecord.receiptHash : "");
+      const verifiedAtPulse =
+        typeof proofBundleMeta?.verifiedAtPulse === "number"
+          ? proofBundleMeta.verifiedAtPulse
+          : rawRecord && typeof rawRecord.verifiedAtPulse === "number"
+            ? rawRecord.verifiedAtPulse
+            : undefined;
+      const capsuleHash = proofBundleMeta?.capsuleHash ?? (rawRecord && typeof rawRecord.capsuleHash === "string" ? rawRecord.capsuleHash : "");
+      const svgHash = proofBundleMeta?.svgHash ?? (rawRecord && typeof rawRecord.svgHash === "string" ? rawRecord.svgHash : "");
+      const p = {
+        ...base,
+        proofBundleJson,
+        bundleHash,
+        receiptHash,
+        verifiedAtPulse,
+        capsuleHash,
+        svgHash,
+      };
       const bridge: VerifierBridge = { getNoteData: async () => p };
       setVerifierBridge(bridge);
       try {
