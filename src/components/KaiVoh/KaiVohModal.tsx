@@ -279,6 +279,20 @@ export default function KaiVohModal({ open, onClose }: KaiVohModalProps) {
     // Touch gating (iOS pull-to-refresh prevention)
     const onTouchStart = (e: TouchEvent): void => {
       touchStartYRef.current = e.touches[0]?.clientY ?? 0;
+
+      const s = scrollRegionRef.current;
+      if (!s) return;
+
+      const target = e.target as Node | null;
+      const insideScrollRegion = target ? s.contains(target) : false;
+      if (!insideScrollRegion) return;
+
+      // iOS pull-to-refresh guard: nudge scroll position away from edges
+      if (s.scrollTop <= 0) {
+        s.scrollTop = 1;
+      } else if (s.scrollTop + s.clientHeight >= s.scrollHeight) {
+        s.scrollTop = Math.max(0, s.scrollHeight - s.clientHeight - 1);
+      }
     };
 
     const onTouchMove = (e: TouchEvent): void => {
