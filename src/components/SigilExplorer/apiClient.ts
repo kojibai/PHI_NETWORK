@@ -152,16 +152,6 @@ function apiBases(): string[] {
     return [DEV_API_BASE];
   }
 
-  if (hasWindow) {
-    const pageOrigin = window.location.origin;
-    // In production on non-API domains (e.g. phi.network), try same-origin first
-    // (if a proxy exists), then fall back to the live API hosts.
-    if (pageOrigin !== LIVE_BASE_URL && pageOrigin !== LIVE_BACKUP_URL) {
-      const list = [DEV_API_BASE, LIVE_BASE_URL, LIVE_BACKUP_URL];
-      return isBackupSuppressed() ? list.filter((b) => b !== LIVE_BACKUP_URL) : list;
-    }
-  }
-
   const wantFallbackFirst = apiBaseHint === API_BASE_FALLBACK && !isBackupSuppressed();
   const list = wantFallbackFirst
     ? [API_BASE_FALLBACK, API_BASE_PRIMARY]
