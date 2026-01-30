@@ -88,12 +88,7 @@ function SigilAuthPill({ className }: { className?: string }) {
   const meta = auth.meta;
   if (!meta) return null;
 
-  const titleParts: string[] = [
-    `Pulse: ${meta.pulse}`,
-    `Beat: ${meta.beat}`,
-    `Step: ${meta.stepIndex}`,
-    `Day: ${meta.chakraDay}`,
-  ];
+  const titleParts: string[] = [`Pulse: ${meta.pulse}`, `Beat: ${meta.beat}`, `Step: ${meta.stepIndex}`, `Day: ${meta.chakraDay}`];
   if (meta.sigilId) titleParts.push(`Sigil: ${meta.sigilId}`);
   if (meta.userPhiKey) titleParts.push(`PhiKey: ${meta.userPhiKey}`);
 
@@ -145,6 +140,18 @@ function isEditableElement(el: Element | null): boolean {
   if (el instanceof HTMLTextAreaElement) return !el.disabled;
   if (el instanceof HTMLSelectElement) return !el.disabled;
   if (el instanceof HTMLElement && el.isContentEditable) return true;
+  return false;
+}
+
+/** Treat events on descendants of editable controls as editable too. */
+function isEditableTarget(target: EventTarget | null): boolean {
+  const el = target instanceof Element ? target : null;
+  if (!el) return false;
+  if (isEditableElement(el)) return true;
+  if (el instanceof HTMLElement) {
+    const nearest = el.closest("input,textarea,select,[contenteditable='true'],[contenteditable=''],[contenteditable]");
+    return isEditableElement(nearest);
+  }
   return false;
 }
 
@@ -207,10 +214,11 @@ export default function KaiVohModal({ open, onClose }: KaiVohModalProps) {
    * - Prevents any touchmove/wheel outside the modal scroll region.
    * - Prevents overscroll bounce at bounds INSIDE the modal scroll region (iOS pull-to-refresh trigger).
    * - Adds Escape-to-close + Tab focus trap (avoids focus escape → accidental page scroll).
-   * - Sets global CSS vars for breath/phi + an innerHeight var for stable layout.
+   * - Sets global CSS vars for breath/phi + a VisualViewport-stable --kai-vh.
    */
   useEffect(() => {
     if (!open) return;
+
     const allowEscapeClose = !window.matchMedia?.("(pointer: coarse)")?.matches;
     const locationAny = window.location as Location;
     const originalLocation = {
@@ -256,9 +264,8 @@ export default function KaiVohModal({ open, onClose }: KaiVohModalProps) {
     document.documentElement.style.setProperty("overscroll-behavior", "none");
     document.body.style.setProperty("overscroll-behavior", "none");
 
-    // Avoid double-tap zoom / weird pan interactions outside our scroll region
-    document.documentElement.style.touchAction = "none";
-    document.body.style.touchAction = "none";
+    // ✅ CRITICAL FIX: do NOT set html/body touch-action:none
+    // (It breaks iOS keyboard + editable gestures and looks like a refresh.)
 
     // CSS vars for timing/phi
     document.documentElement.style.setProperty("--kai-breath", viewportVars.breath);
@@ -289,17 +296,72 @@ export default function KaiVohModal({ open, onClose }: KaiVohModalProps) {
       // ignore inability to patch location methods
     }
 
-    // Stable viewport var (helps iOS address-bar / orientation “jump”)
-    const syncVh = (): void => {
-      document.documentElement.style.setProperty("--kai-vh", `${window.innerHeight}px`);
+    // ✅ KEY FIX: VisualViewport-stable --kai-vh, freeze during editing
+    const vv = window.visualViewport ?? null;
+
+    let rafId = 0;
+    let lastH = -1;
+
+    let freezeVh = false;
+    let freezePending = false;
+
+    const measureVh = (): number => {
+      const h = vv?.height ?? window.innerHeight;
+      return Math.max(1, Math.round(h));
     };
-    syncVh();
-    window.addEventListener("resize", syncVh, { passive: true });
+
+    const applyVh = (force = false): void => {
+      const h = measureVh();
+      if (!force && lastH >= 0 && Math.abs(h - lastH) < 2) return;
+      lastH = h;
+      document.documentElement.style.setProperty("--kai-vh", `${h}px`);
+    };
+
+    const scheduleVh = (force = false): void => {
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        rafId = 0;
+        applyVh(force);
+
+        // After the first keyboard-driven resize after focus, freeze to prevent jitter while typing.
+        if (freezePending) {
+          freezePending = false;
+          freezeVh = true;
+        }
+      });
+    };
+
+    const onViewportResize = (): void => {
+      if (freezeVh) return;
+      scheduleVh(false);
+    };
+
+    const onFocusIn = (e: FocusEvent): void => {
+      if (!isEditableTarget(e.target)) return;
+      // allow one viewport update to capture keyboard height, then freeze
+      freezeVh = false;
+      freezePending = true;
+      scheduleVh(true);
+    };
+
+    const onFocusOut = (e: FocusEvent): void => {
+      if (!isEditableTarget(e.target)) return;
+      // keyboard closing: unfreeze so vh can restore
+      freezeVh = false;
+      freezePending = false;
+      scheduleVh(true);
+    };
+
+    scheduleVh(true);
+    window.addEventListener("resize", onViewportResize, { passive: true });
+    vv?.addEventListener("resize", onViewportResize as EventListener, { passive: true } as AddEventListenerOptions);
+    vv?.addEventListener("scroll", onViewportResize as EventListener, { passive: true } as AddEventListenerOptions);
+    document.addEventListener("focusin", onFocusIn as EventListener, { capture: true, passive: true });
+    document.addEventListener("focusout", onFocusOut as EventListener, { capture: true, passive: true });
 
     // Make the scroll region itself “contain” overscroll (best-effort; iOS still needs touch gate)
     const scrollEl = scrollRegionRef.current;
     if (scrollEl) {
-
       scrollEl.style.overscrollBehavior = "contain";
       // iOS momentum scrolling (smooth)
       // @ts-expect-error: webkitOverflowScrolling not in standard types.
@@ -311,6 +373,9 @@ export default function KaiVohModal({ open, onClose }: KaiVohModalProps) {
 
     // Touch gating (iOS pull-to-refresh prevention)
     const onTouchStart = (e: TouchEvent): void => {
+      // ✅ never interfere with focusing/typing/selection inside inputs
+      if (isEditableTarget(e.target)) return;
+
       touchStartYRef.current = e.touches[0]?.clientY ?? 0;
 
       const s = scrollRegionRef.current;
@@ -330,6 +395,9 @@ export default function KaiVohModal({ open, onClose }: KaiVohModalProps) {
 
     const onTouchMove = (e: TouchEvent): void => {
       if (e.touches.length !== 1) return;
+
+      // ✅ never block scrolling/selection/caret gestures in editable controls
+      if (isEditableTarget(e.target)) return;
 
       const s = scrollRegionRef.current;
       if (!s) {
@@ -360,6 +428,9 @@ export default function KaiVohModal({ open, onClose }: KaiVohModalProps) {
 
     // Wheel gating (trackpads can “overscroll” background under fixed body in some browsers)
     const onWheel = (e: WheelEvent): void => {
+      // ✅ never interfere with wheel/trackpad inside textareas/inputs
+      if (isEditableTarget(e.target)) return;
+
       const s = scrollRegionRef.current;
       if (!s) {
         e.preventDefault();
@@ -453,10 +524,7 @@ export default function KaiVohModal({ open, onClose }: KaiVohModalProps) {
       ev.preventDefault();
     };
     document.addEventListener("gesturestart", onGesture, { passive: false, signal: ac.signal } as AddEventListenerOptions);
-    document.addEventListener("gesturechange", onGesture, {
-      passive: false,
-      signal: ac.signal,
-    } as AddEventListenerOptions);
+    document.addEventListener("gesturechange", onGesture, { passive: false, signal: ac.signal } as AddEventListenerOptions);
     document.addEventListener("gestureend", onGesture, { passive: false, signal: ac.signal } as AddEventListenerOptions);
 
     const onSubmit = (e: Event): void => {
@@ -471,7 +539,14 @@ export default function KaiVohModal({ open, onClose }: KaiVohModalProps) {
     return () => {
       // Remove listeners
       ac.abort();
-      window.removeEventListener("resize", syncVh);
+
+      window.removeEventListener("resize", onViewportResize);
+      vv?.removeEventListener("resize", onViewportResize as EventListener);
+      vv?.removeEventListener("scroll", onViewportResize as EventListener);
+      document.removeEventListener("focusin", onFocusIn as EventListener, true);
+      document.removeEventListener("focusout", onFocusOut as EventListener, true);
+
+      if (rafId) cancelAnimationFrame(rafId);
 
       // Restore global styles/vars
       document.body.style.overflow = prev.bodyOverflow;

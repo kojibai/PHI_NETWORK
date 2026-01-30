@@ -1,15 +1,15 @@
-/* ──────────────────────────────────────────────────────────────
+/* src/components/KaiVoh/styles/KaiVohModal.css
    KaiVohModal.css — Atlantean Glass (Phi / Breath 5.236s)
    HARDENED “NATIVE APP” MODAL (no pull-to-refresh, no scroll chaining,
    no iOS input zoom, no weird reloads when focusing inputs)
-   ────────────────────────────────────────────────────────────── */
+*/
 
 /* Global fallbacks (TSX sets these on <html> when modal opens) */
 :root{
   --kai-breath: 5.236s;
   --kai-phi: 1.61803398875;
 
-  /* TSX sets --kai-vh = innerHeight px while open (stable iOS viewport) */
+  /* TSX sets --kai-vh = visualViewport height px while open (keyboard-safe) */
   --kai-vh: 100vh;
 
   /* Palette (deep ocean glass + auric cyan/violet + gold) */
@@ -48,13 +48,7 @@
   --voh-orb-gap: 8px;
 }
 
-/* ──────────────────────────────────────────────────────────────
-   Backdrop + celestial layers
-   Key hardening:
-   - touch-action: none on backdrop (prevents stray gestures / iOS bounce)
-   - overscroll-behavior: none/contain (no scroll chaining)
-   - stable height using --kai-vh (set by TSX)
-   ────────────────────────────────────────────────────────────── */
+/* Backdrop */
 .kai-voh-modal-backdrop{
   position: fixed;
   inset: 0;
@@ -66,7 +60,6 @@
 
   padding: 0;
 
-  /* Stable viewport while keyboard opens/closes (TSX updates --kai-vh on resize) */
   min-height: var(--kai-vh, 100vh);
   height: var(--kai-vh, 100vh);
 
@@ -80,13 +73,11 @@
   backdrop-filter: blur(6px) saturate(1.08);
   animation: portal-fade .42s ease-out both;
 
-  /* HARD: never allow overscroll/pull-to-refresh from backdrop */
   overscroll-behavior: none;
 
-  /* HARD: block pan/zoom gestures at the backdrop level (scroll is allowed only in .kai-voh-body) */
+  /* keep this: backdrop blocks stray gestures; scroll is allowed only in .kai-voh-body */
   touch-action: none;
 
-  /* Prevent highlight/selection weirdness on iOS */
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -152,19 +143,13 @@
 .atlantean-halo--1{ background: var(--halo-1); animation: halo-orbit var(--kai-breath) ease-in-out infinite alternate; }
 .atlantean-halo--2{ background: var(--halo-2); animation: halo-orbit calc(var(--kai-breath) * 1.618) ease-in-out infinite alternate-reverse; }
 
-/* ──────────────────────────────────────────────────────────────
-   Container — Atlantean glass
-   Key hardening:
-   - max-height uses --kai-vh to stay stable with iOS keyboard
-   - touch-action none on shell; scroll only inside .kai-voh-body
-   ────────────────────────────────────────────────────────────── */
+/* Container */
 .kai-voh-container{
   position: relative;
 
   width: 100%;
   height: 100%;
 
-  /* Stable iOS keyboard behavior */
   max-height: var(--kai-vh, 100vh);
 
   color: var(--kai-fg);
@@ -191,16 +176,18 @@
 
   isolation:isolate;
 
-  /* HARD: block pan/zoom gestures on container (scroll allowed only in inner region) */
-  touch-action: none;
+  /* ✅ KEY FIX: do NOT block touch-action at the container level (inputs live here) */
+  touch-action: auto;
 
-  /* Prevent iOS “smart zoom” text scaling */
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
 
-  /* Helps reduce paint churn */
   contain: layout paint;
 }
+
+/* ...everything else below is unchanged from your file... */
+/* (Keep the rest of your CSS exactly as you pasted it) */
+
 
 .glass-omni::before{
   content:"";
