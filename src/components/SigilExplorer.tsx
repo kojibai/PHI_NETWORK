@@ -1543,10 +1543,17 @@ async function flushInhaleQueue(): Promise<void> {
     fd.append("file", blob, `sigils_${randId()}.json`);
 
     const makeUrl = (base: string) => {
-      const url = new URL(API_INHALE_PATH, base);
+      if (base) {
+        const url = new URL(API_INHALE_PATH, base);
+        url.searchParams.set("include_state", "false");
+        url.searchParams.set("include_urls", "false");
+        return url.toString();
+      }
+
+      const url = new URL(API_INHALE_PATH, "http://placeholder");
       url.searchParams.set("include_state", "false");
       url.searchParams.set("include_urls", "false");
-      return url.toString();
+      return `${API_INHALE_PATH}${url.search}`;
     };
 
     const res = await apiFetchWithFailover(makeUrl, { method: "POST", body: fd });
@@ -1776,10 +1783,17 @@ async function pullAndImportRemoteUrls(
 
     const r = await apiFetchJsonWithFailover<ApiUrlsPageResponse>(
       (base) => {
-        const url = new URL(API_URLS_PATH, base);
+        if (base) {
+          const url = new URL(API_URLS_PATH, base);
+          url.searchParams.set("offset", String(offset));
+          url.searchParams.set("limit", String(URLS_PAGE_LIMIT));
+          return url.toString();
+        }
+
+        const url = new URL(API_URLS_PATH, "http://placeholder");
         url.searchParams.set("offset", String(offset));
         url.searchParams.set("limit", String(URLS_PAGE_LIMIT));
-        return url.toString();
+        return `${API_URLS_PATH}${url.search}`;
       },
       { method: "GET", signal, cache: "no-store" },
     );
@@ -3271,12 +3285,15 @@ const SigilExplorer: React.FC = () => {
         // (B) EXHALE — seal check
         const prevSeal = remoteSealRef.current;
 
-        const res = await apiFetchWithFailover((base) => new URL(API_SEAL_PATH, base).toString(), {
-          method: "GET",
-          cache: "no-store",
-          signal: ac.signal,
-          headers: undefined,
-        });
+        const res = await apiFetchWithFailover(
+          (base) => (base ? new URL(API_SEAL_PATH, base).toString() : API_SEAL_PATH),
+          {
+            method: "GET",
+            cache: "no-store",
+            signal: ac.signal,
+            headers: undefined,
+          },
+        );
 
         if (!res) return;
 
