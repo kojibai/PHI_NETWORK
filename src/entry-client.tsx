@@ -146,28 +146,18 @@ if (container) {
 }
 
 void loadSnarkjsGlobal();
-
 /* ─────────────────────────────────────────────────────────────────────
    Service worker registration (prod only)
+   - NO auto skipWaiting (prevents mid-session controller swap)
+   - NO update checks while user is typing / KaiVoh active
+   - Manual apply only (window.kairosApplyUpdate)
 ────────────────────────────────────────────────────────────────────── */
 if ("serviceWorker" in navigator && isProduction) {
   const registerKairosSW = async () => {
     try {
       const reg = await navigator.serviceWorker.register(`/sw.js?v=${APP_VERSION}`, { scope: "/" });
 
-      // Avoid mid-session reloads: only refresh when safe/idle.
-      let pendingReload = false;
-
-      const hasActiveKaiVohSession = (): boolean => {
-        try {
-          return Boolean(
-            window.localStorage.getItem("kai.voh.session.v1") ||
-              window.localStorage.getItem("kai.sigilAuth.v1"),
-          );
-        } catch {
-          return false;
-        }
-      };
+      let pendingApply = false;
 
       const isInteractiveElement = (el: Element | null): boolean => {
         if (!el) return false;
@@ -178,16 +168,13 @@ if ("serviceWorker" in navigator && isProduction) {
         return false;
       };
 
-      const hasFocusedKaiVohField = (): boolean => {
+      const hasFocusedField = (): boolean => {
         const active = document.activeElement;
         if (!active || active === document.body) return false;
         if (!(active instanceof HTMLElement)) return false;
-        if (!active.closest(".kai-voh-app-shell, .kai-voh-login-shell, .kai-voh-modal-backdrop")) {
-          return false;
-        }
         return Boolean(
           isInteractiveElement(active) ||
-            active.closest("input, textarea, select, [contenteditable='true'], [contenteditable='plaintext-only']"),
+            active.closest("input, textarea, select, [contenteditable='true'], [contenteditable]")
         );
       };
 
@@ -196,66 +183,81 @@ if ("serviceWorker" in navigator && isProduction) {
           document.querySelector(".kai-voh-modal-backdrop") ||
             document.querySelector(".kai-voh-app-shell") ||
             document.querySelector(".kai-voh-login-shell") ||
-            document.querySelector(".kv-post-caption-textarea") ||
             document.querySelector(".composer-textarea") ||
-            hasFocusedKaiVohField(),
+            hasFocusedField()
         );
       };
 
-      const isReloadSafe = (): boolean => !hasActiveKaiVohSession() && !hasActiveKaiVohUi();
+      const isReloadSafe = (): boolean => !hasActiveKaiVohUi() && !hasFocusedField();
 
       const markUpdateAvailable = (reason: string): void => {
         window.dispatchEvent(
           new CustomEvent("kairos-sw-update-available", {
             detail: { reason, version: window.kairosSwVersion },
-          }),
+          })
         );
       };
 
-      const tryReload = (reason: string): void => {
-        if (!pendingReload) return;
+      const getWaitingWorker = (): ServiceWorker | null => {
+        return reg.waiting || null;
+      };
+
+      const tryApply = (reason: string): void => {
+        if (!pendingApply) return;
 
         if (!isReloadSafe()) {
           markUpdateAvailable(`blocked:${reason}`);
           return;
         }
 
+        const w = getWaitingWorker();
+        if (!w) {
+          markUpdateAvailable(`no-waiting:${reason}`);
+          return;
+        }
+
+        // Step 1: ask waiting SW to activate
+        w.postMessage({ type: "SKIP_WAITING" });
+      };
+
+      // Manual entrypoint only
+      window.kairosApplyUpdate = () => {
+        pendingApply = true;
+        tryApply("manual");
+      };
+
+      // When new SW is installed and waiting, notify UI (do NOT auto-activate)
+      reg.addEventListener("updatefound", () => {
+        const nw = reg.installing;
+        if (!nw) return;
+        nw.addEventListener("statechange", () => {
+          if (nw.state === "installed" && navigator.serviceWorker.controller) {
+            // waiting SW is ready; tell UI an update exists
+            markUpdateAvailable("installed");
+          }
+        });
+      });
+
+      // Controller swap happens AFTER skipWaiting + activate + claim
+      navigator.serviceWorker.addEventListener("controllerchange", () => {
+        // Never reload automatically. If user manually applied, we can reload when safe.
+        if (!pendingApply) return;
+
+        if (!isReloadSafe()) {
+          markUpdateAvailable("controllerchange-blocked");
+          return;
+        }
+
+        // reload only when not visible (zero disruption)
         if (document.visibilityState === "hidden") {
           window.location.reload();
         } else {
-          markUpdateAvailable(`deferred:${reason}`);
+          markUpdateAvailable("controllerchange-deferred");
         }
-      };
-
-   
- 
-
-      window.kairosApplyUpdate = () => {
-        pendingReload = true;
-        tryReload("manual");
-      };
-
-      const triggerSkipWaiting = (worker: ServiceWorker | null) => {
-        worker?.postMessage({ type: "SKIP_WAITING" });
-      };
-
-      const watchForUpdates = (registration: ServiceWorkerRegistration) => {
-        registration.addEventListener("updatefound", () => {
-          const newWorker = registration.installing;
-          if (!newWorker) return;
-          newWorker.addEventListener("statechange", () => {
-            if (newWorker.state === "installed" && navigator.serviceWorker.controller) {
-              triggerSkipWaiting(newWorker);
-            }
-          });
-        });
-      };
-
-      watchForUpdates(reg);
+      });
 
       navigator.serviceWorker.addEventListener("message", (event) => {
         if (event.data?.type === "SW_ACTIVATED") {
-          console.log("Kairos service worker active", event.data.version);
           if (typeof event.data.version === "string") {
             window.kairosSwVersion = event.data.version;
             window.dispatchEvent(new CustomEvent(SW_VERSION_EVENT, { detail: event.data.version }));
@@ -263,27 +265,30 @@ if ("serviceWorker" in navigator && isProduction) {
         }
       });
 
-      // ✅ Beat cadence update checks (replaces hourly interval)
-      const navAny = navigator as Navigator & {
-        connection?: { saveData?: boolean; effectiveType?: string };
-      };
+      // ✅ Beat cadence update checks — but NEVER while typing / KaiVoh active
+      const navAny = navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } };
       const saveData = Boolean(navAny.connection?.saveData);
       const effectiveType = navAny.connection?.effectiveType || "";
       const slowNet = effectiveType === "slow-2g" || effectiveType === "2g";
+
+      const safeUpdate = async (): Promise<void> => {
+        if (hasActiveKaiVohUi() || hasFocusedField()) return;
+        await reg.update();
+      };
 
       if (saveData || slowNet) {
         startKaiCadence({
           unit: "beat",
           every: 144,
           onTick: async () => {
-            await reg.update();
+            await safeUpdate();
           },
         });
       } else {
         startKaiFibBackoff({
           unit: "beat",
           work: async () => {
-            await reg.update();
+            await safeUpdate();
           },
         });
       }

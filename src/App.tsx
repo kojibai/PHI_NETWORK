@@ -321,6 +321,19 @@ const DEFAULT_LIVE_SNAP: LiveKaiSnap = {
   dmyLabel: formatDMYLabel(DEFAULT_BEAT_STEP_DMY),
   chakraDay: "Heart",
 };
+function isEditableElement(el: Element | null): boolean {
+  if (!el) return false;
+  if (el instanceof HTMLInputElement) return !el.disabled;
+  if (el instanceof HTMLTextAreaElement) return !el.disabled;
+  if (el instanceof HTMLSelectElement) return !el.disabled;
+  if (el instanceof HTMLElement && el.isContentEditable) return true;
+  return false;
+}
+
+function isEditingNow(): boolean {
+  if (typeof document === "undefined") return false;
+  return isEditableElement(document.activeElement as Element | null);
+}
 
 function computeBeatStepDMY(m: KaiMoment): BeatStepDMY {
   const pulse = readNum(m, "pulse") ?? 0;
@@ -441,8 +454,40 @@ function ExplorerPopover({
   children,
 }: ExplorerPopoverProps): React.JSX.Element | null {
   const hydrated = useHydrated();
-  const vvSizeRaw = useVisualViewportSize();
-  const vvSize = hydrated ? vvSizeRaw : { width: 0, height: 0 };
+const vvSizeRaw = useVisualViewportSize();
+
+// ✅ Freeze viewport height while typing (prevents iOS keyboard resize thrash)
+const [vvStable, setVvStable] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
+
+useIsoLayoutEffect(() => {
+  if (!hydrated) return;
+  setVvStable({ width: vvSizeRaw.width, height: vvSizeRaw.height });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [hydrated]);
+
+useEffect(() => {
+  if (!hydrated) return;
+  if (isEditingNow()) return; // ✅ do not update while typing
+  setVvStable((prev) => {
+    if (prev.width === vvSizeRaw.width && prev.height === vvSizeRaw.height) return prev;
+    return { width: vvSizeRaw.width, height: vvSizeRaw.height };
+  });
+}, [hydrated, vvSizeRaw.width, vvSizeRaw.height]);
+
+useEffect(() => {
+  if (!hydrated) return;
+
+  const onFocusOut = (): void => {
+    // when keyboard closes, resync once
+    setVvStable({ width: vvSizeRaw.width, height: vvSizeRaw.height });
+  };
+
+  document.addEventListener("focusout", onFocusOut, true);
+  return () => document.removeEventListener("focusout", onFocusOut, true);
+}, [hydrated, vvSizeRaw.width, vvSizeRaw.height]);
+
+const vvSize = hydrated ? vvStable : { width: 0, height: 0 };
+
 
   const portalHost = useMemo<HTMLElement | null>(() => {
     if (!hydrated) return null;
