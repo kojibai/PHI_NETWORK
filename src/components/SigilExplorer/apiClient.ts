@@ -30,6 +30,7 @@ const canStorage = hasWindow && typeof window.localStorage !== "undefined";
  * ─────────────────────────────────────────────────────────────────── */
 export const LIVE_BASE_URL = "https://m.kai.ac";
 export const LIVE_BACKUP_URL = "https://memory.kaiklok.com";
+const PROXY_API_BASE = ""; // same-origin proxy ("/sigils" handled by the app server)
 
 /**
  * Dev API base:
@@ -43,6 +44,13 @@ export const DEV_API_BASE = ""; // relative (same-origin), uses Vite proxy for /
 
 function isLocalDevOrigin(origin: string): boolean {
   return origin.startsWith("http://localhost:") || origin.startsWith("http://127.0.0.1:");
+}
+
+function shouldTrySameOriginProxy(origin: string): boolean {
+  if (!origin || origin === "null") return false;
+  if (isLocalDevOrigin(origin)) return false;
+  if (origin === LIVE_BASE_URL || origin === LIVE_BACKUP_URL) return false;
+  return true;
 }
 
 function selectPrimaryBase(primary: string, backup: string): string {
@@ -173,8 +181,11 @@ function apiBases(): string[] {
     return protocolFiltered.filter((b) => b === pageOrigin);
   }
 
-  // Soft-fail: suppress backup if marked dead
-  return isBackupSuppressed() ? protocolFiltered.filter((b) => b !== API_BASE_FALLBACK) : protocolFiltered;
+  const filtered = isBackupSuppressed()
+    ? protocolFiltered.filter((b) => b !== API_BASE_FALLBACK)
+    : protocolFiltered;
+  const shouldProxy = hasWindow && shouldTrySameOriginProxy(pageOrigin);
+  return shouldProxy ? [PROXY_API_BASE, ...filtered] : filtered;
 }
 
 function shouldFailoverStatus(status: number): boolean {
