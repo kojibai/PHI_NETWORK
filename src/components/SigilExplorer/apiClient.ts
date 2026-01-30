@@ -31,6 +31,7 @@ const canStorage = hasWindow && typeof window.localStorage !== "undefined";
 export const LIVE_BASE_URL = "https://m.kai.ac";
 export const LIVE_BACKUP_URL = "https://memory.kaiklok.com";
 const PROXY_API_BASE = ""; // same-origin proxy ("/sigils" handled by the app server)
+const ENABLE_PROXY_IN_PROD = import.meta.env.VITE_SIGIL_PROXY === "true";
 
 /**
  * Dev API base:
@@ -48,7 +49,9 @@ function isLocalDevOrigin(origin: string): boolean {
 
 function shouldTrySameOriginProxy(origin: string): boolean {
   if (!origin || origin === "null") return false;
-  if (isLocalDevOrigin(origin)) return false;
+  if (isLocalDevOrigin(origin)) return true;
+  if (import.meta.env.DEV) return true;
+  if (!ENABLE_PROXY_IN_PROD) return false;
   if (origin === LIVE_BASE_URL || origin === LIVE_BACKUP_URL) return false;
   return true;
 }
