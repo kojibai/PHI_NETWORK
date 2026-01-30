@@ -212,11 +212,11 @@ export default function KaiVohModal({ open, onClose }: KaiVohModalProps) {
   useEffect(() => {
     if (!open) return;
     const allowEscapeClose = !window.matchMedia?.("(pointer: coarse)")?.matches;
-    const locationAny = window.location as unknown as Record<string, (...args: unknown[]) => void>;
+    const locationAny = window.location as Location;
     const originalLocation = {
-      reload: window.location.reload?.bind(window.location),
-      assign: window.location.assign?.bind(window.location),
-      replace: window.location.replace?.bind(window.location),
+      reload: window.location.reload.bind(window.location),
+      assign: window.location.assign.bind(window.location),
+      replace: window.location.replace.bind(window.location),
     };
 
     // Save prior styles (restore exactly)
@@ -265,19 +265,26 @@ export default function KaiVohModal({ open, onClose }: KaiVohModalProps) {
     document.documentElement.style.setProperty("--kai-phi", viewportVars.phi);
 
     // HARD: block programmatic reload/replace/assign while modal is open
-    const blockNav = (label: string) => {
-      return (...args: unknown[]) => {
-        if (isReloadDebugEnabled()) {
-          // eslint-disable-next-line no-console
-          console.warn(`[Reload Detective] blocked ${label}`, ...args);
-        }
-      };
+    const logBlocked = (label: string, args: unknown[]): void => {
+      if (!isReloadDebugEnabled()) return;
+      // eslint-disable-next-line no-console
+      console.warn(`[Reload Detective] blocked ${label}`, ...args);
+    };
+
+    const blockReload: Location["reload"] = (...args) => {
+      logBlocked("location.reload", args);
+    };
+    const blockAssign: Location["assign"] = (url) => {
+      logBlocked("location.assign", [url]);
+    };
+    const blockReplace: Location["replace"] = (url) => {
+      logBlocked("location.replace", [url]);
     };
 
     try {
-      if (originalLocation.reload) locationAny.reload = blockNav("location.reload");
-      if (originalLocation.assign) locationAny.assign = blockNav("location.assign");
-      if (originalLocation.replace) locationAny.replace = blockNav("location.replace");
+      locationAny.reload = blockReload;
+      locationAny.assign = blockAssign;
+      locationAny.replace = blockReplace;
     } catch {
       // ignore inability to patch location methods
     }
@@ -498,9 +505,9 @@ export default function KaiVohModal({ open, onClose }: KaiVohModalProps) {
 
       // Restore location methods
       try {
-        if (originalLocation.reload) locationAny.reload = originalLocation.reload;
-        if (originalLocation.assign) locationAny.assign = originalLocation.assign;
-        if (originalLocation.replace) locationAny.replace = originalLocation.replace;
+        locationAny.reload = originalLocation.reload;
+        locationAny.assign = originalLocation.assign;
+        locationAny.replace = originalLocation.replace;
       } catch {
         // ignore restore failures
       }
