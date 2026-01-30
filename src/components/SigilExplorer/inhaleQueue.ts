@@ -222,6 +222,7 @@ async function flushInhaleQueue(): Promise<void> {
     const keys: string[] = [];
     const encoder = typeof TextEncoder !== "undefined" ? new TextEncoder() : null;
     let currentBytes = 2;
+    let droppedOversize = false;
 
     for (const [k, v] of inhaleQueue) {
       const next = [...batch, v];
@@ -230,6 +231,12 @@ async function flushInhaleQueue(): Promise<void> {
         encoder != null
           ? encoder.encode(jsonPreview).byteLength
           : new Blob([jsonPreview]).size;
+
+      if (batch.length === 0 && size > INHALE_BATCH_MAX_BYTES) {
+        inhaleQueue.delete(k);
+        droppedOversize = true;
+        continue;
+      }
 
       if (
         batch.length > 0 &&
@@ -245,6 +252,21 @@ async function flushInhaleQueue(): Promise<void> {
       if (batch.length >= INHALE_BATCH_MAX || currentBytes >= INHALE_BATCH_MAX_BYTES) {
         break;
       }
+    }
+
+    if (droppedOversize) {
+      saveInhaleQueueToStorage();
+    }
+
+    if (batch.length === 0) {
+      inhaleRetryMs = 0;
+      if (inhaleQueue.size > 0) {
+        inhaleFlushTimer = window.setTimeout(() => {
+          inhaleFlushTimer = null;
+          void flushInhaleQueue();
+        }, 10);
+      }
+      return;
     }
 
     const json = JSON.stringify(batch);
