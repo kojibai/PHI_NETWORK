@@ -4,18 +4,11 @@
 /**
  * KaiVoh — Stream Exhale Composer
  * v5.0 — PRIVATE SEALING (real encryption, not “pulse lock”)
- *        - 🔒 Optional “Private (Sealed)” mode: encrypts inner content BEFORE token encode
- *        - Two access paths (choose one):
- *           A) DERIVED GLYPH ACCESS: any derivative glyph exported from the issuer’s verifier unlocks
- *           B) SPECIFIC GLYPH ACCESS: only uploaded/allowed glyph(s) can unlock (pulse-agnostic)
- *        - Hard guard: private posts may NOT contain cache-only file-ref attachments (must be inline or URL)
- *        - Keeps SAME token format (encodeTokenWithBudgets from feedPayload)
- *        - Worker-first encode with deterministic main-thread fallback (iOS/Safari-safe)
  *
- * Primary role:
- * - Exhale a /stream/p/<token> URL bound to the current verified Sigil.
- * - Attach documents, folders, tiny inline files, extra URLs, and recorded stories.
- * - Embed parentUrl/originUrl lineage + register the stream URL with Sigil Explorer.
+ * FIX (v5.0.1 - no-jank typing / no "reload"):
+ * - Caption/Author/Teaser/URL inputs are UNCONTROLLED (refs) → typing does NOT re-render KaiVoh.
+ * - Draft saving is debounced and reads from refs + current state snapshot.
+ * - Post body + derived caption computed ONLY on Exhale (not per-keystroke).
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -49,7 +42,7 @@ import StoryRecorder, { type CapturedStory } from "./StoryRecorder";
 import { registerSigilUrl } from "../../utils/sigilRegistry";
 import { getOriginUrl } from "../../utils/sigilUrl";
 
-/* 🔒 Sealing utilities (new) */
+/* 🔒 Sealing utilities */
 import { sealEnvelopeV1, makeSealSaltB64Url, type GlyphCredential, type SealedEnvelopeV1 } from "../../utils/postSeal";
 import { extractSigilAuthFromSvg } from "../../utils/sigilAuthExtract";
 import { deriveKaiSignatureB64Url } from "../../utils/derivedGlyph";
@@ -68,7 +61,7 @@ export interface KaiVohProps {
   onExhale?: (result: KaiVohExhaleResult) => void;
 }
 
-/* ───────────────────────── Inline Icons (no visible text) ───────────────────────── */
+/* ───────────────────────── Inline Icons ───────────────────────── */
 
 function IconCamRecord(): ReactElement {
   return (
@@ -96,7 +89,9 @@ const MAX_INLINE_BYTES = 6_000 as const; // per-file inline cap
 const KB = 1024;
 const MB = 1024 * KB;
 
-/* ───────────────────────── Small utils (no any) ───────────────────────── */
+const DRAFT_STORAGE_KEY = "kai-voh:draft:v1";
+
+/* ───────────────────────── Small utils ───────────────────────── */
 
 const prettyBytes = (n: number): string => {
   if (n >= MB) return `${(n / MB).toFixed(2)} MB`;
@@ -106,6 +101,16 @@ const prettyBytes = (n: number): string => {
 
 const short = (s: string, head = 8, tail = 6): string =>
   s.length <= head + tail ? s : `${s.slice(0, head)}…${s.slice(-tail)}`;
+
+const trunc = (s: string, max: number): string => {
+  if (s.length <= max) return s;
+  return `${s.slice(0, Math.max(0, max - 1))}…`;
+};
+
+function firstLine(s: string): string {
+  const n = s.indexOf("\n");
+  return n >= 0 ? s.slice(0, n) : s;
+}
 
 const isHttpUrl = (s: unknown): s is string => {
   if (typeof s !== "string" || !s) return false;
@@ -117,7 +122,6 @@ const isHttpUrl = (s: unknown): s is string => {
   }
 };
 
-/** Any supported stream link form? (#t=, ?p=, /stream|feed/p/, /p~) */
 function isLikelySigilUrl(u: string): boolean {
   try {
     const url = new URL(u, globalThis.location?.origin ?? "https://example.org");
@@ -134,7 +138,6 @@ function isLikelySigilUrl(u: string): boolean {
 
 /**
  * base64url (byte-safe, no btoa/atob)
- * Prevents “giant string” stalls and works for any ArrayBuffer size.
  */
 function base64UrlEncodeBytes(buf: ArrayBuffer): string {
   const bytes = new Uint8Array(buf);
@@ -149,7 +152,7 @@ function base64UrlEncodeBytes(buf: ArrayBuffer): string {
       alphabet[(x >>> 18) & 63] +
         alphabet[(x >>> 12) & 63] +
         alphabet[(x >>> 6) & 63] +
-        alphabet[x & 63],
+        alphabet[x & 63]
     );
   }
 
@@ -165,7 +168,6 @@ function base64UrlEncodeBytes(buf: ArrayBuffer): string {
   return outParts.join("").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
-/** Read string/number from object or nested meta, safely */
 function readStringProp(obj: unknown, key: string): string | undefined {
   if (typeof obj !== "object" || obj === null) return undefined;
   const r = obj as Record<string, unknown>;
@@ -192,10 +194,9 @@ function readNumberProp(obj: unknown, key: string): number | undefined {
   return undefined;
 }
 
-/** Extract action URL from SVG text (metadata JSON, CDATA, or <a> href) */
 function extractSigilActionUrlFromSvgText(
   svgText?: string | null,
-  metaCandidate?: Record<string, unknown>,
+  metaCandidate?: Record<string, unknown>
 ): string | undefined {
   if (!svgText) return undefined;
 
@@ -250,11 +251,10 @@ function extractSigilActionUrlFromSvgText(
   return undefined;
 }
 
-/** Cache helper: store blob under /att/<sha> and return the URL */
 async function cachePutAndUrl(
   sha256: string,
   blob: Blob,
-  opts: { cacheName?: string; pathPrefix?: string } = {},
+  opts: { cacheName?: string; pathPrefix?: string } = {}
 ): Promise<string | undefined> {
   const cacheName = opts.cacheName ?? "sigil-attachments-v1";
   const pathPrefix = (opts.pathPrefix ?? "/att/").replace(/\/+$/, "") + "/";
@@ -265,7 +265,7 @@ async function cachePutAndUrl(
     const url = `${pathPrefix}${sha256}`;
     await cache.put(
       new Request(url, { method: "GET" }),
-      new Response(blob, { headers: { "Content-Type": blob.type || "application/octet-stream" } }),
+      new Response(blob, { headers: { "Content-Type": blob.type || "application/octet-stream" } })
     );
     return url;
   } catch {
@@ -275,22 +275,12 @@ async function cachePutAndUrl(
 
 function formatMs(ms: number): string {
   const s = Math.floor(ms / 1000);
-  const mm = Math.floor(s / 60)
-    .toString()
-    .padStart(2, "0");
+  const mm = Math.floor(s / 60).toString().padStart(2, "0");
   const ss = (s % 60).toString().padStart(2, "0");
   return `${mm}:${ss}`;
 }
 
-function firstLine(s: string): string {
-  const n = s.indexOf("\n");
-  return n >= 0 ? s.slice(0, n) : s;
-}
-
-function trunc(s: string, max: number): string {
-  if (s.length <= max) return s;
-  return `${s.slice(0, Math.max(0, max - 1))}…`;
-}
+/* ───────────────────────── Types ───────────────────────── */
 
 type BodyKind = "text" | "code" | "md" | "html";
 type HtmlMode = "code" | "sanitized";
@@ -299,7 +289,7 @@ type UrlItem = Extract<AttachmentItem, { kind: "url" }>;
 type SealMode = "derived" | "glyph";
 
 type AllowedGlyph = GlyphCredential & {
-  label: string; // file name or user label
+  label: string;
 };
 
 type DraftState = {
@@ -319,7 +309,6 @@ type DraftState = {
   sealAdvanced: boolean;
 };
 
-const DRAFT_STORAGE_KEY = "kai-voh:draft:v1";
 const BODY_KIND_OPTIONS: BodyKind[] = ["text", "code", "md", "html"];
 const HTML_MODE_OPTIONS: HtmlMode[] = ["code", "sanitized"];
 const SEAL_MODE_OPTIONS: SealMode[] = ["derived", "glyph"];
@@ -351,10 +340,10 @@ const parsePulseLoose = (raw: unknown): number | null => {
 };
 
 /**
- * ✅ Pulse mirror:
- * - Subscribes to aligned ticker (same source as KaiStatus)
+ * Pulse mirror:
+ * - Subscribes to aligned ticker
  * - Writes latest pulse into a ref
- * - KaiVoh does NOT re-render on each pulse (only this child does)
+ * - KaiVoh does NOT re-render on each pulse
  */
 function KaiVohPulseMirror({ pulseRef }: { pulseRef: MutableRefObject<number> }): null {
   const kaiNow = useAlignedKaiTicker() as unknown;
@@ -391,7 +380,7 @@ const readDraftAllowedGlyphs = (v: unknown): AllowedGlyph[] => {
   return out;
 };
 
-/* ───────────────────────── Non-hanging encode (REAL Module Worker file) ───────────────────────── */
+/* ───────────────────────── Non-hanging encode (worker-first) ───────────────────────── */
 
 type EncodeWorkerRequest = { id: string; payload: FeedPostPayload };
 
@@ -435,7 +424,6 @@ const makeId = (): string => {
 
   if (c && "randomUUID" in c && typeof c.randomUUID === "function") return c.randomUUID();
 
-  // Chronos-free fallback: 16 random bytes → hex
   if (c && "getRandomValues" in c && typeof c.getRandomValues === "function") {
     const bytes = new Uint8Array(16);
     c.getRandomValues(bytes);
@@ -444,11 +432,9 @@ const makeId = (): string => {
     return out;
   }
 
-  // Absolute last resort (should never happen in modern browsers)
   return `id-${Math.random().toString(16).slice(2)}-${Math.random().toString(16).slice(2)}`;
 };
 
-// Singleton worker plumbing (module-scope; not React state)
 let _encodeWorker: Worker | null = null;
 const _pending = new Map<string, (res: EncodeWorkerResponse) => void>();
 
@@ -457,7 +443,6 @@ function getEncodeWorker(): Worker {
   if (typeof window === "undefined") throw new Error("encode worker unavailable (no window)");
   if (typeof Worker === "undefined") throw new Error("encode worker unavailable (Worker not supported)");
 
-  // ✅ Real worker module file (bundler-safe; no blob; no import() inside worker)
   const url = new URL("./encodeToken.worker.ts", import.meta.url);
   _encodeWorker = new Worker(url, { type: "module", name: "kaiVohEncodeWorker" });
 
@@ -470,7 +455,6 @@ function getEncodeWorker(): Worker {
   };
 
   _encodeWorker.onerror = () => {
-    // Fail all inflight and reset. Keep ids stable.
     for (const [id, cb] of _pending) cb({ id, ok: false, error: "encode worker crashed", ms: 0 });
     _pending.clear();
     try {
@@ -495,43 +479,26 @@ async function encodeTokenInWorker(payload: FeedPostPayload): Promise<EncodeWork
   return p;
 }
 
-/** ✅ Worker-first, deterministic fallback if worker is blocked/unavailable OR crashes */
 async function encodeTokenWorkerFirst(payload: FeedPostPayload): Promise<EncodeWorkerResponse> {
   const t0 = nowMs();
 
   const mainThread = (): EncodeWorkerResponse => {
     try {
       const out = encodeTokenWithBudgets(payload);
-      return {
-        id: makeId(),
-        ok: true,
-        token: out.token,
-        withinHard: out.withinHard,
-        ms: nowMs() - t0,
-      };
+      return { id: makeId(), ok: true, token: out.token, withinHard: out.withinHard, ms: nowMs() - t0 };
     } catch (err) {
-      return {
-        id: makeId(),
-        ok: false,
-        error: err instanceof Error ? err.message : String(err),
-        ms: nowMs() - t0,
-      };
+      return { id: makeId(), ok: false, error: err instanceof Error ? err.message : String(err), ms: nowMs() - t0 };
     }
   };
 
   try {
     const res = await encodeTokenInWorker(payload);
-
-    // ✅ KEY FIX: if worker returns a failure (including "crashed"), fall back
     if (!res.ok) {
       const fallback = mainThread();
-      // If fallback succeeds, prefer it. If it also fails, return worker error.
       return fallback.ok ? fallback : res;
     }
-
     return res;
   } catch {
-    // Worker unavailable/constructor throw/etc.
     return mainThread();
   }
 }
@@ -542,11 +509,19 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
   const { auth } = useSigilAuth();
   const sigilMeta = auth.meta;
 
-  // ✅ Latest aligned pulse (KaiStatus-identical source), without re-rendering KaiVoh
+  // Latest aligned pulse without re-render per pulse
   const kaiPulseRef = useRef<number>(Number.NaN);
 
-  const [caption, setCaption] = useState<string>(initialCaption);
-  const [author, setAuthor] = useState<string>(initialAuthor);
+  // UNCONTROLLED text inputs (typing does not re-render)
+  const captionRef = useRef<string>(initialCaption);
+  const authorRef = useRef<string>(initialAuthor);
+  const sealTeaserRef = useRef<string>("");
+  const extraUrlFieldRef = useRef<string>("");
+
+  const captionElRef = useRef<HTMLTextAreaElement | null>(null);
+  const authorElRef = useRef<HTMLInputElement | null>(null);
+  const sealTeaserElRef = useRef<HTMLInputElement | null>(null);
+  const extraUrlElRef = useRef<HTMLInputElement | null>(null);
 
   const [bodyKind, setBodyKind] = useState<BodyKind>("text");
   const [codeLang, setCodeLang] = useState<string>("tsx");
@@ -555,7 +530,6 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
   const [phiKey, setPhiKey] = useState<string>("");
   const [kaiSignature, setKaiSignature] = useState<string>("");
 
-  const [extraUrlField, setExtraUrlField] = useState<string>("");
   const [extraUrls, setExtraUrls] = useState<UrlItem[]>([]);
 
   const [files, setFiles] = useState<File[]>([]);
@@ -584,8 +558,7 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
   /* 🔒 private seal states */
   const [privateOn, setPrivateOn] = useState<boolean>(false);
   const [sealMode, setSealMode] = useState<SealMode>("derived");
-  const [sealTeaser, setSealTeaser] = useState<string>(""); // optional public teaser
-  const [sealSalt, setSealSalt] = useState<string>(() => makeSealSaltB64Url(18)); // derived mode salt
+  const [sealSalt, setSealSalt] = useState<string>(() => makeSealSaltB64Url(18));
   const [allowedGlyphs, setAllowedGlyphs] = useState<AllowedGlyph[]>([]);
   const [sealAdvanced, setSealAdvanced] = useState<boolean>(false);
 
@@ -595,71 +568,26 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
   const dropRef = useRef<HTMLDivElement | null>(null);
   const hasVerifiedSigil = Boolean(sigilMeta);
 
-  useEffect(() => {
-    if (!draftHydratedRef.current) setCaption(initialCaption);
-  }, [initialCaption]);
-
-  useEffect(() => {
-    if (!draftHydratedRef.current) setAuthor(initialAuthor);
-  }, [initialAuthor]);
-
-  useEffect(() => {
-    if (draftHydratedRef.current) return;
-    draftHydratedRef.current = true;
-
-    if (typeof window === "undefined") return;
-
-    const raw = window.sessionStorage.getItem(DRAFT_STORAGE_KEY);
-    if (!raw) return;
-
-    try {
-      const parsed = JSON.parse(raw) as DraftState;
-      if (!isRecord(parsed) || parsed.v !== 1) return;
-
-      const nextBodyKind = BODY_KIND_OPTIONS.includes(parsed.bodyKind) ? parsed.bodyKind : "text";
-      const nextHtmlMode = HTML_MODE_OPTIONS.includes(parsed.htmlMode) ? parsed.htmlMode : "code";
-      const nextSealMode = SEAL_MODE_OPTIONS.includes(parsed.sealMode) ? parsed.sealMode : "derived";
-      const nextExtraUrls = readDraftStringArray(parsed.extraUrls)
-        .map((url) => url.trim())
-        .filter((url) => isHttpUrl(url))
-        .map((url) => makeUrlAttachment({ url }));
-
-      setCaption(readDraftString(parsed.caption, initialCaption));
-      setAuthor(readDraftString(parsed.author, initialAuthor));
-      setBodyKind(nextBodyKind);
-      setCodeLang(readDraftString(parsed.codeLang, "tsx"));
-      setHtmlMode(nextHtmlMode);
-      setExtraUrlField(readDraftString(parsed.extraUrlField, ""));
-      setExtraUrls(nextExtraUrls);
-      setPrivateOn(readDraftBool(parsed.privateOn, false));
-      setSealMode(nextSealMode);
-      setSealTeaser(readDraftString(parsed.sealTeaser, ""));
-      setSealSalt(readDraftString(parsed.sealSalt, makeSealSaltB64Url(18)));
-      setAllowedGlyphs(readDraftAllowedGlyphs(parsed.allowedGlyphs));
-      setSealAdvanced(readDraftBool(parsed.sealAdvanced, false));
-    } catch {
-      // ignore draft restore failures
-    }
-  }, [initialAuthor, initialCaption]);
-
-  useEffect(() => {
+  // Debounced draft save (reads from refs + current state snapshot)
+  const scheduleDraftSave = (): void => {
     if (!draftHydratedRef.current) return;
+    if (typeof window === "undefined") return;
 
     if (draftSaveTimerRef.current) window.clearTimeout(draftSaveTimerRef.current);
 
     draftSaveTimerRef.current = window.setTimeout(() => {
       const draft: DraftState = {
         v: 1,
-        caption,
-        author,
+        caption: captionRef.current ?? "",
+        author: authorRef.current ?? "",
         bodyKind,
         codeLang,
         htmlMode,
-        extraUrlField,
+        extraUrlField: extraUrlFieldRef.current ?? "",
         extraUrls: extraUrls.map((item) => item.url),
         privateOn,
         sealMode,
-        sealTeaser,
+        sealTeaser: sealTeaserRef.current ?? "",
         sealSalt,
         allowedGlyphs,
         sealAdvanced,
@@ -668,28 +596,92 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
       try {
         window.sessionStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draft));
       } catch {
-        // ignore draft save failures
+        /* ignore */
       }
-    }, 250);
+    }, 450);
+  };
 
-    return () => {
-      if (draftSaveTimerRef.current) window.clearTimeout(draftSaveTimerRef.current);
-    };
-  }, [
-    caption,
-    author,
-    bodyKind,
-    codeLang,
-    htmlMode,
-    extraUrlField,
-    extraUrls,
-    privateOn,
-    sealMode,
-    sealTeaser,
-    sealSalt,
-    allowedGlyphs,
-    sealAdvanced,
-  ]);
+  // Prop updates only affect refs if we haven't hydrated draft
+  useEffect(() => {
+    if (draftHydratedRef.current) return;
+    captionRef.current = initialCaption;
+    if (captionElRef.current) captionElRef.current.value = initialCaption;
+  }, [initialCaption]);
+
+  useEffect(() => {
+    if (draftHydratedRef.current) return;
+    authorRef.current = initialAuthor;
+    if (authorElRef.current) authorElRef.current.value = initialAuthor;
+  }, [initialAuthor]);
+
+  // Draft hydrate (ONE time)
+  useEffect(() => {
+    if (draftHydratedRef.current) return;
+    draftHydratedRef.current = true;
+
+    if (typeof window === "undefined") return;
+
+    const raw = window.sessionStorage.getItem(DRAFT_STORAGE_KEY);
+    if (!raw) {
+      // Initialize DOM with provided props
+      captionRef.current = initialCaption;
+      authorRef.current = initialAuthor;
+      if (captionElRef.current) captionElRef.current.value = initialCaption;
+      if (authorElRef.current) authorElRef.current.value = initialAuthor;
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(raw) as DraftState;
+      if (!isRecord(parsed) || parsed.v !== 1) return;
+
+      const nextBodyKind = BODY_KIND_OPTIONS.includes(parsed.bodyKind) ? parsed.bodyKind : "text";
+      const nextHtmlMode = HTML_MODE_OPTIONS.includes(parsed.htmlMode) ? parsed.htmlMode : "code";
+      const nextSealMode = SEAL_MODE_OPTIONS.includes(parsed.sealMode) ? parsed.sealMode : "derived";
+
+      const nextExtraUrls = readDraftStringArray(parsed.extraUrls)
+        .map((url) => url.trim())
+        .filter((url) => isHttpUrl(url))
+        .map((url) => makeUrlAttachment({ url }));
+
+      const cap = readDraftString(parsed.caption, initialCaption);
+      const auth = readDraftString(parsed.author, initialAuthor);
+
+      captionRef.current = cap;
+      authorRef.current = auth;
+
+      if (captionElRef.current) captionElRef.current.value = cap;
+      if (authorElRef.current) authorElRef.current.value = auth;
+
+      const teaser = readDraftString(parsed.sealTeaser, "");
+      sealTeaserRef.current = teaser;
+      if (sealTeaserElRef.current) sealTeaserElRef.current.value = teaser;
+
+      const urlField = readDraftString(parsed.extraUrlField, "");
+      extraUrlFieldRef.current = urlField;
+      if (extraUrlElRef.current) extraUrlElRef.current.value = urlField;
+
+      setBodyKind(nextBodyKind);
+      setCodeLang(readDraftString(parsed.codeLang, "tsx"));
+      setHtmlMode(nextHtmlMode);
+
+      setExtraUrls(nextExtraUrls);
+      setPrivateOn(readDraftBool(parsed.privateOn, false));
+      setSealMode(nextSealMode);
+      setSealSalt(readDraftString(parsed.sealSalt, makeSealSaltB64Url(18)));
+      setAllowedGlyphs(readDraftAllowedGlyphs(parsed.allowedGlyphs));
+      setSealAdvanced(readDraftBool(parsed.sealAdvanced, false));
+    } catch {
+      /* ignore */
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Save draft when any STATE changes (caption/author handled by onInput)
+  useEffect(() => {
+    scheduleDraftSave();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bodyKind, codeLang, htmlMode, extraUrls, privateOn, sealMode, sealSalt, allowedGlyphs, sealAdvanced]);
 
   useEffect(() => {
     attachmentsRef.current = attachments;
@@ -739,18 +731,21 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
   /* ───────────── Extra URL management ───────────── */
 
   const addExtraUrl = (): void => {
-    const raw = extraUrlField.trim();
+    const raw = (extraUrlFieldRef.current ?? "").trim();
     if (!isHttpUrl(raw)) {
       setWarn("Invalid URL. Enter a full http(s) link.");
       return;
     }
     setExtraUrls((prev) => [...prev, makeUrlAttachment({ url: raw })]);
-    setExtraUrlField("");
+    extraUrlFieldRef.current = "";
+    if (extraUrlElRef.current) extraUrlElRef.current.value = "";
     setWarn(null);
+    scheduleDraftSave();
   };
 
   const removeExtraUrl = (i: number): void => {
     setExtraUrls((prev) => prev.filter((_, idx) => idx !== i));
+    scheduleDraftSave();
   };
 
   /* ───────────── File/Folder ingest ───────────── */
@@ -779,8 +774,6 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
     for (const f of fileList) {
       const displayName = fileNameWithPath(f);
 
-      // 🔒 Private hard-guard: no cache-only file-ref allowed.
-      // Instead of creating file-ref, we SKIP large files and instruct URL upload.
       if (privateOn && f.size > MAX_INLINE_BYTES) {
         skippedLarge.push(displayName);
         continue;
@@ -794,7 +787,7 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
             type: f.type || "application/octet-stream",
             size: f.size,
             data_b64url: base64UrlEncodeBytes(buf),
-          }),
+          })
         );
       } else {
         const sha = await sha256FileHex(f);
@@ -806,7 +799,7 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
             type: f.type || "application/octet-stream",
             size: f.size,
             url,
-          }),
+          })
         );
       }
     }
@@ -816,7 +809,7 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
       const tail = skippedLarge.length > 3 ? ` (+${skippedLarge.length - 3} more)` : "";
       setWarn(
         `Private (Sealed) mode cannot include cache-backed large files. Skipped: ${head}${tail}. ` +
-          `Attach as a URL instead (Drive/S3/IPFS/etc), or keep files ≤ ${prettyBytes(MAX_INLINE_BYTES)}.`,
+          `Attach as a URL instead (Drive/S3/IPFS/etc), or keep files ≤ ${prettyBytes(MAX_INLINE_BYTES)}.`
       );
     }
 
@@ -860,7 +853,6 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
   }
 
   async function handleStoryCaptured(s: CapturedStory): Promise<void> {
-    // 🔒 Private hard-guard: StoryRecorder produces cache-backed video (file-ref).
     if (privateOn) {
       setWarn("Private (Sealed) mode cannot include recorded stories (cache-backed video refs). Upload as a URL instead.");
       setStoryOpen(false);
@@ -897,46 +889,9 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
     setStoryOpen(false);
   }
 
-  /* ───────────── Payload body (v2) ───────────── */
-
-  const effectiveBodyText = caption.trim();
-
-  const postBody: PostBody | undefined = useMemo(() => {
-    if (!effectiveBodyText) return undefined;
-
-    if (bodyKind === "text") return makeTextBody(effectiveBodyText);
-    if (bodyKind === "md") return makeMarkdownBody(effectiveBodyText);
-    if (bodyKind === "html") return makeHtmlBody(effectiveBodyText, htmlMode);
-
-    const lang = codeLang.trim();
-    return makeCodeBody(effectiveBodyText, lang ? lang : undefined);
-  }, [effectiveBodyText, bodyKind, codeLang, htmlMode]);
-
-  const derivedCaption = useMemo((): string | undefined => {
-    if (!effectiveBodyText) return undefined;
-
-    const one = firstLine(effectiveBodyText).trim();
-    if (!one) return undefined;
-
-    if (bodyKind === "code") {
-      const lang = codeLang.trim();
-      const hint = lang ? `code:${lang}` : "code";
-      return trunc(`${hint} — ${one}`, 220);
-    }
-    if (bodyKind === "md") return trunc(`md — ${one}`, 220);
-    if (bodyKind === "html") return trunc(`html — ${one}`, 220);
-    return trunc(one, 220);
-  }, [effectiveBodyText, bodyKind, codeLang]);
-
-  /* ───────────── Private seal helpers ───────────── */
+  /* ───────────── Private helpers ───────────── */
 
   const hasFileRef = useMemo(() => attachmentsRef.current.items.some((it) => it.kind === "file-ref"), [attachments]);
-
-  const publicCaptionForPost = useMemo(() => {
-    if (!privateOn) return derivedCaption;
-    const t = sealTeaser.trim();
-    return t ? trunc(t, 220) : "Sealed Memory";
-  }, [privateOn, derivedCaption, sealTeaser]);
 
   const canSealDerived = privateOn && sealMode === "derived" && hasVerifiedSigil && Boolean(kaiSignature.trim());
   const canSealGlyph = privateOn && sealMode === "glyph" && allowedGlyphs.length > 0;
@@ -1015,6 +970,7 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
         return next;
       });
       setWarn(null);
+      scheduleDraftSave();
     }
 
     if (rejected.length > 0) {
@@ -1026,9 +982,10 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
 
   const removeAllowedGlyph = (idx: number): void => {
     setAllowedGlyphs((prev) => prev.filter((_, i) => i !== idx));
+    scheduleDraftSave();
   };
 
-  /* ───────────── Generate payload/link (with lineage + registry) ───────────── */
+  /* ───────────── Generate payload/link ───────────── */
 
   const onGenerate = async (): Promise<void> => {
     if (busy) return;
@@ -1048,13 +1005,13 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
       setWarn("Proof of Breath™ URL not detected; using fallback. Link generation will still work.");
     }
 
-    // 🔒 Private guard: do not allow cache-only file-ref attachments
+    // Private guard: no file-ref
     if (privateOn) {
       const mergedItemsPre: AttachmentItem[] = [...attachmentsRef.current.items, ...extraUrls];
       if (mergedItemsPre.some((it) => it.kind === "file-ref")) {
         setErr(
           `Private (Sealed) mode cannot include cache-backed file refs. ` +
-            `Keep files ≤ ${prettyBytes(MAX_INLINE_BYTES)} (inline) or attach public URLs.`,
+            `Keep files ≤ ${prettyBytes(MAX_INLINE_BYTES)} (inline) or attach public URLs.`
         );
         return;
       }
@@ -1070,14 +1027,14 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
       }
     }
 
-    // ✅ Pulse is aligned + identical to KaiStatus, but KaiVoh does NOT re-render per pulse.
+    // Pulse from mirror ref
     const pulse = kaiPulseRef.current;
     if (!Number.isFinite(pulse) || pulse < 0) {
       setErr("Failed to compute Kai pulse (aligned ticker not ready).");
       return;
     }
 
-    // ✅ If payload requires a timestamp field, derive it FROM the pulse (not Date.now)
+    // Timestamp from pulse (not Date.now)
     const ts = toSafeNumberFromBigInt(epochMsFromPulse(pulse));
 
     const t0 = nowMs();
@@ -1089,6 +1046,37 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
       await nextPaint();
 
       setStage("assemble");
+
+      // Read current draft text without triggering renders
+      const effectiveBodyText = (captionRef.current ?? "").trim();
+      const authorValue = (authorRef.current ?? "").trim();
+      const teaserValue = (sealTeaserRef.current ?? "").trim();
+
+      const postBody: PostBody | undefined = (() => {
+        if (!effectiveBodyText) return undefined;
+        if (bodyKind === "text") return makeTextBody(effectiveBodyText);
+        if (bodyKind === "md") return makeMarkdownBody(effectiveBodyText);
+        if (bodyKind === "html") return makeHtmlBody(effectiveBodyText, htmlMode);
+        const lang = codeLang.trim();
+        return makeCodeBody(effectiveBodyText, lang ? lang : undefined);
+      })();
+
+      const derivedCaption: string | undefined = (() => {
+        if (!effectiveBodyText) return undefined;
+        const one = firstLine(effectiveBodyText).trim();
+        if (!one) return undefined;
+
+        if (bodyKind === "code") {
+          const lang = codeLang.trim();
+          const hint = lang ? `code:${lang}` : "code";
+          return trunc(`${hint} — ${one}`, 220);
+        }
+        if (bodyKind === "md") return trunc(`md — ${one}`, 220);
+        if (bodyKind === "html") return trunc(`html — ${one}`, 220);
+        return trunc(one, 220);
+      })();
+
+      const publicCaptionForPost = !privateOn ? derivedCaption : teaserValue ? trunc(teaserValue, 220) : "Sealed Memory";
 
       const mergedItems: AttachmentItem[] = [...attachmentsRef.current.items, ...extraUrls];
       const mergedAttachments = mergedItems.length > 0 ? makeAttachments(mergedItems) : undefined;
@@ -1107,7 +1095,7 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
         pulse,
         caption: publicCaptionForPost,
         body: postBody,
-        author: author.trim() ? author.trim() : undefined,
+        author: authorValue ? authorValue : undefined,
         source: "manual",
         sigilId,
         phiKey: hasVerifiedSigil && phiKey ? phiKey : undefined,
@@ -1121,16 +1109,15 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
       setStage("prepare");
       const tPrep0 = nowMs();
 
-      // Prepare attachments for link (inline/url only for private; normal path otherwise)
       const preparedFull = await withTimeout(
         preparePayloadForLink(basePayload, { cacheName: "sigil-attachments-v1", pathPrefix: "/att/" }),
         20_000,
-        "preparePayloadForLink",
+        "preparePayloadForLink"
       );
 
       const prepareMs = nowMs() - tPrep0;
 
-      // 🔒 If private: seal inner content (body + attachments) and remove plaintext from outer payload
+      // Private seal: seal inner (body + attachments) then remove plaintext from outer
       let payloadToEncode: FeedPostPayload = preparedFull;
 
       if (privateOn) {
@@ -1168,21 +1155,17 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
           });
         }
 
-        const sealedOuter = {
+        payloadToEncode = {
           ...preparedFull,
           body: undefined,
           attachments: undefined,
-          // Attach the sealed envelope. This extends runtime payload shape.
           seal: envelope,
         } as unknown as FeedPostPayload;
-
-        payloadToEncode = sealedOuter;
       }
 
       setStage("encode(worker)");
       const tEnc0 = nowMs();
 
-      // ✅ Worker-first encode (real module worker), deterministic fallback if needed
       const enc = await withTimeout(encodeTokenWorkerFirst(payloadToEncode), 30_000, "encodeTokenWithBudgets(worker)");
 
       const encodeMs = nowMs() - tEnc0;
@@ -1202,7 +1185,7 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
         setErr(
           `Token encode failed: ${enc.error}. ` +
             `If you have a strict CSP, allow module workers from 'self' (worker-src 'self'). ` +
-            `This build uses a real worker file (no blob workers).`,
+            `This build uses a real worker file (no blob workers).`
         );
         return;
       }
@@ -1218,7 +1201,7 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
 
       if (token.length > TOKEN_HARD_LIMIT) {
         setWarn(
-          `Token exceeds hard path limit (${token.length.toLocaleString()} > ${TOKEN_HARD_LIMIT.toLocaleString()}). Using hash URL to avoid request-line limits.`,
+          `Token exceeds hard path limit (${token.length.toLocaleString()} > ${TOKEN_HARD_LIMIT.toLocaleString()}). Using hash URL to avoid request-line limits.`
         );
       } else if (token.length > TOKEN_SOFT_BUDGET) {
         setWarn(`Token is large (${token.length.toLocaleString()} chars). Prefer trimming inlined files or relying on external URLs.`);
@@ -1252,11 +1235,7 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : typeof e === "string" ? e : "Failed to generate link.";
       setErr(msg);
-      setDiag({
-        stage: stage || "unknown",
-        totalMs: nowMs() - t0,
-        note: msg,
-      });
+      setDiag({ stage: stage || "unknown", totalMs: nowMs() - t0, note: msg });
     } finally {
       setStage("");
       setBusy(false);
@@ -1264,14 +1243,24 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
   };
 
   const onReset = (): void => {
-    setCaption(initialCaption || "");
-    setAuthor(initialAuthor || "");
+    // reset uncontrolled fields (refs + DOM)
+    captionRef.current = initialCaption || "";
+    authorRef.current = initialAuthor || "";
+    sealTeaserRef.current = "";
+    extraUrlFieldRef.current = "";
+
+    if (captionElRef.current) captionElRef.current.value = captionRef.current;
+    if (authorElRef.current) authorElRef.current.value = authorRef.current;
+    if (sealTeaserElRef.current) sealTeaserElRef.current.value = "";
+    if (extraUrlElRef.current) extraUrlElRef.current.value = "";
+
     setBodyKind("text");
     setCodeLang("tsx");
     setHtmlMode("code");
-    setExtraUrlField("");
+
     setExtraUrls([]);
     clearFiles();
+
     setErr(null);
     setWarn(null);
     setCopied(false);
@@ -1281,8 +1270,7 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
     setStage("");
     setDiag(null);
 
-    // 🔒 Keep user’s sealing choices but reset content-adjacent fields
-    setSealTeaser("");
+    // keep sealing choices but reset content-adjacent fields
     setSealAdvanced(false);
 
     if (storyPreview) {
@@ -1293,14 +1281,9 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
     try {
       window.sessionStorage.removeItem(DRAFT_STORAGE_KEY);
     } catch {
-      // ignore draft clear failures
+      /* ignore */
     }
   };
-
-  const bind =
-    (setter: (v: string) => void) =>
-    (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>): void =>
-      setter(e.target.value);
 
   /** Identity banner */
   const identityBanner = useMemo(() => {
@@ -1345,9 +1328,7 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
           </button>
         </div>
         {!isLikelySigilUrl(sigilActionUrl) && (
-          <div className="composer-hint warn">
-            No canonical stream token detected in the URL. Fallback will still produce a valid post.
-          </div>
+          <div className="composer-hint warn">No canonical stream token detected in the URL. Fallback will still produce a valid post.</div>
         )}
       </div>
     );
@@ -1408,17 +1389,21 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
       {privateOn && (
         <>
           <div className="composer-hint">
-            Private (Sealed) encrypts <span className="mono">body + attachments</span> inside the token. The outer post remains verifiable (ΦKey/ΣSig)
-            but does not contain plaintext content.
+            Private (Sealed) encrypts <span className="mono">body + attachments</span> inside the token. The outer post remains verifiable (ΦKey/ΣSig) but
+            does not contain plaintext content.
           </div>
 
           <div className="composer" style={{ padding: 0, marginTop: 10 }}>
             <label className="composer-label">Public teaser (optional)</label>
             <input
+              ref={sealTeaserElRef}
               className="composer-input"
               type="text"
-              value={sealTeaser}
-              onChange={bind(setSealTeaser)}
+              defaultValue={sealTeaserRef.current}
+              onInput={(e) => {
+                sealTeaserRef.current = e.currentTarget.value;
+                scheduleDraftSave();
+              }}
               placeholder="What should be visible without unlocking?"
               maxLength={240}
             />
@@ -1432,12 +1417,7 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
               <label className="composer-label">Derivation salt (for verifier export)</label>
               <div className="composer-input-row">
                 <input className="composer-input mono" type="text" readOnly value={sealSalt} />
-                <button
-                  type="button"
-                  className="composer-aux"
-                  onClick={() => setSealSalt(makeSealSaltB64Url(18))}
-                  title="Rotate derivation salt"
-                >
+                <button type="button" className="composer-aux" onClick={() => setSealSalt(makeSealSaltB64Url(18))} title="Rotate derivation salt">
                   Rotate
                 </button>
                 <button
@@ -1605,11 +1585,15 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
         <label className="composer-label">Seal any URL</label>
         <div className="composer-input-row">
           <input
+            ref={extraUrlElRef}
             className="composer-input"
             type="url"
             placeholder="https://example.com/docs/your-file.pdf"
-            value={extraUrlField}
-            onChange={bind(setExtraUrlField)}
+            defaultValue={extraUrlFieldRef.current}
+            onInput={(e) => {
+              extraUrlFieldRef.current = e.currentTarget.value;
+              scheduleDraftSave();
+            }}
             autoCapitalize="none"
             autoCorrect="off"
             spellCheck={false}
@@ -1742,7 +1726,7 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
 
   return (
     <div className="social-connector-container">
-      {/* ✅ This mirrors KaiStatus pulse math without causing KaiVoh to re-render every pulse */}
+      {/* Mirrors KaiStatus pulse math without causing KaiVoh to re-render every pulse */}
       <KaiVohPulseMirror pulseRef={kaiPulseRef} />
 
       <h2 className="social-connector-title">KaiVoh</h2>
@@ -1776,7 +1760,7 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
               className="composer-input"
               style={{ maxWidth: 160 }}
               value={codeLang}
-              onChange={bind(setCodeLang)}
+              onChange={(e) => setCodeLang(e.target.value)}
               placeholder="lang (tsx)"
               aria-label="Code language"
               autoCapitalize="none"
@@ -1809,12 +1793,16 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
             Memory <span className="muted">(Body)</span>
           </label>
           <textarea
+            ref={captionElRef}
             id="caption"
             className={`composer-textarea${bodyKind === "code" ? " mono" : ""}`}
             rows={textareaRows}
             placeholder={textareaPlaceholder}
-            value={caption}
-            onChange={bind(setCaption)}
+            defaultValue={captionRef.current}
+            onInput={(e) => {
+              captionRef.current = e.currentTarget.value;
+              scheduleDraftSave();
+            }}
             spellCheck={bodyKind === "code" ? false : true}
           />
         </div>
@@ -1824,12 +1812,16 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
             Author Handle <span className="muted">(optional, e.g., @KaiRexKlok)</span>
           </label>
           <input
+            ref={authorElRef}
             id="author"
             className="composer-input"
             type="text"
             placeholder="@handle"
-            value={author}
-            onChange={bind(setAuthor)}
+            defaultValue={authorRef.current}
+            onInput={(e) => {
+              authorRef.current = e.currentTarget.value;
+              scheduleDraftSave();
+            }}
             autoCorrect="off"
             autoCapitalize="none"
           />

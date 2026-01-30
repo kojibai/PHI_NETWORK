@@ -230,12 +230,6 @@ type VerifyPopoverProps = {
   children: React.ReactNode;
 };
 
-type KaiVohPopoverProps = {
-  open: boolean;
-  onClose: () => void;
-  children: React.ReactNode;
-};
-
 type KlockPopoverProps = {
   open: boolean;
   onClose: () => void;
@@ -327,7 +321,6 @@ const DEFAULT_LIVE_SNAP: LiveKaiSnap = {
   dmyLabel: formatDMYLabel(DEFAULT_BEAT_STEP_DMY),
   chakraDay: "Heart",
 };
-
 function isEditableElement(el: Element | null): boolean {
   if (!el) return false;
   if (el instanceof HTMLInputElement) return !el.disabled;
@@ -461,39 +454,40 @@ function ExplorerPopover({
   children,
 }: ExplorerPopoverProps): React.JSX.Element | null {
   const hydrated = useHydrated();
-  const vvSizeRaw = useVisualViewportSize();
+const vvSizeRaw = useVisualViewportSize();
 
-  // ✅ Freeze viewport height while typing (prevents iOS keyboard resize thrash)
-  const [vvStable, setVvStable] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
+// ✅ Freeze viewport height while typing (prevents iOS keyboard resize thrash)
+const [vvStable, setVvStable] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
 
-  useIsoLayoutEffect(() => {
-    if (!hydrated) return;
+useIsoLayoutEffect(() => {
+  if (!hydrated) return;
+  setVvStable({ width: vvSizeRaw.width, height: vvSizeRaw.height });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [hydrated]);
+
+useEffect(() => {
+  if (!hydrated) return;
+  if (isEditingNow()) return; // ✅ do not update while typing
+  setVvStable((prev) => {
+    if (prev.width === vvSizeRaw.width && prev.height === vvSizeRaw.height) return prev;
+    return { width: vvSizeRaw.width, height: vvSizeRaw.height };
+  });
+}, [hydrated, vvSizeRaw.width, vvSizeRaw.height]);
+
+useEffect(() => {
+  if (!hydrated) return;
+
+  const onFocusOut = (): void => {
+    // when keyboard closes, resync once
     setVvStable({ width: vvSizeRaw.width, height: vvSizeRaw.height });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hydrated]);
+  };
 
-  useEffect(() => {
-    if (!hydrated) return;
-    if (isEditingNow()) return; // ✅ do not update while typing
-    setVvStable((prev) => {
-      if (prev.width === vvSizeRaw.width && prev.height === vvSizeRaw.height) return prev;
-      return { width: vvSizeRaw.width, height: vvSizeRaw.height };
-    });
-  }, [hydrated, vvSizeRaw.width, vvSizeRaw.height]);
+  document.addEventListener("focusout", onFocusOut, true);
+  return () => document.removeEventListener("focusout", onFocusOut, true);
+}, [hydrated, vvSizeRaw.width, vvSizeRaw.height]);
 
-  useEffect(() => {
-    if (!hydrated) return;
+const vvSize = hydrated ? vvStable : { width: 0, height: 0 };
 
-    const onFocusOut = (): void => {
-      // when keyboard closes, resync once
-      setVvStable({ width: vvSizeRaw.width, height: vvSizeRaw.height });
-    };
-
-    document.addEventListener("focusout", onFocusOut, true);
-    return () => document.removeEventListener("focusout", onFocusOut, true);
-  }, [hydrated, vvSizeRaw.width, vvSizeRaw.height]);
-
-  const vvSize = hydrated ? vvStable : { width: 0, height: 0 };
 
   const portalHost = useMemo<HTMLElement | null>(() => {
     if (!hydrated) return null;
@@ -706,122 +700,6 @@ function VerifyPopover({ open, onClose, children }: VerifyPopoverProps): React.J
   );
 }
 
-/* ──────────────────────────────────────────────────────────────────────────────
-   KaiVoh Popover — EXACT SAME POP STYLE AS ATTESTATION
-────────────────────────────────────────────────────────────────────────────── */
-function KaiVohPopover({ open, onClose, children }: KaiVohPopoverProps): React.JSX.Element | null {
-  const hydrated = useHydrated();
-  const vvSizeRaw = useVisualViewportSize();
-  const vvSize = hydrated ? vvSizeRaw : { width: 0, height: 0 };
-
-  const portalHost = useMemo<HTMLElement | null>(() => {
-    if (!hydrated) return null;
-    return getPortalHost();
-  }, [hydrated]);
-
-  useBodyScrollLock(open && hydrated);
-
-  useEffect(() => {
-    if (!open || !hydrated) return;
-
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") onClose();
-    };
-
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open, onClose, hydrated]);
-
-  const closeBtnRef = useRef<HTMLButtonElement | null>(null);
-  useEffect(() => {
-    if (!open || !hydrated) return;
-    window.requestAnimationFrame(() => closeBtnRef.current?.focus());
-  }, [open, hydrated]);
-
-  const overlayStyle = useMemo<ExplorerPopoverStyle | undefined>(() => {
-    if (!open || !hydrated) return undefined;
-
-    const h = vvSize.height;
-    const w = vvSize.width;
-
-    return {
-      position: "fixed",
-      inset: 0,
-      pointerEvents: "auto",
-      height: h > 0 ? `${h}px` : undefined,
-      width: w > 0 ? `${w}px` : undefined,
-
-      ["--sx-breath"]: "5.236s",
-      ["--sx-border"]: "rgba(60, 220, 205, 0.35)",
-      ["--sx-border-strong"]: "rgba(55, 255, 228, 0.55)",
-      ["--sx-ring"]:
-        "0 0 0 2px rgba(55, 255, 228, 0.25), 0 0 0 6px rgba(55, 255, 228, 0.12)",
-    };
-  }, [open, hydrated, vvSize.height, vvSize.width]);
-
-  const onBackdropPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>): void => {
-    if (e.target === e.currentTarget) {
-      e.preventDefault();
-      e.stopPropagation();
-    }
-  }, []);
-
-  const onBackdropClick = useCallback(
-    (e: React.MouseEvent<HTMLDivElement>): void => {
-      if (e.target === e.currentTarget) {
-        e.preventDefault();
-        e.stopPropagation();
-        onClose();
-      }
-    },
-    [onClose],
-  );
-
-  const onClosePointerDown = useCallback((e: React.PointerEvent<HTMLButtonElement>): void => {
-    e.preventDefault();
-    e.stopPropagation();
-  }, []);
-
-  if (!open || !hydrated || !portalHost) return null;
-
-  return createPortal(
-    <div
-      className="explorer-pop verify-pop kaivoh-pop"
-      style={overlayStyle}
-      role="dialog"
-      aria-modal="true"
-      aria-label="KaiVoh Memory OS"
-      onPointerDown={onBackdropPointerDown}
-      onClick={onBackdropClick}
-    >
-      <div className="explorer-pop__panel verify-pop__panel kaivoh-pop__panel" role="document">
-        <button
-          ref={closeBtnRef}
-          type="button"
-          className="explorer-pop__close verify-pop__close kx-x"
-          onPointerDown={onClosePointerDown}
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            onClose();
-          }}
-          aria-label="Close KaiVoh"
-          title="Close (Esc)"
-        >
-          ×
-        </button>
-
-        <div className="explorer-pop__body verify-pop__body kaivoh-pop__body">{children}</div>
-
-        <div className="sr-only" aria-live="polite">
-          KaiVoh portal open
-        </div>
-      </div>
-    </div>,
-    portalHost,
-  );
-}
-
 function ExplorerFallback(): React.JSX.Element {
   return (
     <div
@@ -982,12 +860,9 @@ export function KaiVohRoute(): React.JSX.Element {
 
   return (
     <>
-      <KaiVohPopover open={open} onClose={handleClose}>
-        <Suspense fallback={null}>
-          <KaiVohModal open={open} onClose={handleClose} />
-        </Suspense>
-      </KaiVohPopover>
-
+      <Suspense fallback={null}>
+        <KaiVohModal open={open} onClose={handleClose} />
+      </Suspense>
       <div className="sr-only" aria-live="polite">
         KaiVoh portal open
       </div>

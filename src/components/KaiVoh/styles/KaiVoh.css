@@ -1,6 +1,13 @@
-/* /components/KaiVoh/SocialConnector.css
-   v3.1 — Atlantean Composer • Golden-Breath Timing (φ-synced)
-   All motion = 5.236s or φ/Fibonacci derivatives.
+/* src/components/KaiVoh/styles/KaiVoh.css
+   (If your repo currently names this SocialConnector.css, replace that file
+    OR rename it to KaiVoh.css to match `import "./styles/KaiVoh.css";`)
+
+   v3.2 — Atlantean Composer • iOS-stable focus (no “jump” on input focus)
+   Goals:
+   - Keep the same look.
+   - Remove the two biggest iOS “typing feels like reload” triggers:
+     (1) transforms on focus (scroll jump inside fixed-body modal)
+     (2) filter animations on large layers (GPU thrash during keyboard open)
 */
 
 :root {
@@ -20,8 +27,8 @@
   --t-2:  calc(var(--phi-breath) / 2);   /* ≈ 2.618s */
 
   /* Breathy easings */
-  --ease-breath: cubic-bezier(.22,.61,.28,.99);  /* gentle inhale/exhale */
-  --ease-pulse:  cubic-bezier(.15,.7,.25,1);     /* quick harmonic pulse */
+  --ease-breath: cubic-bezier(.22,.61,.28,.99);
+  --ease-pulse:  cubic-bezier(.15,.7,.25,1);
 
   /* Palette — abyssal teal & auric highlights */
   --ink-0: #000000;
@@ -78,33 +85,53 @@
     radial-gradient(1200px 800px at 20% -10%, rgba(0, 238, 255, 0.08), transparent 60%),
     radial-gradient(800px 600px at 120% 120%, rgba(255, 209, 102, 0.06), transparent 55%),
     linear-gradient(180deg, var(--ink-3) 0%, var(--ink-1) 100%);
+
   border: 1px solid var(--line-1);
   border-radius: var(--radius-lg);
+
   box-shadow: var(--shadow-ambient), inset 0 0 0 1px rgba(255, 255, 255, 0.04);
-  backdrop-filter: blur(8px);
-  overflow: clip;
+
+  /* iOS safety: blur only if supported; otherwise avoid heavy redraw */
+  background-clip: padding-box;
+  overflow: hidden;
+
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+
+  touch-action: auto;
 }
 
-/* Breathing auric ring — slow full breath */
+@supports (backdrop-filter: blur(8px)) {
+  .social-connector-container {
+    backdrop-filter: blur(8px);
+  }
+}
+
+/* Breathing auric ring — slow full breath (opacity-only animation; no filter) */
 .social-connector-container::before {
   content: "";
   position: absolute;
   inset: -1px;
   border-radius: calc(var(--radius-lg) + 1px);
   pointer-events: none;
+
   background:
     radial-gradient(1200px 400px at 50% -20%, rgba(255, 209, 102, 0.12), transparent 60%),
     radial-gradient(900px 300px at 50% 120%, rgba(0, 255, 230, 0.10), transparent 60%);
+
   mask: linear-gradient(#000, #000) content-box, linear-gradient(#000, #000);
   padding: 1px;
+
   box-shadow: inset 0 0 0 1px rgba(255, 209, 102, 0.06);
+
   animation: breathGlow var(--phi-breath-slow) var(--ease-breath) infinite;
+  will-change: opacity;
   z-index: 0;
 }
 
 @keyframes breathGlow {
-  0%, 100% { opacity: 0.40; filter: blur(0.5px); }
-  50%      { opacity: 0.70; filter: blur(1.2px); }
+  0%, 100% { opacity: 0.40; }
+  50%      { opacity: 0.70; }
 }
 
 /* ===== Titles & Copy ====================================================== */
@@ -118,12 +145,15 @@
   letter-spacing: 0.015em;
   margin: 0.25rem 0 0.25rem;
   text-shadow: 0 1px 0 rgba(0,0,0,0.35);
+
   background: linear-gradient(90deg, var(--text-1), var(--aqua-2), var(--auric-1));
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
+
   animation: titleShimmer var(--phi-breath-fast) linear infinite;
   background-size: 200%;
+  will-change: background-position;
 }
 
 @keyframes titleShimmer {
@@ -199,16 +229,25 @@
   width: 100%;
   padding: 0.78rem 1rem;
   border-radius: var(--radius-md);
+
   background: linear-gradient(180deg, rgba(10,20,30,0.66), rgba(8,14,20,0.72));
   color: var(--text-1);
+
   border: 1px solid var(--line-2);
   outline: none;
+
   transition:
     border-color var(--t-34) var(--ease-breath),
     box-shadow   var(--t-34) var(--ease-breath),
-    background   var(--t-34) var(--ease-breath),
-    transform    var(--t-34) var(--ease-breath);
+    background   var(--t-34) var(--ease-breath);
+
   box-shadow: inset 0 0 0 1px rgba(255,255,255,0.02);
+
+  /* extra iOS safety: don’t let focus cause layout scroll jumps */
+  transform: none !important;
+
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 .social-connector-container .composer-textarea { min-height: 100px; resize: vertical; }
@@ -217,7 +256,7 @@
 .social-connector-container .composer-textarea:focus {
   border-color: rgba(0,255,230,0.38);
   box-shadow: var(--glow-aqua-md), inset 0 0 0 1px rgba(255,255,255,0.04), var(--focus-ring);
-  transform: translateY(-0.5px);
+  /* IMPORTANT: no translateY on focus */
 }
 
 .social-connector-container .composer-input.warn {
@@ -424,7 +463,7 @@
 .social-connector-container .dz-sub { color: var(--text-3); font-size: 0.9rem; }
 .social-connector-container .dz-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.4rem; }
 
-/* Pills (reusable buttons) */
+/* Pills */
 .social-connector-container .pill {
   display: inline-flex;
   align-items: center;
@@ -465,7 +504,7 @@
 }
 .social-connector-container .pill.icon-only { width: 44px; padding: 0; }
 
-/* Inline icons (SVG) */
+/* Inline icons */
 .social-connector-container .ico {
   width: 20px;
   height: 20px;
@@ -551,14 +590,11 @@
   box-shadow: 0 0 8px rgba(0,255,230,0.35);
   animation: phiBlink var(--phi-breath) var(--ease-breath) infinite;
 }
-@keyframes phiBlink {
-  0%, 100% { opacity: 0.8; }
-  50%      { opacity: 0.35; }
-}
+@keyframes phiBlink { 0%, 100% { opacity: 0.8; } 50% { opacity: 0.35; } }
 .social-connector-container .id-text { color: var(--text-1); font-weight: 700; }
 .social-connector-container .id-sub { color: var(--text-3); }
 
-/* ===== Story Recorder (Modal + Preview) =================================== */
+/* ===== Story Recorder ===================================================== */
 
 .social-connector-container .story-actions {
   display: flex;
@@ -642,7 +678,7 @@
   height: 100%; width: 0%;
   background: linear-gradient(90deg, #ff7b7b, #ffd166, #00ffd5);
   box-shadow: 0 0 14px rgba(255, 209, 102, 0.22);
-  transition: width var(--t-21) linear; /* Kai-aligned micro progress */
+  transition: width var(--t-21) linear;
 }
 
 .social-connector-container .story-btn {
@@ -660,12 +696,6 @@
 .social-connector-container .story-btn.record { background: linear-gradient(135deg, #3a1414, #261010); color: #ffeaea; border-color: rgba(255,74,74,0.45); }
 .social-connector-container .story-btn.primary { background: linear-gradient(135deg, #15616d, #0b3943); color: #e7ffff; }
 .social-connector-container .story-foot { display: flex; align-items: center; gap: 0.5rem; justify-content: flex-end; padding: 0.75rem 0.9rem; border-top: 1px solid rgba(255,255,255,0.06); }
-
-/* ===== Icon Aura ========================================================== */
-
-.breath-glow {
-  filter: drop-shadow(0 0 10px rgba(0,255,230,0.22)) drop-shadow(0 0 18px rgba(255,209,102,0.10));
-}
 
 /* ===== Utility ============================================================ */
 
@@ -688,10 +718,9 @@
     transition-duration: 0ms !important;
   }
 }
+
 /* ─────────────────────────────────────────────────────────────
-   SocialConnector — Kai-Sigil Proof Sharing
-   - Proof caption preview, metadata, share rows
-   - Uses kv-btn tokens from KaiVohApp.css
+   SocialConnector — Kai-Sigil Proof Sharing (unchanged styling)
    ───────────────────────────────────────────────────────────── */
 
 .kv-social-connector {
@@ -706,13 +735,7 @@
   gap: 14px;
 }
 
-/* Header */
-
-.kv-social-header {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
+.kv-social-header { display: flex; flex-direction: column; gap: 4px; }
 
 .kv-social-title {
   font-size: 16px;
@@ -721,12 +744,7 @@
   text-transform: uppercase;
 }
 
-.kv-social-subtitle {
-  font-size: 13px;
-  color: var(--kv-ink-soft, #b7c7dd);
-}
-
-/* Proof block */
+.kv-social-subtitle { font-size: 13px; color: var(--kv-ink-soft, #b7c7dd); }
 
 .kv-social-proof {
   display: grid;
@@ -765,8 +783,6 @@
   word-wrap: break-word;
 }
 
-/* Proof meta */
-
 .kv-social-proof-meta {
   border-radius: 14px;
   border: 1px solid rgba(255, 255, 255, 0.16);
@@ -778,12 +794,7 @@
   font-size: 12px;
 }
 
-.kv-proof-meta-row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-}
+.kv-proof-meta-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 
 .kv-proof-meta-label {
   color: var(--kv-ink-muted, #8b9bb2);
@@ -797,56 +808,18 @@
   text-align: right;
 }
 
-/* Actions */
+.kv-social-actions { display: flex; flex-direction: column; gap: 10px; }
 
-.kv-social-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
+.kv-social-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.kv-social-row--primary { justify-content: flex-start; }
+.kv-social-row--grid { flex-wrap: wrap; }
+.kv-social-row--secondary { justify-content: flex-start; }
 
-.kv-social-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.kv-social-row--primary {
-  justify-content: flex-start;
-}
-
-.kv-social-row--grid {
-  flex-wrap: wrap;
-}
-
-.kv-social-row--secondary {
-  justify-content: flex-start;
-}
-
-/* Status */
-
-.kv-social-status {
-  font-size: 12px;
-  color: var(--kv-ink-soft, #b7c7dd);
-  margin-top: 4px;
-}
-
-/* Responsive */
+.kv-social-status { font-size: 12px; color: var(--kv-ink-soft, #b7c7dd); margin-top: 4px; }
 
 @media (max-width: 768px) {
-  .kv-social-connector {
-    padding: 12px 10px 14px;
-  }
-
-  .kv-social-proof {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .kv-social-row {
-    flex-direction: column;
-  }
-
-  .kv-social-row .kv-btn {
-    width: 100%;
-  }
+  .kv-social-connector { padding: 12px 10px 14px; }
+  .kv-social-proof { grid-template-columns: minmax(0, 1fr); }
+  .kv-social-row { flex-direction: column; }
+  .kv-social-row .kv-btn { width: 100%; }
 }
