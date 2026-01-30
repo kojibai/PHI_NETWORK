@@ -212,6 +212,12 @@ export default function KaiVohModal({ open, onClose }: KaiVohModalProps) {
   useEffect(() => {
     if (!open) return;
     const allowEscapeClose = !window.matchMedia?.("(pointer: coarse)")?.matches;
+    const locationAny = window.location as Location;
+    const originalLocation = {
+      reload: window.location.reload.bind(window.location),
+      assign: window.location.assign.bind(window.location),
+      replace: window.location.replace.bind(window.location),
+    };
 
     // Save prior styles (restore exactly)
     const prev = {
@@ -257,6 +263,31 @@ export default function KaiVohModal({ open, onClose }: KaiVohModalProps) {
     // CSS vars for timing/phi
     document.documentElement.style.setProperty("--kai-breath", viewportVars.breath);
     document.documentElement.style.setProperty("--kai-phi", viewportVars.phi);
+
+    // HARD: block programmatic reload/replace/assign while modal is open
+    const logBlocked = (label: string, args: unknown[]): void => {
+      if (!isReloadDebugEnabled()) return;
+      // eslint-disable-next-line no-console
+      console.warn(`[Reload Detective] blocked ${label}`, ...args);
+    };
+
+    const blockReload: Location["reload"] = (...args) => {
+      logBlocked("location.reload", args);
+    };
+    const blockAssign: Location["assign"] = (url) => {
+      logBlocked("location.assign", [url]);
+    };
+    const blockReplace: Location["replace"] = (url) => {
+      logBlocked("location.replace", [url]);
+    };
+
+    try {
+      locationAny.reload = blockReload;
+      locationAny.assign = blockAssign;
+      locationAny.replace = blockReplace;
+    } catch {
+      // ignore inability to patch location methods
+    }
 
     // Stable viewport var (helps iOS address-bar / orientation “jump”)
     const syncVh = (): void => {
@@ -363,6 +394,12 @@ export default function KaiVohModal({ open, onClose }: KaiVohModalProps) {
         return;
       }
 
+      if (e.key === "F5" || ((e.key === "r" || e.key === "R") && (e.ctrlKey || e.metaKey))) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+
       if (e.key === "Enter") {
         const target = e.target as Element | null;
         if (shouldSuppressEnter(target) && rootRef.current?.contains(target)) {
@@ -465,6 +502,15 @@ export default function KaiVohModal({ open, onClose }: KaiVohModalProps) {
 
       if (prev.kaiVh) document.documentElement.style.setProperty("--kai-vh", prev.kaiVh);
       else document.documentElement.style.removeProperty("--kai-vh");
+
+      // Restore location methods
+      try {
+        locationAny.reload = originalLocation.reload;
+        locationAny.assign = originalLocation.assign;
+        locationAny.replace = originalLocation.replace;
+      } catch {
+        // ignore restore failures
+      }
 
       // Restore scroll position after unlocking fixed body
       const y = lockedScrollYRef.current || 0;
