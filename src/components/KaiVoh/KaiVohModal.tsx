@@ -226,6 +226,7 @@ export default function KaiVohModal({ open, onClose }: KaiVohModalProps) {
       htmlHeight: document.documentElement.style.height,
       docOverscroll: document.documentElement.style.getPropertyValue("overscroll-behavior"),
       bodyOverscroll: document.body.style.getPropertyValue("overscroll-behavior"),
+      bodyTouchAction: document.body.style.touchAction,
       touchAction: document.documentElement.style.touchAction,
       breath: document.documentElement.style.getPropertyValue("--kai-breath"),
       phi: document.documentElement.style.getPropertyValue("--kai-phi"),
@@ -250,7 +251,8 @@ export default function KaiVohModal({ open, onClose }: KaiVohModalProps) {
     document.body.style.setProperty("overscroll-behavior", "none");
 
     // Avoid double-tap zoom / weird pan interactions outside our scroll region
-    document.documentElement.style.touchAction = "manipulation";
+    document.documentElement.style.touchAction = "none";
+    document.body.style.touchAction = "none";
 
     // CSS vars for timing/phi
     document.documentElement.style.setProperty("--kai-breath", viewportVars.breath);
@@ -279,6 +281,20 @@ export default function KaiVohModal({ open, onClose }: KaiVohModalProps) {
     // Touch gating (iOS pull-to-refresh prevention)
     const onTouchStart = (e: TouchEvent): void => {
       touchStartYRef.current = e.touches[0]?.clientY ?? 0;
+
+      const s = scrollRegionRef.current;
+      if (!s) return;
+
+      const target = e.target as Node | null;
+      const insideScrollRegion = target ? s.contains(target) : false;
+      if (!insideScrollRegion) return;
+
+      // iOS pull-to-refresh guard: nudge scroll position away from edges
+      if (s.scrollTop <= 0) {
+        s.scrollTop = 1;
+      } else if (s.scrollTop + s.clientHeight >= s.scrollHeight) {
+        s.scrollTop = Math.max(0, s.scrollHeight - s.clientHeight - 1);
+      }
     };
 
     const onTouchMove = (e: TouchEvent): void => {
@@ -439,6 +455,7 @@ export default function KaiVohModal({ open, onClose }: KaiVohModalProps) {
       else document.body.style.removeProperty("overscroll-behavior");
 
       document.documentElement.style.touchAction = prev.touchAction;
+      document.body.style.touchAction = prev.bodyTouchAction;
 
       if (prev.breath) document.documentElement.style.setProperty("--kai-breath", prev.breath);
       else document.documentElement.style.removeProperty("--kai-breath");
