@@ -267,10 +267,12 @@ export default function KaiVohModal({ open, onClose }: KaiVohModalProps) {
 
     // Make the scroll region itself “contain” overscroll (best-effort; iOS still needs touch gate)
     const scrollEl = scrollRegionRef.current;
+    const prevScrollTouchAction = scrollEl?.style.touchAction;
     if (scrollEl) {
       scrollEl.style.overscrollBehavior = "none";
       scrollEl.style.overscrollBehaviorY = "none";
       scrollEl.style.overscrollBehaviorX = "none";
+      scrollEl.style.touchAction = "pan-y";
       // iOS momentum scrolling (smooth)
       // @ts-expect-error: webkitOverflowScrolling not in standard types.
       scrollEl.style.webkitOverflowScrolling = "touch";
@@ -459,6 +461,7 @@ export default function KaiVohModal({ open, onClose }: KaiVohModalProps) {
 
       document.documentElement.style.touchAction = prev.touchAction;
       document.body.style.touchAction = prev.bodyTouchAction;
+      if (scrollEl) scrollEl.style.touchAction = prevScrollTouchAction ?? "";
 
       if (prev.breath) document.documentElement.style.setProperty("--kai-breath", prev.breath);
       else document.documentElement.style.removeProperty("--kai-breath");
