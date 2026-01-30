@@ -50,6 +50,12 @@ function shouldTrySameOriginProxy(origin: string): boolean {
   if (!origin || origin === "null") return false;
   if (isLocalDevOrigin(origin)) return false;
   if (origin === LIVE_BASE_URL || origin === LIVE_BACKUP_URL) return false;
+  try {
+    const { hostname } = new URL(origin);
+    if (hostname === "phi.network" || hostname === "www.phi.network") return false;
+  } catch {
+    return false;
+  }
   return true;
 }
 
