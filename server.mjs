@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import fsSync from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { PassThrough } from "node:stream";
+import { PassThrough, Readable } from "node:stream";
 import { createServer as createHttpServer } from "node:http";
 import { createServer as createViteServer } from "vite";
 import { createHash } from "node:crypto";
@@ -32,6 +32,9 @@ const OG_PATH_PREFIX = "/og/v/verified/";
 const OG_CACHE_CONTROL = "public, max-age=0, s-maxage=31536000, immutable";
 const OG_CACHE_TTL_MS = 10 * 60 * 1000;
 const OG_CACHE_MAX_ENTRIES = 512;
+const SIGILS_PROXY_PATH = "/sigils";
+const SIGILS_PRIMARY_BASE = "https://m.kai.ac";
+const SIGILS_BACKUP_BASE = "https://memory.kaiklok.com";
 
 const escapeHtml = (value) =>
   String(value)
@@ -76,6 +79,84 @@ const tryServeStatic = (req, res, rootDir) => {
   const isAsset = pathname.startsWith("/assets/");
   const cacheControl = isAsset ? "public, max-age=31536000, immutable" : "public, max-age=600";
   sendFile(res, filePath, cacheControl);
+  return true;
+};
+
+const shouldFailoverStatus = (status) => {
+  if (status === 0) return true;
+  if (status === 404) return true;
+  if (status === 408 || status === 429) return true;
+  if (status >= 500) return true;
+  return false;
+};
+
+const readRequestBody = async (req) => {
+  const chunks = [];
+  for await (const chunk of req) {
+    chunks.push(chunk);
+  }
+  return chunks.length ? Buffer.concat(chunks) : undefined;
+};
+
+const buildProxyHeaders = (req) => {
+  const headers = new Headers();
+  for (const [key, value] of Object.entries(req.headers)) {
+    const lower = key.toLowerCase();
+    if (lower === "host" || lower === "connection" || lower === "content-length") continue;
+    if (typeof value === "undefined") continue;
+    if (Array.isArray(value)) {
+      for (const entry of value) headers.append(lower, entry);
+    } else {
+      headers.set(lower, value);
+    }
+  }
+  return headers;
+};
+
+const proxySigils = async (req, res) => {
+  if (!req.url?.startsWith(SIGILS_PROXY_PATH)) return false;
+
+  const body =
+    req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS"
+      ? undefined
+      : await readRequestBody(req);
+  const headers = buildProxyHeaders(req);
+  const bases = [SIGILS_PRIMARY_BASE, SIGILS_BACKUP_BASE];
+  let lastStatus = null;
+
+  for (const base of bases) {
+    try {
+      const proxyRes = await fetch(`${base}${req.url}`, {
+        method: req.method,
+        headers,
+        body,
+      });
+
+      if (shouldFailoverStatus(proxyRes.status) && base === SIGILS_PRIMARY_BASE) {
+        lastStatus = proxyRes.status;
+        continue;
+      }
+
+      res.statusCode = proxyRes.status;
+      for (const [key, value] of proxyRes.headers) {
+        if (key.toLowerCase() === "content-encoding") continue;
+        res.setHeader(key, value);
+      }
+
+      if (proxyRes.body) {
+        Readable.fromWeb(proxyRes.body).pipe(res);
+        return true;
+      }
+
+      res.end();
+      return true;
+    } catch {
+      continue;
+    }
+  }
+
+  res.statusCode = lastStatus ?? 502;
+  res.end("Bad Gateway");
   return true;
 };
 
@@ -242,6 +323,8 @@ async function createServer() {
         res.end("Bad Request");
         return;
       }
+
+      if (await proxySigils(req, res)) return;
 
       if (await handleOgRoute(req, res)) return;
 

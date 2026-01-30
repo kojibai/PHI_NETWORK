@@ -152,6 +152,15 @@ function apiBases(): string[] {
     return [DEV_API_BASE];
   }
 
+  if (hasWindow) {
+    const pageOrigin = window.location.origin;
+    // In production on non-API domains (e.g. phi.network), stay same-origin to avoid CORS.
+    // Server-side proxy handles forwarding to the API hosts.
+    if (pageOrigin !== LIVE_BASE_URL && pageOrigin !== LIVE_BACKUP_URL) {
+      return [DEV_API_BASE];
+    }
+  }
+
   const wantFallbackFirst = apiBaseHint === API_BASE_FALLBACK && !isBackupSuppressed();
   const list = wantFallbackFirst
     ? [API_BASE_FALLBACK, API_BASE_PRIMARY]
