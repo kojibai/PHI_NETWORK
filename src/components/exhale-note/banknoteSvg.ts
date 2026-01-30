@@ -307,7 +307,7 @@ export function buildBanknoteSVG(opts: BuildBanknoteSvgOpts): string {
   <!-- Serials / identity -->
   <g font-family="ui-monospace,monospace" font-size="11" fill="#bff">
     <text x="64"  y="130">SERIAL: ${esc(serial)}</text>
-    <text x="64"  y="266">PULSE (VALUATION): ${esc(pulseRendered)}</text>
+    <text x="64"  y="306">PULSE (VALUATION): ${esc(pulseRendered)}</text>
     <text x="320" y="130" text-anchor="start">KaiSignature: ${esc(kaiSignature || "—")}</text>
     <text x="520" y="146" text-anchor="start">ΦKey: ${esc(userPhiKey || "—")}</text>
     <text x="64" y="460" fill="#aee" font-size="10" opacity=".95">Algorithm (Valuation): ${esc(valuationAlg || "—")}</text>
