@@ -154,10 +154,11 @@ function apiBases(): string[] {
 
   if (hasWindow) {
     const pageOrigin = window.location.origin;
-    // In production on non-API domains (e.g. phi.network), stay same-origin to avoid CORS.
-    // Server-side proxy handles forwarding to the API hosts.
+    // In production on non-API domains (e.g. phi.network), try same-origin first
+    // (if a proxy exists), then fall back to the live API hosts.
     if (pageOrigin !== LIVE_BASE_URL && pageOrigin !== LIVE_BACKUP_URL) {
-      return [DEV_API_BASE];
+      const list = [DEV_API_BASE, LIVE_BASE_URL, LIVE_BACKUP_URL];
+      return isBackupSuppressed() ? list.filter((b) => b !== LIVE_BACKUP_URL) : list;
     }
   }
 
