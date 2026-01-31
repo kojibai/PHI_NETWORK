@@ -840,6 +840,7 @@ const ExhaleNote: React.FC<NoteProps> = ({
       sendCommittedRef.current = false;
       setNoteSendResult(null);
 
+      const proofFields = parseProofBundleJson(form.proofBundleJson);
       const sigmaCanon = (form.sigmaCanon || form.kaiSignature || "").trim();
       const shaHex = sigmaCanon ? sha256HexJs(sigmaCanon) : "";
       let phiDerived = form.phiDerived?.trim() || "";
@@ -862,6 +863,8 @@ const ExhaleNote: React.FC<NoteProps> = ({
         sigmaCanon: sigmaCanon || prev.sigmaCanon,
         shaHex: shaHex || prev.shaHex,
         phiDerived: phiDerived || prev.phiDerived,
+        verifiedAtPulse: prev.verifiedAtPulse ?? proofFields.verifiedAtPulse ?? lockedPulse,
+        receiptHash: prev.receiptHash || proofFields.receiptHash || "",
         verifyUrl: resolveVerifyUrl(prev.verifyUrl, defaultVerifyUrl),
       }));
 
