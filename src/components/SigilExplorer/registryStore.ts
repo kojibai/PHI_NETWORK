@@ -100,6 +100,10 @@ function normalizeNonce(raw: string | undefined | null): string {
 function buildNoteClaimPayload(args: NoteClaimArgs): SigilUrlPayloadLoose {
   const { parentCanonical, transferNonce, childCanonical } = args;
   const payload: SigilUrlPayloadLoose = {
+    pulse: 0,
+    beat: 0,
+    stepIndex: 0,
+    chakraDay: "Root",
     transferDirection: "receive",
     transferNonce,
     parentCanonical,
