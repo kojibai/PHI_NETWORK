@@ -332,6 +332,19 @@ export function getReservedScaledForKind(
   }, 0n);
 }
 
+/** Sum of all Φ (scaled) pending from a parent canonical by kind. */
+export function getPendingReservedScaledForKind(
+  parentCanonical: string,
+  kind: "send" | "note" | "all" = "all"
+): bigint {
+  const rows = getSendsFor(parentCanonical);
+  return rows.reduce<bigint>((acc, r) => {
+    if (r.confirmed) return acc;
+    if (kind !== "all" && (r.kind ?? "send") !== kind) return acc;
+    return acc + BigInt(coerceBigIntString(r.amountPhiScaled));
+  }, 0n);
+}
+
 /**
  * Incoming base Φ for a CHILD canonical.
  * Returns the most recent amount exhaled *to* this child, as scaled BigInt.

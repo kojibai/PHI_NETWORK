@@ -9,7 +9,7 @@ import {
   type DebitRecord,
   type DebitQS,
 } from "../../utils/cryptoLedger";
-import { getReservedScaledForKind } from "../../utils/sendLedger";
+import { getPendingReservedScaledForKind, getReservedScaledForKind } from "../../utils/sendLedger";
 import { fromScaledBig, toScaledBig } from "../../components/verifier/utils/decimal";
 import {
   currentCanonical as currentCanonicalUtil,
@@ -315,10 +315,10 @@ export function useSigilSend(params: {
         String((withDebits as { branchSpentPhi?: string | number } | null)?.branchSpentPhi ?? "0")
       );
       const branchSpentPhi = branchSpentScaled > 0n ? Number(fromScaledBig(branchSpentScaled)) : 0;
-      const ledgerReservedScaled = getReservedScaledForKind(
-        h,
-        branchSpentScaled > 0n ? "note" : "all"
-      );
+      const ledgerReservedScaled =
+        branchSpentScaled > 0n
+          ? getReservedScaledForKind(h, "note") + getPendingReservedScaledForKind(h, "send")
+          : getReservedScaledForKind(h, "all");
       const ledgerReservedPhi = ledgerReservedScaled > 0n ? Number(fromScaledBig(ledgerReservedScaled)) : 0;
 
       const currentAvail = Math.max(
