@@ -641,7 +641,14 @@ const ExhaleNote: React.FC<NoteProps> = ({
   const usdPerPhi = liveQuote.usdPerPhi;
   const phiPerUsd = liveQuote.phiPerUsd;
   const valueUsdIndicative = liveValuePhi * usdPerPhi;
-  const defaultSendPhi = locked ? locked.valuePhi : liveValuePhi;
+  const cappedDefaultPhi = useMemo(() => {
+    if (!locked) return liveValuePhi;
+    if (typeof availablePhi === "number" && Number.isFinite(availablePhi)) {
+      return Math.max(0, Math.min(locked.valuePhi, availablePhi));
+    }
+    return locked.valuePhi;
+  }, [locked, liveValuePhi, availablePhi]);
+  const defaultSendPhi = locked ? cappedDefaultPhi : liveValuePhi;
   const parsedSendPhi = locked ? parsePhiInput(sendPhiInput) : null;
   const effectiveSendPhi = locked ? parsedSendPhi ?? defaultSendPhi : defaultSendPhi;
   const effectiveUsdPerPhi = locked ? locked.usdPerPhi : usdPerPhi;
@@ -762,7 +769,8 @@ const ExhaleNote: React.FC<NoteProps> = ({
 
       lockedRef.current = true;
       setLocked(payload);
-      setSendPhiInput(fTiny(sealed.valuePhi));
+      const cap = typeof availablePhi === "number" && Number.isFinite(availablePhi) ? availablePhi : sealed.valuePhi;
+      setSendPhiInput(fTiny(Math.max(0, Math.min(sealed.valuePhi, cap))));
       {
         const nextNonce = generateNonce();
         setSendNonce(nextNonce);
@@ -790,7 +798,7 @@ const ExhaleNote: React.FC<NoteProps> = ({
     } finally {
       setIsRendering(false);
     }
-  }, [nowFloor, meta, usdSample, policy, onRender, isRendering, defaultVerifyUrl]);
+  }, [nowFloor, meta, usdSample, policy, onRender, isRendering, defaultVerifyUrl, availablePhi]);
 
   /* Bridge hydration + updates */
   const lastBridgeJsonRef = useRef<string>("");
@@ -1198,7 +1206,7 @@ const ExhaleNote: React.FC<NoteProps> = ({
                 title="Freeze current pulse and valuation"
                 disabled={isRendering}
               >
-                {isRendering ? "Rendering…" : "Render — Lock Valuation"}
+                {isRendering ? "Rendering…" : "Render — Lock Send"}
               </button>
             ) : (
               <div className="kk-locked-banner" role="status" aria-live="polite">
@@ -1392,7 +1400,7 @@ const ExhaleNote: React.FC<NoteProps> = ({
         <div className="kk-flex">
           {!locked && (
             <button className="kk-btn kk-btn-primary" onClick={handleRenderLock} disabled={isRendering}>
-              {isRendering ? "Rendering…" : "Render — Lock Valuation"}
+            {isRendering ? "Rendering…" : "Render — Lock Send"}
             </button>
           )}
           <button className="kk-btn" onClick={onPrint} disabled={!locked}>
