@@ -1268,6 +1268,14 @@ export default function VerifyPage(): ReactElement {
     setOwnerAuthBusy(false);
   }, [result.status]);
 
+  React.useEffect(() => {
+    if (result.status !== "ok") return;
+    if (hasKASAuthSig) return;
+    setOwnerAuthVerified(null);
+    setOwnerAuthStatus("Not present");
+    setOwnerAuthBusy(false);
+  }, [hasKASAuthSig, result.status]);
+
   const openChartPopover = useCallback((focus: "phi" | "usd") => {
     const nextFocus = isReceiveGlyph ? "usd" : focus;
     setChartFocus(nextFocus);
