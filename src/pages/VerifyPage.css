@@ -1780,3 +1780,24 @@ dialog.glass-modal .modal-topbar .close-btn:focus-visible{
   object-fit: cover;
   object-position: center;
 }
+/* Center the ⬇︎Φ download button (note row) */
+.vreceipt-note-actions button.vbtn[aria-label="Download fresh note PNG"]{
+  display: grid !important;
+  place-items: center !important;
+
+  /* make it a true square like your other micro-buttons */
+  width: 28px;
+  height: 28px;
+  padding: 0 !important;
+  border-radius: 10px;
+
+  /* kill baseline/emoji drift */
+  line-height: 1 !important;
+  text-align: center;
+  font-size: 15px;
+
+  /* optical centering for the 2-glyph “⬇︎Φ” combo */
+  letter-spacing: -0.06em;
+  transform: translateX(-0.5px);
+  
+}
