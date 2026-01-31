@@ -57,6 +57,7 @@ import { deriveOwnerPhiKeyFromReceive, type OwnerKeyDerivation } from "../utils/
 import { base64UrlDecode, sha256Hex } from "../utils/sha256";
 import { readPngTextChunk } from "../utils/pngChunks";
 import { getKaiPulseEternalInt } from "../SovereignSolar";
+import { markConfirmedByNonce } from "../utils/sendLedger";
 import { useKaiTicker } from "../hooks/useKaiTicker";
 import { useValuation } from "./SigilPage/useValuation";
 import type { SigilMetadataLite } from "../utils/valuation";
@@ -120,6 +121,37 @@ function parseJsonString(value: unknown): unknown {
   } catch {
     return value;
   }
+}
+
+type NoteSendMeta = {
+  parentCanonical: string;
+  transferNonce: string;
+  amountPhi?: number;
+};
+
+function parseNoteSendMeta(raw: string | null): NoteSendMeta | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const parentCanonical = typeof parsed.parentCanonical === "string" ? parsed.parentCanonical.trim() : "";
+    const transferNonce = typeof parsed.transferNonce === "string" ? parsed.transferNonce.trim() : "";
+    const amountPhi = typeof parsed.amountPhi === "number" && Number.isFinite(parsed.amountPhi) ? parsed.amountPhi : undefined;
+    if (!parentCanonical || !transferNonce) return null;
+    return { parentCanonical, transferNonce, amountPhi };
+  } catch {
+    return null;
+  }
+}
+
+function downloadTextFile(filename: string, text: string, mime: string): void {
+  const blob = new Blob([text], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.rel = "noopener";
+  a.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -711,6 +743,7 @@ export default function VerifyPage(): ReactElement {
   const fileRef = useRef<HTMLInputElement | null>(null);
   const pngFileRef = useRef<HTMLInputElement | null>(null);
   const lastAutoScanKeyRef = useRef<string | null>(null);
+  const noteSendConfirmedRef = useRef<string | null>(null);
 
   const slugRaw = useMemo(() => readSlugFromLocation(), []);
   const slug = useMemo(() => parseSlug(slugRaw), [slugRaw]);
@@ -722,6 +755,8 @@ export default function VerifyPage(): ReactElement {
   const [result, setResult] = useState<VerifyResult>({ status: "idle" });
   const [busy, setBusy] = useState<boolean>(false);
   const [sharedReceipt, setSharedReceipt] = useState<SharedReceipt | null>(initialReceiptResult.receipt);
+  const [noteSendMeta, setNoteSendMeta] = useState<NoteSendMeta | null>(null);
+  const [noteSvgFromPng, setNoteSvgFromPng] = useState<string>("");
 
   const [proofCapsule, setProofCapsule] = useState<ProofCapsuleV1 | null>(null);
   const [capsuleHash, setCapsuleHash] = useState<string>("");
@@ -1116,6 +1151,8 @@ export default function VerifyPage(): ReactElement {
       setSvgText(text);
       setResult({ status: "idle" });
       setNotice("");
+      setNoteSendMeta(null);
+      setNoteSvgFromPng("");
     },
     [slug],
   );
@@ -1126,13 +1163,18 @@ export default function VerifyPage(): ReactElement {
         setResult({ status: "error", message: "Select a receipt PNG with embedded proof metadata.", slug });
         return;
       }
+      setNoteSendMeta(null);
+      setNoteSvgFromPng("");
       try {
         const buffer = await readFileArrayBuffer(file);
-        const text = readPngTextChunk(new Uint8Array(buffer), "phi_proof_bundle");
+        const bytes = new Uint8Array(buffer);
+        const text = readPngTextChunk(bytes, "phi_proof_bundle");
         if (!text) {
           setResult({ status: "error", message: "Receipt PNG is missing embedded proof metadata.", slug });
           return;
         }
+        const noteSendJson = readPngTextChunk(bytes, "phi_note_send");
+        const noteSvg = readPngTextChunk(bytes, "phi_note_svg");
         const parsed = JSON.parse(text) as unknown;
         const receipt = buildSharedReceiptFromObject(parsed);
         if (!receipt) {
@@ -1143,6 +1185,8 @@ export default function VerifyPage(): ReactElement {
         setSvgText("");
         setResult({ status: "idle" });
         setNotice("Receipt PNG loaded.");
+        setNoteSendMeta(parseNoteSendMeta(noteSendJson));
+        setNoteSvgFromPng(noteSvg ?? "");
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Failed to read receipt PNG.";
         setResult({ status: "error", message: msg, slug });
@@ -1357,6 +1401,18 @@ if (receipt.receiptHash) {
           embeddedMeta: embeddedProofMeta,
           bundleHashValue: embeddedProofMeta?.bundleHash ?? "",
         });
+        if (noteSendMeta) {
+          const key = `${noteSendMeta.parentCanonical}|${noteSendMeta.transferNonce}`;
+          if (noteSendConfirmedRef.current !== key) {
+            noteSendConfirmedRef.current = key;
+            try {
+              markConfirmedByNonce(noteSendMeta.parentCanonical, noteSendMeta.transferNonce);
+            } catch (err) {
+              // eslint-disable-next-line no-console
+              console.error("note send confirm failed", err);
+            }
+          }
+        }
       } else {
         setOwnerAuthVerified(null);
         setOwnerAuthStatus("Not present");
@@ -1364,7 +1420,7 @@ if (receipt.receiptHash) {
     } finally {
       setBusy(false);
     }
-  }, [currentPulse, runOwnerAuthFlow, slug, stampAuditFields, svgText]);
+  }, [currentPulse, runOwnerAuthFlow, slug, stampAuditFields, svgText, noteSendMeta]);
 
   const identityAttested: AttestationState = hasKASOwnerSig ? (ownerAuthVerified === null ? "missing" : ownerAuthVerified) : "missing";
 
@@ -2710,6 +2766,13 @@ React.useEffect(() => {
     await downloadVerifiedCardPng(verifiedCardData);
   }, [verifiedCardData]);
 
+  const onDownloadNoteSvg = useCallback(() => {
+    if (!noteSvgFromPng) return;
+    const nonce = noteSendMeta?.transferNonce ? `-${noteSendMeta.transferNonce.slice(0, 8)}` : "";
+    const filename = `kai-note${nonce}.svg`;
+    downloadTextFile(filename, noteSvgFromPng, "image/svg+xml");
+  }, [noteSendMeta, noteSvgFromPng]);
+
   const receiptPayload = useMemo(() => {
     if (!proofCapsule) return null;
     const receipt = {
@@ -2973,6 +3036,17 @@ React.useEffect(() => {
                 >
                   ✍
                 </button>
+                {noteSvgFromPng && result.status === "ok" ? (
+                  <button
+                    type="button"
+                    className="vbtn vbtn--ghost"
+                    onClick={onDownloadNoteSvg}
+                    title="Download note SVG"
+                    aria-label="Download note SVG"
+                  >
+                    ⬇︎Φ
+                  </button>
+                ) : null}
                 <button type="button" className="vbtn vbtn--ghost" onClick={() => void onDownloadVerifiedCard()}>
                   ⬇
                 </button>

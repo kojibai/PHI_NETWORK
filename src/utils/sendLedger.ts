@@ -296,6 +296,12 @@ export function getSpentScaledFor(parentCanonical: string): bigint {
   );
 }
 
+/** Sum of all Φ (scaled) reserved/exhaled from a parent canonical (confirmed + pending). */
+export function getReservedScaledFor(parentCanonical: string): bigint {
+  const rows = getSendsFor(parentCanonical);
+  return rows.reduce<bigint>((acc, r) => acc + BigInt(coerceBigIntString(r.amountPhiScaled)), 0n);
+}
+
 /**
  * Incoming base Φ for a CHILD canonical.
  * Returns the most recent amount exhaled *to* this child, as scaled BigInt.

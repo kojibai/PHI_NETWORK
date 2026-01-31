@@ -78,6 +78,17 @@ export type VerifierBridge = {
   getNoteData?: () => BanknoteInputs | Promise<BanknoteInputs>;
 };
 
+export type NoteSendPayload = {
+  amountPhi: number;
+  amountPhiScaled: string;
+  amountUsd?: number;
+  lockedPulse: number;
+  valuationStamp: string;
+  transferNonce: string;
+  verifyUrl: string;
+  parentCanonical?: string;
+};
+
 export interface NoteProps {
   /** Sigil metadata powering live valuation */
   meta: SigilMetadataLite;
@@ -89,6 +100,13 @@ export interface NoteProps {
   getNowPulse?: () => number;
   /** Callback fired when user locks the note (Render). */
   onRender?: (payload: ExhaleNoteRenderPayload) => void;
+
+  /** Optional remaining Φ balance for send validation (origin sigil). */
+  availablePhi?: number;
+  /** Optional origin canonical hash for send metadata. */
+  originCanonical?: string;
+  /** Callback fired when user saves a note and it should reserve/send Φ. */
+  onSendNote?: (payload: NoteSendPayload) => Promise<void> | void;
 
   /** Optional initial builder fields (purpose/to/from/etc.). */
   initial?: BanknoteInputs;
