@@ -1705,50 +1705,63 @@ const ExhaleNote: React.FC<NoteProps> = ({
                 <span className="kk-mono">{fTiny(displayPhiPerUsd)}</span>
               </span>
             </div>
+<div className="kk-hero2__big">
+  <div className="kk-big__top">
+    <div className="kk-big__label">VALUE</div>
 
-            <div className="kk-hero2__big">
-              <div className="kk-big__label">VALUE</div>
-              <div className="kk-big__num" aria-label="value in phi">
-                <span className="kk-big__phi">Φ</span>
-                <span className="kk-big__int">{phiParts.int}</span>
-                <span className="kk-big__frac">{phiParts.frac}</span>
-              </div>
-              <div className="kk-big__usd">≈ {fUsd(displayUsd)}</div>
-            </div>
-          </div>
+    <div className="kk-big__lockSlot" aria-label="lock control">
+      {!isLocked ? (
+        <button
+          type="button"
+          className="kk-lockBtn"
+          onClick={handleRenderLock}
+          disabled={isRendering}
+          title="Mint valuation at the current Kai pulse"
+        >
+          {isRendering ? "Minting…" : "Mint"}
+        </button>
+      ) : (
+        <div
+          className="kk-lockPill"
+          title={`Locked at ☤KAI ${locked ? fPulse(locked.lockedPulse) : fPulse(displayPulse)} · stamp ${
+            form.valuationStamp || locked?.seal.stamp || "—"
+          }`}
+        >
+          <span className="kk-lockPill__k">Minted</span>
+          <span className="kk-lockPill__dot">·</span>
+          <span className="kk-lockPill__mono kk-mono">
+            ☤KAI {locked ? fPulse(locked.lockedPulse) : fPulse(displayPulse)}
+          </span>
+        </div>
+      )}
+    </div>
+  </div>
 
-          <div className="kk-hero2__actions">
-            {!isLocked ? (
-              <button
-                className="kk-btn kk-btn-primary kk-btn-xl"
-                onClick={handleRenderLock}
-                disabled={isRendering}
-                title="Lock valuation at the current Kai pulse"
-              >
-                {isRendering ? "Rendering…" : "Render — Lock Note"}
-              </button>
-            ) : (
-              <div className="kk-lockcard" role="status" aria-live="polite">
-                <div className="kk-lockcard__t">Locked</div>
-                <div className="kk-lockcard__s">
-                  ☤KAI <span className="kk-mono">{locked ? fPulse(locked.lockedPulse) : fPulse(displayPulse)}</span> · stamp{" "}
-                  <span className="kk-mono">{form.valuationStamp || locked?.seal.stamp || "—"}</span>
-                </div>
-              </div>
-            )}
+  <div className="kk-big__num" aria-label="value in phi">
+    <span className="kk-big__phi">Φ</span>
+    <span className="kk-big__int">{phiParts.int}</span>
+    <span className="kk-big__frac">{phiParts.frac}</span>
+  </div>
 
-            <div className="kk-hero2__cta">
-              <button className="kk-btn" onClick={onPrint} disabled={!isLocked} title="Print / Save PDF">
-                Print / PDF
-              </button>
-              <button className="kk-btn kk-btn-ghost" onClick={onSaveSvg} disabled={!isLocked} title="Save SVG">
-                Save SVG
-              </button>
-              <button className="kk-btn kk-btn-ghost" onClick={onSavePng} disabled={!isLocked} title="Save PNG">
-                Save PNG
-              </button>
-            </div>
-          </div>
+  <div className="kk-big__usd">≈ {fUsd(displayUsd)}</div>
+</div>
+
+<div className="kk-hero2__actions">
+  <div className="kk-actionsRow__tools" aria-label="export">
+    <button className="kk-btn kk-btn-mini" onClick={onPrint} disabled={!isLocked} title="Print / Save PDF">
+      Print/PDF
+    </button>
+    <button className="kk-btn kk-btn-ghost kk-btn-mini" onClick={onSaveSvg} disabled={!isLocked} title="Save SVG">
+      SVG
+    </button>
+    <button className="kk-btn kk-btn-ghost kk-btn-mini" onClick={onSavePng} disabled={!isLocked} title="Save PNG">
+      PNG
+    </button>
+  </div>
+</div>
+
+</div>
+
         </div>
 
         {/* TOP ANSWER BOX + SEND AMOUNT (side-by-side) */}
@@ -1758,14 +1771,14 @@ const ExhaleNote: React.FC<NoteProps> = ({
               <div className="kk-qaHead">
                 <div className="kk-qaMeta" title="Step">
                   <IconSpark />
-                  <span className="kk-mono">{isLocked ? "LOCKED" : `${guideIdx + 1}/${guideSteps.length}`}</span>
+                  <span className="kk-mono">{isLocked ? "MINTED" : `${guideIdx + 1}/${guideSteps.length}`}</span>
                 </div>
                 <div className="kk-qaTag" title="Field">
                   {currentGuide.label}
                 </div>
               </div>
 
-              <div className="kk-qaPrompt">{isLocked ? "Locked — only Send Amount can change." : currentGuide.prompt}</div>
+              <div className="kk-qaPrompt">{isLocked ? "Minted — only Send Amount can change." : currentGuide.prompt}</div>
 
               <div className="kk-qaRow">
                 <input
@@ -1773,7 +1786,7 @@ const ExhaleNote: React.FC<NoteProps> = ({
                   className="kk-qaInput"
                   value={isLocked ? "" : draft}
                   onChange={(e) => setDraft(e.target.value)}
-                  placeholder={isLocked ? "Locked" : currentGuide.placeholder}
+                  placeholder={isLocked ? "Minted" : currentGuide.placeholder}
                   disabled={isLocked}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
@@ -1832,82 +1845,86 @@ const ExhaleNote: React.FC<NoteProps> = ({
               ) : null}
             </div>
           ) : null}
+{/* Send Amount — compact + centered unit toggle */}
+<div className="kk-sendbar kk-sendbar--compact" aria-label="send amount">
+  <div className="kk-sendbar__left">
+    <div className="kk-sendbar__label">Exhale Amount</div>
+    <div className="kk-sendbar__sub">Minted on Print/SVG/PNG.</div>
+  </div>
 
-          {/* Send Amount */}
-          <div className="kk-sendbar" aria-label="send amount">
-            <div className="kk-sendbar__left">
-              <div className="kk-sendbar__label">Send Amount</div>
-              <div className="kk-sendbar__sub">Committed when printing/saving exports.</div>
-            </div>
+  <div className="kk-sendbar__right">
+    {/* Unit toggle */}
+    <div className="kk-sendbar__unit" role="group" aria-label="amount unit">
+      <button
+        type="button"
+        className={`kk-sendbar__unitBtn ${sendUnit === "phi" ? "is-on" : ""}`}
+        onClick={() => setSendUnitSafe("phi")}
+        disabled={!isLocked}
+        aria-pressed={sendUnit === "phi"}
+        title="Enter Φ"
+      >
+        <span className="kk-unitGlyph" aria-hidden="true">Φ</span>
+      </button>
 
-            <div className="kk-sendbar__right">
-              {/* Unit toggle */}
-              <div className="kk-sendbar__unit" role="group" aria-label="amount unit">
-                <button
-                  type="button"
-                  className={`kk-sendbar__unitBtn ${sendUnit === "phi" ? "is-on" : ""}`}
-                  onClick={() => setSendUnitSafe("phi")}
-                  disabled={!isLocked}
-                  aria-pressed={sendUnit === "phi"}
-                  title="Enter Φ"
-                >
-                  Φ
-                </button>
-                <button
-                  type="button"
-                  className={`kk-sendbar__unitBtn ${sendUnit === "usd" ? "is-on" : ""}`}
-                  onClick={() => setSendUnitSafe("usd")}
-                  disabled={!isLocked}
-                  aria-pressed={sendUnit === "usd"}
-                  title="Enter USD"
-                >
-                  $
-                </button>
-              </div>
+      <button
+        type="button"
+        className={`kk-sendbar__unitBtn ${sendUnit === "usd" ? "is-on" : ""}`}
+        onClick={() => setSendUnitSafe("usd")}
+        disabled={!isLocked}
+        aria-pressed={sendUnit === "usd"}
+        title="Enter USD"
+      >
+        <span className="kk-unitGlyph" aria-hidden="true">$</span>
+      </button>
+    </div>
 
-              <div className="kk-sendbar__inputWrap">
-                <span className="kk-sendbar__prefix">{sendUnit === "phi" ? "Φ" : "$"}</span>
-                <input
-                  value={sendUnit === "phi" ? sendPhiInput : sendUsdInput}
-                  onChange={(e) => {
-                    if (sendUnit === "phi") setSendPhiInput(e.target.value);
-                    else setSendUsdInput(e.target.value);
-                  }}
-                  placeholder={
-                    !isLocked
-                      ? "Render to set amount"
-                      : sendUnit === "phi"
-                        ? fTiny(defaultSendPhi)
-                        : formatUsdInput(defaultSendUsd)
-                  }
-                  disabled={!isLocked}
-                  className={`kk-sendbar__input ${sendPhiOverBalance ? "is-error" : ""}`}
-                  inputMode="decimal"
-                  aria-invalid={sendPhiOverBalance || undefined}
-                />
-              </div>
+    {/* Amount input */}
+    <div className="kk-sendbar__inputWrap">
+      <span className="kk-sendbar__prefix" aria-hidden="true">{sendUnit === "phi" ? "Φ" : "$"}</span>
+      <input
+        value={sendUnit === "phi" ? sendPhiInput : sendUsdInput}
+        onChange={(e) => {
+          if (sendUnit === "phi") setSendPhiInput(e.target.value);
+          else setSendUsdInput(e.target.value);
+        }}
+        placeholder={
+          !isLocked
+            ? "Mint to set amount"
+            : sendUnit === "phi"
+              ? fTiny(defaultSendPhi)
+              : formatUsdInput(defaultSendUsd)
+        }
+        disabled={!isLocked}
+        className={`kk-sendbar__input ${sendPhiOverBalance ? "is-error" : ""}`}
+        inputMode="decimal"
+        aria-invalid={sendPhiOverBalance || undefined}
+      />
+    </div>
 
-              <div className="kk-sendbar__meta">
-                <div className="kk-sendbar__usd">
-                  {sendUnit === "phi" ? (
-                    <>≈ {fUsd(effectiveValueUsd)}</>
-                  ) : (
-                    <>
-                      ≈ Φ <span className="kk-mono">{fTiny(effectiveSendPhi)}</span>
-                    </>
-                  )}
-                </div>
+    {/* Meta (single tight line + optional hint) */}
+    <div className="kk-sendbar__meta">
+      <div className="kk-sendbar__usd">
+        {sendUnit === "phi" ? (
+          <>≈ {fUsd(effectiveValueUsd)}</>
+        ) : (
+          <>
+            ≈ Φ <span className="kk-mono">{fTiny(effectiveSendPhi)}</span>
+          </>
+        )}
+      </div>
 
-                {isLocked && typeof availablePhi === "number" && Number.isFinite(availablePhi) ? (
-                  <div className="kk-sendbar__hint">
-                    Available: <span className="kk-mono">{fTiny(availablePhi)}</span> {sendPhiOverBalance ? "· exceeds" : ""}
-                  </div>
-                ) : (
-                  <div className="kk-sendbar__hint">Render locks valuation.</div>
-                )}
-              </div>
-            </div>
-          </div>
+      {isLocked && typeof availablePhi === "number" && Number.isFinite(availablePhi) ? (
+        <div className="kk-sendbar__hint">
+          Avail <span className="kk-mono">{fTiny(availablePhi)}</span>
+          {sendPhiOverBalance ? <span className="kk-sendbar__warn"> · exceeds</span> : null}
+        </div>
+      ) : (
+        <div className="kk-sendbar__hint">Mint locks valuation.</div>
+      )}
+    </div>
+  </div>
+</div>
+
         </div>
       </section>
 

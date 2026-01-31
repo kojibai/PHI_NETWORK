@@ -3351,65 +3351,76 @@ React.useEffect(() => {
           </div>
 
           {proofCapsule ? (
-            <div className="vreceipt-row" aria-label="Proof actions">
-              <div className="vreceipt-label">Proof</div>
-              {noteClaimStatus ? (
-                <div
-                  className={`vnote-claim ${noteClaimed ? "vnote-claim--claimed" : "vnote-claim--unclaimed"}`}
-                  title={noteClaimed ? "This note has already been claimed." : "This note has not been claimed yet."}
-                >
-                  {noteClaimStatus}
+            <div className="vreceipt-block" aria-label="Proof actions">
+              <div className="vreceipt-row">
+                <div className="vreceipt-label">Proof</div>
+                <div className="vreceipt-actions">
+                  <button type="button" className="vbtn vbtn--ghost" onClick={() => void onShareReceipt()}>
+                     ➦
+                  </button>
+                  <button type="button" className="vbtn vbtn--ghost" onClick={() => void onCopyReceipt()}>
+                    💠
+                  </button>
+                  {isExhaleNoteUpload ? null : (
+                    <button
+                      type="button"
+                      className="vbtn vbtn--ghost"
+                      onClick={() => void onSignVerification()}
+                      title={verificationSigLabel}
+                      aria-label={verificationSigLabel}
+                      disabled={!canSignVerification || verificationSigBusy}
+                    >
+                      ✍
+                    </button>
+                  )}
+                  {isExhaleNoteUpload ? null : (
+                    <button type="button" className="vbtn vbtn--ghost" onClick={() => void onDownloadVerifiedCard()}>
+                      ⬇
+                    </button>
+                  )}
+                </div>
+              </div>
+              {canShowNotePreview || noteClaimStatus || (noteSvgFromPng && result.status === "ok" && !noteClaimed) ? (
+                <div className="vreceipt-note" aria-label="Exhale note actions">
+                  <div className="vreceipt-note-left">
+                    <div className="vreceipt-label">☤Kai-Note (Legal Tender)</div>
+                    {noteClaimStatus ? (
+                      <div
+                        className={`vnote-claim ${noteClaimed ? "vnote-claim--claimed" : "vnote-claim--unclaimed"}`}
+                        title={noteClaimed ? "This note has already been claimed." : "This note has not been claimed yet."}
+                      >
+                        {noteClaimStatus}
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="vreceipt-note-actions">
+                    {canShowNotePreview ? (
+                      <button
+                        type="button"
+                        className="vbtn vbtn--ghost vbtn--note"
+                        onPointerDown={openNote}
+                        onClick={openNote}
+                        aria-label="Open note Exhaler"
+                        title="Open note Exhaler"
+                      >
+                        <span className="vbtn-note-preview" aria-hidden="true" dangerouslySetInnerHTML={{ __html: notePreviewSvg }} />
+                      </button>
+                    ) : null}
+                    {noteSvgFromPng && result.status === "ok" && !noteClaimed ? (
+                      <button
+                        type="button"
+                        className="vbtn vbtn--ghost"
+                        onClick={onDownloadNotePng}
+                        title="Download fresh note PNG"
+                        aria-label="Download fresh note PNG"
+                      >
+                        ⬇︎Φ
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
               ) : null}
-              <div className="vreceipt-actions">
-                <button type="button" className="vbtn vbtn--ghost" onClick={() => void onShareReceipt()}>
-                   ➦
-                </button>
-                <button type="button" className="vbtn vbtn--ghost" onClick={() => void onCopyReceipt()}>
-                  💠
-                </button>
-                {canShowNotePreview ? (
-                  <button
-                    type="button"
-                    className="vbtn vbtn--ghost vbtn--note"
-                    onClick={openNote}
-                    aria-label="Open Exhale note"
-                    title="Open Exhale note"
-                  >
-                    <span className="vbtn-note-preview" aria-hidden="true" dangerouslySetInnerHTML={{ __html: notePreviewSvg }} />
-                  </button>
-                ) : null}
-                {isExhaleNoteUpload ? null : (
-                  <button
-                    type="button"
-                    className="vbtn vbtn--ghost"
-                    onClick={() => void onSignVerification()}
-                    title={verificationSigLabel}
-                    aria-label={verificationSigLabel}
-                    disabled={!canSignVerification || verificationSigBusy}
-                  >
-                    ✍
-                  </button>
-                )}
-                {noteSvgFromPng && result.status === "ok" && !noteClaimed ? (
-                  <button
-                    type="button"
-                    className="vbtn vbtn--ghost"
-                    onClick={onDownloadNotePng}
-                    title="Download fresh note PNG"
-                    aria-label="Download fresh note PNG"
-                  >
-                    ⬇︎Φ
-                  </button>
-                ) : null}
-                {isExhaleNoteUpload ? null : (
-                  <button type="button" className="vbtn vbtn--ghost" onClick={() => void onDownloadVerifiedCard()}>
-                    ⬇
-                  </button>
-                )}
-              </div>
             </div>
-
           ) : null}
         </div>
 
@@ -3490,7 +3501,7 @@ React.useEffect(() => {
       >
         <div className="modal-viewport" style={{ display: "flex", flexDirection: "column", height: "100%" }}>
           <div className="modal-topbar" style={{ display: "grid", gridTemplateColumns: "1fr auto", alignItems: "center", padding: "8px 10px" }}>
-            <div style={{ paddingInline: 12, fontSize: 12, color: "var(--dim)" }}>Kairos — Exhale Note</div>
+            <div style={{ paddingInline: 12, fontSize: 12, color: "var(--dim)" }}>☤Kairos Note Exhaler</div>
             <button
               className="close-btn holo"
               data-aurora="true"
