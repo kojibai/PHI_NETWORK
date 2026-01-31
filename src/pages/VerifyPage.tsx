@@ -117,13 +117,9 @@ function formatProofValue(value: unknown): string {
   }
 }
 
-function formatClaimTimestamp(value: number | null): string {
+function formatClaimPulse(value: number | null): string {
   if (!value || !Number.isFinite(value)) return "—";
-  try {
-    return new Date(value).toLocaleString();
-  } catch {
-    return "—";
-  }
+  return String(Math.trunc(value));
 }
 
 async function sha256Bytes(data: Uint8Array): Promise<string> {
@@ -1081,7 +1077,7 @@ export default function VerifyPage(): ReactElement {
     () => (noteSendMeta ? getNoteClaimLeader(noteSendMeta.parentCanonical) : null),
     [noteSendMeta, registryTick],
   );
-  const noteClaimedAt = noteClaimInfo?.claimedAt || null;
+  const noteClaimedPulse = noteClaimInfo?.claimedPulse || null;
   const noteClaimNonce = noteClaimInfo?.nonce ?? noteSendMeta?.transferNonce ?? "";
   const noteClaimLeaderNonce = noteClaimLeader?.nonce ?? "";
   const noteClaimTransferHash =
@@ -1094,7 +1090,7 @@ export default function VerifyPage(): ReactElement {
     Boolean(noteSendRecord?.confirmed) ||
     (noteSendMeta ? isNoteClaimed(noteSendMeta.parentCanonical, noteSendMeta.transferNonce) : false);
   const noteClaimStatus = noteSendMeta ? (noteClaimed ? "CLAIMED — nonce owned" : "UNCLAIMED — nonce available") : null;
-  const noteClaimTimestampLabel = useMemo(() => formatClaimTimestamp(noteClaimedAt), [noteClaimedAt]);
+  const noteClaimPulseLabel = useMemo(() => formatClaimPulse(noteClaimedPulse), [noteClaimedPulse]);
   const noteClaimNonceShort = noteClaimNonce ? ellipsizeMiddle(noteClaimNonce, 8, 6) : "—";
   const noteClaimLeaderShort = noteClaimLeaderNonce ? ellipsizeMiddle(noteClaimLeaderNonce, 8, 6) : "—";
   const noteClaimHashShort = noteClaimTransferHash ? ellipsizeMiddle(noteClaimTransferHash, 10, 8) : "—";
@@ -1514,6 +1510,7 @@ export default function VerifyPage(): ReactElement {
     const key = `${noteSendMeta.parentCanonical}|${noteSendMeta.transferNonce}`;
     if (noteSendConfirmedRef.current === key) return;
     noteSendConfirmedRef.current = key;
+    const claimedPulse = currentPulse ?? getKaiPulseEternalInt(new Date());
     const transferLeafHash =
       noteSendMeta.transferLeafHashSend ??
       readRecordString(noteSendPayloadRaw, "transferLeafHashSend") ??
@@ -1524,6 +1521,7 @@ export default function VerifyPage(): ReactElement {
       markNoteClaimed(noteSendMeta.parentCanonical, noteSendMeta.transferNonce, {
         childCanonical: noteSendMeta.childCanonical,
         transferLeafHash,
+        claimedPulse,
       });
       if (noteSendMeta.childCanonical && noteSendMeta.amountPhi) {
         recordSigilTransferMovement({
@@ -1537,7 +1535,7 @@ export default function VerifyPage(): ReactElement {
       // eslint-disable-next-line no-console
       console.error("note send confirm failed", err);
     }
-  }, [noteSendMeta, noteSendPayloadRaw, noteSendRecord]);
+  }, [currentPulse, noteSendMeta, noteSendPayloadRaw, noteSendRecord]);
 
   const runOwnerAuthFlow = useCallback(
     async (args: {
@@ -3520,16 +3518,16 @@ React.useEffect(() => {
                           className={`vnote-claim ${noteClaimed ? "vnote-claim--claimed" : "vnote-claim--unclaimed"}`}
                           title={
                             noteClaimed
-                              ? `Nonce owned: ${noteClaimNonce || "—"}\nClaimed: ${noteClaimTimestampLabel}\nLeaf hash: ${noteClaimTransferHash || "—"}`
-                              : "Nonce available: this note has not been claimed yet."
+                              ? `Rotation-Seal owned: ${noteClaimNonce || "—"}\nClaimed pulse: ${noteClaimPulseLabel}\nLeaf hash: ${noteClaimTransferHash || "—"}`
+                              : "Rotation-Seal available: this note has not been claimed yet."
                           }
                         >
                           {noteClaimStatus}
                         </div>
                         {noteClaimed && noteClaimNonce ? (
                           <div className="vnote-claim-meta" aria-label="Note claim metadata">
-                            <span className="mono">nonce {noteClaimNonceShort}</span>
-                            <span>claimed {noteClaimTimestampLabel}</span>
+                            <span className="mono">rotation-seal {noteClaimNonceShort}</span>
+                            <span>claimed pulse {noteClaimPulseLabel}</span>
                             {noteClaimTransferHash ? <span className="mono">hash {noteClaimHashShort}</span> : null}
                             {noteClaimLeaderNonce && noteClaimLeaderNonce !== noteClaimNonce ? (
                               <span className="mono">leader {noteClaimLeaderShort}</span>
