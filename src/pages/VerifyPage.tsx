@@ -1084,13 +1084,7 @@ export default function VerifyPage(): ReactElement {
     () => (noteSendMeta ? getNoteClaimLeader(noteSendMeta.parentCanonical) : null),
     [noteSendMeta, registryTick],
   );
-  const noteClaimedPulse = useMemo(() => {
-    const registryPulse = normalizeClaimPulse(noteClaimInfo?.claimedPulse ?? null);
-    if (registryPulse != null) return registryPulse;
-    return normalizeClaimPulse(
-      embeddedProof?.receivePulse ?? sharedReceipt?.receivePulse ?? receiveSig?.createdAtPulse ?? null,
-    );
-  }, [embeddedProof?.receivePulse, noteClaimInfo?.claimedPulse, receiveSig?.createdAtPulse, sharedReceipt?.receivePulse]);
+  const noteClaimedPulse = noteClaimInfo?.claimedPulse || null;
   const noteClaimNonce = noteClaimInfo?.nonce ?? noteSendMeta?.transferNonce ?? "";
   const noteClaimLeaderNonce = noteClaimLeader?.nonce ?? "";
   const noteClaimTransferHash =

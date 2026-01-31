@@ -59,7 +59,6 @@ type NoteClaimArgs = {
   parentCanonical: string;
   transferNonce: string;
   childCanonical?: string;
-  claimedPulse?: number;
 };
 
 export function isOnline(): boolean {
@@ -119,10 +118,9 @@ function normalizeNonce(raw: string | undefined | null): string {
 }
 
 function buildNoteClaimPayload(args: NoteClaimArgs): SigilUrlPayloadLoose {
-  const { parentCanonical, transferNonce, childCanonical, claimedPulse } = args;
-  const claimedPulseValue = Number.isFinite(claimedPulse ?? NaN) ? Number(claimedPulse) : 0;
+  const { parentCanonical, transferNonce, childCanonical } = args;
   const payload: SigilUrlPayloadLoose = {
-    pulse: claimedPulseValue,
+    pulse: 0,
     beat: 0,
     stepIndex: 0,
     chakraDay: "Root",
@@ -130,7 +128,6 @@ function buildNoteClaimPayload(args: NoteClaimArgs): SigilUrlPayloadLoose {
     transferNonce,
     parentCanonical,
   };
-  if (claimedPulseValue > 0) payload.claimedPulse = claimedPulseValue;
   if (childCanonical) {
     payload.canonicalHash = childCanonical;
     payload.childHash = childCanonical;
@@ -257,13 +254,11 @@ export function markNoteClaimed(
     parentCanonical: parentKey,
     transferNonce: nonce,
     childCanonical: args?.childCanonical,
-    claimedPulse,
   });
   const claimUrl = buildNoteClaimUrl({
     parentCanonical: parentKey,
     transferNonce: nonce,
     childCanonical: args?.childCanonical,
-    claimedPulse,
   });
   upsertRegistryPayload(claimUrl, claimPayload);
   enqueueInhaleKrystal(claimUrl, claimPayload);
