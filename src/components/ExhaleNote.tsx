@@ -18,6 +18,7 @@ import { fetchFromVerifierBridge } from "./exhale-note/bridge";
 import { svgStringToPngBlob, triggerDownload } from "./exhale-note/svgToPng";
 import { insertPngTextChunks } from "../utils/pngChunks";
 import { buildVerifierUrl } from "./KaiVoh/verifierProof";
+import { derivePhiKeyFromSig } from "./VerifierStamper/sigilUtils";
 
 import type {
   NoteProps,
@@ -839,6 +840,17 @@ const ExhaleNote: React.FC<NoteProps> = ({
       sendCommittedRef.current = false;
       setNoteSendResult(null);
 
+      const sigmaCanon = (form.sigmaCanon || form.kaiSignature || "").trim();
+      const shaHex = sigmaCanon ? sha256HexJs(sigmaCanon) : "";
+      let phiDerived = form.phiDerived?.trim() || "";
+      if (!phiDerived && sigmaCanon) {
+        try {
+          phiDerived = await derivePhiKeyFromSig(sigmaCanon);
+        } catch {
+          phiDerived = "";
+        }
+      }
+
       setForm((prev) => ({
         ...prev,
         computedPulse: String(lockedPulse),
@@ -847,6 +859,9 @@ const ExhaleNote: React.FC<NoteProps> = ({
         premiumPhi: lockedUnsigned.premium !== undefined ? fTiny(lockedUnsigned.premium) : prev.premiumPhi,
         valuationAlg: prev.valuationAlg || `${lockedUnsigned.algorithm} • ${lockedUnsigned.policyChecksum}`,
         valuePhi: fTiny(sealed.valuePhi),
+        sigmaCanon: sigmaCanon || prev.sigmaCanon,
+        shaHex: shaHex || prev.shaHex,
+        phiDerived: phiDerived || prev.phiDerived,
         verifyUrl: resolveVerifyUrl(prev.verifyUrl, defaultVerifyUrl),
       }));
 
@@ -858,7 +873,7 @@ const ExhaleNote: React.FC<NoteProps> = ({
     } finally {
       setIsRendering(false);
     }
-  }, [nowFloor, meta, usdSample, policy, onRender, isRendering, defaultVerifyUrl, availablePhi]);
+  }, [nowFloor, meta, usdSample, policy, onRender, isRendering, defaultVerifyUrl, availablePhi, form]);
 
   /* Bridge hydration + updates */
   const lastBridgeJsonRef = useRef<string>("");
