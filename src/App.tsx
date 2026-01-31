@@ -1640,7 +1640,18 @@ export function AppChrome(): React.JSX.Element {
                 </div>
 
                 <div ref={navListRef} className="nav-list" role="list" aria-label="Atrium navigation tiles">
+                            <button
+                    type="button"
+                    className="nav-item nav-item--button"
+                    aria-label="Attestation: Proof Of Breath™"
+                    aria-haspopup="dialog"
+                    onClick={openVerify}
+                  >
+                    <div className="nav-item__label">Attestation</div>
+                    <div className="nav-item__desc">Proof Of Breath™</div>
+                  </button>
                   {navItems.map((item) => (
+                    
                     <NavLink
                       key={item.to}
                       to={item.to}
@@ -1657,16 +1668,7 @@ export function AppChrome(): React.JSX.Element {
                     </NavLink>
                   ))}
 
-                  <button
-                    type="button"
-                    className="nav-item nav-item--button"
-                    aria-label="Attestation: Proof Of Breath™"
-                    aria-haspopup="dialog"
-                    onClick={openVerify}
-                  >
-                    <div className="nav-item__label">Attestation</div>
-                    <div className="nav-item__desc">Proof Of Breath™</div>
-                  </button>
+        
                 </div>
 
                 <div className="nav-writ-slot" data-writ-slim="1">
