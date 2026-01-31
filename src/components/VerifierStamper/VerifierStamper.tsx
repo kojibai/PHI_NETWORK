@@ -651,28 +651,115 @@ const VerifierStamperInner: React.FC = () => {
     dlgRef.current?.setAttribute("data-open", "false");
   };
 
-  const noteInitial = useMemo<NoteBanknoteInputs>(
-    () => {
+const noteInitial = useMemo<NoteBanknoteInputs>(() => {
+  const base = buildNotePayload({
+    meta,
+    sigilSvgRaw,
+    verifyUrl: sealUrl || (typeof window !== "undefined" ? window.location.href : ""),
+    pulseNow,
+  });
+
+  // ✅ Prefer the live parsed proof bundle; fallback: extract directly from the raw SVG text
+  const extracted = sigilSvgRaw && sigilSvgRaw.trim() ? extractProofBundleMetaFromSvg(sigilSvgRaw) : null;
+  const bundleMeta = proofBundleMeta?.raw ? proofBundleMeta : extracted;
+
+  const rawBundle = bundleMeta?.raw;
+  const rawRecord = isRecord(rawBundle) ? rawBundle : null;
+
+  const proofBundleJson = rawRecord ? JSON.stringify(rawRecord) : "";
+
+  const bundleHash =
+    bundleMeta?.bundleHash ??
+    (rawRecord && typeof rawRecord.bundleHash === "string" ? (rawRecord.bundleHash as string) : "");
+
+  const receiptHash =
+    (bundleMeta as { receiptHash?: string } | null)?.receiptHash ??
+    (rawRecord && typeof rawRecord.receiptHash === "string" ? (rawRecord.receiptHash as string) : "");
+
+  const verifiedAtPulse =
+    typeof bundleMeta?.verifiedAtPulse === "number"
+      ? bundleMeta.verifiedAtPulse
+      : rawRecord && typeof rawRecord.verifiedAtPulse === "number"
+        ? (rawRecord.verifiedAtPulse as number)
+        : undefined;
+
+  const capsuleHash =
+    bundleMeta?.capsuleHash ??
+    (rawRecord && typeof rawRecord.capsuleHash === "string" ? (rawRecord.capsuleHash as string) : "");
+
+  const svgHash =
+    bundleMeta?.svgHash ??
+    (rawRecord && typeof rawRecord.svgHash === "string" ? (rawRecord.svgHash as string) : "");
+
+  return {
+    ...base,
+    proofBundleJson,
+    bundleHash,
+    receiptHash,
+    verifiedAtPulse,
+    capsuleHash,
+    svgHash,
+  };
+}, [meta, sigilSvgRaw, sealUrl, pulseNow, proofBundleMeta]);
+
+
+const openNote = () =>
+  switchModal(dlgRef.current, () => {
+    const d = noteDlgRef.current;
+    if (!d) return;
+
+    // ✅ Build note data at call-time (avoids first-click race on state)
+    const buildNoteData = async (): Promise<NoteBanknoteInputs> => {
+      let svgRaw = (sigilSvgRaw ?? "").trim();
+
+      // If state hasn't landed yet, fetch raw SVG from the blob URL (first-click safe)
+      if (!svgRaw && svgURL) {
+        try {
+          svgRaw = (await fetch(svgURL).then((r) => r.text())).trim();
+        } catch (err) {
+          logError("openNote.fetch(svgURL)", err);
+          svgRaw = "";
+        }
+      }
+
       const base = buildNotePayload({
         meta,
-        sigilSvgRaw,
+        sigilSvgRaw: svgRaw || null,
         verifyUrl: sealUrl || (typeof window !== "undefined" ? window.location.href : ""),
         pulseNow,
       });
 
-      const rawBundle = proofBundleMeta?.raw;
+      // ✅ Prefer proofBundleMeta; fallback: extract directly from the SVG text
+      const extracted = svgRaw ? extractProofBundleMetaFromSvg(svgRaw) : null;
+      const bundleMeta = proofBundleMeta?.raw ? proofBundleMeta : extracted;
+
+      const rawBundle = bundleMeta?.raw;
       const rawRecord = isRecord(rawBundle) ? rawBundle : null;
+
       const proofBundleJson = rawRecord ? JSON.stringify(rawRecord) : "";
-      const bundleHash = proofBundleMeta?.bundleHash ?? (rawRecord && typeof rawRecord.bundleHash === "string" ? rawRecord.bundleHash : "");
-      const receiptHash = proofBundleMeta?.receiptHash ?? (rawRecord && typeof rawRecord.receiptHash === "string" ? rawRecord.receiptHash : "");
+
+      const bundleHash =
+        bundleMeta?.bundleHash ??
+        (rawRecord && typeof rawRecord.bundleHash === "string" ? (rawRecord.bundleHash as string) : "");
+
+      const receiptHash =
+        (bundleMeta as { receiptHash?: string } | null)?.receiptHash ??
+        (rawRecord && typeof rawRecord.receiptHash === "string" ? (rawRecord.receiptHash as string) : "");
+
       const verifiedAtPulse =
-        typeof proofBundleMeta?.verifiedAtPulse === "number"
-          ? proofBundleMeta.verifiedAtPulse
+        typeof bundleMeta?.verifiedAtPulse === "number"
+          ? bundleMeta.verifiedAtPulse
           : rawRecord && typeof rawRecord.verifiedAtPulse === "number"
-            ? rawRecord.verifiedAtPulse
+            ? (rawRecord.verifiedAtPulse as number)
             : undefined;
-      const capsuleHash = proofBundleMeta?.capsuleHash ?? (rawRecord && typeof rawRecord.capsuleHash === "string" ? rawRecord.capsuleHash : "");
-      const svgHash = proofBundleMeta?.svgHash ?? (rawRecord && typeof rawRecord.svgHash === "string" ? rawRecord.svgHash : "");
+
+      const capsuleHash =
+        bundleMeta?.capsuleHash ??
+        (rawRecord && typeof rawRecord.capsuleHash === "string" ? (rawRecord.capsuleHash as string) : "");
+
+      const svgHash =
+        bundleMeta?.svgHash ??
+        (rawRecord && typeof rawRecord.svgHash === "string" ? (rawRecord.svgHash as string) : "");
 
       return {
         ...base,
@@ -683,52 +770,24 @@ const VerifierStamperInner: React.FC = () => {
         capsuleHash,
         svgHash,
       };
-    },
-    [meta, sigilSvgRaw, sealUrl, pulseNow, proofBundleMeta]
-  );
+    };
 
-  const openNote = () =>
-    switchModal(dlgRef.current, () => {
-      const d = noteDlgRef.current;
-      if (!d) return;
-      const base = buildNotePayload({
-        meta,
-        sigilSvgRaw,
-        verifyUrl: sealUrl || (typeof window !== "undefined" ? window.location.href : ""),
-        pulseNow,
-      });
-      const rawBundle = proofBundleMeta?.raw;
-      const rawRecord = isRecord(rawBundle) ? rawBundle : null;
-      const proofBundleJson = rawRecord ? JSON.stringify(rawRecord) : "";
-      const bundleHash = proofBundleMeta?.bundleHash ?? (rawRecord && typeof rawRecord.bundleHash === "string" ? rawRecord.bundleHash : "");
-      const receiptHash = proofBundleMeta?.receiptHash ?? (rawRecord && typeof rawRecord.receiptHash === "string" ? rawRecord.receiptHash : "");
-      const verifiedAtPulse =
-        typeof proofBundleMeta?.verifiedAtPulse === "number"
-          ? proofBundleMeta.verifiedAtPulse
-          : rawRecord && typeof rawRecord.verifiedAtPulse === "number"
-            ? rawRecord.verifiedAtPulse
-            : undefined;
-      const capsuleHash = proofBundleMeta?.capsuleHash ?? (rawRecord && typeof rawRecord.capsuleHash === "string" ? rawRecord.capsuleHash : "");
-      const svgHash = proofBundleMeta?.svgHash ?? (rawRecord && typeof rawRecord.svgHash === "string" ? rawRecord.svgHash : "");
-      const p = {
-        ...base,
-        proofBundleJson,
-        bundleHash,
-        receiptHash,
-        verifiedAtPulse,
-        capsuleHash,
-        svgHash,
-      };
-      const bridge: VerifierBridge = { getNoteData: async () => p };
-      setVerifierBridge(bridge);
+    const bridge: VerifierBridge = { getNoteData: buildNoteData };
+    setVerifierBridge(bridge);
+
+    // Push immediate hydration event (best effort); ExhaleNote also pulls from bridge on mount
+    void (async () => {
       try {
+        const p = await buildNoteData();
         window.dispatchEvent(new CustomEvent<NoteBanknoteInputs>("kk:note-data", { detail: p }));
       } catch (err) {
         logError("dispatch(kk:note-data)", err);
       }
-      safeShowDialog(d);
-      setNoteOpen(true);
-    });
+    })();
+
+    safeShowDialog(d);
+    setNoteOpen(true);
+  });
 
   const closeNote = () => {
     const d = noteDlgRef.current;
@@ -2023,8 +2082,32 @@ const VerifierStamperInner: React.FC = () => {
       if (noteSendBusyRef.current) return;
       noteSendBusyRef.current = true;
       try {
-        const parentCanonical = (canonical ?? "").toLowerCase();
-        if (!parentCanonical) throw new Error("Origin sigil not initialized.");
+// ✅ Prefer existing computed canonical; fallback to deterministic derivation from meta
+let parentCanonical = (canonical ?? "").toLowerCase().trim();
+
+if (!parentCanonical && meta) {
+  const direct = (meta.canonicalHash as string | undefined)?.toLowerCase().trim();
+  if (direct) parentCanonical = direct;
+}
+
+if (!parentCanonical && meta) {
+  try {
+    const eff = await computeEffectiveCanonical(meta);
+    if (eff?.canonical) parentCanonical = eff.canonical.toLowerCase().trim();
+  } catch (err) {
+    logError("noteSend.computeEffectiveCanonical", err);
+  }
+}
+
+if (!parentCanonical && meta) {
+  try {
+    parentCanonical = (await sha256Hex(`${meta.pulse}|${meta.beat}|${meta.stepIndex}|${meta.chakraDay}`)).toLowerCase();
+  } catch (err) {
+    logError("noteSend.sha256Fallback", err);
+  }
+}
+
+if (!parentCanonical) throw new Error("Origin sigil not initialized.");
 
         const amountScaled = toScaledBig(String(payload.amountPhi || 0));
         if (amountScaled <= 0n) throw new Error("Invalid Φ amount.");
@@ -2102,9 +2185,9 @@ const VerifierStamperInner: React.FC = () => {
       } finally {
         noteSendBusyRef.current = false;
       }
-    },
-    [canonical, meta, remainingPhiScaled, remainingPhiDisplay4],
-  );
+}, [canonical, meta, computeEffectiveCanonical, remainingPhiScaled, remainingPhiDisplay4],
+);
+
 
   // Snap headline Φ to 6dp for UI (math stays BigInt elsewhere)
   const headerPhi = useMemo(() => snap6(Number(fromScaledBig(remainingPhiScaled))), [remainingPhiScaled]);
