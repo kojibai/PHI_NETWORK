@@ -75,7 +75,7 @@ import SealMomentModal from "../SealMomentModalTransfer";
 import ValuationModal from "../ValuationModal";
 import { buildValueSeal, attachValuation, type ValueSeal } from "../../utils/valuation";
 import NotePrinter from "../ExhaleNote";
-import type { BanknoteInputs as NoteBanknoteInputs, NoteSendPayload, VerifierBridge } from "../exhale-note/types";
+import type { BanknoteInputs as NoteBanknoteInputs, NoteSendPayload, NoteSendResult, VerifierBridge } from "../exhale-note/types";
 
 import { kaiPulseNow, SIGIL_CTX, SIGIL_TYPE, SEGMENT_SIZE } from "./constants";
 import { sha256Hex, phiFromPublicKey } from "./crypto";
@@ -2006,7 +2006,7 @@ const VerifierStamperInner: React.FC = () => {
 
   const noteSendBusyRef = useRef(false);
   const handleNoteSend = useCallback(
-    async (payload: NoteSendPayload): Promise<void> => {
+    async (payload: NoteSendPayload): Promise<NoteSendResult | void> => {
       if (noteSendBusyRef.current) return;
       noteSendBusyRef.current = true;
       try {
@@ -2076,6 +2076,15 @@ const VerifierStamperInner: React.FC = () => {
         } catch (err) {
           logError("dispatchEvent(sigil:sent)", err);
         }
+        return {
+          ...payload,
+          parentCanonical,
+          childCanonical,
+          senderKaiPulse,
+          senderStamp,
+          previousHeadRoot,
+          transferLeafHashSend,
+        };
       } finally {
         noteSendBusyRef.current = false;
       }

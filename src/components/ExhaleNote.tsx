@@ -25,6 +25,7 @@ import type {
   MaybeUnsignedSeal,
   ExhaleNoteRenderPayload,
   NoteSendPayload,
+  NoteSendResult,
 } from "./exhale-note/types";
 
 /* External stylesheet */
@@ -601,6 +602,7 @@ const ExhaleNote: React.FC<NoteProps> = ({
   const [sendNonce, setSendNonce] = useState<string>("");
   const sendNonceRef = useRef<string>("");
   const sendCommittedRef = useRef(false);
+  const [noteSendResult, setNoteSendResult] = useState<NoteSendResult | null>(null);
 
   const u =
     (k: keyof BanknoteInputs) =>
@@ -655,7 +657,7 @@ const ExhaleNote: React.FC<NoteProps> = ({
 
     const valuePhiStr = usingLocked ? fTiny(effectiveSendPhi) : fTiny(liveValuePhi);
     const valueUsdStr = usingLocked ? fUsd(effectiveValueUsd) : fUsd(valueUsdIndicative);
-    const premiumPhiStr = usingLocked ? form.premiumPhi || fTiny(livePremium) : fTiny(livePremium);
+    const premiumPhiStr = usingLocked ? fTiny(effectiveSendPhi) : fTiny(livePremium);
 
     const lockedPulseStr = usingLocked ? String(locked!.lockedPulse) : "";
     const valuationStampStr = usingLocked ? form.valuationStamp || locked!.seal.stamp : "";
@@ -767,6 +769,7 @@ const ExhaleNote: React.FC<NoteProps> = ({
         sendNonceRef.current = nextNonce;
       }
       sendCommittedRef.current = false;
+      setNoteSendResult(null);
 
       setForm((prev) => ({
         ...prev,
@@ -895,7 +898,9 @@ const ExhaleNote: React.FC<NoteProps> = ({
     if (!Number.isFinite(amountPhi) || amountPhi <= 0) return null;
     const verifyUrl = resolveVerifyUrl(form.verifyUrl, defaultVerifyUrl);
     const transferNonce = resolveSendNonce();
+    const merged = noteSendResult ?? {};
     return {
+      ...merged,
       amountPhi,
       amountPhiScaled: toScaledPhi18(amountPhi),
       amountUsd: amountPhi * effectiveUsdPerPhi,
@@ -903,7 +908,7 @@ const ExhaleNote: React.FC<NoteProps> = ({
       valuationStamp: form.valuationStamp || locked.seal.stamp || "",
       transferNonce,
       verifyUrl,
-      parentCanonical: originCanonical,
+      parentCanonical: originCanonical ?? merged.parentCanonical,
     };
   }, [
     locked,
@@ -914,6 +919,7 @@ const ExhaleNote: React.FC<NoteProps> = ({
     defaultVerifyUrl,
     originCanonical,
     resolveSendNonce,
+    noteSendResult,
   ]);
 
   const ensureNoteSend = useCallback(async (): Promise<boolean> => {
@@ -929,7 +935,8 @@ const ExhaleNote: React.FC<NoteProps> = ({
       return false;
     }
     try {
-      await onSendNote?.(payload);
+      const result = await onSendNote?.(payload);
+      if (result) setNoteSendResult(result);
       sendCommittedRef.current = true;
       return true;
     } catch (err) {
@@ -958,7 +965,7 @@ const ExhaleNote: React.FC<NoteProps> = ({
       ...form,
       valuePhi: fTiny(effectiveSendPhi),
       valueUsd: fUsd(effectiveValueUsd),
-      premiumPhi: form.premiumPhi || fTiny(livePremium),
+      premiumPhi: fTiny(effectiveSendPhi),
       computedPulse: String(locked.lockedPulse),
       nowPulse: String(locked.lockedPulse),
       kaiSignature: form.kaiSignature || "",
@@ -979,7 +986,7 @@ const ExhaleNote: React.FC<NoteProps> = ({
       shaHex: form.shaHex || "",
       phiDerived: form.phiDerived || "",
       valuePhi: fTiny(effectiveSendPhi),
-      premiumPhi: form.premiumPhi || fTiny(livePremium),
+      premiumPhi: fTiny(effectiveSendPhi),
       valuationAlg: form.valuationAlg || liveAlgString,
       valuationStamp: form.valuationStamp || locked.seal.stamp,
       zk: form.zk,
@@ -1025,7 +1032,7 @@ const ExhaleNote: React.FC<NoteProps> = ({
         ...form,
         valuePhi: fTiny(effectiveSendPhi),
         valueUsd: fUsd(effectiveValueUsd),
-        premiumPhi: form.premiumPhi || fTiny(livePremium),
+        premiumPhi: fTiny(effectiveSendPhi),
         computedPulse: String(locked.lockedPulse),
         nowPulse: String(locked.lockedPulse),
         kaiSignature: form.kaiSignature || "",
@@ -1078,7 +1085,7 @@ const ExhaleNote: React.FC<NoteProps> = ({
         ...form,
         valuePhi: fTiny(effectiveSendPhi),
         valueUsd: fUsd(effectiveValueUsd),
-        premiumPhi: form.premiumPhi || fTiny(livePremium),
+        premiumPhi: fTiny(effectiveSendPhi),
         computedPulse: String(locked.lockedPulse),
         nowPulse: String(locked.lockedPulse),
         kaiSignature: form.kaiSignature || "",
@@ -1145,7 +1152,7 @@ const ExhaleNote: React.FC<NoteProps> = ({
   const displayUsd = locked ? effectiveValueUsd : valueUsdIndicative;
   const displayUsdPerPhi = locked ? locked.usdPerPhi : usdPerPhi;
   const displayPhiPerUsd = locked ? locked.phiPerUsd : phiPerUsd;
-  const displayPremium = locked ? (form.premiumPhi ? Number(form.premiumPhi) : 0) : livePremium;
+  const displayPremium = locked ? effectiveSendPhi : livePremium;
   const phiParts = formatPhiParts(displayPhi);
 
   const noteTitle = useMemo(() => `☤KAI ${fPulse(displayPulse)}`, [displayPulse]);

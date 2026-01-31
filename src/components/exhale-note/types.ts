@@ -87,7 +87,14 @@ export type NoteSendPayload = {
   transferNonce: string;
   verifyUrl: string;
   parentCanonical?: string;
+  childCanonical?: string;
+  senderKaiPulse?: number;
+  senderStamp?: string;
+  previousHeadRoot?: string;
+  transferLeafHashSend?: string;
 };
+
+export type NoteSendResult = NoteSendPayload;
 
 export interface NoteProps {
   /** Sigil metadata powering live valuation */
@@ -106,7 +113,7 @@ export interface NoteProps {
   /** Optional origin canonical hash for send metadata. */
   originCanonical?: string;
   /** Callback fired when user saves a note and it should reserve/send Φ. */
-  onSendNote?: (payload: NoteSendPayload) => Promise<void> | void;
+  onSendNote?: (payload: NoteSendPayload) => Promise<NoteSendResult | void> | NoteSendResult | void;
 
   /** Optional initial builder fields (purpose/to/from/etc.). */
   initial?: BanknoteInputs;

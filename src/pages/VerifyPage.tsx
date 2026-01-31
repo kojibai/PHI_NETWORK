@@ -58,6 +58,7 @@ import { base64UrlDecode, sha256Hex } from "../utils/sha256";
 import { readPngTextChunk } from "../utils/pngChunks";
 import { getKaiPulseEternalInt } from "../SovereignSolar";
 import { markConfirmedByNonce } from "../utils/sendLedger";
+import { recordSigilTransferMovement } from "../utils/sigilTransferRegistry";
 import { useKaiTicker } from "../hooks/useKaiTicker";
 import { useValuation } from "./SigilPage/useValuation";
 import type { SigilMetadataLite } from "../utils/valuation";
@@ -127,6 +128,8 @@ type NoteSendMeta = {
   parentCanonical: string;
   transferNonce: string;
   amountPhi?: number;
+  amountUsd?: number;
+  childCanonical?: string;
 };
 
 function parseNoteSendMeta(raw: string | null): NoteSendMeta | null {
@@ -136,8 +139,10 @@ function parseNoteSendMeta(raw: string | null): NoteSendMeta | null {
     const parentCanonical = typeof parsed.parentCanonical === "string" ? parsed.parentCanonical.trim() : "";
     const transferNonce = typeof parsed.transferNonce === "string" ? parsed.transferNonce.trim() : "";
     const amountPhi = typeof parsed.amountPhi === "number" && Number.isFinite(parsed.amountPhi) ? parsed.amountPhi : undefined;
+    const amountUsd = typeof parsed.amountUsd === "number" && Number.isFinite(parsed.amountUsd) ? parsed.amountUsd : undefined;
+    const childCanonical = typeof parsed.childCanonical === "string" ? parsed.childCanonical.trim() : undefined;
     if (!parentCanonical || !transferNonce) return null;
-    return { parentCanonical, transferNonce, amountPhi };
+    return { parentCanonical, transferNonce, amountPhi, amountUsd, childCanonical };
   } catch {
     return null;
   }
@@ -1407,6 +1412,14 @@ if (receipt.receiptHash) {
             noteSendConfirmedRef.current = key;
             try {
               markConfirmedByNonce(noteSendMeta.parentCanonical, noteSendMeta.transferNonce);
+              if (noteSendMeta.childCanonical && noteSendMeta.amountPhi) {
+                recordSigilTransferMovement({
+                  hash: noteSendMeta.childCanonical,
+                  direction: "receive",
+                  amountPhi: noteSendMeta.amountPhi,
+                  amountUsd: noteSendMeta.amountUsd != null ? noteSendMeta.amountUsd.toFixed(2) : undefined,
+                });
+              }
             } catch (err) {
               // eslint-disable-next-line no-console
               console.error("note send confirm failed", err);
