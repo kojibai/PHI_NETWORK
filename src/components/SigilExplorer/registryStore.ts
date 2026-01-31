@@ -6,7 +6,7 @@ import type { Registry, SigilSharePayloadLoose } from "./types";
 import { USERNAME_CLAIM_KIND, type UsernameClaimPayload } from "../../types/usernameClaim";
 import { ingestUsernameClaimGlyph } from "../../utils/usernameClaimRegistry";
 import { normalizeClaimGlyphRef, normalizeUsername } from "../../utils/usernameClaim";
-import { resolveLineageBackwards } from "../../utils/sigilUrl";
+import { makeSigilUrlLoose, resolveLineageBackwards, type SigilSharePayloadLoose as SigilUrlPayloadLoose } from "../../utils/sigilUrl";
 import { getInMemorySigilUrls } from "../../utils/sigilRegistry";
 import { markConfirmedByNonce } from "../../utils/sendLedger";
 import {
@@ -22,6 +22,7 @@ import { enqueueInhaleKrystal } from "./inhaleQueue";
 
 export const REGISTRY_LS_KEY = "kai:sigils:v1"; // explorer’s persisted URL list
 export const MODAL_FALLBACK_LS_KEY = "sigil:urls"; // composer/modal fallback URL list
+export const NOTE_CLAIM_LS_KEY = "kai:sigil-claims:v1"; // persistent note-claim registry
 const BC_NAME = "kai-sigil-registry";
 
 const WITNESS_ADD_MAX = 512;
@@ -29,8 +30,10 @@ const WITNESS_ADD_MAX = 512;
 const hasWindow = typeof window !== "undefined";
 const canStorage = hasWindow && typeof window.localStorage !== "undefined";
 let registryHydrated = false;
+let noteClaimsHydrated = false;
 
 export const memoryRegistry: Registry = new Map();
+const noteClaimRegistry: Map<string, Set<string>> = new Map();
 const channel = hasWindow && "BroadcastChannel" in window ? new BroadcastChannel(BC_NAME) : null;
 
 export type AddSource = "local" | "remote" | "hydrate" | "import";
@@ -41,6 +44,12 @@ export type AddUrlOptions = {
   persist?: boolean;
   source?: AddSource;
   enqueueToApi?: boolean;
+};
+
+type NoteClaimArgs = {
+  parentCanonical: string;
+  transferNonce: string;
+  childCanonical?: string;
 };
 
 export function isOnline(): boolean {
@@ -78,6 +87,125 @@ function readTransferDirectionFromPayload(payload: SigilSharePayloadLoose): "sen
     readTransferDirectionValue(record.transferKind) ||
     readTransferDirectionValue(record.phiDirection)
   );
+}
+
+function normalizeCanonical(raw: string | undefined | null): string {
+  return raw ? raw.trim().toLowerCase() : "";
+}
+
+function normalizeNonce(raw: string | undefined | null): string {
+  return raw ? raw.trim() : "";
+}
+
+function buildNoteClaimPayload(args: NoteClaimArgs): SigilUrlPayloadLoose {
+  const { parentCanonical, transferNonce, childCanonical } = args;
+  const payload: SigilUrlPayloadLoose = {
+    pulse: 0,
+    beat: 0,
+    stepIndex: 0,
+    chakraDay: "Root",
+    transferDirection: "receive",
+    transferNonce,
+    parentCanonical,
+  };
+  if (childCanonical) {
+    payload.canonicalHash = childCanonical;
+    payload.childHash = childCanonical;
+    payload.hash = childCanonical;
+  }
+  return payload;
+}
+
+function buildNoteClaimUrl(args: NoteClaimArgs): string {
+  const payload = buildNoteClaimPayload(args);
+  return makeSigilUrlLoose(args.parentCanonical, payload, { absolute: true });
+}
+
+function hydrateNoteClaimsFromStorage(): boolean {
+  if (!canStorage) return false;
+  try {
+    const raw = localStorage.getItem(NOTE_CLAIM_LS_KEY);
+    if (!raw) return false;
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object") return false;
+    let changed = false;
+    for (const [parent, value] of Object.entries(parsed as Record<string, unknown>)) {
+      if (!Array.isArray(value)) continue;
+      const parentKey = normalizeCanonical(parent);
+      if (!parentKey) continue;
+      const set = noteClaimRegistry.get(parentKey) ?? new Set<string>();
+      for (const entry of value) {
+        if (typeof entry !== "string") continue;
+        const nonce = normalizeNonce(entry);
+        if (!nonce) continue;
+        if (!set.has(nonce)) {
+          set.add(nonce);
+          changed = true;
+        }
+      }
+      if (set.size > 0) noteClaimRegistry.set(parentKey, set);
+    }
+    return changed;
+  } catch {
+    return false;
+  }
+}
+
+function persistNoteClaimsToStorage(): void {
+  if (!canStorage) return;
+  try {
+    const obj: Record<string, string[]> = {};
+    for (const [parent, nonces] of noteClaimRegistry.entries()) {
+      const list = Array.from(nonces.values());
+      if (list.length > 0) obj[parent] = list;
+    }
+    localStorage.setItem(NOTE_CLAIM_LS_KEY, JSON.stringify(obj));
+  } catch {
+    // ignore quota issues
+  }
+}
+
+function ensureNoteClaimsHydrated(): void {
+  if (noteClaimsHydrated) return;
+  noteClaimsHydrated = true;
+  hydrateNoteClaimsFromStorage();
+}
+
+export function markNoteClaimed(
+  parentCanonical: string,
+  transferNonce: string,
+  args?: { childCanonical?: string },
+): boolean {
+  ensureNoteClaimsHydrated();
+  const parentKey = normalizeCanonical(parentCanonical);
+  const nonce = normalizeNonce(transferNonce);
+  if (!parentKey || !nonce) return false;
+  const set = noteClaimRegistry.get(parentKey) ?? new Set<string>();
+  if (set.has(nonce)) return false;
+  set.add(nonce);
+  noteClaimRegistry.set(parentKey, set);
+  persistNoteClaimsToStorage();
+  const claimPayload = buildNoteClaimPayload({
+    parentCanonical: parentKey,
+    transferNonce: nonce,
+    childCanonical: args?.childCanonical,
+  });
+  const claimUrl = buildNoteClaimUrl({
+    parentCanonical: parentKey,
+    transferNonce: nonce,
+    childCanonical: args?.childCanonical,
+  });
+  upsertRegistryPayload(claimUrl, claimPayload);
+  enqueueInhaleKrystal(claimUrl, claimPayload);
+  return true;
+}
+
+export function isNoteClaimed(parentCanonical: string, transferNonce: string): boolean {
+  ensureNoteClaimsHydrated();
+  const parentKey = normalizeCanonical(parentCanonical);
+  const nonce = normalizeNonce(transferNonce);
+  if (!parentKey || !nonce) return false;
+  return noteClaimRegistry.get(parentKey)?.has(nonce) ?? false;
 }
 
 function safeDecodeURIComponent(v: string): string {
@@ -362,6 +490,7 @@ export function hydrateRegistryFromStorage(): boolean {
 export function ensureRegistryHydrated(): boolean {
   if (registryHydrated) return false;
   registryHydrated = true;
+  ensureNoteClaimsHydrated();
   return hydrateRegistryFromStorage();
 }
 
@@ -389,9 +518,14 @@ export function addUrl(url: string, opts?: AddUrlOptions): boolean {
 
   if (readTransferDirectionFromPayload(extracted) === "receive") {
     const record = extracted as unknown as Record<string, unknown>;
-    const parentHash = readStringField(record, "parentHash");
+    const parentHash = readStringField(record, "parentHash") ?? readStringField(record, "parentCanonical");
     const nonce = readStringField(record, "transferNonce") ?? readStringField(record, "nonce");
-    if (parentHash && nonce) markConfirmedByNonce(parentHash, nonce);
+    const childCanonical =
+      readStringField(record, "canonicalHash") ?? readStringField(record, "childHash") ?? readStringField(record, "hash");
+    if (parentHash && nonce) {
+      markConfirmedByNonce(parentHash, nonce);
+      markNoteClaimed(parentHash, nonce, { childCanonical: childCanonical ?? undefined });
+    }
   }
 
   if (includeAncestry && ctx.chain.length > 0) {
