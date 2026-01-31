@@ -138,6 +138,8 @@ import {
   currentCanonical as currentCanonicalUtil,
   currentToken as currentTokenUtil,
 } from "../../utils/urlShort";
+import { getReservedScaledForKind } from "../../utils/sendLedger";
+import { fromScaledBig, toScaledBig } from "../../components/verifier/utils/decimal";
 // registry.ts
 import {
   buildClaim,
@@ -1994,17 +1996,42 @@ setTimeout(() => setSuppressAuthUntil(0), 0);
     return sumDebits(items);
   }, [payloadD?.debits]);
 
+  const branchSpentScaled = useMemo(
+    () => toScaledBig(String((payloadD as { branchSpentPhi?: string | number } | null)?.branchSpentPhi ?? "0")),
+    [payloadD]
+  );
+
+  const branchSpentPhi = useMemo(
+    () => (branchSpentScaled > 0n ? Number(fromScaledBig(branchSpentScaled)) : 0),
+    [branchSpentScaled]
+  );
+
+  const ledgerReservedScaled = useMemo(() => {
+    const h = currentCanonicalUtil(payload ?? null, localHash, legacyInfo);
+    if (!h) return 0n;
+    const kind = branchSpentScaled > 0n ? "note" : "all";
+    return getReservedScaledForKind(h, kind);
+  }, [payload, localHash, legacyInfo, branchSpentScaled]);
+
+  const ledgerReservedPhi = useMemo(
+    () => (ledgerReservedScaled > 0n ? Number(fromScaledBig(ledgerReservedScaled)) : 0),
+    [ledgerReservedScaled]
+  );
+
   const availablePhi = useMemo<number>(() => {
     const base =
       typeof payloadD?.originalAmount === "number"
         ? payloadD.originalAmount
         : (valSeal?.valuePhi ?? 0);
-    const avail = base - totalDebited;
+    const avail = base - totalDebited - branchSpentPhi - ledgerReservedPhi;
     return avail > 0 ? avail : 0;
-  }, [payloadD?.originalAmount, valSeal?.valuePhi, totalDebited]);
+  }, [payloadD?.originalAmount, valSeal?.valuePhi, totalDebited, branchSpentPhi, ledgerReservedPhi]);
 
   const hasDebitsOrFrozen =
-    (payloadD?.debits?.length ?? 0) > 0 || typeof payloadD?.originalAmount === "number";
+    (payloadD?.debits?.length ?? 0) > 0 ||
+    typeof payloadD?.originalAmount === "number" ||
+    branchSpentPhi > 0 ||
+    ledgerReservedPhi > 0;
 
   const displayedChipPhi = useMemo(() => {
     if (hasDebitsOrFrozen) return availablePhi;

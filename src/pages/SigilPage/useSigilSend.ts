@@ -9,6 +9,8 @@ import {
   type DebitRecord,
   type DebitQS,
 } from "../../utils/cryptoLedger";
+import { getReservedScaledForKind } from "../../utils/sendLedger";
+import { fromScaledBig, toScaledBig } from "../../components/verifier/utils/decimal";
 import {
   currentCanonical as currentCanonicalUtil,
   currentToken as currentTokenUtil,
@@ -309,9 +311,22 @@ export function useSigilSend(params: {
         debits: Array.isArray(merged.debits) ? merged.debits : [],
       });
 
+      const branchSpentScaled = toScaledBig(
+        String((withDebits as { branchSpentPhi?: string | number } | null)?.branchSpentPhi ?? "0")
+      );
+      const branchSpentPhi = branchSpentScaled > 0n ? Number(fromScaledBig(branchSpentScaled)) : 0;
+      const ledgerReservedScaled = getReservedScaledForKind(
+        h,
+        branchSpentScaled > 0n ? "note" : "all"
+      );
+      const ledgerReservedPhi = ledgerReservedScaled > 0n ? Number(fromScaledBig(ledgerReservedScaled)) : 0;
+
       const currentAvail = Math.max(
         0,
-        (current.originalAmount ?? 0) - sumDebits((current.debits as unknown as DebitLoose[]) || [])
+        (current.originalAmount ?? 0) -
+          sumDebits((current.debits as unknown as DebitLoose[]) || []) -
+          branchSpentPhi -
+          ledgerReservedPhi
       );
       if (amt > currentAvail + EPS) {
         return setToast("Amount exceeds available");

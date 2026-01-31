@@ -99,7 +99,7 @@ import { embedProofMetadata } from "../../utils/svgProof";
 import { extractProofBundleMetaFromSvg, type ProofBundleMeta } from "../../utils/sigilMetadata";
 import { DEFAULT_ISSUANCE_POLICY, quotePhiForUsd } from "../../utils/phi-issuance";
 import { BREATH_MS } from "../valuation/constants";
-import { recordSend, getReservedScaledFor, markConfirmedByLeaf } from "../../utils/sendLedger";
+import { recordSend, getReservedScaledForKind, markConfirmedByLeaf } from "../../utils/sendLedger";
 import { recordSigilTransferMovement } from "../../utils/sigilTransferRegistry";
 import {
   buildBundleRoot,
@@ -1979,19 +1979,25 @@ const VerifierStamperInner: React.FC = () => {
     return toScaledBig(String(initialGlyph?.value ?? 0) || "0");
   }, [isChildContext, meta, lastTransfer, persistedBaseScaled, pivotIndex, initialGlyph]);
 
+  const branchSpentScaled = useMemo(
+    () => toScaledBig((meta as SigilMetadataWithOptionals | null)?.branchSpentPhi ?? "0"),
+    [meta]
+  );
+
   const ledgerReservedScaled = useMemo(() => {
     if (!canonical) return 0n;
     try {
-      return getReservedScaledFor(canonical);
+      const kind = branchSpentScaled > 0n ? "note" : "all";
+      return getReservedScaledForKind(canonical, kind);
     } catch (err) {
       logError("ledgerReservedScaled", err);
       return 0n;
     }
-  }, [canonical]);
+  }, [canonical, branchSpentScaled]);
 
   const totalSpentScaled = useMemo(
-    () => (isChildContext ? 0n : ledgerReservedScaled),
-    [isChildContext, ledgerReservedScaled]
+    () => (isChildContext ? 0n : branchSpentScaled + ledgerReservedScaled),
+    [isChildContext, branchSpentScaled, ledgerReservedScaled]
   );
 
   const remainingPhiScaled = useMemo(
@@ -2051,6 +2057,7 @@ const VerifierStamperInner: React.FC = () => {
           parentCanonical,
           childCanonical,
           amountPhiScaled: amountScaled.toString(),
+          kind: "note" as const,
           senderKaiPulse,
           transferNonce,
           senderStamp,
@@ -2511,6 +2518,7 @@ const VerifierStamperInner: React.FC = () => {
         parentCanonical,
         childCanonical,
         amountPhiScaled: toScaledBig(validPhi6).toString(), // μΦ-exact
+        kind: "send" as const,
         senderKaiPulse: nowPulse,
         transferNonce: updated.transferNonce!,
         senderStamp: stamp,
