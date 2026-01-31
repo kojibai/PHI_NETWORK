@@ -17,6 +17,7 @@ import { fPhi, fUsd, fTiny } from "./exhale-note/format";
 import { fetchFromVerifierBridge } from "./exhale-note/bridge";
 import { svgStringToPngBlob, triggerDownload } from "./exhale-note/svgToPng";
 import { insertPngTextChunks } from "../utils/pngChunks";
+import { buildVerifierUrl } from "./KaiVoh/verifierProof";
 
 import type {
   NoteProps,
@@ -140,6 +141,10 @@ type NoteProofBundleFields = {
   verifiedAtPulse?: number;
   capsuleHash?: string;
   svgHash?: string;
+  proofCapsule?: {
+    pulse?: number;
+    kaiSignature?: string;
+  };
 };
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
@@ -163,6 +168,15 @@ function parseProofBundleJson(raw: string | undefined): NoteProofBundleFields {
   try {
     const parsed = JSON.parse(raw) as unknown;
     if (!isPlainRecord(parsed)) return {};
+    let proofCapsule: NoteProofBundleFields["proofCapsule"];
+    const capsuleRaw = parsed.proofCapsule;
+    if (isPlainRecord(capsuleRaw)) {
+      const pulse = readOptionalNumber(capsuleRaw.pulse);
+      const kaiSignature = readOptionalString(capsuleRaw.kaiSignature);
+      if (pulse != null || kaiSignature) {
+        proofCapsule = { pulse: pulse ?? undefined, kaiSignature };
+      }
+    }
     return {
       verifierUrl: readOptionalString(parsed.verifierUrl),
       bundleHash: readOptionalString(parsed.bundleHash),
@@ -170,6 +184,7 @@ function parseProofBundleJson(raw: string | undefined): NoteProofBundleFields {
       verifiedAtPulse: readOptionalNumber(parsed.verifiedAtPulse),
       capsuleHash: readOptionalString(parsed.capsuleHash),
       svgHash: readOptionalString(parsed.svgHash),
+      proofCapsule,
     };
   } catch {
     return {};
@@ -195,7 +210,18 @@ function resolveNoteVerifyUrl(
 ): string {
   const parsed = parseProofBundleJson(input.proofBundleJson);
   const preferred = parsed.verifierUrl ?? input.verifyUrl;
-  return resolveVerifyUrl(preferred, fallbackAbs);
+  const resolved = resolveVerifyUrl(preferred, fallbackAbs);
+  const hasSlug = /\/verify\/[^/?#]+/i.test(resolved);
+  if (hasSlug) return resolved;
+
+  const pulse = parsed.proofCapsule?.pulse;
+  const sig = parsed.proofCapsule?.kaiSignature;
+  if (pulse != null && sig) {
+    const base = /\/verify\/?$/i.test(resolved) ? resolved : undefined;
+    return buildVerifierUrl(pulse, sig, base, parsed.verifiedAtPulse);
+  }
+
+  return resolved;
 }
 
 /** Inject preview CSS once so the SVG scales on mobile (kept defensive even if ExhaleNote.css exists). */
