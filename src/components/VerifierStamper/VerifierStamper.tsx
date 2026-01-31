@@ -662,17 +662,32 @@ const VerifierStamperInner: React.FC = () => {
 
       const rawBundle = proofBundleMeta?.raw;
       const rawRecord = isRecord(rawBundle) ? rawBundle : null;
-      const proofBundleJson = rawRecord ? JSON.stringify(rawRecord) : "";
-      const bundleHash = proofBundleMeta?.bundleHash ?? (rawRecord && typeof rawRecord.bundleHash === "string" ? rawRecord.bundleHash : "");
-      const receiptHash = proofBundleMeta?.receiptHash ?? (rawRecord && typeof rawRecord.receiptHash === "string" ? rawRecord.receiptHash : "");
+      const extracted = !rawRecord && sigilSvgRaw ? extractProofBundleMetaFromSvg(sigilSvgRaw) : null;
+      const extractedRaw = extracted?.raw;
+      const extractedRecord = isRecord(extractedRaw) ? extractedRaw : null;
+      const record = rawRecord ?? extractedRecord;
+      const proofBundleJson = record ? JSON.stringify(record) : "";
+      const bundleHash =
+        extracted?.bundleHash ??
+        proofBundleMeta?.bundleHash ??
+        (record && typeof record.bundleHash === "string" ? record.bundleHash : "");
+      const receiptHash =
+        extracted?.receiptHash ??
+        proofBundleMeta?.receiptHash ??
+        (record && typeof record.receiptHash === "string" ? record.receiptHash : "");
       const verifiedAtPulse =
-        typeof proofBundleMeta?.verifiedAtPulse === "number"
-          ? proofBundleMeta.verifiedAtPulse
-          : rawRecord && typeof rawRecord.verifiedAtPulse === "number"
-            ? rawRecord.verifiedAtPulse
-            : undefined;
-      const capsuleHash = proofBundleMeta?.capsuleHash ?? (rawRecord && typeof rawRecord.capsuleHash === "string" ? rawRecord.capsuleHash : "");
-      const svgHash = proofBundleMeta?.svgHash ?? (rawRecord && typeof rawRecord.svgHash === "string" ? rawRecord.svgHash : "");
+        typeof extracted?.verifiedAtPulse === "number"
+          ? extracted.verifiedAtPulse
+          : typeof proofBundleMeta?.verifiedAtPulse === "number"
+            ? proofBundleMeta.verifiedAtPulse
+            : record && typeof record.verifiedAtPulse === "number"
+              ? record.verifiedAtPulse
+              : undefined;
+      const capsuleHash =
+        extracted?.capsuleHash ??
+        proofBundleMeta?.capsuleHash ??
+        (record && typeof record.capsuleHash === "string" ? record.capsuleHash : "");
+      const svgHash = extracted?.svgHash ?? proofBundleMeta?.svgHash ?? (record && typeof record.svgHash === "string" ? record.svgHash : "");
 
       return {
         ...base,
@@ -699,17 +714,32 @@ const VerifierStamperInner: React.FC = () => {
       });
       const rawBundle = proofBundleMeta?.raw;
       const rawRecord = isRecord(rawBundle) ? rawBundle : null;
-      const proofBundleJson = rawRecord ? JSON.stringify(rawRecord) : "";
-      const bundleHash = proofBundleMeta?.bundleHash ?? (rawRecord && typeof rawRecord.bundleHash === "string" ? rawRecord.bundleHash : "");
-      const receiptHash = proofBundleMeta?.receiptHash ?? (rawRecord && typeof rawRecord.receiptHash === "string" ? rawRecord.receiptHash : "");
+      const extracted = !rawRecord && sigilSvgRaw ? extractProofBundleMetaFromSvg(sigilSvgRaw) : null;
+      const extractedRaw = extracted?.raw;
+      const extractedRecord = isRecord(extractedRaw) ? extractedRaw : null;
+      const record = rawRecord ?? extractedRecord;
+      const proofBundleJson = record ? JSON.stringify(record) : "";
+      const bundleHash =
+        extracted?.bundleHash ??
+        proofBundleMeta?.bundleHash ??
+        (record && typeof record.bundleHash === "string" ? record.bundleHash : "");
+      const receiptHash =
+        extracted?.receiptHash ??
+        proofBundleMeta?.receiptHash ??
+        (record && typeof record.receiptHash === "string" ? record.receiptHash : "");
       const verifiedAtPulse =
-        typeof proofBundleMeta?.verifiedAtPulse === "number"
-          ? proofBundleMeta.verifiedAtPulse
-          : rawRecord && typeof rawRecord.verifiedAtPulse === "number"
-            ? rawRecord.verifiedAtPulse
-            : undefined;
-      const capsuleHash = proofBundleMeta?.capsuleHash ?? (rawRecord && typeof rawRecord.capsuleHash === "string" ? rawRecord.capsuleHash : "");
-      const svgHash = proofBundleMeta?.svgHash ?? (rawRecord && typeof rawRecord.svgHash === "string" ? rawRecord.svgHash : "");
+        typeof extracted?.verifiedAtPulse === "number"
+          ? extracted.verifiedAtPulse
+          : typeof proofBundleMeta?.verifiedAtPulse === "number"
+            ? proofBundleMeta.verifiedAtPulse
+            : record && typeof record.verifiedAtPulse === "number"
+              ? record.verifiedAtPulse
+              : undefined;
+      const capsuleHash =
+        extracted?.capsuleHash ??
+        proofBundleMeta?.capsuleHash ??
+        (record && typeof record.capsuleHash === "string" ? record.capsuleHash : "");
+      const svgHash = extracted?.svgHash ?? proofBundleMeta?.svgHash ?? (record && typeof record.svgHash === "string" ? record.svgHash : "");
       const p = {
         ...base,
         proofBundleJson,
@@ -2023,7 +2053,23 @@ const VerifierStamperInner: React.FC = () => {
       if (noteSendBusyRef.current) return;
       noteSendBusyRef.current = true;
       try {
-        const parentCanonical = (canonical ?? "").toLowerCase();
+        if (
+          !meta ||
+          typeof meta.pulse !== "number" ||
+          typeof meta.beat !== "number" ||
+          typeof meta.stepIndex !== "number" ||
+          typeof meta.chakraDay !== "string"
+        ) {
+          throw new Error("Origin sigil not initialized.");
+        }
+        let parentCanonical = (meta.canonicalHash as string | undefined)?.toLowerCase() ?? "";
+        if (!parentCanonical) {
+          const eff = await computeEffectiveCanonical(meta);
+          parentCanonical = eff.canonical;
+        }
+        if (!parentCanonical) {
+          parentCanonical = (await sha256Hex(`${meta.pulse}|${meta.beat}|${meta.stepIndex}|${meta.chakraDay}`)).toLowerCase();
+        }
         if (!parentCanonical) throw new Error("Origin sigil not initialized.");
 
         const amountScaled = toScaledBig(String(payload.amountPhi || 0));

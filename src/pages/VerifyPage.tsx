@@ -2838,31 +2838,44 @@ body: [
       verifyUrl: currentVerifyUrl,
       pulseNow: notePulseNow,
     });
+    const svgTrimmed = svgText.trim();
+    const extracted = svgTrimmed ? extractProofBundleMetaFromSvg(svgTrimmed) : null;
+    const extractedRaw = extracted?.raw;
+    const extractedRecord = isRecord(extractedRaw) ? extractedRaw : null;
     const rawBundle = embeddedProof?.raw;
     const rawRecord = isRecord(rawBundle) ? rawBundle : null;
-    const proofBundleJson = rawRecord ? JSON.stringify(rawRecord) : "";
+    const record = extractedRecord ?? rawRecord;
+    const proofBundleJson = record ? JSON.stringify(record) : "";
     const bundleHashValue =
+      extracted?.bundleHash ??
       embeddedProof?.bundleHash ??
       sharedReceipt?.bundleHash ??
-      (rawRecord && typeof rawRecord.bundleHash === "string" ? rawRecord.bundleHash : "");
+      (record && typeof record.bundleHash === "string" ? record.bundleHash : "");
     const receiptHashValue =
+      extracted?.receiptHash ??
       embeddedProof?.receiptHash ??
       sharedReceipt?.receiptHash ??
-      (rawRecord && typeof rawRecord.receiptHash === "string" ? rawRecord.receiptHash : "");
+      (record && typeof record.receiptHash === "string" ? record.receiptHash : "");
     const verifiedAtPulseValue =
-      typeof embeddedProof?.verifiedAtPulse === "number"
-        ? embeddedProof.verifiedAtPulse
-        : typeof sharedReceipt?.verifiedAtPulse === "number"
-          ? sharedReceipt.verifiedAtPulse
-          : rawRecord && typeof rawRecord.verifiedAtPulse === "number"
-            ? rawRecord.verifiedAtPulse
-            : undefined;
+      typeof extracted?.verifiedAtPulse === "number"
+        ? extracted.verifiedAtPulse
+        : typeof embeddedProof?.verifiedAtPulse === "number"
+          ? embeddedProof.verifiedAtPulse
+          : typeof sharedReceipt?.verifiedAtPulse === "number"
+            ? sharedReceipt.verifiedAtPulse
+            : record && typeof record.verifiedAtPulse === "number"
+              ? record.verifiedAtPulse
+              : undefined;
     const capsuleHashValue =
+      extracted?.capsuleHash ??
       embeddedProof?.capsuleHash ??
       sharedReceipt?.capsuleHash ??
-      (rawRecord && typeof rawRecord.capsuleHash === "string" ? rawRecord.capsuleHash : "");
+      (record && typeof record.capsuleHash === "string" ? record.capsuleHash : "");
     const svgHashValue =
-      embeddedProof?.svgHash ?? sharedReceipt?.svgHash ?? (rawRecord && typeof rawRecord.svgHash === "string" ? rawRecord.svgHash : "");
+      extracted?.svgHash ??
+      embeddedProof?.svgHash ??
+      sharedReceipt?.svgHash ??
+      (record && typeof record.svgHash === "string" ? record.svgHash : "");
 
     return {
       ...base,
