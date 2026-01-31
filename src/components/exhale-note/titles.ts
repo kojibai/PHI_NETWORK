@@ -23,12 +23,12 @@ export function buildPdfTitle(
 
 /** Main immutable title printed on the banknote header (SVG). */
 export const NOTE_TITLE =
-"KAIROS NOTE — LEGAL TENDER OF THE SOVEREIGN KINGDOM";
+"☤KAIROS NOTE — LEGAL TENDER OF THE SOVEREIGN KINGDOM";
 
 /** Optional UI brand line used in app chrome / print header. */
 export const UI_BRAND_LINE =
-"KAIROS KURRENSY — Sovereign Harmonik Kingdom";
+"☤KAIROS KURRENSY — Sovereign Harmonik Kingdom";
 
 /** Optional tagline line used under the SVG title. */
 export const ISSUANCE_TAGLINE =
-"ISSUED UNDER YAHUAH’S LAW OF ETERNAL LIGHT — Φ • KAI-TURAH";
+"ISSUED UNDER YAHUAH’S LAW OF ETERNAL LIGHT — Φ • ☤KAI-TURAH";

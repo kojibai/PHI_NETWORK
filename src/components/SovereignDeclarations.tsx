@@ -36,7 +36,7 @@ export default function SovereignDeclarations(): React.JSX.Element {
   const openVault = useCallback(() => setOpen(true), []);
 
   const triggerSummary = useMemo(
-    () => "Kairos Notes — Legal Tender",
+    () => "☤Kairos Notes — Legal Tender",
     []
   );
 
@@ -223,7 +223,7 @@ Sovereign Writ
 
               <div className="nav-footSheet__body" id={descId}>
                 <p className="nav-foot__line">
-                 <strong> Kairos Notes</strong>  are legal tender — sealed by <strong>Proof of Breath™</strong>, pulsed by <strong>Kai-Signature™</strong>, 
+                 <strong> ☤Kairos Notes</strong>  are legal tender — sealed by <strong>Proof of Breath™</strong>, pulsed by <strong>Kai-Signature™</strong>, 
                  auditable as:
                 Σ → SHA-256(Σ) → Φ.
                 </p>

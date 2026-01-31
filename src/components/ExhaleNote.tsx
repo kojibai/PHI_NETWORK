@@ -2,12 +2,16 @@
 /* eslint-disable @typescript-eslint/consistent-type-assertions */
 /**
  * ExhaleNote — Exhale Note Composer
- * v26.2 — GUIDED STEP COMPOSER (same function, premium header + correct flow)
+ * v26.3 — GUIDED STEP COMPOSER + SEND AMOUNT UNIT TOGGLE (Φ ⇄ USD)
  * - Same valuation/lock/print/save logic
  * - Guided mode is truly step-by-step:
  *   - Answer box is TOP (next to Send Amount)
  *   - Chat shows past Q/A + current question only (no future questions)
  *   - No bottom composer
+ * - Send Amount now supports unit toggle:
+ *   - Enter Φ or USD (toggle)
+ *   - Always computes the exact paired value
+ *   - Uses locked USD/Φ rate after Render (valuation locked)
  * - Premium Atlantean-glass header: one-row crystalline icon pills (mobile-first)
  * - Fix: `disabled` always receives boolean (no `locked` object leaks)
  * - Terminology: UI says “note” (not “bill”)
@@ -90,6 +94,25 @@ function parsePhiInput(raw: string): number | null {
   const num = Number(cleaned);
   if (!Number.isFinite(num) || num <= 0) return null;
   return Number(num.toFixed(6));
+}
+
+function parseUsdInput(raw: string): number | null {
+  let cleaned = raw.trim().replace(/\$/g, "").replace(/\s+/g, "");
+  if (!cleaned) return null;
+
+  // If user typed "10,5" (comma as decimal), and there's no dot, treat comma as decimal.
+  if (cleaned.includes(",") && !cleaned.includes(".")) cleaned = cleaned.replace(/,/g, ".");
+  else cleaned = cleaned.replace(/,/g, "");
+
+  const num = Number(cleaned);
+  if (!Number.isFinite(num) || num <= 0) return null;
+  return Number(num.toFixed(6));
+}
+
+function formatUsdInput(val: number): string {
+  if (!Number.isFinite(val) || val <= 0) return "";
+  // Input-friendly numeric string (no $), stable for toggles.
+  return val.toFixed(2);
 }
 
 function generateNonce(): string {
@@ -513,10 +536,7 @@ function IconSpark({ title, className }: IconProps) {
   return (
     <svg className={className} width="16" height="16" viewBox="0 0 24 24" aria-hidden={title ? undefined : true} role={title ? "img" : "presentation"}>
       {title ? <title>{title}</title> : null}
-      <path
-        fill="currentColor"
-        d="M12 2l1.6 6.2L20 10l-6.4 1.8L12 18l-1.6-6.2L4 10l6.4-1.8L12 2z"
-      />
+      <path fill="currentColor" d="M12 2l1.6 6.2L20 10l-6.4 1.8L12 18l-1.6-6.2L4 10l6.4-1.8L12 2z" />
     </svg>
   );
 }
@@ -525,10 +545,7 @@ function IconLock({ title, className }: IconProps) {
   return (
     <svg className={className} width="16" height="16" viewBox="0 0 24 24" aria-hidden={title ? undefined : true} role={title ? "img" : "presentation"}>
       {title ? <title>{title}</title> : null}
-      <path
-        fill="currentColor"
-        d="M17 9h-1V7a4 4 0 10-8 0v2H7a2 2 0 00-2 2v9a2 2 0 002 2h10a2 2 0 002-2v-9a2 2 0 00-2-2zm-7-2a2 2 0 114 0v2h-4V7z"
-      />
+      <path fill="currentColor" d="M17 9h-1V7a4 4 0 10-8 0v2H7a2 2 0 00-2 2v9a2 2 0 002 2h10a2 2 0 002-2v-9a2 2 0 00-2-2zm-7-2a2 2 0 114 0v2h-4V7z" />
     </svg>
   );
 }
@@ -537,10 +554,7 @@ function IconWave({ title, className }: IconProps) {
   return (
     <svg className={className} width="16" height="16" viewBox="0 0 24 24" aria-hidden={title ? undefined : true} role={title ? "img" : "presentation"}>
       {title ? <title>{title}</title> : null}
-      <path
-        fill="currentColor"
-        d="M3 12c2.5 0 2.5-6 5-6s2.5 12 5 12 2.5-6 5-6 2.5 0 5 0v2c-2.5 0-2.5-6-5-6s-2.5 12-5 12-2.5-6-5-6-2.5 6-5 6V12z"
-      />
+      <path fill="currentColor" d="M3 12c2.5 0 2.5-6 5-6s2.5 12 5 12 2.5-6 5-6 2.5 0 5 0v2c-2.5 0-2.5-6-5-6s-2.5 12-5 12-2.5-6-5-6-2.5 6-5 6V12z" />
     </svg>
   );
 }
@@ -549,10 +563,7 @@ function IconChat({ title, className }: IconProps) {
   return (
     <svg className={className} width="16" height="16" viewBox="0 0 24 24" aria-hidden={title ? undefined : true} role={title ? "img" : "presentation"}>
       {title ? <title>{title}</title> : null}
-      <path
-        fill="currentColor"
-        d="M4 4h16a2 2 0 012 2v9a2 2 0 01-2 2H9l-5 4v-4H4a2 2 0 01-2-2V6a2 2 0 012-2z"
-      />
+      <path fill="currentColor" d="M4 4h16a2 2 0 012 2v9a2 2 0 01-2 2H9l-5 4v-4H4a2 2 0 01-2-2V6a2 2 0 012-2z" />
     </svg>
   );
 }
@@ -570,10 +581,7 @@ function IconShield({ title, className }: IconProps) {
   return (
     <svg className={className} width="16" height="16" viewBox="0 0 24 24" aria-hidden={title ? undefined : true} role={title ? "img" : "presentation"}>
       {title ? <title>{title}</title> : null}
-      <path
-        fill="currentColor"
-        d="M12 2l8 4v6c0 5-3.4 9.7-8 10-4.6-.3-8-5-8-10V6l8-4z"
-      />
+      <path fill="currentColor" d="M12 2l8 4v6c0 5-3.4 9.7-8 10-4.6-.3-8-5-8-10V6l8-4z" />
     </svg>
   );
 }
@@ -744,13 +752,22 @@ const ExhaleNote: React.FC<NoteProps> = ({
   const lockedRef = useRef(false);
   const [isRendering, setIsRendering] = useState(false);
 
+  /**
+   * Send Amount:
+   * - Unit toggle Φ ⇄ USD (only editable post-lock)
+   * - Store both raw inputs; one is active based on unit.
+   */
+  type SendUnit = "phi" | "usd";
+  const [sendUnit, setSendUnit] = useState<SendUnit>("phi");
   const [sendPhiInput, setSendPhiInput] = useState<string>("");
+  const [sendUsdInput, setSendUsdInput] = useState<string>("");
+
   const [sendNonce, setSendNonce] = useState<string>("");
   const sendNonceRef = useRef<string>("");
 
   const sendCommittedRef = useRef(false);
   const [noteSendResult, setNoteSendResult] = useState<NoteSendResult | null>(null);
-  const lastSendPhiInputRef = useRef<string>("");
+  const lastSendPhiCanonRef = useRef<string>("");
 
   const u =
     (k: keyof BanknoteInputs) =>
@@ -775,21 +792,6 @@ const ExhaleNote: React.FC<NoteProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [liveAlgString]);
 
-  useEffect(() => {
-    if (!isLocked) {
-      lastSendPhiInputRef.current = sendPhiInput;
-      return;
-    }
-    if (lastSendPhiInputRef.current === sendPhiInput) return;
-    lastSendPhiInputRef.current = sendPhiInput;
-    if (!sendCommittedRef.current) return;
-    sendCommittedRef.current = false;
-    setNoteSendResult(null);
-    const nextNonce = generateNonce();
-    setSendNonce(nextNonce);
-    sendNonceRef.current = nextNonce;
-  }, [sendPhiInput, isLocked]);
-
   const liveQuote = useMemo(
     () => quotePhiForUsd({ meta, nowPulse: nowFloor, usd: usdSample, currentStreakDays: 0, lifetimeUsdSoFar: 0 }, policy),
     [meta, nowFloor, usdSample, policy]
@@ -810,14 +812,67 @@ const ExhaleNote: React.FC<NoteProps> = ({
   }, [isLocked, locked, liveValuePhi, availablePhi]);
 
   const defaultSendPhi = isLocked ? cappedDefaultPhi : liveValuePhi;
-  const parsedSendPhi = isLocked ? parsePhiInput(sendPhiInput) : null;
-  const effectiveSendPhi = isLocked ? parsedSendPhi ?? defaultSendPhi : defaultSendPhi;
 
   const effectiveUsdPerPhi = isLocked && locked ? locked.usdPerPhi : usdPerPhi;
-  const effectiveValueUsd = effectiveSendPhi * effectiveUsdPerPhi;
+  const effectivePhiPerUsd = isLocked && locked ? locked.phiPerUsd : phiPerUsd;
+
+  const defaultSendUsd = useMemo(() => {
+    const usd = defaultSendPhi * (Number.isFinite(effectiveUsdPerPhi) ? effectiveUsdPerPhi : 0);
+    return Number.isFinite(usd) && usd > 0 ? usd : 0;
+  }, [defaultSendPhi, effectiveUsdPerPhi]);
+
+  const parsedSendPhi = useMemo(() => (isLocked ? parsePhiInput(sendPhiInput) : null), [isLocked, sendPhiInput]);
+  const parsedSendUsd = useMemo(() => (isLocked ? parseUsdInput(sendUsdInput) : null), [isLocked, sendUsdInput]);
+
+  const effectiveSendPhi = useMemo(() => {
+    if (!isLocked) return defaultSendPhi;
+
+    const rate = Number.isFinite(effectiveUsdPerPhi) ? effectiveUsdPerPhi : 0;
+    if (sendUnit === "phi") {
+      return parsedSendPhi ?? defaultSendPhi;
+    }
+
+    // USD → Φ
+    if (!rate || rate <= 0) return defaultSendPhi;
+    const usd = parsedSendUsd;
+    if (usd == null) return defaultSendPhi;
+    const phi = usd / rate;
+    if (!Number.isFinite(phi) || phi <= 0) return defaultSendPhi;
+    return Number(phi.toFixed(6));
+  }, [isLocked, sendUnit, parsedSendPhi, parsedSendUsd, defaultSendPhi, effectiveUsdPerPhi]);
+
+  const effectiveValueUsd = useMemo(() => {
+    const usd = effectiveSendPhi * (Number.isFinite(effectiveUsdPerPhi) ? effectiveUsdPerPhi : 0);
+    return Number.isFinite(usd) && usd > 0 ? usd : 0;
+  }, [effectiveSendPhi, effectiveUsdPerPhi]);
 
   const sendPhiOverBalance =
     typeof availablePhi === "number" && Number.isFinite(availablePhi) && effectiveSendPhi > availablePhi + 1e-9;
+
+  /**
+   * If user has already "committed" a send (via print/save),
+   * any subsequent amount change must invalidate the prior send result and rotate nonce.
+   */
+  const effectiveSendPhiCanon = useMemo(() => {
+    return Number.isFinite(effectiveSendPhi) ? effectiveSendPhi.toFixed(6) : "";
+  }, [effectiveSendPhi]);
+
+  useEffect(() => {
+    if (!isLocked) {
+      lastSendPhiCanonRef.current = effectiveSendPhiCanon;
+      return;
+    }
+    if (lastSendPhiCanonRef.current === effectiveSendPhiCanon) return;
+    lastSendPhiCanonRef.current = effectiveSendPhiCanon;
+
+    if (!sendCommittedRef.current) return;
+    sendCommittedRef.current = false;
+    setNoteSendResult(null);
+
+    const nextNonce = generateNonce();
+    setSendNonce(nextNonce);
+    sendNonceRef.current = nextNonce;
+  }, [effectiveSendPhiCanon, isLocked]);
 
   /* Build SVG for preview */
   const buildCurrentSVG = useCallback((): string => {
@@ -944,7 +999,12 @@ const ExhaleNote: React.FC<NoteProps> = ({
       setLocked(payload);
 
       const cap = typeof availablePhi === "number" && Number.isFinite(availablePhi) ? availablePhi : sealed.valuePhi;
-      setSendPhiInput(fTiny(Math.max(0, Math.min(sealed.valuePhi, cap))));
+      const initialPhi = Number(fTiny(Math.max(0, Math.min(sealed.valuePhi, cap))));
+      const initialPhiStr = fTiny(Math.max(0, Math.min(sealed.valuePhi, cap)));
+
+      setSendUnit("phi");
+      setSendPhiInput(initialPhiStr);
+      setSendUsdInput(formatUsdInput(initialPhi * quote.usdPerPhi));
 
       {
         const nextNonce = generateNonce();
@@ -1143,7 +1203,7 @@ const ExhaleNote: React.FC<NoteProps> = ({
     }
     const payload = buildNoteSendPayload();
     if (!payload) {
-      window.alert("Enter a valid Φ amount to send.");
+      window.alert("Enter a valid amount to send.");
       return false;
     }
     try {
@@ -1350,11 +1410,11 @@ const ExhaleNote: React.FC<NoteProps> = ({
   const displayPulse = isLocked && locked ? locked.lockedPulse : nowFloor;
   const displayPhi = isLocked ? effectiveSendPhi : liveValuePhi;
   const displayUsd = isLocked ? effectiveValueUsd : valueUsdIndicative;
-  const displayUsdPerPhi = isLocked && locked ? locked.usdPerPhi : usdPerPhi;
-  const displayPhiPerUsd = isLocked && locked ? locked.phiPerUsd : phiPerUsd;
+  const displayUsdPerPhi = effectiveUsdPerPhi;
+  const displayPhiPerUsd = effectivePhiPerUsd;
   const displayPremium = isLocked ? effectiveSendPhi : livePremium;
-  const phiParts = formatPhiParts(displayPhi);
 
+  const phiParts = useMemo(() => formatPhiParts(displayPhi), [displayPhi]);
   const noteTitle = useMemo(() => `☤KAI ${fPulse(displayPulse)}`, [displayPulse]);
 
   /* ────────────────────────────────────────────────────────────────────────────
@@ -1524,6 +1584,31 @@ const ExhaleNote: React.FC<NoteProps> = ({
     [isLocked, currentGuide.optional, guideKey, guideSteps.length, setGuideField]
   );
 
+  /**
+   * Send unit toggle:
+   * - Only enabled after lock
+   * - Switching keeps the underlying amount (Φ) consistent by translating current effective φ to the other unit.
+   */
+  const setSendUnitSafe = useCallback(
+    (next: SendUnit) => {
+      if (!isLocked) return;
+      if (next === sendUnit) return;
+
+      const phi = effectiveSendPhi;
+      const rate = Number.isFinite(effectiveUsdPerPhi) ? effectiveUsdPerPhi : 0;
+
+      if (next === "phi") {
+        setSendPhiInput(Number.isFinite(phi) && phi > 0 ? fTiny(phi) : fTiny(defaultSendPhi));
+      } else {
+        const usd = rate > 0 ? phi * rate : defaultSendUsd;
+        setSendUsdInput(formatUsdInput(usd));
+      }
+
+      setSendUnit(next);
+    },
+    [isLocked, sendUnit, effectiveSendPhi, effectiveUsdPerPhi, defaultSendPhi, defaultSendUsd]
+  );
+
   /* UI */
   return (
     <div data-kk-scope={uid} className={`kk-note kk-note--guide ${className ?? ""}`} style={breathStyle}>
@@ -1673,18 +1758,14 @@ const ExhaleNote: React.FC<NoteProps> = ({
               <div className="kk-qaHead">
                 <div className="kk-qaMeta" title="Step">
                   <IconSpark />
-                  <span className="kk-mono">
-                    {isLocked ? "LOCKED" : `${guideIdx + 1}/${guideSteps.length}`}
-                  </span>
+                  <span className="kk-mono">{isLocked ? "LOCKED" : `${guideIdx + 1}/${guideSteps.length}`}</span>
                 </div>
                 <div className="kk-qaTag" title="Field">
                   {currentGuide.label}
                 </div>
               </div>
 
-              <div className="kk-qaPrompt">
-                {isLocked ? "Locked — only Send Amount can change." : currentGuide.prompt}
-              </div>
+              <div className="kk-qaPrompt">{isLocked ? "Locked — only Send Amount can change." : currentGuide.prompt}</div>
 
               <div className="kk-qaRow">
                 <input
@@ -1760,12 +1841,45 @@ const ExhaleNote: React.FC<NoteProps> = ({
             </div>
 
             <div className="kk-sendbar__right">
+              {/* Unit toggle */}
+              <div className="kk-sendbar__unit" role="group" aria-label="amount unit">
+                <button
+                  type="button"
+                  className={`kk-sendbar__unitBtn ${sendUnit === "phi" ? "is-on" : ""}`}
+                  onClick={() => setSendUnitSafe("phi")}
+                  disabled={!isLocked}
+                  aria-pressed={sendUnit === "phi"}
+                  title="Enter Φ"
+                >
+                  Φ
+                </button>
+                <button
+                  type="button"
+                  className={`kk-sendbar__unitBtn ${sendUnit === "usd" ? "is-on" : ""}`}
+                  onClick={() => setSendUnitSafe("usd")}
+                  disabled={!isLocked}
+                  aria-pressed={sendUnit === "usd"}
+                  title="Enter USD"
+                >
+                  $
+                </button>
+              </div>
+
               <div className="kk-sendbar__inputWrap">
-                <span className="kk-sendbar__prefix">Φ</span>
+                <span className="kk-sendbar__prefix">{sendUnit === "phi" ? "Φ" : "$"}</span>
                 <input
-                  value={sendPhiInput}
-                  onChange={(e) => setSendPhiInput(e.target.value)}
-                  placeholder={isLocked ? fTiny(defaultSendPhi) : "Render to set amount"}
+                  value={sendUnit === "phi" ? sendPhiInput : sendUsdInput}
+                  onChange={(e) => {
+                    if (sendUnit === "phi") setSendPhiInput(e.target.value);
+                    else setSendUsdInput(e.target.value);
+                  }}
+                  placeholder={
+                    !isLocked
+                      ? "Render to set amount"
+                      : sendUnit === "phi"
+                        ? fTiny(defaultSendPhi)
+                        : formatUsdInput(defaultSendUsd)
+                  }
                   disabled={!isLocked}
                   className={`kk-sendbar__input ${sendPhiOverBalance ? "is-error" : ""}`}
                   inputMode="decimal"
@@ -1774,7 +1888,16 @@ const ExhaleNote: React.FC<NoteProps> = ({
               </div>
 
               <div className="kk-sendbar__meta">
-                <div className="kk-sendbar__usd">≈ {fUsd(effectiveValueUsd)}</div>
+                <div className="kk-sendbar__usd">
+                  {sendUnit === "phi" ? (
+                    <>≈ {fUsd(effectiveValueUsd)}</>
+                  ) : (
+                    <>
+                      ≈ Φ <span className="kk-mono">{fTiny(effectiveSendPhi)}</span>
+                    </>
+                  )}
+                </div>
+
                 {isLocked && typeof availablePhi === "number" && Number.isFinite(availablePhi) ? (
                   <div className="kk-sendbar__hint">
                     Available: <span className="kk-mono">{fTiny(availablePhi)}</span> {sendPhiOverBalance ? "· exceeds" : ""}
