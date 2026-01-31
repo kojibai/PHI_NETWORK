@@ -1058,7 +1058,8 @@ export default function VerifyPage(): ReactElement {
     Boolean(noteSendRecord?.confirmed) ||
     (noteSendMeta ? isNoteClaimed(noteSendMeta.parentCanonical, noteSendMeta.transferNonce) : false);
   const noteClaimStatus = noteSendMeta ? (noteClaimed ? "CLAIMED" : "UNCLAIMED") : null;
-  const isExhaleNoteUpload = Boolean(noteSendMeta || noteSvgFromPng || noteProofBundleJson);
+  const isNoteUpload = Boolean(noteSendMeta || noteSendPayloadRaw || noteSvgFromPng);
+  const isExhaleNoteUpload = isNoteUpload;
 
   useEffect(() => {
     if (!noteSendMeta || noteClaimed) return;
@@ -3306,10 +3307,10 @@ React.useEffect(() => {
     panel === "inhale" ? "Inhale" : panel === "capsule" ? "Vessel" : panel === "proof" ? "Proof" : panel === "zk" ? "ZK" : "Audit";
   const detectedStatus = svgText.trim()
     ? "Detected: Sigil-Glyph (SVG) — Full attestation"
-    : noteSendMeta || noteSvgFromPng || noteProofBundleJson
+    : isNoteUpload
       ? "Detected: Kai-Note (PNG) — Value note"
       : sharedReceipt
-        ? "Detected: Sigil-Seal (PNG) — Quick verify"
+        ? "Detected: Sigil-Seal (PNG) — Proof seal"
         : "";
 
   const onDragOver = useCallback((e: React.DragEvent) => {
