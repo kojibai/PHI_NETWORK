@@ -3401,10 +3401,18 @@ React.useEffect(() => {
 
           ) : null}
           {proofCapsule && canShowNotePreview ? (
-            <button type="button" className="vnote-card" onClick={openNote} aria-label="Open Exhale note" title="Open Exhale note">
+            <div className="vnote-row" aria-label="Note preview">
               <span className="vnote-label">Note</span>
-              <span className="vnote-preview" aria-hidden="true" dangerouslySetInnerHTML={{ __html: notePreviewSvg }} />
-            </button>
+              <button
+                type="button"
+                className="vnote-preview-btn"
+                onClick={openNote}
+                aria-label="Open Exhale note"
+                title="Open Exhale note"
+              >
+                <span className="vnote-preview" aria-hidden="true" dangerouslySetInnerHTML={{ __html: notePreviewSvg }} />
+              </button>
+            </div>
           ) : null}
         </div>
 
