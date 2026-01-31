@@ -408,6 +408,20 @@ html.verify-shell, body.verify-shell{
   color: rgba(230,240,255,0.9);
   background: rgba(18,20,30,0.35);
 }
+.vnote-claim-wrap{
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.vnote-claim-meta{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  font-size: 0.58rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(200,224,255,0.8);
+}
 .vnote-claim--unclaimed{
   border-color: rgba(79,197,255,0.6);
   color: rgba(165,227,255,0.95);

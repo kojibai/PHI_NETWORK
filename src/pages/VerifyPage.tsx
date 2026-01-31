@@ -59,7 +59,7 @@ import { insertPngTextChunks, readPngTextChunk } from "../utils/pngChunks";
 import { getKaiPulseEternalInt } from "../SovereignSolar";
 import { getSendRecordByNonce, listen, markConfirmedByNonce } from "../utils/sendLedger";
 import { recordSigilTransferMovement } from "../utils/sigilTransferRegistry";
-import { isNoteClaimed, markNoteClaimed } from "../components/SigilExplorer/registryStore";
+import { getNoteClaimInfo, getNoteClaimLeader, isNoteClaimed, markNoteClaimed } from "../components/SigilExplorer/registryStore";
 import { pullAndImportRemoteUrls } from "../components/SigilExplorer/remotePull";
 import { useKaiTicker } from "../hooks/useKaiTicker";
 import { useValuation } from "./SigilPage/useValuation";
@@ -117,6 +117,15 @@ function formatProofValue(value: unknown): string {
   }
 }
 
+function formatClaimTimestamp(value: number | null): string {
+  if (!value || !Number.isFinite(value)) return "—";
+  try {
+    return new Date(value).toLocaleString();
+  } catch {
+    return "—";
+  }
+}
+
 async function sha256Bytes(data: Uint8Array): Promise<string> {
   return (await sha256Hex(data)).toLowerCase();
 }
@@ -139,6 +148,7 @@ type NoteSendMeta = {
   amountPhi?: number;
   amountUsd?: number;
   childCanonical?: string;
+  transferLeafHashSend?: string;
 };
 
 function buildNoteSendMetaFromObject(value: unknown): NoteSendMeta | null {
@@ -148,8 +158,9 @@ function buildNoteSendMetaFromObject(value: unknown): NoteSendMeta | null {
   const amountPhi = typeof value.amountPhi === "number" && Number.isFinite(value.amountPhi) ? value.amountPhi : undefined;
   const amountUsd = typeof value.amountUsd === "number" && Number.isFinite(value.amountUsd) ? value.amountUsd : undefined;
   const childCanonical = typeof value.childCanonical === "string" ? value.childCanonical.trim() : undefined;
+  const transferLeafHashSend = typeof value.transferLeafHashSend === "string" ? value.transferLeafHashSend.trim() : undefined;
   if (!parentCanonical || !transferNonce) return null;
-  return { parentCanonical, transferNonce, amountPhi, amountUsd, childCanonical };
+  return { parentCanonical, transferNonce, amountPhi, amountUsd, childCanonical, transferLeafHashSend };
 }
 
 function parseNoteSendMeta(raw: string | null): NoteSendMeta | null {
@@ -173,6 +184,14 @@ function parseNoteSendPayload(raw: string | null): Record<string, unknown> | nul
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function readRecordString(value: Record<string, unknown> | null | undefined, key: string): string | null {
+  if (!value) return null;
+  const raw = value[key];
+  if (typeof raw !== "string") return null;
+  const trimmed = raw.trim();
+  return trimmed ? trimmed : null;
 }
 
 function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
@@ -1054,10 +1073,31 @@ export default function VerifyPage(): ReactElement {
     () => (noteSendMeta ? getSendRecordByNonce(noteSendMeta.parentCanonical, noteSendMeta.transferNonce) : null),
     [noteSendMeta, ledgerTick, registryTick],
   );
+  const noteClaimInfo = useMemo(
+    () => (noteSendMeta ? getNoteClaimInfo(noteSendMeta.parentCanonical, noteSendMeta.transferNonce) : null),
+    [noteSendMeta, registryTick],
+  );
+  const noteClaimLeader = useMemo(
+    () => (noteSendMeta ? getNoteClaimLeader(noteSendMeta.parentCanonical) : null),
+    [noteSendMeta, registryTick],
+  );
+  const noteClaimedAt = noteClaimInfo?.claimedAt || null;
+  const noteClaimNonce = noteClaimInfo?.nonce ?? noteSendMeta?.transferNonce ?? "";
+  const noteClaimLeaderNonce = noteClaimLeader?.nonce ?? "";
+  const noteClaimTransferHash =
+    noteClaimInfo?.transferLeafHash ??
+    noteSendMeta?.transferLeafHashSend ??
+    readRecordString(noteSendPayloadRaw, "transferLeafHashSend") ??
+    noteSendRecord?.transferLeafHashSend ??
+    "";
   const noteClaimed =
     Boolean(noteSendRecord?.confirmed) ||
     (noteSendMeta ? isNoteClaimed(noteSendMeta.parentCanonical, noteSendMeta.transferNonce) : false);
   const noteClaimStatus = noteSendMeta ? (noteClaimed ? "CLAIMED — nonce owned" : "UNCLAIMED — nonce available") : null;
+  const noteClaimTimestampLabel = useMemo(() => formatClaimTimestamp(noteClaimedAt), [noteClaimedAt]);
+  const noteClaimNonceShort = noteClaimNonce ? ellipsizeMiddle(noteClaimNonce, 8, 6) : "—";
+  const noteClaimLeaderShort = noteClaimLeaderNonce ? ellipsizeMiddle(noteClaimLeaderNonce, 8, 6) : "—";
+  const noteClaimHashShort = noteClaimTransferHash ? ellipsizeMiddle(noteClaimTransferHash, 10, 8) : "—";
   const isNoteUpload = Boolean(noteSendMeta || noteSendPayloadRaw || noteSvgFromPng);
   const isExhaleNoteUpload = isNoteUpload;
 
@@ -1474,10 +1514,16 @@ export default function VerifyPage(): ReactElement {
     const key = `${noteSendMeta.parentCanonical}|${noteSendMeta.transferNonce}`;
     if (noteSendConfirmedRef.current === key) return;
     noteSendConfirmedRef.current = key;
+    const transferLeafHash =
+      noteSendMeta.transferLeafHashSend ??
+      readRecordString(noteSendPayloadRaw, "transferLeafHashSend") ??
+      noteSendRecord?.transferLeafHashSend ??
+      undefined;
     try {
       markConfirmedByNonce(noteSendMeta.parentCanonical, noteSendMeta.transferNonce);
       markNoteClaimed(noteSendMeta.parentCanonical, noteSendMeta.transferNonce, {
         childCanonical: noteSendMeta.childCanonical,
+        transferLeafHash,
       });
       if (noteSendMeta.childCanonical && noteSendMeta.amountPhi) {
         recordSigilTransferMovement({
@@ -1491,7 +1537,7 @@ export default function VerifyPage(): ReactElement {
       // eslint-disable-next-line no-console
       console.error("note send confirm failed", err);
     }
-  }, [noteSendMeta]);
+  }, [noteSendMeta, noteSendPayloadRaw, noteSendRecord]);
 
   const runOwnerAuthFlow = useCallback(
     async (args: {
@@ -3469,11 +3515,27 @@ React.useEffect(() => {
                   <div className="vreceipt-note-left">
                     <div className="vreceipt-label">☤Kai-Note (Legal Tender)</div>
                     {noteClaimStatus ? (
-                      <div
-                        className={`vnote-claim ${noteClaimed ? "vnote-claim--claimed" : "vnote-claim--unclaimed"}`}
-                        title={noteClaimed ? "Nonce owned: this note has been claimed." : "Nonce available: this note has not been claimed yet."}
-                      >
-                        {noteClaimStatus}
+                      <div className="vnote-claim-wrap">
+                        <div
+                          className={`vnote-claim ${noteClaimed ? "vnote-claim--claimed" : "vnote-claim--unclaimed"}`}
+                          title={
+                            noteClaimed
+                              ? `Nonce owned: ${noteClaimNonce || "—"}\nClaimed: ${noteClaimTimestampLabel}\nLeaf hash: ${noteClaimTransferHash || "—"}`
+                              : "Nonce available: this note has not been claimed yet."
+                          }
+                        >
+                          {noteClaimStatus}
+                        </div>
+                        {noteClaimed && noteClaimNonce ? (
+                          <div className="vnote-claim-meta" aria-label="Note claim metadata">
+                            <span className="mono">nonce {noteClaimNonceShort}</span>
+                            <span>claimed {noteClaimTimestampLabel}</span>
+                            {noteClaimTransferHash ? <span className="mono">hash {noteClaimHashShort}</span> : null}
+                            {noteClaimLeaderNonce && noteClaimLeaderNonce !== noteClaimNonce ? (
+                              <span className="mono">leader {noteClaimLeaderShort}</span>
+                            ) : null}
+                          </div>
+                        ) : null}
                       </div>
                     ) : null}
                   </div>
