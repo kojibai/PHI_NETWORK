@@ -759,6 +759,7 @@ html.verify-shell, body.verify-shell{
 }
 .vdrop-keypill{
   align-items: center;
+  gap: 0;
 }
 .vdrop-keymark{
   width: 16px;
@@ -772,6 +773,7 @@ html.verify-shell, body.verify-shell{
   font-weight: 900;
   text-transform: uppercase;
   color: var(--ink);
+  margin-left: 0;
 }
 
 .vdrop-helper{
