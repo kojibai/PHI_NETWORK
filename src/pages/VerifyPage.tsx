@@ -69,6 +69,12 @@ import type { VerifiedCardData } from "../og/types";
 import { jcsCanonicalize } from "../utils/jcs";
 import { svgCanonicalForHash } from "../utils/svgProof";
 import { svgStringToPngBlob, triggerDownload } from "../components/exhale-note/svgToPng";
+import NotePrinter from "../components/ExhaleNote";
+import { buildNotePayload } from "../components/verifier/utils/notePayload";
+import { buildBanknoteSVG } from "../components/exhale-note/banknoteSvg";
+import type { BanknoteInputs as NoteBanknoteInputs } from "../components/exhale-note/types";
+import { safeShowDialog } from "../components/verifier/utils/modal";
+import type { SigilMetadata } from "../components/verifier/types/local";
 import useRollingChartSeries from "../components/VerifierStamper/hooks/useRollingChartSeries";
 import { BREATH_MS } from "../components/valuation/constants";
 import {
@@ -1078,6 +1084,8 @@ export default function VerifyPage(): ReactElement {
   const [openZkProof, setOpenZkProof] = useState<boolean>(false);
   const [openZkInputs, setOpenZkInputs] = useState<boolean>(false);
   const [openZkHints, setOpenZkHints] = useState<boolean>(false);
+  const noteDlgRef = useRef<HTMLDialogElement>(null);
+  const [noteOpen, setNoteOpen] = useState<boolean>(false);
 
   // Live chart popover
   const [chartOpen, setChartOpen] = useState<boolean>(false);
@@ -2678,6 +2686,85 @@ body: [
     };
   }, [hasKASAuthSig, result.status, sealKAS, sealPopover, sealStateLabel, sealZK]);
 
+  const noteMeta = useMemo(() => {
+    if (result.status !== "ok") return null;
+    const raw = result.embedded.raw;
+    return isRecord(raw) ? (raw as SigilMetadata) : null;
+  }, [result]);
+
+  const notePulseNow = useMemo(() => currentPulse ?? getKaiPulseEternalInt(new Date()), [currentPulse]);
+
+  const noteInitial = useMemo<NoteBanknoteInputs>(() => {
+    const base = buildNotePayload({
+      meta: noteMeta,
+      sigilSvgRaw: svgText.trim() ? svgText.trim() : null,
+      verifyUrl: currentVerifyUrl,
+      pulseNow: notePulseNow,
+    });
+    const rawBundle = embeddedProof?.raw;
+    const rawRecord = isRecord(rawBundle) ? rawBundle : null;
+    const proofBundleJson = rawRecord ? JSON.stringify(rawRecord) : "";
+    const bundleHashValue =
+      embeddedProof?.bundleHash ??
+      sharedReceipt?.bundleHash ??
+      (rawRecord && typeof rawRecord.bundleHash === "string" ? rawRecord.bundleHash : "");
+    const receiptHashValue =
+      embeddedProof?.receiptHash ??
+      sharedReceipt?.receiptHash ??
+      (rawRecord && typeof rawRecord.receiptHash === "string" ? rawRecord.receiptHash : "");
+    const verifiedAtPulseValue =
+      typeof embeddedProof?.verifiedAtPulse === "number"
+        ? embeddedProof.verifiedAtPulse
+        : typeof sharedReceipt?.verifiedAtPulse === "number"
+          ? sharedReceipt.verifiedAtPulse
+          : rawRecord && typeof rawRecord.verifiedAtPulse === "number"
+            ? rawRecord.verifiedAtPulse
+            : undefined;
+    const capsuleHashValue =
+      embeddedProof?.capsuleHash ??
+      sharedReceipt?.capsuleHash ??
+      (rawRecord && typeof rawRecord.capsuleHash === "string" ? rawRecord.capsuleHash : "");
+    const svgHashValue =
+      embeddedProof?.svgHash ?? sharedReceipt?.svgHash ?? (rawRecord && typeof rawRecord.svgHash === "string" ? rawRecord.svgHash : "");
+
+    return {
+      ...base,
+      proofBundleJson,
+      bundleHash: bundleHashValue,
+      receiptHash: receiptHashValue,
+      verifiedAtPulse: verifiedAtPulseValue,
+      capsuleHash: capsuleHashValue,
+      svgHash: svgHashValue,
+    };
+  }, [currentVerifyUrl, embeddedProof, noteMeta, notePulseNow, sharedReceipt, svgText]);
+
+  const canShowNotePreview = result.status === "ok" && Boolean(svgText.trim());
+  const notePreviewSvg = useMemo(() => {
+    if (!canShowNotePreview) return "";
+    const valuePhi = displayPhi != null ? displayPhi.toFixed(4) : noteInitial.valuePhi ?? "";
+    const valueUsd = displayUsd != null ? fmtUsd(displayUsd) : "";
+    return buildBanknoteSVG({
+      ...noteInitial,
+      valuePhi,
+      valueUsd,
+      sigilSvg: svgText.trim(),
+      verifyUrl: currentVerifyUrl,
+    });
+  }, [canShowNotePreview, currentVerifyUrl, displayPhi, displayUsd, noteInitial, svgText]);
+
+  const openNote = useCallback(() => {
+    if (!noteDlgRef.current) return;
+    safeShowDialog(noteDlgRef.current);
+    setNoteOpen(true);
+  }, []);
+
+  const closeNote = useCallback(() => {
+    if (!noteDlgRef.current) return;
+    noteDlgRef.current.close();
+    noteDlgRef.current.setAttribute("data-open", "false");
+    setNoteOpen(false);
+  }, []);
+
   const hasSvgBytes = Boolean(svgText.trim());
   const expectedSvgHash = sharedReceipt?.svgHash ?? embeddedProof?.svgHash ?? "";
   const identityStatusLabel = hasKASOwnerSig ? ownerAuthStatus || "Not present" : "";
@@ -3313,6 +3400,12 @@ React.useEffect(() => {
             </div>
 
           ) : null}
+          {proofCapsule && canShowNotePreview ? (
+            <button type="button" className="vnote-card" onClick={openNote} aria-label="Open Exhale note" title="Open Exhale note">
+              <span className="vnote-label">Note</span>
+              <span className="vnote-preview" aria-hidden="true" dangerouslySetInnerHTML={{ __html: notePreviewSvg }} />
+            </button>
+          ) : null}
         </div>
 
       </header>
@@ -3382,6 +3475,42 @@ React.useEffect(() => {
           </div>
         </div>
       ) : null}
+
+      <dialog
+        ref={noteDlgRef}
+        className="glass-modal fullscreen"
+        id="verify-note-dialog"
+        data-open={noteOpen ? "true" : "false"}
+        aria-label="Exhale Note"
+      >
+        <div className="modal-viewport" style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+          <div className="modal-topbar" style={{ display: "grid", gridTemplateColumns: "1fr auto", alignItems: "center", padding: "8px 10px" }}>
+            <div style={{ paddingInline: 12, fontSize: 12, color: "var(--dim)" }}>Kairos — Exhale Note</div>
+            <button
+              className="close-btn holo"
+              data-aurora="true"
+              aria-label="Close"
+              title="Close"
+              onClick={closeNote}
+              style={{ justifySelf: "end", marginRight: 8 }}
+            >
+              ×
+            </button>
+          </div>
+
+          <div style={{ flex: "1 1 auto", minHeight: 0, overflowY: "auto" }}>
+            {valuationPayload && svgText.trim() ? (
+              <NotePrinter
+                meta={valuationPayload}
+                availablePhi={ledgerBalance?.remaining}
+                initial={noteInitial}
+              />
+            ) : (
+              <div style={{ padding: 16, color: "var(--dim)" }}>Load and verify a sigil to render an exhale note.</div>
+            )}
+          </div>
+        </div>
+      </dialog>
 
       {/* Body */}
       <div className="vbody">
