@@ -3307,9 +3307,9 @@ React.useEffect(() => {
   const detectedStatus = svgText.trim()
     ? "Detected: Sigil-Glyph (SVG) — Full attestation"
     : noteSendMeta || noteSvgFromPng || noteProofBundleJson
-      ? "Detected: Kai-Note (PNG/PDF) — Value note"
+      ? "Detected: Kai-Note (PNG) — Value note"
       : sharedReceipt
-        ? "Detected: Sigil-Seal (PNG/PDF) — Quick verify"
+        ? "Detected: Sigil-Seal (PNG) — Quick verify"
         : "";
 
   const onDragOver = useCallback((e: React.DragEvent) => {
@@ -3613,7 +3613,7 @@ React.useEffect(() => {
             <div className="vcard" data-panel="inhale">
               <div className="vcard-head">
                 <div className="vcard-title">Inhale Sigil</div>
-                <div className="vcard-sub">Drop Sigil-Glyph (SVG) or Sigil-Seal / Kai-Note (PNG/PDF) to derive Φ-Key.</div>
+                <div className="vcard-sub">Drop Sigil-Glyph (SVG) or Sigil-Seal / Kai-Note (PNG) to derive Φ-Key.</div>
               </div>
  
               <div className="vcard-body vfit">
@@ -3655,11 +3655,10 @@ React.useEffect(() => {
                         </span>
                         <span className="vdrop-copy">
                           <span className="vdrop-txt">Inhale Sigil</span>
-                          <span className="vdrop-sub">{dragActive ? "Drop to Inhale" : "Sigil-Glyph (SVG) or Sigil-Seal / Kai-Note (PNG/PDF)"}</span>
+                          <span className="vdrop-sub">{dragActive ? "Drop to Inhale" : "Sigil-Glyph (SVG) or Sigil-Seal / Kai-Note (PNG)"}</span>
                           <span className="vdrop-pills" aria-label="Supported formats">
                             <span className="vdrop-pill">SVG</span>
                             <span className="vdrop-pill">PNG</span>
-                            <span className="vdrop-pill">PDF</span>
                           </span>
                         </span>
                         <span className="vdrop-mark vdrop-mark--phi vdrop-keypill" aria-label="Derives key">
@@ -3667,7 +3666,7 @@ React.useEffect(() => {
                           <span className="vdrop-mark-label">KEY</span>
                         </span>
                       </button>
-                      <div className="vdrop-helper">Original exports only — screenshots won’t verify.</div>
+                      <div className="vdrop-helper">Original mints only — screenshots won’t verify.</div>
                       {detectedStatus ? <div className="vdrop-detect">{detectedStatus}</div> : null}
 
                       <div className="vcontrol-row" aria-label="Quick actions">
@@ -3705,7 +3704,7 @@ React.useEffect(() => {
 
                     <div className="vconsole" aria-label="ΦKey preview">
                       <pre className="vpre">
-                        <code className="mono">{svgPreview || "Inhale a Sigil-Glyph (SVG) or Sigil-Seal / Kai-Note (PNG/PDF) to begin…"}</code>
+                        <code className="mono">{svgPreview || "Inhale a Sigil-Glyph (SVG) or Sigil-Seal / Kai-Note (PNG) to begin…"}</code>
                       </pre>
                       <div className="vconsole-foot">
                         <div className="vchip" title="Sovereign verification rail">
@@ -3720,7 +3719,7 @@ React.useEffect(() => {
                   </div>
 
                   <div className="vdropzone-hint" aria-hidden="true">
-                    Drag & drop Sigil-Glyph (SVG) or Sigil-Seal / Kai-Note (PNG/PDF) anywhere in this panel
+                    Drag & drop Sigil-Glyph (SVG) or Sigil-Seal / Kai-Note (PNG) anywhere in this panel
                   </div>
                 </div>
 
