@@ -36,7 +36,7 @@ import {
   type ProofBundleLike,
 } from "../components/KaiVoh/verifierProof";
 import { extractProofBundleMetaFromSvg, type ProofBundleMeta } from "../utils/sigilMetadata";
-import { derivePhiKeyFromSig } from "../components/VerifierStamper/sigilUtils";
+import { derivePhiKeyFromSig, genNonce } from "../components/VerifierStamper/sigilUtils";
 import { tryVerifyGroth16 } from "../components/VerifierStamper/zk";
 import { isKASAuthorSig, type KASAuthorSig } from "../utils/authorSig";
 import {
@@ -55,7 +55,7 @@ import {
 import { assertionToJson, verifyOwnerWebAuthnAssertion } from "../utils/webauthnOwner";
 import { deriveOwnerPhiKeyFromReceive, type OwnerKeyDerivation } from "../utils/ownerPhiKey";
 import { base64UrlDecode, sha256Hex } from "../utils/sha256";
-import { readPngTextChunk } from "../utils/pngChunks";
+import { insertPngTextChunks, readPngTextChunk } from "../utils/pngChunks";
 import { getKaiPulseEternalInt } from "../SovereignSolar";
 import { getSendRecordByNonce, listen, markConfirmedByNonce } from "../utils/sendLedger";
 import { recordSigilTransferMovement } from "../utils/sigilTransferRegistry";
@@ -65,7 +65,8 @@ import type { SigilMetadataLite } from "../utils/valuation";
 import { downloadVerifiedCardPng } from "../og/downloadVerifiedCard";
 import type { VerifiedCardData } from "../og/types";
 import { jcsCanonicalize } from "../utils/jcs";
-import { embedProofMetadata, svgCanonicalForHash } from "../utils/svgProof";
+import { svgCanonicalForHash } from "../utils/svgProof";
+import { svgStringToPngBlob, triggerDownload } from "../components/exhale-note/svgToPng";
 import useRollingChartSeries from "../components/VerifierStamper/hooks/useRollingChartSeries";
 import { BREATH_MS } from "../components/valuation/constants";
 import {
@@ -152,15 +153,14 @@ function parseNoteSendMeta(raw: string | null): NoteSendMeta | null {
   }
 }
 
-function downloadTextFile(filename: string, text: string, mime: string): void {
-  const blob = new Blob([text], { type: mime });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.rel = "noopener";
-  a.click();
-  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+function parseNoteSendPayload(raw: string | null): Record<string, unknown> | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return isRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -850,7 +850,9 @@ export default function VerifyPage(): ReactElement {
   const [busy, setBusy] = useState<boolean>(false);
   const [sharedReceipt, setSharedReceipt] = useState<SharedReceipt | null>(initialReceiptResult.receipt);
   const [noteSendMeta, setNoteSendMeta] = useState<NoteSendMeta | null>(null);
+  const [noteSendPayloadRaw, setNoteSendPayloadRaw] = useState<Record<string, unknown> | null>(null);
   const [noteSvgFromPng, setNoteSvgFromPng] = useState<string>("");
+  const [noteProofBundleJson, setNoteProofBundleJson] = useState<string>("");
 
   const [proofCapsule, setProofCapsule] = useState<ProofCapsuleV1 | null>(null);
   const [capsuleHash, setCapsuleHash] = useState<string>("");
@@ -1267,7 +1269,9 @@ export default function VerifyPage(): ReactElement {
       setResult({ status: "idle" });
       setNotice("");
       setNoteSendMeta(null);
+      setNoteSendPayloadRaw(null);
       setNoteSvgFromPng("");
+      setNoteProofBundleJson("");
     },
     [slug],
   );
@@ -1279,7 +1283,9 @@ export default function VerifyPage(): ReactElement {
         return;
       }
       setNoteSendMeta(null);
+      setNoteSendPayloadRaw(null);
       setNoteSvgFromPng("");
+      setNoteProofBundleJson("");
       try {
         const buffer = await readFileArrayBuffer(file);
         const bytes = new Uint8Array(buffer);
@@ -1301,7 +1307,9 @@ export default function VerifyPage(): ReactElement {
         setResult({ status: "idle" });
         setNotice("Receipt PNG loaded.");
         setNoteSendMeta(parseNoteSendMeta(noteSendJson));
+        setNoteSendPayloadRaw(parseNoteSendPayload(noteSendJson));
         setNoteSvgFromPng(noteSvg ?? "");
+        setNoteProofBundleJson(text);
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Failed to read receipt PNG.";
         setResult({ status: "error", message: msg, slug });
@@ -1317,7 +1325,9 @@ export default function VerifyPage(): ReactElement {
         return;
       }
       setNoteSendMeta(null);
+      setNoteSendPayloadRaw(null);
       setNoteSvgFromPng("");
+      setNoteProofBundleJson("");
       try {
         const buffer = await readFileArrayBuffer(file);
         const receipt = parsePdfForSharedReceipt(buffer);
@@ -2921,20 +2931,58 @@ React.useEffect(() => {
     zkMeta?.zkPoseidonHash,
   ]);
 
-  const onDownloadNoteSvg = useCallback(() => {
+  const onDownloadNotePng = useCallback(async () => {
     if (!noteSvgFromPng) return;
     if (noteClaimed) return;
-    const nonce = noteSendMeta?.transferNonce ? `-${noteSendMeta.transferNonce.slice(0, 8)}` : "";
-    const filename = `kai-note${nonce}.svg`;
-    const bundleForExport = auditBundlePayload
-      ? noteSendMeta
-        ? { ...auditBundlePayload, noteSend: noteSendMeta }
-        : auditBundlePayload
+    const payloadBase = noteSendPayloadRaw
+      ? { ...noteSendPayloadRaw }
+      : noteSendMeta
+        ? {
+            parentCanonical: noteSendMeta.parentCanonical,
+            amountPhi: noteSendMeta.amountPhi,
+            amountUsd: noteSendMeta.amountUsd,
+            childCanonical: noteSendMeta.childCanonical,
+          }
+        : null;
+    const nextNonce = genNonce();
+    const noteSendPayload = payloadBase
+      ? {
+          ...payloadBase,
+          parentCanonical: payloadBase.parentCanonical || noteSendMeta?.parentCanonical,
+          amountPhi: noteSendMeta?.amountPhi ?? payloadBase.amountPhi,
+          amountUsd: noteSendMeta?.amountUsd ?? payloadBase.amountUsd,
+          transferNonce: nextNonce,
+        }
       : null;
-    const svgWithProof = bundleForExport ? embedProofMetadata(noteSvgFromPng, bundleForExport) : noteSvgFromPng;
-    downloadTextFile(filename, svgWithProof, "image/svg+xml");
+
+    if (noteSendPayload && "childCanonical" in noteSendPayload) {
+      delete (noteSendPayload as { childCanonical?: unknown }).childCanonical;
+    }
+
+    const nonce = nextNonce ? `-${nextNonce.slice(0, 8)}` : "";
+    const filename = `kai-note${nonce}.png`;
+    const png = await svgStringToPngBlob(noteSvgFromPng, 2400);
+    const noteSendJson = noteSendPayload ? JSON.stringify(noteSendPayload) : "";
+    const entries = [
+      noteProofBundleJson ? { keyword: "phi_proof_bundle", text: noteProofBundleJson } : null,
+      sharedReceipt?.bundleHash ? { keyword: "phi_bundle_hash", text: sharedReceipt.bundleHash } : null,
+      sharedReceipt?.receiptHash ? { keyword: "phi_receipt_hash", text: sharedReceipt.receiptHash } : null,
+      noteSendJson ? { keyword: "phi_note_send", text: noteSendJson } : null,
+      { keyword: "phi_note_svg", text: noteSvgFromPng },
+    ].filter((entry): entry is { keyword: string; text: string } => Boolean(entry));
+
+    if (entries.length === 0) {
+      triggerDownload(filename, png, "image/png");
+      confirmNoteSend();
+      return;
+    }
+
+    const bytes = new Uint8Array(await png.arrayBuffer());
+    const enriched = insertPngTextChunks(bytes, entries);
+    const finalBlob = new Blob([enriched as BlobPart], { type: "image/png" });
+    triggerDownload(filename, finalBlob, "image/png");
     confirmNoteSend();
-  }, [auditBundlePayload, confirmNoteSend, noteClaimed, noteSendMeta, noteSvgFromPng]);
+  }, [confirmNoteSend, noteClaimed, noteProofBundleJson, noteSendMeta, noteSendPayloadRaw, noteSvgFromPng, sharedReceipt]);
 
   const onDownloadVerifiedCard = useCallback(async () => {
     if (!verifiedCardData) return;
@@ -3216,9 +3264,9 @@ React.useEffect(() => {
                   <button
                     type="button"
                     className="vbtn vbtn--ghost"
-                    onClick={onDownloadNoteSvg}
-                    title={noteClaimed ? "Note already claimed" : "Download note SVG"}
-                    aria-label={noteClaimed ? "Note already claimed" : "Download note SVG"}
+                    onClick={onDownloadNotePng}
+                    title={noteClaimed ? "Note already claimed" : "Download note PNG"}
+                    aria-label={noteClaimed ? "Note already claimed" : "Download note PNG"}
                     disabled={noteClaimed}
                   >
                     ⬇︎Φ
