@@ -6,7 +6,7 @@ import type { Registry, SigilSharePayloadLoose } from "./types";
 import { USERNAME_CLAIM_KIND, type UsernameClaimPayload } from "../../types/usernameClaim";
 import { ingestUsernameClaimGlyph } from "../../utils/usernameClaimRegistry";
 import { normalizeClaimGlyphRef, normalizeUsername } from "../../utils/usernameClaim";
-import { resolveLineageBackwards } from "../../utils/sigilUrl";
+import { makeSigilUrlLoose, resolveLineageBackwards } from "../../utils/sigilUrl";
 import { getInMemorySigilUrls } from "../../utils/sigilRegistry";
 import { markConfirmedByNonce } from "../../utils/sendLedger";
 import {
@@ -44,6 +44,12 @@ export type AddUrlOptions = {
   persist?: boolean;
   source?: AddSource;
   enqueueToApi?: boolean;
+};
+
+type NoteClaimArgs = {
+  parentCanonical: string;
+  transferNonce: string;
+  childCanonical?: string;
 };
 
 export function isOnline(): boolean {
@@ -89,6 +95,26 @@ function normalizeCanonical(raw: string | undefined | null): string {
 
 function normalizeNonce(raw: string | undefined | null): string {
   return raw ? raw.trim() : "";
+}
+
+function buildNoteClaimPayload(args: NoteClaimArgs): SigilSharePayloadLoose {
+  const { parentCanonical, transferNonce, childCanonical } = args;
+  const payload: SigilSharePayloadLoose = {
+    transferDirection: "receive",
+    transferNonce,
+    parentCanonical,
+  };
+  if (childCanonical) {
+    payload.canonicalHash = childCanonical;
+    payload.childHash = childCanonical;
+    payload.hash = childCanonical;
+  }
+  return payload;
+}
+
+function buildNoteClaimUrl(args: NoteClaimArgs): string {
+  const payload = buildNoteClaimPayload(args);
+  return makeSigilUrlLoose(args.parentCanonical, payload, { absolute: true });
 }
 
 function hydrateNoteClaimsFromStorage(): boolean {
@@ -141,7 +167,11 @@ function ensureNoteClaimsHydrated(): void {
   hydrateNoteClaimsFromStorage();
 }
 
-export function markNoteClaimed(parentCanonical: string, transferNonce: string): boolean {
+export function markNoteClaimed(
+  parentCanonical: string,
+  transferNonce: string,
+  args?: { childCanonical?: string },
+): boolean {
   ensureNoteClaimsHydrated();
   const parentKey = normalizeCanonical(parentCanonical);
   const nonce = normalizeNonce(transferNonce);
@@ -151,6 +181,18 @@ export function markNoteClaimed(parentCanonical: string, transferNonce: string):
   set.add(nonce);
   noteClaimRegistry.set(parentKey, set);
   persistNoteClaimsToStorage();
+  const claimPayload = buildNoteClaimPayload({
+    parentCanonical: parentKey,
+    transferNonce: nonce,
+    childCanonical: args?.childCanonical,
+  });
+  const claimUrl = buildNoteClaimUrl({
+    parentCanonical: parentKey,
+    transferNonce: nonce,
+    childCanonical: args?.childCanonical,
+  });
+  upsertRegistryPayload(claimUrl, claimPayload);
+  enqueueInhaleKrystal(claimUrl, claimPayload);
   return true;
 }
 
@@ -474,9 +516,11 @@ export function addUrl(url: string, opts?: AddUrlOptions): boolean {
     const record = extracted as unknown as Record<string, unknown>;
     const parentHash = readStringField(record, "parentHash") ?? readStringField(record, "parentCanonical");
     const nonce = readStringField(record, "transferNonce") ?? readStringField(record, "nonce");
+    const childCanonical =
+      readStringField(record, "canonicalHash") ?? readStringField(record, "childHash") ?? readStringField(record, "hash");
     if (parentHash && nonce) {
       markConfirmedByNonce(parentHash, nonce);
-      markNoteClaimed(parentHash, nonce);
+      markNoteClaimed(parentHash, nonce, { childCanonical: childCanonical ?? undefined });
     }
   }
 

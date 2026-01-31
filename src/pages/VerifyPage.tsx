@@ -1409,7 +1409,9 @@ export default function VerifyPage(): ReactElement {
     noteSendConfirmedRef.current = key;
     try {
       markConfirmedByNonce(noteSendMeta.parentCanonical, noteSendMeta.transferNonce);
-      markNoteClaimed(noteSendMeta.parentCanonical, noteSendMeta.transferNonce);
+      markNoteClaimed(noteSendMeta.parentCanonical, noteSendMeta.transferNonce, {
+        childCanonical: noteSendMeta.childCanonical,
+      });
       if (noteSendMeta.childCanonical && noteSendMeta.amountPhi) {
         recordSigilTransferMovement({
           hash: noteSendMeta.childCanonical,
