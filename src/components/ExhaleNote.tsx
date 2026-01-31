@@ -196,6 +196,9 @@ function buildQrPayload(
   input: {
     verifyUrl?: string;
     proofBundleJson?: string;
+    kaiSignature?: string;
+    pulse?: number;
+    verifiedAtPulse?: number;
   },
   fallbackAbs: string
 ): string {
@@ -206,6 +209,9 @@ function resolveNoteVerifyUrl(
   input: {
     verifyUrl?: string;
     proofBundleJson?: string;
+    kaiSignature?: string;
+    pulse?: number;
+    verifiedAtPulse?: number;
   },
   fallbackAbs: string
 ): string {
@@ -215,11 +221,13 @@ function resolveNoteVerifyUrl(
   const hasSlug = /\/verify\/[^/?#]+/i.test(resolved);
   if (hasSlug) return resolved;
 
-  const pulse = parsed.proofCapsule?.pulse;
-  const sig = parsed.proofCapsule?.kaiSignature;
+  const pulse = parsed.proofCapsule?.pulse ?? input.pulse;
+  const sig = parsed.proofCapsule?.kaiSignature ?? input.kaiSignature;
+  const verifiedAtPulse = parsed.verifiedAtPulse ?? input.verifiedAtPulse;
   if (pulse != null && sig) {
     const base = /\/verify\/?$/i.test(resolved) ? resolved : undefined;
-    return buildVerifierUrl(pulse, sig, base, parsed.verifiedAtPulse);
+    const built = buildVerifierUrl(pulse, sig, base, verifiedAtPulse);
+    return resolveVerifyUrl(built, fallbackAbs);
   }
 
   return resolved;
@@ -725,13 +733,22 @@ const ExhaleNote: React.FC<NoteProps> = ({
     const valuationStampStr = usingLocked ? form.valuationStamp || locked!.seal.stamp : "";
 
     const verifyUrl = resolveNoteVerifyUrl(
-      { verifyUrl: form.verifyUrl, proofBundleJson: form.proofBundleJson },
+      {
+        verifyUrl: form.verifyUrl,
+        proofBundleJson: form.proofBundleJson,
+        kaiSignature: form.kaiSignature,
+        pulse: locked?.lockedPulse ?? Number(form.computedPulse || nowFloor),
+        verifiedAtPulse: form.verifiedAtPulse,
+      },
       defaultVerifyUrl
     );
     const qrPayload = buildQrPayload(
       {
         verifyUrl: form.verifyUrl,
         proofBundleJson: form.proofBundleJson,
+        kaiSignature: form.kaiSignature,
+        pulse: locked?.lockedPulse ?? Number(form.computedPulse || nowFloor),
+        verifiedAtPulse: form.verifiedAtPulse,
       },
       defaultVerifyUrl
     );
@@ -983,7 +1000,13 @@ const ExhaleNote: React.FC<NoteProps> = ({
     const amountPhi = effectiveSendPhi;
     if (!Number.isFinite(amountPhi) || amountPhi <= 0) return null;
     const verifyUrl = resolveNoteVerifyUrl(
-      { verifyUrl: form.verifyUrl, proofBundleJson: form.proofBundleJson },
+      {
+        verifyUrl: form.verifyUrl,
+        proofBundleJson: form.proofBundleJson,
+        kaiSignature: form.kaiSignature,
+        pulse: locked.lockedPulse,
+        verifiedAtPulse: form.verifiedAtPulse,
+      },
       defaultVerifyUrl
     );
     const transferNonce = resolveSendNonce();
@@ -1005,6 +1028,8 @@ const ExhaleNote: React.FC<NoteProps> = ({
     effectiveUsdPerPhi,
     form.verifyUrl,
     form.proofBundleJson,
+    form.kaiSignature,
+    form.verifiedAtPulse,
     form.valuationStamp,
     defaultVerifyUrl,
     originCanonical,
@@ -1046,13 +1071,22 @@ const ExhaleNote: React.FC<NoteProps> = ({
     if (!(await ensureNoteSend())) return;
 
     const verifyUrl = resolveNoteVerifyUrl(
-      { verifyUrl: form.verifyUrl, proofBundleJson: form.proofBundleJson },
+      {
+        verifyUrl: form.verifyUrl,
+        proofBundleJson: form.proofBundleJson,
+        kaiSignature: form.kaiSignature,
+        pulse: locked.lockedPulse,
+        verifiedAtPulse: form.verifiedAtPulse,
+      },
       defaultVerifyUrl
     );
     const qrPayload = buildQrPayload(
       {
         verifyUrl: form.verifyUrl,
         proofBundleJson: form.proofBundleJson,
+        kaiSignature: form.kaiSignature,
+        pulse: locked.lockedPulse,
+        verifiedAtPulse: form.verifiedAtPulse,
       },
       defaultVerifyUrl
     );
@@ -1131,13 +1165,22 @@ const ExhaleNote: React.FC<NoteProps> = ({
       if (!(await ensureNoteSend())) return;
 
       const verifyUrl = resolveNoteVerifyUrl(
-        { verifyUrl: form.verifyUrl, proofBundleJson: form.proofBundleJson },
+        {
+          verifyUrl: form.verifyUrl,
+          proofBundleJson: form.proofBundleJson,
+          kaiSignature: form.kaiSignature,
+          pulse: locked.lockedPulse,
+          verifiedAtPulse: form.verifiedAtPulse,
+        },
         defaultVerifyUrl
       );
       const qrPayload = buildQrPayload(
         {
           verifyUrl: form.verifyUrl,
           proofBundleJson: form.proofBundleJson,
+          kaiSignature: form.kaiSignature,
+          pulse: locked.lockedPulse,
+          verifiedAtPulse: form.verifiedAtPulse,
         },
         defaultVerifyUrl
       );
@@ -1190,13 +1233,22 @@ const ExhaleNote: React.FC<NoteProps> = ({
       if (!(await ensureNoteSend())) return;
 
       const verifyUrl = resolveNoteVerifyUrl(
-        { verifyUrl: form.verifyUrl, proofBundleJson: form.proofBundleJson },
+        {
+          verifyUrl: form.verifyUrl,
+          proofBundleJson: form.proofBundleJson,
+          kaiSignature: form.kaiSignature,
+          pulse: locked.lockedPulse,
+          verifiedAtPulse: form.verifiedAtPulse,
+        },
         defaultVerifyUrl
       );
       const qrPayload = buildQrPayload(
         {
           verifyUrl: form.verifyUrl,
           proofBundleJson: form.proofBundleJson,
+          kaiSignature: form.kaiSignature,
+          pulse: locked.lockedPulse,
+          verifiedAtPulse: form.verifiedAtPulse,
         },
         defaultVerifyUrl
       );
