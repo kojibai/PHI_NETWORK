@@ -487,6 +487,65 @@ function isPngFile(file: File): boolean {
   return name.endsWith(".png") || type === "image/png";
 }
 
+function isPdfFile(file: File): boolean {
+  const name = (file.name || "").toLowerCase();
+  const type = (file.type || "").toLowerCase();
+  return name.endsWith(".pdf") || type === "application/pdf";
+}
+
+function extractNearestJson(text: string, anchorIdx: number): unknown | null {
+  const left = Math.max(0, anchorIdx - 20000);
+  const right = Math.min(text.length, anchorIdx + 20000);
+  const slice = text.slice(left, right);
+  let start = slice.lastIndexOf("{", anchorIdx - left);
+  if (start < 0) return null;
+
+  let depth = 0;
+  let end = -1;
+  for (let i = start; i < slice.length; i += 1) {
+    const ch = slice[i];
+    if (ch === "{") depth += 1;
+    if (ch === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        end = i;
+        break;
+      }
+    }
+  }
+  if (end < 0) return null;
+  const raw = slice.slice(start, end + 1);
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+function parsePdfForSharedReceipt(buffer: ArrayBuffer): SharedReceipt | null {
+  const decoder = new TextDecoder("latin1");
+  const text = decoder.decode(new Uint8Array(buffer));
+  const anchors = [
+    "\"proofCapsule\"",
+    "\"bundleHash\"",
+    "\"receiptHash\"",
+    "\"verifierUrl\"",
+    "\"verifiedAtPulse\"",
+    "\"ownerPhiKey\"",
+  ];
+
+  for (const anchor of anchors) {
+    let idx = text.indexOf(anchor);
+    while (idx >= 0) {
+      const candidate = extractNearestJson(text, idx);
+      const receipt = buildSharedReceiptFromObject(candidate);
+      if (receipt) return receipt;
+      idx = text.indexOf(anchor, idx + anchor.length);
+    }
+  }
+  return null;
+}
+
 async function copyTextToClipboard(text: string): Promise<boolean> {
   const value = text.trim();
   if (!value) return false;
@@ -1200,10 +1259,43 @@ export default function VerifyPage(): ReactElement {
     [slug],
   );
 
+  const onPickReceiptPdf = useCallback(
+    async (file: File): Promise<void> => {
+      if (!isPdfFile(file)) {
+        setResult({ status: "error", message: "Select a receipt PDF with embedded proof metadata.", slug });
+        return;
+      }
+      setNoteSendMeta(null);
+      setNoteSvgFromPng("");
+      try {
+        const buffer = await readFileArrayBuffer(file);
+        const receipt = parsePdfForSharedReceipt(buffer);
+        if (!receipt) {
+          setSharedReceipt(null);
+          setResult({ status: "error", message: "Receipt PDF is missing embedded proof metadata.", slug });
+          return;
+        }
+        setSharedReceipt(receipt);
+        setSvgText("");
+        setResult({ status: "idle" });
+        setNotice("Receipt PDF loaded.");
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Failed to read receipt PDF.";
+        setResult({ status: "error", message: msg, slug });
+      }
+    },
+    [slug],
+  );
+
   const handleFiles = useCallback(
     (files: FileList | null | undefined): void => {
       if (!files || files.length === 0) return;
       const arr = Array.from(files);
+      const pdf = arr.find(isPdfFile);
+      if (pdf) {
+        void onPickReceiptPdf(pdf);
+        return;
+      }
       const png = arr.find(isPngFile);
       if (png) {
         void onPickReceiptPng(png);
@@ -1216,7 +1308,7 @@ export default function VerifyPage(): ReactElement {
       }
       void onPickFile(svg);
     },
-    [onPickFile, onPickReceiptPng, slug],
+    [onPickFile, onPickReceiptPng, onPickReceiptPdf, slug],
   );
 
   const runOwnerAuthFlow = useCallback(
@@ -3165,7 +3257,7 @@ React.useEffect(() => {
                     ref={pngFileRef}
                     className="vfile"
                     type="file"
-                    accept=".png,image/png"
+                    accept=".png,image/png,.pdf,application/pdf"
                     onChange={(e) => {
                       handleFiles(e.currentTarget.files);
                       e.currentTarget.value = "";

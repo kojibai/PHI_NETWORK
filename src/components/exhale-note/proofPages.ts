@@ -27,6 +27,12 @@ export interface ProofPagesParams {
 
   sigilSvg?: string;     // raw SVG for page 4 (sanitized)
   verifyUrl?: string;    // used for QR & link on pages 2/4
+  proofBundleJson?: string;
+  bundleHash?: string;
+  receiptHash?: string;
+  verifiedAtPulse?: number;
+  capsuleHash?: string;
+  svgHash?: string;
 }
 
 /* --- lightweight view helpers matching portal styles --- */
@@ -63,6 +69,12 @@ export function buildProofPagesHTML(p: ProofPagesParams): string {
 
   const verify = p.verifyUrl || "/";
   const qrSvg = makeQrSvgTagSafe(verify, 160, 2);
+  const bundleHash = p.bundleHash || "";
+  const receiptHash = p.receiptHash || "";
+  const verifiedAtPulse = p.verifiedAtPulse != null ? String(p.verifiedAtPulse) : "";
+  const capsuleHash = p.capsuleHash || "";
+  const svgHash = p.svgHash || "";
+  const proofBundleJson = p.proofBundleJson || "";
 
   // Optional ZK block
   const zkBlock =
@@ -76,6 +88,22 @@ export function buildProofPagesHTML(p: ProofPagesParams): string {
         ${cardTail}
       `
       : "";
+
+  const bundleBlock = `
+    ${cardHead("Verification Bundle")}
+      ${kvOpen}
+        ${codeLine("bundleHash", bundleHash || "—")}
+        ${codeLine("receiptHash", receiptHash || "—")}
+        ${codeLine("verifiedAtPulse", verifiedAtPulse || "—")}
+        ${codeLine("capsuleHash", capsuleHash || "—")}
+        ${codeLine("svgHash", svgHash || "—")}
+      ${kvClose}
+      <div style="margin-top:8px">
+        ${hint("Proof bundle JSON (embedded for PDF verification)")}
+        <pre class="out">${esc(proofBundleJson || "—")}</pre>
+      </div>
+    ${cardTail}
+  `;
 
   // Optional provenance table (newest first)
   let provDetail = "";
@@ -147,6 +175,7 @@ export function buildProofPagesHTML(p: ProofPagesParams): string {
       ${cardTail}
 
       ${zkBlock}
+      ${bundleBlock}
       ${provDetail}
 
       ${cardHead("QR • Verify Link (same as seal/QR)")}
