@@ -323,6 +323,57 @@ html.verify-shell, body.verify-shell{
 
 /* KPIs */
 .vkpis{ display:grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+/* KPI helper stack */
+.vkpi-stack{
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* Atlantean micro-pill (“official whisper”) under Φ-Key */
+.vkpi-whisper{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+
+  padding: 5px 10px;
+  border-radius: 999px;
+
+  font-size: 0.60rem;
+  font-weight: 800;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+
+  color: rgba(228, 248, 255, 0.92);
+  border: 1px solid rgba(154, 236, 255, 0.30);
+
+  background:
+    radial-gradient(circle at 20% 0%, rgba(120, 226, 255, 0.22), rgba(10, 20, 40, 0.0) 55%),
+    linear-gradient(120deg, rgba(20, 40, 60, 0.58), rgba(10, 14, 28, 0.78));
+
+  box-shadow:
+    0 8px 18px rgba(10, 28, 48, 0.38),
+    inset 0 0 14px rgba(120, 226, 255, 0.14),
+    0 0 0 1px rgba(255,255,255,0.04) inset;
+
+  text-shadow: 0 0 10px rgba(120, 226, 255, 0.35);
+
+  user-select: none;
+  pointer-events: none; /* helper only */
+}
+
+/* subtle living shimmer (respect reduced motion) */
+@media (prefers-reduced-motion: no-preference){
+  .vkpi-whisper{
+    animation: vkpiWhisperBreath 5.236s ease-in-out infinite;
+  }
+  @keyframes vkpiWhisperBreath{
+    0%   { filter: brightness(0.98); transform: translateY(0px); }
+    50%  { filter: brightness(1.06); transform: translateY(-1px); }
+    100% { filter: brightness(0.98); transform: translateY(0px); }
+  }
+}
 .vreceipt-block{ display:flex; flex-direction:column; gap: 8px; margin-top: 6px; }
 .vreceipt-row{ display:flex; align-items:center; justify-content:space-between; gap: 8px; flex-wrap:wrap; }
 .vreceipt-label{ font-size: 0.60rem; letter-spacing: 0.28em; text-transform: uppercase; color: rgba(190,220,255,0.7); }
@@ -455,6 +506,11 @@ html.verify-shell, body.verify-shell{
   .seal{ padding: 2px 5px; }
   .seal-lbl,
   .seal-txt{ font-size: 0.56rem; }
+  .vkpi-whisper{
+    font-size: 0.56rem;
+    letter-spacing: 0.20em;
+    padding: 4px 9px;
+  }
 }
 
 /* Body layout */

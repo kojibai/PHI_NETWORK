@@ -1057,7 +1057,7 @@ export default function VerifyPage(): ReactElement {
   const noteClaimed =
     Boolean(noteSendRecord?.confirmed) ||
     (noteSendMeta ? isNoteClaimed(noteSendMeta.parentCanonical, noteSendMeta.transferNonce) : false);
-  const noteClaimStatus = noteSendMeta ? (noteClaimed ? "CLAIMED" : "UNCLAIMED") : null;
+  const noteClaimStatus = noteSendMeta ? (noteClaimed ? "CLAIMED — nonce owned" : "UNCLAIMED — nonce available") : null;
   const isNoteUpload = Boolean(noteSendMeta || noteSendPayloadRaw || noteSvgFromPng);
   const isExhaleNoteUpload = isNoteUpload;
 
@@ -1637,7 +1637,7 @@ export default function VerifyPage(): ReactElement {
   const runVerify = useCallback(async (): Promise<void> => {
     const raw = svgText.trim();
     if (!raw) {
-      setResult({ status: "error", message: "Inhale or remember the sealed SVG (ΦKey).", slug });
+      setResult({ status: "error", message: "Inhale or remember the sealed SVG (Sigil-Glyph).", slug });
       return;
     }
     const receipt = parseSharedReceiptFromText(raw);
@@ -2595,8 +2595,8 @@ if (verified && typeof cacheBundleHash === "string" && cacheBundleHash.trim().le
   const badge: { kind: BadgeKind; title: string; subtitle?: string } = useMemo(() => {
     if (busy) return { kind: "busy", title: "SEALING", subtitle: "Deterministic proof rails executing." };
     if (result.status === "ok") return { kind: "ok", title: "PROOF OF BREATH™", subtitle: "Human-origin seal affirmed." };
-    if (result.status === "error") return { kind: "fail", title: "REJECTED", subtitle: "Inhale a sealed ΦKey, then verify." };
-    return { kind: "idle", title: "STANDBY", subtitle: "Inhale a ΦKey to begin." };
+    if (result.status === "error") return { kind: "fail", title: "REJECTED", subtitle: "Inhale a sealed file, then verify." };
+    return { kind: "idle", title: "STANDBY", subtitle: "Inhale a Sigil / Seal / Note to begin." };
   }, [busy, result.status]);
 
   const kpiPulse = useMemo(
@@ -3306,11 +3306,11 @@ React.useEffect(() => {
   const activePanelTitle =
     panel === "inhale" ? "Inhale" : panel === "capsule" ? "Vessel" : panel === "proof" ? "Proof" : panel === "zk" ? "ZK" : "Audit";
   const detectedStatus = svgText.trim()
-    ? "Detected: Sigil-Glyph (SVG) — Full attestation"
+    ? "Detected input: Sigil-Glyph (SVG) — Full attestation"
     : isNoteUpload
-      ? "Detected: Kai-Note (PNG) — Value note"
+      ? "Detected input: Kai-Note (PNG) — Value note"
       : sharedReceipt
-        ? "Detected: Sigil-Seal (PNG) — Proof seal"
+        ? "Detected input: Sigil-Seal (PNG) — Proof seal"
         : "";
 
   const onDragOver = useCallback((e: React.DragEvent) => {
@@ -3412,7 +3412,16 @@ React.useEffect(() => {
 
           <div className="vkpis" aria-label="Primary identifiers">
             <MiniField label="Pulse" value={kpiPulse} />
-            <MiniField label="Φ-Key" value={kpiPhiKey === "—" ? "—" : ellipsizeMiddle(kpiPhiKey, 12, 10)} title={kpiPhiKey} />
+            <div className="vkpi-stack">
+              <MiniField
+                label="Φ-Key"
+                value={kpiPhiKey === "—" ? "—" : ellipsizeMiddle(kpiPhiKey, 12, 10)}
+                title={kpiPhiKey}
+              />
+              <div className="vkpi-whisper" aria-label="Φ-Key helper">
+                Derived sovereign identifier
+              </div>
+            </div>
           </div>
 
           {proofCapsule ? (
@@ -3462,7 +3471,7 @@ React.useEffect(() => {
                     {noteClaimStatus ? (
                       <div
                         className={`vnote-claim ${noteClaimed ? "vnote-claim--claimed" : "vnote-claim--unclaimed"}`}
-                        title={noteClaimed ? "This note has already been claimed." : "This note has not been claimed yet."}
+                        title={noteClaimed ? "Nonce owned: this note has been claimed." : "Nonce available: this note has not been claimed yet."}
                       >
                         {noteClaimStatus}
                       </div>
