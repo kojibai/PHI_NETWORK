@@ -1049,6 +1049,24 @@ dialog.glass-modal{
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55), inset 0 0 0 1px rgba(255,255,255,0.08);
   color: var(--ink);
   overflow: hidden;
+  display: none;
+}
+
+dialog.glass-modal[open]{
+  display: block;
+}
+
+dialog.glass-modal.fullscreen[open]{
+  position: fixed;
+  inset: clamp(8px, 6vh, 24px);
+  margin: auto;
+  z-index: 1200;
+}
+
+@media (max-width: 720px){
+  dialog.glass-modal.fullscreen[open]{
+    inset: calc(8px + var(--safeTop)) calc(8px + var(--safeRight)) calc(8px + var(--safeBot)) calc(8px + var(--safeLeft));
+  }
 }
 
 dialog.glass-modal::backdrop{
