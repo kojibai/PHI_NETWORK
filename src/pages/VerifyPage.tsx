@@ -57,7 +57,13 @@ import { deriveOwnerPhiKeyFromReceive, type OwnerKeyDerivation } from "../utils/
 import { base64UrlDecode, sha256Hex } from "../utils/sha256";
 import { insertPngTextChunks, readPngTextChunk } from "../utils/pngChunks";
 import { getKaiPulseEternalInt } from "../SovereignSolar";
-import { getSendRecordByNonce, listen, markConfirmedByNonce } from "../utils/sendLedger";
+import {
+  getPendingReservedScaledForKind,
+  getReservedScaledForKind,
+  getSendRecordByNonce,
+  listen,
+  markConfirmedByNonce,
+} from "../utils/sendLedger";
 import { recordSigilTransferMovement } from "../utils/sigilTransferRegistry";
 import { getNoteClaimInfo, getNoteClaimLeader, isNoteClaimed, markNoteClaimed } from "../components/SigilExplorer/registryStore";
 import { pullAndImportRemoteUrls } from "../components/SigilExplorer/remotePull";
@@ -74,6 +80,7 @@ import { buildNotePayload } from "../components/verifier/utils/notePayload";
 import { buildBanknoteSVG } from "../components/exhale-note/banknoteSvg";
 import type { BanknoteInputs as NoteBanknoteInputs, NoteSendPayload, NoteSendResult } from "../components/exhale-note/types";
 import { safeShowDialog } from "../components/verifier/utils/modal";
+import { fromScaledBig, toScaledBig } from "../components/verifier/utils/decimal";
 import type { SigilMetadata } from "../components/verifier/types/local";
 import useRollingChartSeries from "../components/VerifierStamper/hooks/useRollingChartSeries";
 import { BREATH_MS } from "../components/valuation/constants";
@@ -259,7 +266,7 @@ type EmbeddedPhiSource = "balance" | "embedded" | "live" | "note";
 
 type AttestationState = boolean | "missing";
 
-function readLedgerBalance(raw: unknown): { originalAmount: number; remaining: number } | null {
+function readLedgerBalance(raw: unknown): { originalAmount: number; remaining: number; totalDebited: number } | null {
   if (!isRecord(raw)) return null;
   const originalAmount = typeof raw.originalAmount === "number" && Number.isFinite(raw.originalAmount) ? raw.originalAmount : null;
   if (originalAmount == null) return null;
@@ -270,7 +277,7 @@ function readLedgerBalance(raw: unknown): { originalAmount: number; remaining: n
     if (typeof amount !== "number" || !Number.isFinite(amount) || amount <= 0) return sum;
     return sum + amount;
   }, 0);
-  return { originalAmount, remaining: Math.max(0, originalAmount - totalDebited) };
+  return { originalAmount, remaining: Math.max(0, originalAmount - totalDebited), totalDebited };
 }
 
 function readPhiAmount(raw: unknown): number | null {
@@ -1061,7 +1068,43 @@ export default function VerifyPage(): ReactElement {
 
   const ledgerBalance = useMemo(() => {
     if (result.status !== "ok") return null;
-    return readLedgerBalance(result.embedded.raw) ?? readLedgerBalance(embeddedProof?.raw);
+    const base =
+      readLedgerBalance(result.embedded.raw) ??
+      readLedgerBalance(embeddedProof?.raw);
+    if (!base) return null;
+
+    const rawRecord = (isRecord(result.embedded.raw) ? result.embedded.raw : null) ?? (isRecord(embeddedProof?.raw) ? embeddedProof?.raw : null);
+    const canonical = normalizeCanonicalHash(
+      typeof rawRecord?.canonicalHash === "string" ? (rawRecord.canonicalHash as string) : ""
+    );
+    const branchSpentScaled = toScaledBig(
+      String((rawRecord as { branchSpentPhi?: string | number } | null)?.branchSpentPhi ?? "0")
+    );
+    const branchSpentPhi = branchSpentScaled > 0n ? Number(fromScaledBig(branchSpentScaled)) : 0;
+
+    let ledgerReservedPhi = 0;
+    if (canonical) {
+      try {
+        const reservedScaled =
+          branchSpentScaled > 0n
+            ? getReservedScaledForKind(canonical, "note") + getPendingReservedScaledForKind(canonical, "send")
+            : getReservedScaledForKind(canonical, "all");
+        ledgerReservedPhi = reservedScaled > 0n ? Number(fromScaledBig(reservedScaled)) : 0;
+      } catch (err) {
+        logError("verify.ledgerBalance", err);
+      }
+    }
+
+    const exhaledPhi = branchSpentPhi + ledgerReservedPhi;
+    const totalSpent = base.totalDebited + exhaledPhi;
+    const remaining = Math.max(0, base.originalAmount - totalSpent);
+
+    return {
+      originalAmount: base.originalAmount,
+      totalDebited: base.totalDebited,
+      exhaledPhi,
+      remaining,
+    };
   }, [embeddedProof?.raw, result]);
 
   const embeddedPhi = useMemo(() => {
@@ -3758,13 +3801,15 @@ React.useEffect(() => {
 
           <div style={{ flex: "1 1 auto", minHeight: 0, overflowY: "auto" }}>
             {valuationPayload && svgText.trim() ? (
-              <NotePrinter
-                meta={valuationPayload}
-                availablePhi={ledgerBalance?.remaining}
-                initial={noteInitial}
-                originCanonical={noteOriginCanonical || undefined}
-                onSendNote={handleNoteSend}
-              />
+                <NotePrinter
+                  meta={valuationPayload}
+                  availablePhi={ledgerBalance?.remaining}
+                  originPhi={ledgerBalance?.originalAmount}
+                  exhaledPhi={ledgerBalance?.exhaledPhi}
+                  initial={noteInitial}
+                  originCanonical={noteOriginCanonical || undefined}
+                  onSendNote={handleNoteSend}
+                />
             ) : (
               <div style={{ padding: 16, color: "var(--dim)" }}>Load and verify a sigil to render an exhale note.</div>
             )}

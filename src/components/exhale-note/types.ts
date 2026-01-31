@@ -110,6 +110,10 @@ export interface NoteProps {
 
   /** Optional remaining Φ balance for send validation (origin sigil). */
   availablePhi?: number;
+  /** Optional origin Φ amount (pre-exhale) for display. */
+  originPhi?: number;
+  /** Optional Φ already exhaled via notes/sends for display. */
+  exhaledPhi?: number;
   /** Optional origin canonical hash for send metadata. */
   originCanonical?: string;
   /** Callback fired when user saves a note and it should reserve/send Φ. */

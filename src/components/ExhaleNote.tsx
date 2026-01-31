@@ -624,6 +624,8 @@ const ExhaleNote: React.FC<NoteProps> = ({
   getNowPulse,
   onRender,
   availablePhi,
+  originPhi,
+  exhaledPhi,
   originCanonical,
   onSendNote,
   initial,
@@ -846,8 +848,11 @@ const ExhaleNote: React.FC<NoteProps> = ({
     return Number.isFinite(usd) && usd > 0 ? usd : 0;
   }, [effectiveSendPhi, effectiveUsdPerPhi]);
 
-  const sendPhiOverBalance =
-    typeof availablePhi === "number" && Number.isFinite(availablePhi) && effectiveSendPhi > availablePhi + 1e-9;
+  const hasAvailablePhi = typeof availablePhi === "number" && Number.isFinite(availablePhi);
+  const hasOriginPhi = typeof originPhi === "number" && Number.isFinite(originPhi);
+  const hasExhaledPhi = typeof exhaledPhi === "number" && Number.isFinite(exhaledPhi);
+
+  const sendPhiOverBalance = hasAvailablePhi && effectiveSendPhi > availablePhi + 1e-9;
 
   /**
    * If user has already "committed" a send (via print/save),
@@ -1913,9 +1918,17 @@ const ExhaleNote: React.FC<NoteProps> = ({
         )}
       </div>
 
-      {isLocked && typeof availablePhi === "number" && Number.isFinite(availablePhi) ? (
+      {isLocked && hasAvailablePhi ? (
         <div className="kk-sendbar__hint">
           Avail <span className="kk-mono">{fTiny(availablePhi)}</span>
+          {hasOriginPhi || hasExhaledPhi ? (
+            <>
+              {" "}
+              · Origin <span className="kk-mono">{hasOriginPhi ? fTiny(originPhi) : "—"}</span>
+              {" "}
+              · Exhaled <span className="kk-mono">{hasExhaledPhi ? fTiny(exhaledPhi) : "—"}</span>
+            </>
+          ) : null}
           {sendPhiOverBalance ? <span className="kk-sendbar__warn"> · exceeds</span> : null}
         </div>
       ) : (

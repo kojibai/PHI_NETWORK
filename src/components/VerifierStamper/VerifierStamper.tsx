@@ -2076,6 +2076,16 @@ const openNote = () =>
     [remainingPhiScaled]
   );
 
+  const originPhiDisplay = useMemo(
+    () => (basePhiScaled > 0n ? Number(fromScaledBig(basePhiScaled)) : 0),
+    [basePhiScaled]
+  );
+
+  const exhaledPhiDisplay = useMemo(
+    () => (isChildContext ? 0 : Number(fromScaledBig(branchSpentScaled + ledgerReservedScaled))),
+    [isChildContext, branchSpentScaled, ledgerReservedScaled]
+  );
+
   const noteSendBusyRef = useRef(false);
   const handleNoteSend = useCallback(
     async (payload: NoteSendPayload): Promise<NoteSendResult | void> => {
@@ -3962,6 +3972,8 @@ if (!parentCanonical) throw new Error("Origin sigil not initialized.");
                 meta={metaLiteForNote}
                 initial={noteInitial}
                 availablePhi={Number(remainingPhiDisplay4)}
+                originPhi={originPhiDisplay}
+                exhaledPhi={exhaledPhiDisplay}
                 originCanonical={canonical ?? undefined}
                 onSendNote={handleNoteSend}
               />
