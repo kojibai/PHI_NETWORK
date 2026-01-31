@@ -22,6 +22,7 @@ import { enqueueInhaleKrystal } from "./inhaleQueue";
 
 export const REGISTRY_LS_KEY = "kai:sigils:v1"; // explorer’s persisted URL list
 export const MODAL_FALLBACK_LS_KEY = "sigil:urls"; // composer/modal fallback URL list
+export const NOTE_CLAIM_LS_KEY = "kai:sigil-claims:v1"; // persistent note-claim registry
 const BC_NAME = "kai-sigil-registry";
 
 const WITNESS_ADD_MAX = 512;
@@ -29,8 +30,10 @@ const WITNESS_ADD_MAX = 512;
 const hasWindow = typeof window !== "undefined";
 const canStorage = hasWindow && typeof window.localStorage !== "undefined";
 let registryHydrated = false;
+let noteClaimsHydrated = false;
 
 export const memoryRegistry: Registry = new Map();
+const noteClaimRegistry: Map<string, Set<string>> = new Map();
 const channel = hasWindow && "BroadcastChannel" in window ? new BroadcastChannel(BC_NAME) : null;
 
 export type AddSource = "local" | "remote" | "hydrate" | "import";
@@ -78,6 +81,85 @@ function readTransferDirectionFromPayload(payload: SigilSharePayloadLoose): "sen
     readTransferDirectionValue(record.transferKind) ||
     readTransferDirectionValue(record.phiDirection)
   );
+}
+
+function normalizeCanonical(raw: string | undefined | null): string {
+  return raw ? raw.trim().toLowerCase() : "";
+}
+
+function normalizeNonce(raw: string | undefined | null): string {
+  return raw ? raw.trim() : "";
+}
+
+function hydrateNoteClaimsFromStorage(): boolean {
+  if (!canStorage) return false;
+  try {
+    const raw = localStorage.getItem(NOTE_CLAIM_LS_KEY);
+    if (!raw) return false;
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object") return false;
+    let changed = false;
+    for (const [parent, value] of Object.entries(parsed as Record<string, unknown>)) {
+      if (!Array.isArray(value)) continue;
+      const parentKey = normalizeCanonical(parent);
+      if (!parentKey) continue;
+      const set = noteClaimRegistry.get(parentKey) ?? new Set<string>();
+      for (const entry of value) {
+        if (typeof entry !== "string") continue;
+        const nonce = normalizeNonce(entry);
+        if (!nonce) continue;
+        if (!set.has(nonce)) {
+          set.add(nonce);
+          changed = true;
+        }
+      }
+      if (set.size > 0) noteClaimRegistry.set(parentKey, set);
+    }
+    return changed;
+  } catch {
+    return false;
+  }
+}
+
+function persistNoteClaimsToStorage(): void {
+  if (!canStorage) return;
+  try {
+    const obj: Record<string, string[]> = {};
+    for (const [parent, nonces] of noteClaimRegistry.entries()) {
+      const list = Array.from(nonces.values());
+      if (list.length > 0) obj[parent] = list;
+    }
+    localStorage.setItem(NOTE_CLAIM_LS_KEY, JSON.stringify(obj));
+  } catch {
+    // ignore quota issues
+  }
+}
+
+function ensureNoteClaimsHydrated(): void {
+  if (noteClaimsHydrated) return;
+  noteClaimsHydrated = true;
+  hydrateNoteClaimsFromStorage();
+}
+
+export function markNoteClaimed(parentCanonical: string, transferNonce: string): boolean {
+  ensureNoteClaimsHydrated();
+  const parentKey = normalizeCanonical(parentCanonical);
+  const nonce = normalizeNonce(transferNonce);
+  if (!parentKey || !nonce) return false;
+  const set = noteClaimRegistry.get(parentKey) ?? new Set<string>();
+  if (set.has(nonce)) return false;
+  set.add(nonce);
+  noteClaimRegistry.set(parentKey, set);
+  persistNoteClaimsToStorage();
+  return true;
+}
+
+export function isNoteClaimed(parentCanonical: string, transferNonce: string): boolean {
+  ensureNoteClaimsHydrated();
+  const parentKey = normalizeCanonical(parentCanonical);
+  const nonce = normalizeNonce(transferNonce);
+  if (!parentKey || !nonce) return false;
+  return noteClaimRegistry.get(parentKey)?.has(nonce) ?? false;
 }
 
 function safeDecodeURIComponent(v: string): string {
@@ -362,6 +444,7 @@ export function hydrateRegistryFromStorage(): boolean {
 export function ensureRegistryHydrated(): boolean {
   if (registryHydrated) return false;
   registryHydrated = true;
+  ensureNoteClaimsHydrated();
   return hydrateRegistryFromStorage();
 }
 
@@ -389,9 +472,12 @@ export function addUrl(url: string, opts?: AddUrlOptions): boolean {
 
   if (readTransferDirectionFromPayload(extracted) === "receive") {
     const record = extracted as unknown as Record<string, unknown>;
-    const parentHash = readStringField(record, "parentHash");
+    const parentHash = readStringField(record, "parentHash") ?? readStringField(record, "parentCanonical");
     const nonce = readStringField(record, "transferNonce") ?? readStringField(record, "nonce");
-    if (parentHash && nonce) markConfirmedByNonce(parentHash, nonce);
+    if (parentHash && nonce) {
+      markConfirmedByNonce(parentHash, nonce);
+      markNoteClaimed(parentHash, nonce);
+    }
   }
 
   if (includeAncestry && ctx.chain.length > 0) {

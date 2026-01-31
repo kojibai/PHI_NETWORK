@@ -59,6 +59,7 @@ import { insertPngTextChunks, readPngTextChunk } from "../utils/pngChunks";
 import { getKaiPulseEternalInt } from "../SovereignSolar";
 import { getSendRecordByNonce, listen, markConfirmedByNonce } from "../utils/sendLedger";
 import { recordSigilTransferMovement } from "../utils/sigilTransferRegistry";
+import { isNoteClaimed, markNoteClaimed } from "../components/SigilExplorer/registryStore";
 import { useKaiTicker } from "../hooks/useKaiTicker";
 import { useValuation } from "./SigilPage/useValuation";
 import type { SigilMetadataLite } from "../utils/valuation";
@@ -987,7 +988,9 @@ export default function VerifyPage(): ReactElement {
     () => (noteSendMeta ? getSendRecordByNonce(noteSendMeta.parentCanonical, noteSendMeta.transferNonce) : null),
     [noteSendMeta, ledgerTick],
   );
-  const noteClaimed = Boolean(noteSendRecord?.confirmed);
+  const noteClaimed =
+    Boolean(noteSendRecord?.confirmed) ||
+    (noteSendMeta ? isNoteClaimed(noteSendMeta.parentCanonical, noteSendMeta.transferNonce) : false);
   const noteClaimStatus = noteSendMeta ? (noteClaimed ? "CLAIMED" : "UNCLAIMED") : null;
 
   const isReceiveGlyph = useMemo(() => {
@@ -1381,6 +1384,7 @@ export default function VerifyPage(): ReactElement {
     noteSendConfirmedRef.current = key;
     try {
       markConfirmedByNonce(noteSendMeta.parentCanonical, noteSendMeta.transferNonce);
+      markNoteClaimed(noteSendMeta.parentCanonical, noteSendMeta.transferNonce);
       if (noteSendMeta.childCanonical && noteSendMeta.amountPhi) {
         recordSigilTransferMovement({
           hash: noteSendMeta.childCanonical,
