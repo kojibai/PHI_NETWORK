@@ -1,7 +1,7 @@
 // src/pages/VerifyPage.tsx
 "use client";
 
-import React, { useCallback, useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
 import "./VerifyPage.css";
 
 import VerifierFrame from "../components/KaiVoh/VerifierFrame";
@@ -57,7 +57,7 @@ import { deriveOwnerPhiKeyFromReceive, type OwnerKeyDerivation } from "../utils/
 import { base64UrlDecode, sha256Hex } from "../utils/sha256";
 import { readPngTextChunk } from "../utils/pngChunks";
 import { getKaiPulseEternalInt } from "../SovereignSolar";
-import { getSendRecordByNonce, markConfirmedByNonce } from "../utils/sendLedger";
+import { getSendRecordByNonce, listen, markConfirmedByNonce } from "../utils/sendLedger";
 import { recordSigilTransferMovement } from "../utils/sigilTransferRegistry";
 import { useKaiTicker } from "../hooks/useKaiTicker";
 import { useValuation } from "./SigilPage/useValuation";
@@ -887,6 +887,13 @@ export default function VerifyPage(): ReactElement {
   const [receiveSig, setReceiveSig] = useState<ReceiveSig | null>(null);
 
   const [dragActive, setDragActive] = useState<boolean>(false);
+  const [ledgerTick, setLedgerTick] = useState<number>(0);
+
+  useEffect(() => {
+    return listen(() => {
+      setLedgerTick((prev) => prev + 1);
+    });
+  }, []);
 
   const { pulse: currentPulse } = useKaiTicker();
   const searchParams = useMemo(() => new URLSearchParams(typeof window !== "undefined" ? window.location.search : ""), []);
@@ -976,7 +983,7 @@ export default function VerifyPage(): ReactElement {
 
   const noteSendRecord = useMemo(
     () => (noteSendMeta ? getSendRecordByNonce(noteSendMeta.parentCanonical, noteSendMeta.transferNonce) : null),
-    [noteSendMeta],
+    [noteSendMeta, ledgerTick],
   );
   const noteClaimed = Boolean(noteSendRecord?.confirmed);
   const noteClaimStatus = noteSendMeta ? (noteClaimed ? "CLAIMED" : "UNCLAIMED") : null;
