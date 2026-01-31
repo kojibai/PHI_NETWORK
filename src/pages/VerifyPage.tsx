@@ -3663,7 +3663,7 @@ React.useEffect(() => {
                         </span>
                         <span className="vdrop-mark vdrop-mark--phi vdrop-keypill" aria-label="Derives key">
                           <img className="vdrop-keymark" src="/phi.svg" alt="" aria-hidden="true" />
-                          <span className="vdrop-mark-label">KEY</span>
+                          <span className="vdrop-mark-label">-KEY</span>
                         </span>
                       </button>
                       <div className="vdrop-helper">Original minted files only — screenshots won’t verify.</div>
