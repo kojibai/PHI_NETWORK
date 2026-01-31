@@ -17,6 +17,7 @@ import { fPhi, fUsd, fTiny } from "./exhale-note/format";
 import { fetchFromVerifierBridge } from "./exhale-note/bridge";
 import { svgStringToPngBlob, triggerDownload } from "./exhale-note/svgToPng";
 import { insertPngTextChunks } from "../utils/pngChunks";
+import { buildVerifierUrl } from "./KaiVoh/verifierProof";
 
 import type {
   NoteProps,
@@ -140,6 +141,10 @@ type NoteProofBundleFields = {
   verifiedAtPulse?: number;
   capsuleHash?: string;
   svgHash?: string;
+  proofCapsule?: {
+    pulse?: number;
+    kaiSignature?: string;
+  };
 };
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
@@ -163,6 +168,15 @@ function parseProofBundleJson(raw: string | undefined): NoteProofBundleFields {
   try {
     const parsed = JSON.parse(raw) as unknown;
     if (!isPlainRecord(parsed)) return {};
+    let proofCapsule: NoteProofBundleFields["proofCapsule"];
+    const capsuleRaw = parsed.proofCapsule;
+    if (isPlainRecord(capsuleRaw)) {
+      const pulse = readOptionalNumber(capsuleRaw.pulse);
+      const kaiSignature = readOptionalString(capsuleRaw.kaiSignature);
+      if (pulse != null || kaiSignature) {
+        proofCapsule = { pulse: pulse ?? undefined, kaiSignature };
+      }
+    }
     return {
       verifierUrl: readOptionalString(parsed.verifierUrl),
       bundleHash: readOptionalString(parsed.bundleHash),
@@ -170,6 +184,7 @@ function parseProofBundleJson(raw: string | undefined): NoteProofBundleFields {
       verifiedAtPulse: readOptionalNumber(parsed.verifiedAtPulse),
       capsuleHash: readOptionalString(parsed.capsuleHash),
       svgHash: readOptionalString(parsed.svgHash),
+      proofCapsule,
     };
   } catch {
     return {};
@@ -178,12 +193,35 @@ function parseProofBundleJson(raw: string | undefined): NoteProofBundleFields {
 
 function buildQrPayload(
   input: {
-    verifyUrl: string;
+    verifyUrl?: string;
     proofBundleJson?: string;
-  }
+  },
+  fallbackAbs: string
+): string {
+  return resolveNoteVerifyUrl(input, fallbackAbs);
+}
+
+function resolveNoteVerifyUrl(
+  input: {
+    verifyUrl?: string;
+    proofBundleJson?: string;
+  },
+  fallbackAbs: string
 ): string {
   const parsed = parseProofBundleJson(input.proofBundleJson);
-  return parsed.verifierUrl ?? input.verifyUrl;
+  const preferred = parsed.verifierUrl ?? input.verifyUrl;
+  const resolved = resolveVerifyUrl(preferred, fallbackAbs);
+  const hasSlug = /\/verify\/[^/?#]+/i.test(resolved);
+  if (hasSlug) return resolved;
+
+  const pulse = parsed.proofCapsule?.pulse;
+  const sig = parsed.proofCapsule?.kaiSignature;
+  if (pulse != null && sig) {
+    const base = /\/verify\/?$/i.test(resolved) ? resolved : undefined;
+    return buildVerifierUrl(pulse, sig, base, parsed.verifiedAtPulse);
+  }
+
+  return resolved;
 }
 
 /** Inject preview CSS once so the SVG scales on mobile (kept defensive even if ExhaleNote.css exists). */
@@ -685,11 +723,17 @@ const ExhaleNote: React.FC<NoteProps> = ({
     const lockedPulseStr = usingLocked ? String(locked!.lockedPulse) : "";
     const valuationStampStr = usingLocked ? form.valuationStamp || locked!.seal.stamp : "";
 
-    const verifyUrl = resolveVerifyUrl(form.verifyUrl, defaultVerifyUrl);
-    const qrPayload = buildQrPayload({
-      verifyUrl,
-      proofBundleJson: form.proofBundleJson,
-    });
+    const verifyUrl = resolveNoteVerifyUrl(
+      { verifyUrl: form.verifyUrl, proofBundleJson: form.proofBundleJson },
+      defaultVerifyUrl
+    );
+    const qrPayload = buildQrPayload(
+      {
+        verifyUrl: form.verifyUrl,
+        proofBundleJson: form.proofBundleJson,
+      },
+      defaultVerifyUrl
+    );
 
     return buildBanknoteSVG({
       purpose: form.purpose,
@@ -920,7 +964,10 @@ const ExhaleNote: React.FC<NoteProps> = ({
     if (!locked) return null;
     const amountPhi = effectiveSendPhi;
     if (!Number.isFinite(amountPhi) || amountPhi <= 0) return null;
-    const verifyUrl = resolveVerifyUrl(form.verifyUrl, defaultVerifyUrl);
+    const verifyUrl = resolveNoteVerifyUrl(
+      { verifyUrl: form.verifyUrl, proofBundleJson: form.proofBundleJson },
+      defaultVerifyUrl
+    );
     const transferNonce = resolveSendNonce();
     const merged: Partial<NoteSendPayload> = noteSendResult ?? {};
     return {
@@ -939,6 +986,7 @@ const ExhaleNote: React.FC<NoteProps> = ({
     effectiveSendPhi,
     effectiveUsdPerPhi,
     form.verifyUrl,
+    form.proofBundleJson,
     form.valuationStamp,
     defaultVerifyUrl,
     originCanonical,
@@ -979,11 +1027,17 @@ const ExhaleNote: React.FC<NoteProps> = ({
     }
     if (!(await ensureNoteSend())) return;
 
-    const verifyUrl = resolveVerifyUrl(form.verifyUrl, defaultVerifyUrl);
-    const qrPayload = buildQrPayload({
-      verifyUrl,
-      proofBundleJson: form.proofBundleJson,
-    });
+    const verifyUrl = resolveNoteVerifyUrl(
+      { verifyUrl: form.verifyUrl, proofBundleJson: form.proofBundleJson },
+      defaultVerifyUrl
+    );
+    const qrPayload = buildQrPayload(
+      {
+        verifyUrl: form.verifyUrl,
+        proofBundleJson: form.proofBundleJson,
+      },
+      defaultVerifyUrl
+    );
 
     const banknote = buildBanknoteSVG({
       ...form,
@@ -1017,6 +1071,12 @@ const ExhaleNote: React.FC<NoteProps> = ({
       provenance: form.provenance ?? [],
       sigilSvg: form.sigilSvg || "",
       verifyUrl,
+      proofBundleJson: form.proofBundleJson,
+      bundleHash: form.bundleHash,
+      receiptHash: form.receiptHash,
+      verifiedAtPulse: form.verifiedAtPulse,
+      capsuleHash: form.capsuleHash,
+      svgHash: form.svgHash,
     });
 
     renderIntoPrintRoot(root, banknote, String(locked.lockedPulse), proofPages);
@@ -1046,11 +1106,17 @@ const ExhaleNote: React.FC<NoteProps> = ({
       }
       if (!(await ensureNoteSend())) return;
 
-      const verifyUrl = resolveVerifyUrl(form.verifyUrl, defaultVerifyUrl);
-      const qrPayload = buildQrPayload({
-        verifyUrl,
-        proofBundleJson: form.proofBundleJson,
-      });
+      const verifyUrl = resolveNoteVerifyUrl(
+        { verifyUrl: form.verifyUrl, proofBundleJson: form.proofBundleJson },
+        defaultVerifyUrl
+      );
+      const qrPayload = buildQrPayload(
+        {
+          verifyUrl: form.verifyUrl,
+          proofBundleJson: form.proofBundleJson,
+        },
+        defaultVerifyUrl
+      );
 
       const banknote = buildBanknoteSVG({
         ...form,
@@ -1099,11 +1165,17 @@ const ExhaleNote: React.FC<NoteProps> = ({
       }
       if (!(await ensureNoteSend())) return;
 
-      const verifyUrl = resolveVerifyUrl(form.verifyUrl, defaultVerifyUrl);
-      const qrPayload = buildQrPayload({
-        verifyUrl,
-        proofBundleJson: form.proofBundleJson,
-      });
+      const verifyUrl = resolveNoteVerifyUrl(
+        { verifyUrl: form.verifyUrl, proofBundleJson: form.proofBundleJson },
+        defaultVerifyUrl
+      );
+      const qrPayload = buildQrPayload(
+        {
+          verifyUrl: form.verifyUrl,
+          proofBundleJson: form.proofBundleJson,
+        },
+        defaultVerifyUrl
+      );
 
       const banknote = buildBanknoteSVG({
         ...form,
