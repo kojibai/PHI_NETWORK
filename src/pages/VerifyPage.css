@@ -1731,6 +1731,11 @@ dialog.glass-modal .modal-topbar .close-btn:focus-visible{
   margin: 0 !important;
   transform: translateY(0) !important;
 }
+
+.vreceipt-actions .vbtn .vicon-word{
+  width: 22px;
+  height: 16px;
+}
 /* ────────────────────────────────────────────────────────────────
    FIX: Note modal preview button — perfect centering
    (prevents .vbtn-ic 16x16 overrides from squashing the thumbnail)

@@ -660,6 +660,30 @@ function ProofMark(): ReactElement {
   );
 }
 
+function SignProofIcon(): ReactElement {
+  return (
+    <svg className="vicon-word" viewBox="0 0 32 24" aria-hidden="true" focusable="false">
+      <rect x="1.5" y="1.5" width="29" height="21" rx="6" fill="none" stroke="currentColor" strokeWidth="1.4" opacity="0.95" />
+      <path d="M7 14.5c3.1-2.8 5.7-2.8 8.8 0" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" opacity="0.6" />
+      <text x="16" y="13" textAnchor="middle" fontSize="7.8" fontWeight="700" fontFamily="system-ui, -apple-system, Segoe UI, sans-serif" fill="currentColor">
+        SIGN
+      </text>
+    </svg>
+  );
+}
+
+function DownloadPngIcon(): ReactElement {
+  return (
+    <svg className="vicon-word" viewBox="0 0 32 24" aria-hidden="true" focusable="false">
+      <rect x="1.5" y="1.5" width="29" height="21" rx="6" fill="none" stroke="currentColor" strokeWidth="1.4" opacity="0.95" />
+      <path d="M16 6.5v6.3m0 0-3-3m3 3 3-3" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+      <text x="16" y="18.2" textAnchor="middle" fontSize="7.2" fontWeight="700" fontFamily="system-ui, -apple-system, Segoe UI, sans-serif" fill="currentColor">
+        PNG
+      </text>
+    </svg>
+  );
+}
+
 /* ────────────────────────────────────────────────────────────────
    UI atoms
 ─────────────────────────────────────────────────────────────── */
@@ -3370,12 +3394,22 @@ React.useEffect(() => {
                       aria-label={verificationSigLabel}
                       disabled={!canSignVerification || verificationSigBusy}
                     >
-                      ✍
+                      <span className="vbtn-ic" aria-hidden="true">
+                        <SignProofIcon />
+                      </span>
                     </button>
                   )}
                   {isExhaleNoteUpload ? null : (
-                    <button type="button" className="vbtn vbtn--ghost" onClick={() => void onDownloadVerifiedCard()}>
-                      ⬇
+                    <button
+                      type="button"
+                      className="vbtn vbtn--ghost"
+                      onClick={() => void onDownloadVerifiedCard()}
+                      title="Download proof PNG"
+                      aria-label="Download proof PNG"
+                    >
+                      <span className="vbtn-ic" aria-hidden="true">
+                        <DownloadPngIcon />
+                      </span>
                     </button>
                   )}
                 </div>
