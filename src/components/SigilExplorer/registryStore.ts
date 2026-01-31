@@ -6,7 +6,7 @@ import type { Registry, SigilSharePayloadLoose } from "./types";
 import { USERNAME_CLAIM_KIND, type UsernameClaimPayload } from "../../types/usernameClaim";
 import { ingestUsernameClaimGlyph } from "../../utils/usernameClaimRegistry";
 import { normalizeClaimGlyphRef, normalizeUsername } from "../../utils/usernameClaim";
-import { makeSigilUrlLoose, resolveLineageBackwards } from "../../utils/sigilUrl";
+import { makeSigilUrlLoose, resolveLineageBackwards, type SigilSharePayloadLoose as SigilUrlPayloadLoose } from "../../utils/sigilUrl";
 import { getInMemorySigilUrls } from "../../utils/sigilRegistry";
 import { markConfirmedByNonce } from "../../utils/sendLedger";
 import {
@@ -97,9 +97,9 @@ function normalizeNonce(raw: string | undefined | null): string {
   return raw ? raw.trim() : "";
 }
 
-function buildNoteClaimPayload(args: NoteClaimArgs): SigilSharePayloadLoose {
+function buildNoteClaimPayload(args: NoteClaimArgs): SigilUrlPayloadLoose {
   const { parentCanonical, transferNonce, childCanonical } = args;
-  const payload: SigilSharePayloadLoose = {
+  const payload: SigilUrlPayloadLoose = {
     transferDirection: "receive",
     transferNonce,
     parentCanonical,

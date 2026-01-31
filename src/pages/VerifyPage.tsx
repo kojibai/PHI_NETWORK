@@ -2964,7 +2964,6 @@ React.useEffect(() => {
 
   const onDownloadNotePng = useCallback(async () => {
     if (!noteSvgFromPng) return;
-    if (noteClaimed) return;
     const payloadBase = noteSendPayloadRaw
       ? { ...noteSendPayloadRaw }
       : noteSendMeta
@@ -3013,7 +3012,7 @@ React.useEffect(() => {
     const finalBlob = new Blob([enriched as BlobPart], { type: "image/png" });
     triggerDownload(filename, finalBlob, "image/png");
     confirmNoteSend();
-  }, [confirmNoteSend, noteClaimed, noteProofBundleJson, noteSendMeta, noteSendPayloadRaw, noteSvgFromPng, sharedReceipt]);
+  }, [confirmNoteSend, noteProofBundleJson, noteSendMeta, noteSendPayloadRaw, noteSvgFromPng, sharedReceipt]);
 
   const onDownloadVerifiedCard = useCallback(async () => {
     if (!verifiedCardData) return;
@@ -3296,9 +3295,8 @@ React.useEffect(() => {
                     type="button"
                     className="vbtn vbtn--ghost"
                     onClick={onDownloadNotePng}
-                    title={noteClaimed ? "Note already claimed" : "Download note PNG"}
-                    aria-label={noteClaimed ? "Note already claimed" : "Download note PNG"}
-                    disabled={noteClaimed}
+                    title="Download fresh note PNG"
+                    aria-label="Download fresh note PNG"
                   >
                     ⬇︎Φ
                   </button>
