@@ -125,7 +125,7 @@ export function buildBanknoteSVG(opts: BuildBanknoteSvgOpts): string {
   const qrOff = Math.max(0, Math.round((QR_PX - qrSvgPx) / 2));
 
   const qrBlock = `
-    <g transform="translate(828,346)">
+    <g transform="translate(828,336)">
       <rect x="${-QR_PAD}" y="${-QR_PAD}" width="${QR_BOX_W}" height="${QR_BOX_H}" rx="10"
             fill="#0a1013" stroke="#2ad6c7" stroke-opacity=".20"/>
       <g transform="translate(${qrOff},${qrOff})">${qrSvg}</g>
