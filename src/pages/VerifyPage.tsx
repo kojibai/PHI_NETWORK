@@ -995,6 +995,7 @@ export default function VerifyPage(): ReactElement {
     Boolean(noteSendRecord?.confirmed) ||
     (noteSendMeta ? isNoteClaimed(noteSendMeta.parentCanonical, noteSendMeta.transferNonce) : false);
   const noteClaimStatus = noteSendMeta ? (noteClaimed ? "CLAIMED" : "UNCLAIMED") : null;
+  const isExhaleNoteUpload = Boolean(noteSendMeta || noteSvgFromPng || noteProofBundleJson);
 
   useEffect(() => {
     if (!noteSendMeta || noteClaimed) return;
@@ -3280,16 +3281,18 @@ React.useEffect(() => {
                 <button type="button" className="vbtn vbtn--ghost" onClick={() => void onCopyReceipt()}>
                   💠
                 </button>
-                <button
-                  type="button"
-                  className="vbtn vbtn--ghost"
-                  onClick={() => void onSignVerification()}
-                  title={verificationSigLabel}
-                  aria-label={verificationSigLabel}
-                  disabled={!canSignVerification || verificationSigBusy}
-                >
-                  ✍
-                </button>
+                {isExhaleNoteUpload ? null : (
+                  <button
+                    type="button"
+                    className="vbtn vbtn--ghost"
+                    onClick={() => void onSignVerification()}
+                    title={verificationSigLabel}
+                    aria-label={verificationSigLabel}
+                    disabled={!canSignVerification || verificationSigBusy}
+                  >
+                    ✍
+                  </button>
+                )}
                 {noteSvgFromPng && result.status === "ok" && !noteClaimed ? (
                   <button
                     type="button"
@@ -3301,9 +3304,11 @@ React.useEffect(() => {
                     ⬇︎Φ
                   </button>
                 ) : null}
-                <button type="button" className="vbtn vbtn--ghost" onClick={() => void onDownloadVerifiedCard()}>
-                  ⬇
-                </button>
+                {isExhaleNoteUpload ? null : (
+                  <button type="button" className="vbtn vbtn--ghost" onClick={() => void onDownloadVerifiedCard()}>
+                    ⬇
+                  </button>
+                )}
               </div>
             </div>
 
