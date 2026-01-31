@@ -3383,7 +3383,7 @@ React.useEffect(() => {
               {canShowNotePreview || noteClaimStatus || (noteSvgFromPng && result.status === "ok" && !noteClaimed) ? (
                 <div className="vreceipt-note" aria-label="Exhale note actions">
                   <div className="vreceipt-note-left">
-                    <div className="vreceipt-label">Note</div>
+                    <div className="vreceipt-label">☤Kai-Note (Legal Tender)</div>
                     {noteClaimStatus ? (
                       <div
                         className={`vnote-claim ${noteClaimed ? "vnote-claim--claimed" : "vnote-claim--unclaimed"}`}
@@ -3400,8 +3400,8 @@ React.useEffect(() => {
                         className="vbtn vbtn--ghost vbtn--note"
                         onPointerDown={openNote}
                         onClick={openNote}
-                        aria-label="Open Exhale note"
-                        title="Open Exhale note"
+                        aria-label="Open note Exhaler"
+                        title="Open note Exhaler"
                       >
                         <span className="vbtn-note-preview" aria-hidden="true" dangerouslySetInnerHTML={{ __html: notePreviewSvg }} />
                       </button>
@@ -3501,7 +3501,7 @@ React.useEffect(() => {
       >
         <div className="modal-viewport" style={{ display: "flex", flexDirection: "column", height: "100%" }}>
           <div className="modal-topbar" style={{ display: "grid", gridTemplateColumns: "1fr auto", alignItems: "center", padding: "8px 10px" }}>
-            <div style={{ paddingInline: 12, fontSize: 12, color: "var(--dim)" }}>Kairos — Exhale Note</div>
+            <div style={{ paddingInline: 12, fontSize: 12, color: "var(--dim)" }}>☤Kairos Note Exhaler</div>
             <button
               className="close-btn holo"
               data-aurora="true"

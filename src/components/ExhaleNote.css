@@ -1087,3 +1087,385 @@
   #print-root { display: block !important; }
   body { background: #fff !important; }
 }
+/* ─────────────────────────────────────────────────────────────
+   v26.3.x COMPACT HERO OVERRIDES
+   - Shrinks Render/Lock + Export controls
+   - Reduces VALUE block height
+   - Keeps everything visible while reclaiming vertical space
+   ───────────────────────────────────────────────────────────── */
+
+.kk-hero2{
+  margin-top: 10px;
+  padding: 10px;
+}
+
+.kk-hero2__row{
+  gap: 10px;
+  align-items: start;
+  grid-template-columns: 1fr minmax(240px, 34%);
+}
+
+@media (max-width: 980px){
+  .kk-hero2__row{ grid-template-columns: 1fr; }
+}
+
+/* Status chips are duplicated by the headbar — hide them on small to save height */
+@media (max-width: 720px){
+  .kk-hero2__status{ display: none; }
+}
+
+/* Tighten chips when visible */
+.kk-hero2__status{
+  margin-bottom: 6px;
+  gap: 6px;
+}
+
+.kk-chip2{
+  font-size: 11px;
+  padding: 5px 8px;
+  gap: 5px;
+}
+
+/* VALUE block: smaller but still “premium” */
+.kk-hero2__big{
+  padding: 10px 12px;
+}
+
+.kk-big__label{
+  font-size: 11px;
+  letter-spacing: 2.2px;
+  margin-bottom: 4px;
+}
+
+.kk-big__num{
+  gap: 8px;
+}
+
+.kk-big__phi{
+  font-size: clamp(20px, 4.2vw, 32px);
+}
+
+.kk-big__int{
+  font-size: clamp(30px, 7.2vw, 52px);
+}
+
+.kk-big__frac{
+  font-size: clamp(13px, 2.8vw, 20px);
+  padding-bottom: 2px;
+}
+
+.kk-big__usd{
+  margin-top: 4px;
+  font-size: 12px;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Compact action row
+   ───────────────────────────────────────────────────────────── */
+
+.kk-hero2__actions{
+  align-content: start;
+}
+
+/* One refined strip for Render/Lock + tools */
+.kk-actionsRow{
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Tools cluster stays tight */
+.kk-actionsRow__tools{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Render button: compact primary */
+.kk-btn-compact{
+  padding: 10px 12px;
+  font-size: 14px;
+  border-radius: 12px;
+  min-height: 40px;
+}
+
+/* Export buttons: mini pills (still finger-safe) */
+.kk-btn-mini{
+  padding: 8px 10px;
+  font-size: 13px;
+  border-radius: 11px;
+  min-height: 36px;
+}
+
+/* Locked card: slimmer */
+.kk-lockcard--compact{
+  padding: 8px 10px;
+  border-radius: 14px;
+}
+
+.kk-lockcard--compact .kk-lockcard__t{
+  font-size: 12px;
+}
+
+.kk-lockcard--compact .kk-lockcard__s{
+  font-size: 11px;
+  margin-top: 3px;
+}
+
+.kk-lockcard__dot{
+  margin: 0 6px;
+  opacity: 0.7;
+}
+
+.kk-lockcard__k{
+  opacity: 0.85;
+}
+
+/* Mobile: keep it compact and readable */
+@media (max-width: 560px){
+  .kk-actionsRow{
+    justify-content: stretch;
+  }
+
+  /* Render takes full width, tools below in one tight row */
+  .kk-actionsRow > .kk-btn-compact,
+  .kk-actionsRow > .kk-lockcard--compact{
+    flex: 1 1 100%;
+  }
+
+  .kk-actionsRow__tools{
+    width: 100%;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .kk-actionsRow__tools .kk-btn-mini{
+    flex: 1 1 0;
+    justify-content: center;
+  }
+}
+/* ─────────────────────────────────────────────────────────────
+   VALUE BOX: inline Lock control (compact)
+   ───────────────────────────────────────────────────────────── */
+
+.kk-big__top{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  margin-bottom: 4px;
+}
+
+.kk-big__label{
+  margin:0;
+}
+
+.kk-big__lockSlot{
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  min-width: 0;
+}
+
+/* Small Lock button that lives on the VALUE box */
+.kk-lockBtn{
+  appearance:none;
+  border: 1px solid rgba(86,255,227,0.34);
+  background: linear-gradient(180deg, rgba(86,255,227,0.18), rgba(86,255,227,0.08));
+  color: rgba(234,241,255,0.96);
+
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-weight: 950;
+  font-size: 12px;
+  letter-spacing: 0.14px;
+
+  min-height: 30px;
+  line-height: 1;
+  cursor:pointer;
+
+  box-shadow: 0 10px 22px rgba(86,255,227,0.10), inset 0 1px 0 rgba(255,255,255,0.08);
+  transition: transform var(--kk-fast) var(--kk-ease),
+              border-color var(--kk-fast) var(--kk-ease),
+              background var(--kk-fast) var(--kk-ease),
+              box-shadow var(--kk-fast) var(--kk-ease),
+              filter var(--kk-fast) var(--kk-ease);
+}
+
+.kk-lockBtn:hover{
+  transform: translateY(-1px);
+  border-color: rgba(86,255,227,0.48);
+  filter: brightness(1.03);
+  box-shadow: 0 14px 28px rgba(86,255,227,0.14), inset 0 1px 0 rgba(255,255,255,0.10);
+}
+
+.kk-lockBtn:active{
+  transform: translateY(0);
+}
+
+.kk-lockBtn:focus-visible{
+  outline:none;
+  box-shadow: var(--kk-focus);
+}
+
+.kk-lockBtn[disabled]{
+  opacity: 0.62;
+  cursor: not-allowed;
+  transform: none;
+  filter: none;
+  box-shadow: 0 10px 22px rgba(0,0,0,0.14), inset 0 1px 0 rgba(255,255,255,0.06);
+}
+
+/* Locked pill (tiny, informational, non-bulky) */
+.kk-lockPill{
+  display:inline-flex;
+  align-items:center;
+  gap: 6px;
+
+  border: 1px solid rgba(245,217,141,0.34);
+  background: linear-gradient(180deg, rgba(245,217,141,0.14), rgba(245,217,141,0.06));
+  color: rgba(234,241,255,0.92);
+
+  padding: 6px 10px;
+  border-radius: 999px;
+
+  font-size: 11px;
+  font-weight: 900;
+  min-height: 30px;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+
+  box-shadow: 0 10px 22px rgba(245,217,141,0.08), inset 0 1px 0 rgba(255,255,255,0.08);
+}
+
+.kk-lockPill__k{ opacity: 0.92; }
+.kk-lockPill__dot{ opacity: 0.70; }
+.kk-lockPill__mono{ font-variant-numeric: tabular-nums; }
+
+/* Right column tools stay compact and aligned */
+.kk-hero2__actions{
+  display:flex;
+  align-items:flex-start;
+  justify-content:flex-end;
+}
+
+.kk-actionsRow__tools{
+  display:inline-flex;
+  align-items:center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+/* Mobile: exports become full-width row buttons */
+@media (max-width: 560px){
+  .kk-actionsRow__tools{
+    width: 100%;
+    justify-content: space-between;
+  }
+  .kk-actionsRow__tools .kk-btn-mini{
+    flex: 1 1 0;
+    justify-content: center;
+  }
+}
+/* ─────────────────────────────────────────────────────────────
+   Send Amount — COMPACT + SLEEK (paste at end of ExhaleNote.css)
+   ───────────────────────────────────────────────────────────── */
+
+.kk-sendbar--compact{
+  padding: 10px 12px 9px;
+}
+
+/* tighter left text */
+.kk-sendbar--compact .kk-sendbar__label{
+  font-size: 13px;
+  font-weight: 950;
+}
+.kk-sendbar--compact .kk-sendbar__sub{
+  margin-top: 2px;
+  font-size: 11.5px;
+  line-height: 1.15;
+}
+
+/* tighter grid inside right side */
+.kk-sendbar--compact .kk-sendbar__right{
+  row-gap: 6px;
+  column-gap: 10px;
+}
+
+/* unit toggle: smaller pill */
+.kk-sendbar--compact .kk-sendbar__unit{
+  padding: 5px;
+  gap: 6px;
+}
+
+/* perfect center for Φ / $ */
+.kk-sendbar--compact .kk-sendbar__unitBtn{
+  width: 36px;
+  height: 28px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  text-align: center;
+}
+
+/* optical centering (Φ usually sits low) */
+.kk-sendbar--compact .kk-unitGlyph{
+  display: block;
+  line-height: 1;
+  transform: translateY(-0.06em);
+  font-weight: 950;
+}
+
+/* compact input wrap */
+.kk-sendbar--compact .kk-sendbar__inputWrap{
+  min-height: 38px;
+  padding: 7px 10px;
+  width: min(320px, 100%);
+}
+
+/* slightly smaller input text */
+.kk-sendbar--compact .kk-sendbar__input{
+  font-size: 13.5px;
+}
+
+/* meta: tighter, no wasted height */
+.kk-sendbar--compact .kk-sendbar__meta{
+  gap: 2px;
+}
+
+.kk-sendbar--compact .kk-sendbar__usd{
+  font-size: 12.5px;
+  line-height: 1.1;
+}
+
+.kk-sendbar--compact .kk-sendbar__hint{
+  font-size: 11.5px;
+  line-height: 1.1;
+}
+
+.kk-sendbar__warn{
+  color: rgba(255, 165, 185, 0.92);
+  font-weight: 850;
+}
+
+/* Mobile: keep it stacked but tight */
+@media (max-width: 720px){
+  .kk-sendbar--compact{
+    padding: 10px 12px;
+  }
+  .kk-sendbar--compact .kk-sendbar__right{
+    justify-items: center;
+    row-gap: 8px;
+  }
+  .kk-sendbar--compact .kk-sendbar__inputWrap{
+    width: 100%;
+  }
+}
