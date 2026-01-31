@@ -103,13 +103,14 @@ export function buildBanknoteSVG(opts: BuildBanknoteSvgOpts): string {
   const sigilEmbed = embedSigilIntoSlotClickable(sigilInner, slot.x, slot.y, slot.w, slot.h, verifyUrl);
 
   // QR block (avoid 8-digit hex colors; use stroke-opacity instead)
-  // QR block — perfectly centered inside the 110×110 slot (and thus the framed box)
-  const QR_PX = 110;     // intended QR slot size
+  // QR block — perfectly centered inside the 140×140 slot (and thus the framed box)
+  const QR_PX = 140;     // intended QR slot size
   const QR_PAD = 8;      // frame padding used by the rect (x/y = -8)
-  const QR_BOX_W = QR_PX + QR_PAD * 2; // 126
-  const QR_BOX_H = 142;  // keep your existing tuned height (label fits)
+  const QR_BOX_W = QR_PX + QR_PAD * 2;
+  const QR_BOX_H = QR_PX + 32;  // add room for the label below the QR
+  const QR_LABEL_Y = QR_PX + 22;
 
-  const qrSvg = makeQrSvgTagSafe(qrPayload || verifyUrl, QR_PX, 2);
+  const qrSvg = makeQrSvgTagSafe(qrPayload || verifyUrl, QR_PX, 3);
 
   // makeQrSvgTagSafe() may output an SVG smaller than QR_PX due to integer cell sizing.
   // We measure that and center it inside the QR_PX slot.
@@ -128,7 +129,7 @@ export function buildBanknoteSVG(opts: BuildBanknoteSvgOpts): string {
       <rect x="${-QR_PAD}" y="${-QR_PAD}" width="${QR_BOX_W}" height="${QR_BOX_H}" rx="10"
             fill="#0a1013" stroke="#2ad6c7" stroke-opacity=".20"/>
       <g transform="translate(${qrOff},${qrOff})">${qrSvg}</g>
-      <text x="${QR_PX / 2}" y="132" text-anchor="middle"
+      <text x="${QR_PX / 2}" y="${QR_LABEL_Y}" text-anchor="middle"
             font-family="ui-sans-serif" font-size="10" fill="#81fff1" letter-spacing=".08em">SCAN • VERIFY</text>
     </g>`;
 
