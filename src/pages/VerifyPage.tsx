@@ -60,6 +60,7 @@ import { getKaiPulseEternalInt } from "../SovereignSolar";
 import { getSendRecordByNonce, listen, markConfirmedByNonce } from "../utils/sendLedger";
 import { recordSigilTransferMovement } from "../utils/sigilTransferRegistry";
 import { isNoteClaimed, markNoteClaimed } from "../components/SigilExplorer/registryStore";
+import { pullAndImportRemoteUrls } from "../components/SigilExplorer/remotePull";
 import { useKaiTicker } from "../hooks/useKaiTicker";
 import { useValuation } from "./SigilPage/useValuation";
 import type { SigilMetadataLite } from "../utils/valuation";
@@ -839,6 +840,7 @@ export default function VerifyPage(): ReactElement {
   const pngFileRef = useRef<HTMLInputElement | null>(null);
   const lastAutoScanKeyRef = useRef<string | null>(null);
   const noteSendConfirmedRef = useRef<string | null>(null);
+  const noteClaimRemoteCheckedRef = useRef<string | null>(null);
 
   const slugRaw = useMemo(() => readSlugFromLocation(), []);
   const slug = useMemo(() => parseSlug(slugRaw), [slugRaw]);
@@ -891,6 +893,7 @@ export default function VerifyPage(): ReactElement {
 
   const [dragActive, setDragActive] = useState<boolean>(false);
   const [ledgerTick, setLedgerTick] = useState<number>(0);
+  const [registryTick, setRegistryTick] = useState<number>(0);
 
   useEffect(() => {
     return listen(() => {
@@ -986,12 +989,34 @@ export default function VerifyPage(): ReactElement {
 
   const noteSendRecord = useMemo(
     () => (noteSendMeta ? getSendRecordByNonce(noteSendMeta.parentCanonical, noteSendMeta.transferNonce) : null),
-    [noteSendMeta, ledgerTick],
+    [noteSendMeta, ledgerTick, registryTick],
   );
   const noteClaimed =
     Boolean(noteSendRecord?.confirmed) ||
     (noteSendMeta ? isNoteClaimed(noteSendMeta.parentCanonical, noteSendMeta.transferNonce) : false);
   const noteClaimStatus = noteSendMeta ? (noteClaimed ? "CLAIMED" : "UNCLAIMED") : null;
+
+  useEffect(() => {
+    if (!noteSendMeta || noteClaimed) return;
+    const key = `${noteSendMeta.parentCanonical}|${noteSendMeta.transferNonce}`;
+    if (noteClaimRemoteCheckedRef.current === key) return;
+    noteClaimRemoteCheckedRef.current = key;
+    const ac = new AbortController();
+
+    (async () => {
+      try {
+        const res = await pullAndImportRemoteUrls(ac.signal);
+        if (ac.signal.aborted) return;
+        if (res.imported > 0) setRegistryTick((prev) => prev + 1);
+      } catch {
+        // ignore remote registry failures
+      }
+    })();
+
+    return () => {
+      ac.abort();
+    };
+  }, [noteClaimed, noteSendMeta]);
 
   const isReceiveGlyph = useMemo(() => {
     const mode = embeddedProof?.mode ?? sharedReceipt?.mode;
