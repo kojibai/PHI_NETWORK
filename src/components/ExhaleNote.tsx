@@ -603,6 +603,7 @@ const ExhaleNote: React.FC<NoteProps> = ({
   const sendNonceRef = useRef<string>("");
   const sendCommittedRef = useRef(false);
   const [noteSendResult, setNoteSendResult] = useState<NoteSendResult | null>(null);
+  const lastSendPhiInputRef = useRef<string>("");
 
   const u =
     (k: keyof BanknoteInputs) =>
@@ -626,6 +627,21 @@ const ExhaleNote: React.FC<NoteProps> = ({
     setForm((prev) => (prev.valuationAlg ? prev : { ...prev, valuationAlg: liveAlgString }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [liveAlgString]);
+
+  useEffect(() => {
+    if (!locked) {
+      lastSendPhiInputRef.current = sendPhiInput;
+      return;
+    }
+    if (lastSendPhiInputRef.current === sendPhiInput) return;
+    lastSendPhiInputRef.current = sendPhiInput;
+    if (!sendCommittedRef.current) return;
+    sendCommittedRef.current = false;
+    setNoteSendResult(null);
+    const nextNonce = generateNonce();
+    setSendNonce(nextNonce);
+    sendNonceRef.current = nextNonce;
+  }, [sendPhiInput, locked]);
 
   const liveQuote = useMemo(
     () =>
@@ -906,7 +922,7 @@ const ExhaleNote: React.FC<NoteProps> = ({
     if (!Number.isFinite(amountPhi) || amountPhi <= 0) return null;
     const verifyUrl = resolveVerifyUrl(form.verifyUrl, defaultVerifyUrl);
     const transferNonce = resolveSendNonce();
-    const merged = noteSendResult ?? {};
+    const merged: Partial<NoteSendPayload> = noteSendResult ?? {};
     return {
       ...merged,
       amountPhi,
