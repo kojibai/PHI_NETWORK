@@ -384,6 +384,17 @@
     box-shadow: var(--kk-focus);
     background: linear-gradient(180deg, rgba(86,255,227,0.05), var(--kk-surface-2));
   }
+
+  .kk-row input.kk-error {
+    border-color: rgba(255, 147, 170, 0.8);
+    box-shadow: 0 0 0 2px rgba(255, 147, 170, 0.25);
+  }
+
+  .kk-row .kk-hint {
+    margin-top: 6px;
+    font-size: 12px;
+    color: var(--kk-text-mute);
+  }
   
   .kk-row input[disabled],
   .kk-row textarea[disabled] {

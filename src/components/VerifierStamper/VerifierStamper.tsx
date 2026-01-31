@@ -75,7 +75,7 @@ import SealMomentModal from "../SealMomentModalTransfer";
 import ValuationModal from "../ValuationModal";
 import { buildValueSeal, attachValuation, type ValueSeal } from "../../utils/valuation";
 import NotePrinter from "../ExhaleNote";
-import type { BanknoteInputs as NoteBanknoteInputs, VerifierBridge } from "../exhale-note/types";
+import type { BanknoteInputs as NoteBanknoteInputs, NoteSendPayload, NoteSendResult, VerifierBridge } from "../exhale-note/types";
 
 import { kaiPulseNow, SIGIL_CTX, SIGIL_TYPE, SEGMENT_SIZE } from "./constants";
 import { sha256Hex, phiFromPublicKey } from "./crypto";
@@ -99,7 +99,7 @@ import { embedProofMetadata } from "../../utils/svgProof";
 import { extractProofBundleMetaFromSvg, type ProofBundleMeta } from "../../utils/sigilMetadata";
 import { DEFAULT_ISSUANCE_POLICY, quotePhiForUsd } from "../../utils/phi-issuance";
 import { BREATH_MS } from "../valuation/constants";
-import { recordSend, getSpentScaledFor, markConfirmedByLeaf } from "../../utils/sendLedger";
+import { recordSend, getReservedScaledFor, markConfirmedByLeaf } from "../../utils/sendLedger";
 import { recordSigilTransferMovement } from "../../utils/sigilTransferRegistry";
 import {
   buildBundleRoot,
@@ -1979,17 +1979,20 @@ const VerifierStamperInner: React.FC = () => {
     return toScaledBig(String(initialGlyph?.value ?? 0) || "0");
   }, [isChildContext, meta, lastTransfer, persistedBaseScaled, pivotIndex, initialGlyph]);
 
-  const ledgerSpentScaled = useMemo(() => {
+  const ledgerReservedScaled = useMemo(() => {
     if (!canonical) return 0n;
     try {
-      return getSpentScaledFor(canonical);
+      return getReservedScaledFor(canonical);
     } catch (err) {
-      logError("ledgerSpentScaled", err);
+      logError("ledgerReservedScaled", err);
       return 0n;
     }
   }, [canonical]);
 
-  const totalSpentScaled = useMemo(() => (isChildContext ? 0n : ledgerSpentScaled), [isChildContext, ledgerSpentScaled]);
+  const totalSpentScaled = useMemo(
+    () => (isChildContext ? 0n : ledgerReservedScaled),
+    [isChildContext, ledgerReservedScaled]
+  );
 
   const remainingPhiScaled = useMemo(
     () => (basePhiScaled > totalSpentScaled ? basePhiScaled - totalSpentScaled : 0n),
@@ -1999,6 +2002,94 @@ const VerifierStamperInner: React.FC = () => {
   const remainingPhiDisplay4 = useMemo(
     () => fromScaledBigFixed(roundScaledToDecimals(remainingPhiScaled, 4), 4),
     [remainingPhiScaled]
+  );
+
+  const noteSendBusyRef = useRef(false);
+  const handleNoteSend = useCallback(
+    async (payload: NoteSendPayload): Promise<NoteSendResult | void> => {
+      if (noteSendBusyRef.current) return;
+      noteSendBusyRef.current = true;
+      try {
+        const parentCanonical = (canonical ?? "").toLowerCase();
+        if (!parentCanonical) throw new Error("Origin sigil not initialized.");
+
+        const amountScaled = toScaledBig(String(payload.amountPhi || 0));
+        if (amountScaled <= 0n) throw new Error("Invalid Φ amount.");
+        if (amountScaled > remainingPhiScaled) {
+          throw new Error(
+            `Exhale exceeds resonance Φ — requested Φ ${fromScaledBigFixed(amountScaled, 4)} but only Φ ${remainingPhiDisplay4} remains on this glyph.`
+          );
+        }
+
+        const metaOpt = meta as SigilMetadataWithOptionals | null;
+        const previousHeadRoot = metaOpt?.transfersWindowRootV14 ?? metaOpt?.transfersWindowRoot ?? "";
+        const senderStamp = payload.valuationStamp || "";
+        const senderKaiPulse = payload.lockedPulse;
+        const transferNonce = payload.transferNonce || genNonce();
+
+        const leafSeed = stableStringify({
+          parent: parentCanonical,
+          nonce: transferNonce,
+          amount: amountScaled.toString(),
+          pulse: senderKaiPulse,
+          stamp: senderStamp,
+          root: previousHeadRoot,
+        });
+        const transferLeafHashSend = (await sha256Hex(leafSeed)).toLowerCase();
+
+        const childSeed = stableStringify({
+          parent: parentCanonical,
+          nonce: transferNonce,
+          senderStamp,
+          senderKaiPulse,
+          prevHead: previousHeadRoot,
+          leafSend: transferLeafHashSend,
+        });
+        const childCanonical = (await sha256Hex(childSeed)).toLowerCase();
+
+        const rec = {
+          parentCanonical,
+          childCanonical,
+          amountPhiScaled: amountScaled.toString(),
+          senderKaiPulse,
+          transferNonce,
+          senderStamp,
+          previousHeadRoot,
+          transferLeafHashSend,
+        };
+
+        await recordSend(rec);
+        recordSigilTransferMovement({
+          hash: childCanonical,
+          direction: "send",
+          amountPhi: payload.amountPhi,
+          amountUsd: payload.amountUsd != null ? payload.amountUsd.toFixed(2) : undefined,
+          sentPulse: senderKaiPulse,
+        });
+        try {
+          getSigilGlobal().registerSend?.(rec);
+        } catch (err) {
+          logError("__SIGIL__.registerSend", err);
+        }
+        try {
+          window.dispatchEvent(new CustomEvent("sigil:sent", { detail: rec }));
+        } catch (err) {
+          logError("dispatchEvent(sigil:sent)", err);
+        }
+        return {
+          ...payload,
+          parentCanonical,
+          childCanonical,
+          senderKaiPulse,
+          senderStamp,
+          previousHeadRoot,
+          transferLeafHashSend,
+        };
+      } finally {
+        noteSendBusyRef.current = false;
+      }
+    },
+    [canonical, meta, remainingPhiScaled, remainingPhiDisplay4],
   );
 
   // Snap headline Φ to 6dp for UI (math stays BigInt elsewhere)
@@ -3769,7 +3860,13 @@ const VerifierStamperInner: React.FC = () => {
 
           <div style={{ flex: "1 1 auto", minHeight: 0, overflowY: "auto" }}>
             {sigilSvgRaw && metaLiteForNote ? (
-              <NotePrinter meta={metaLiteForNote} initial={noteInitial} />
+              <NotePrinter
+                meta={metaLiteForNote}
+                initial={noteInitial}
+                availablePhi={Number(remainingPhiDisplay4)}
+                originCanonical={canonical ?? undefined}
+                onSendNote={handleNoteSend}
+              />
             ) : sigilSvgRaw ? (
               <div style={{ padding: 16, color: "var(--dim)" }}>Missing valuation metadata for Note — upload/parse a sigil first.</div>
             ) : (

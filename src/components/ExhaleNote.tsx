@@ -24,6 +24,8 @@ import type {
   IntrinsicUnsigned,
   MaybeUnsignedSeal,
   ExhaleNoteRenderPayload,
+  NoteSendPayload,
+  NoteSendResult,
 } from "./exhale-note/types";
 
 /* External stylesheet */
@@ -67,6 +69,26 @@ function formatPhiParts(val: number): { int: string; frac: string } {
   const s = fTiny(val);
   const [i, f] = s.includes(".") ? s.split(".") : [s, ""];
   return { int: i, frac: f ? `.${f}` : "" };
+}
+
+function parsePhiInput(raw: string): number | null {
+  const cleaned = raw.replace(/,/g, ".").trim();
+  if (!cleaned) return null;
+  const num = Number(cleaned);
+  if (!Number.isFinite(num) || num <= 0) return null;
+  return Number(num.toFixed(6));
+}
+
+function generateNonce(): string {
+  if (typeof crypto === "undefined" || !("getRandomValues" in crypto)) {
+    return `${Date.now()}${Math.random().toString(16).slice(2)}`;
+  }
+  return crypto.getRandomValues(new Uint32Array(3)).join("");
+}
+
+function toScaledPhi18(amountPhi: number): string {
+  const safe = Number.isFinite(amountPhi) ? amountPhi : 0;
+  return safe.toFixed(18).replace(".", "");
 }
 
 /** Wait two animation frames to guarantee paint before print */
@@ -446,6 +468,9 @@ const ExhaleNote: React.FC<NoteProps> = ({
   policy = DEFAULT_ISSUANCE_POLICY,
   getNowPulse,
   onRender,
+  availablePhi,
+  originCanonical,
+  onSendNote,
   initial,
   className,
 }) => {
@@ -573,6 +598,12 @@ const ExhaleNote: React.FC<NoteProps> = ({
   const [locked, setLocked] = useState<ExhaleNoteRenderPayload | null>(null);
   const lockedRef = useRef(false);
   const [isRendering, setIsRendering] = useState(false);
+  const [sendPhiInput, setSendPhiInput] = useState<string>("");
+  const [sendNonce, setSendNonce] = useState<string>("");
+  const sendNonceRef = useRef<string>("");
+  const sendCommittedRef = useRef(false);
+  const [noteSendResult, setNoteSendResult] = useState<NoteSendResult | null>(null);
+  const lastSendPhiInputRef = useRef<string>("");
 
   const u =
     (k: keyof BanknoteInputs) =>
@@ -597,6 +628,21 @@ const ExhaleNote: React.FC<NoteProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [liveAlgString]);
 
+  useEffect(() => {
+    if (!locked) {
+      lastSendPhiInputRef.current = sendPhiInput;
+      return;
+    }
+    if (lastSendPhiInputRef.current === sendPhiInput) return;
+    lastSendPhiInputRef.current = sendPhiInput;
+    if (!sendCommittedRef.current) return;
+    sendCommittedRef.current = false;
+    setNoteSendResult(null);
+    const nextNonce = generateNonce();
+    setSendNonce(nextNonce);
+    sendNonceRef.current = nextNonce;
+  }, [sendPhiInput, locked]);
+
   const liveQuote = useMemo(
     () =>
       quotePhiForUsd(
@@ -611,14 +657,30 @@ const ExhaleNote: React.FC<NoteProps> = ({
   const usdPerPhi = liveQuote.usdPerPhi;
   const phiPerUsd = liveQuote.phiPerUsd;
   const valueUsdIndicative = liveValuePhi * usdPerPhi;
+  const cappedDefaultPhi = useMemo(() => {
+    if (!locked) return liveValuePhi;
+    if (typeof availablePhi === "number" && Number.isFinite(availablePhi)) {
+      return Math.max(0, Math.min(locked.valuePhi, availablePhi));
+    }
+    return locked.valuePhi;
+  }, [locked, liveValuePhi, availablePhi]);
+  const defaultSendPhi = locked ? cappedDefaultPhi : liveValuePhi;
+  const parsedSendPhi = locked ? parsePhiInput(sendPhiInput) : null;
+  const effectiveSendPhi = locked ? parsedSendPhi ?? defaultSendPhi : defaultSendPhi;
+  const effectiveUsdPerPhi = locked ? locked.usdPerPhi : usdPerPhi;
+  const effectiveValueUsd = effectiveSendPhi * effectiveUsdPerPhi;
+  const sendPhiOverBalance =
+    typeof availablePhi === "number" &&
+    Number.isFinite(availablePhi) &&
+    effectiveSendPhi > availablePhi + 1e-9;
 
   /* Build SVG for preview */
   const buildCurrentSVG = useCallback((): string => {
     const usingLocked = Boolean(locked);
 
-    const valuePhiStr = usingLocked ? fTiny(locked!.valuePhi) : fTiny(liveValuePhi);
-    const valueUsdStr = usingLocked ? fUsd(locked!.valueUsdIndicative) : fUsd(valueUsdIndicative);
-    const premiumPhiStr = usingLocked ? form.premiumPhi || fTiny(livePremium) : fTiny(livePremium);
+    const valuePhiStr = usingLocked ? fTiny(effectiveSendPhi) : fTiny(liveValuePhi);
+    const valueUsdStr = usingLocked ? fUsd(effectiveValueUsd) : fUsd(valueUsdIndicative);
+    const premiumPhiStr = usingLocked ? fTiny(effectiveSendPhi) : fTiny(livePremium);
 
     const lockedPulseStr = usingLocked ? String(locked!.lockedPulse) : "";
     const valuationStampStr = usingLocked ? form.valuationStamp || locked!.seal.stamp : "";
@@ -655,7 +717,18 @@ const ExhaleNote: React.FC<NoteProps> = ({
       qrPayload,
       provenance: form.provenance ?? [],
     });
-  }, [form, liveValuePhi, livePremium, valueUsdIndicative, nowFloor, liveAlgString, locked, defaultVerifyUrl]);
+  }, [
+    form,
+    liveValuePhi,
+    livePremium,
+    valueUsdIndicative,
+    nowFloor,
+    liveAlgString,
+    locked,
+    defaultVerifyUrl,
+    effectiveSendPhi,
+    effectiveValueUsd,
+  ]);
 
   const renderPreviewThrottled = useRafThrottle(() => {
     const host = previewHostRef.current;
@@ -712,6 +785,15 @@ const ExhaleNote: React.FC<NoteProps> = ({
 
       lockedRef.current = true;
       setLocked(payload);
+      const cap = typeof availablePhi === "number" && Number.isFinite(availablePhi) ? availablePhi : sealed.valuePhi;
+      setSendPhiInput(fTiny(Math.max(0, Math.min(sealed.valuePhi, cap))));
+      {
+        const nextNonce = generateNonce();
+        setSendNonce(nextNonce);
+        sendNonceRef.current = nextNonce;
+      }
+      sendCommittedRef.current = false;
+      setNoteSendResult(null);
 
       setForm((prev) => ({
         ...prev,
@@ -732,7 +814,7 @@ const ExhaleNote: React.FC<NoteProps> = ({
     } finally {
       setIsRendering(false);
     }
-  }, [nowFloor, meta, usdSample, policy, onRender, isRendering, defaultVerifyUrl]);
+  }, [nowFloor, meta, usdSample, policy, onRender, isRendering, defaultVerifyUrl, availablePhi]);
 
   /* Bridge hydration + updates */
   const lastBridgeJsonRef = useRef<string>("");
@@ -826,6 +908,67 @@ const ExhaleNote: React.FC<NoteProps> = ({
     };
   }, [defaultVerifyUrl]);
 
+  const resolveSendNonce = useCallback((): string => {
+    if (sendNonceRef.current) return sendNonceRef.current;
+    const next = sendNonce || generateNonce();
+    sendNonceRef.current = next;
+    if (sendNonce !== next) setSendNonce(next);
+    return next;
+  }, [sendNonce]);
+
+  const buildNoteSendPayload = useCallback((): NoteSendPayload | null => {
+    if (!locked) return null;
+    const amountPhi = effectiveSendPhi;
+    if (!Number.isFinite(amountPhi) || amountPhi <= 0) return null;
+    const verifyUrl = resolveVerifyUrl(form.verifyUrl, defaultVerifyUrl);
+    const transferNonce = resolveSendNonce();
+    const merged: Partial<NoteSendPayload> = noteSendResult ?? {};
+    return {
+      ...merged,
+      amountPhi,
+      amountPhiScaled: toScaledPhi18(amountPhi),
+      amountUsd: amountPhi * effectiveUsdPerPhi,
+      lockedPulse: locked.lockedPulse,
+      valuationStamp: form.valuationStamp || locked.seal.stamp || "",
+      transferNonce,
+      verifyUrl,
+      parentCanonical: originCanonical ?? merged.parentCanonical,
+    };
+  }, [
+    locked,
+    effectiveSendPhi,
+    effectiveUsdPerPhi,
+    form.verifyUrl,
+    form.valuationStamp,
+    defaultVerifyUrl,
+    originCanonical,
+    resolveSendNonce,
+    noteSendResult,
+  ]);
+
+  const ensureNoteSend = useCallback(async (): Promise<boolean> => {
+    if (!locked) return false;
+    if (sendCommittedRef.current) return true;
+    if (sendPhiOverBalance) {
+      window.alert("Send amount exceeds the available Φ balance.");
+      return false;
+    }
+    const payload = buildNoteSendPayload();
+    if (!payload) {
+      window.alert("Enter a valid Φ amount to send.");
+      return false;
+    }
+    try {
+      const result = await onSendNote?.(payload);
+      if (result) setNoteSendResult(result);
+      sendCommittedRef.current = true;
+      return true;
+    } catch (err) {
+      window.alert(`Send failed: ${err instanceof Error ? err.message : String(err)}`);
+      return false;
+    }
+  }, [locked, sendPhiOverBalance, buildNoteSendPayload, onSendNote]);
+
   /* Print + PNG (require lock) */
   const onPrint = useCallback(async () => {
     const root = printRootRef.current;
@@ -834,6 +977,7 @@ const ExhaleNote: React.FC<NoteProps> = ({
       window.alert("Please Render to lock the valuation before printing.");
       return;
     }
+    if (!(await ensureNoteSend())) return;
 
     const verifyUrl = resolveVerifyUrl(form.verifyUrl, defaultVerifyUrl);
     const qrPayload = buildQrPayload({
@@ -843,9 +987,9 @@ const ExhaleNote: React.FC<NoteProps> = ({
 
     const banknote = buildBanknoteSVG({
       ...form,
-      valuePhi: form.valuePhi || fTiny(locked.valuePhi),
-      valueUsd: fUsd(locked.valueUsdIndicative),
-      premiumPhi: form.premiumPhi || fTiny(livePremium),
+      valuePhi: fTiny(effectiveSendPhi),
+      valueUsd: fUsd(effectiveValueUsd),
+      premiumPhi: fTiny(effectiveSendPhi),
       computedPulse: String(locked.lockedPulse),
       nowPulse: String(locked.lockedPulse),
       kaiSignature: form.kaiSignature || "",
@@ -865,8 +1009,8 @@ const ExhaleNote: React.FC<NoteProps> = ({
       sigmaCanon: form.sigmaCanon || "",
       shaHex: form.shaHex || "",
       phiDerived: form.phiDerived || "",
-      valuePhi: form.valuePhi || fTiny(locked.valuePhi),
-      premiumPhi: form.premiumPhi || fTiny(livePremium),
+      valuePhi: fTiny(effectiveSendPhi),
+      premiumPhi: fTiny(effectiveSendPhi),
       valuationAlg: form.valuationAlg || liveAlgString,
       valuationStamp: form.valuationStamp || locked.seal.stamp,
       zk: form.zk,
@@ -883,14 +1027,24 @@ const ExhaleNote: React.FC<NoteProps> = ({
     await printWithTempTitle(title);
 
     root.setAttribute("aria-hidden", "true");
-  }, [form, locked, livePremium, liveAlgString, defaultVerifyUrl]);
+  }, [
+    form,
+    locked,
+    livePremium,
+    liveAlgString,
+    defaultVerifyUrl,
+    effectiveSendPhi,
+    effectiveValueUsd,
+    ensureNoteSend,
+  ]);
 
-  const onSavePng = useCallback(async () => {
+  const onSaveSvg = useCallback(async () => {
     try {
       if (!lockedRef.current || !locked) {
-        window.alert("Please Render to lock the valuation before saving PNG.");
+        window.alert("Please Render to lock the valuation before saving SVG.");
         return;
       }
+      if (!(await ensureNoteSend())) return;
 
       const verifyUrl = resolveVerifyUrl(form.verifyUrl, defaultVerifyUrl);
       const qrPayload = buildQrPayload({
@@ -900,9 +1054,62 @@ const ExhaleNote: React.FC<NoteProps> = ({
 
       const banknote = buildBanknoteSVG({
         ...form,
-        valuePhi: form.valuePhi || fTiny(locked.valuePhi),
-        valueUsd: fUsd(locked.valueUsdIndicative),
-        premiumPhi: form.premiumPhi || fTiny(livePremium),
+        valuePhi: fTiny(effectiveSendPhi),
+        valueUsd: fUsd(effectiveValueUsd),
+        premiumPhi: fTiny(effectiveSendPhi),
+        computedPulse: String(locked.lockedPulse),
+        nowPulse: String(locked.lockedPulse),
+        kaiSignature: form.kaiSignature || "",
+        userPhiKey: form.userPhiKey || "",
+        valuationAlg: form.valuationAlg || liveAlgString,
+        valuationStamp: form.valuationStamp || locked.seal.stamp,
+        sigilSvg: form.sigilSvg || "",
+        verifyUrl,
+        qrPayload,
+        provenance: form.provenance ?? [],
+      });
+
+      const title = makeFileTitle(
+        form.kaiSignature || "",
+        String(locked.lockedPulse),
+        form.valuationStamp || locked.seal.stamp || ""
+      );
+      triggerDownload(`${title}.svg`, new Blob([banknote], { type: "image/svg+xml" }), "image/svg+xml");
+    } catch (err) {
+      window.alert("Save SVG failed: " + (err instanceof Error ? err.message : String(err)));
+      // eslint-disable-next-line no-console
+      console.error(err);
+    }
+  }, [
+    form,
+    locked,
+    livePremium,
+    liveAlgString,
+    defaultVerifyUrl,
+    effectiveSendPhi,
+    effectiveValueUsd,
+    ensureNoteSend,
+  ]);
+
+  const onSavePng = useCallback(async () => {
+    try {
+      if (!lockedRef.current || !locked) {
+        window.alert("Please Render to lock the valuation before saving PNG.");
+        return;
+      }
+      if (!(await ensureNoteSend())) return;
+
+      const verifyUrl = resolveVerifyUrl(form.verifyUrl, defaultVerifyUrl);
+      const qrPayload = buildQrPayload({
+        verifyUrl,
+        proofBundleJson: form.proofBundleJson,
+      });
+
+      const banknote = buildBanknoteSVG({
+        ...form,
+        valuePhi: fTiny(effectiveSendPhi),
+        valueUsd: fUsd(effectiveValueUsd),
+        premiumPhi: fTiny(effectiveSendPhi),
         computedPulse: String(locked.lockedPulse),
         nowPulse: String(locked.lockedPulse),
         kaiSignature: form.kaiSignature || "",
@@ -926,16 +1133,15 @@ const ExhaleNote: React.FC<NoteProps> = ({
         String(locked.lockedPulse),
         form.valuationStamp || locked.seal.stamp || ""
       );
-
-      if (!proofBundleJson) {
-        triggerDownload(`${title}.png`, png, "image/png");
-        return;
-      }
+      const noteSendPayload = buildNoteSendPayload();
+      const noteSendJson = noteSendPayload ? JSON.stringify(noteSendPayload) : "";
 
       const entries = [
         proofBundleJson ? { keyword: "phi_proof_bundle", text: proofBundleJson } : null,
         bundleHash ? { keyword: "phi_bundle_hash", text: bundleHash } : null,
         receiptHash ? { keyword: "phi_receipt_hash", text: receiptHash } : null,
+        noteSendJson ? { keyword: "phi_note_send", text: noteSendJson } : null,
+        { keyword: "phi_note_svg", text: banknote },
       ].filter((entry): entry is { keyword: string; text: string } => Boolean(entry));
 
       if (entries.length === 0) {
@@ -952,15 +1158,25 @@ const ExhaleNote: React.FC<NoteProps> = ({
       // eslint-disable-next-line no-console
       console.error(err);
     }
-  }, [form, locked, livePremium, liveAlgString, defaultVerifyUrl]);
+  }, [
+    form,
+    locked,
+    livePremium,
+    liveAlgString,
+    defaultVerifyUrl,
+    effectiveSendPhi,
+    effectiveValueUsd,
+    ensureNoteSend,
+    buildNoteSendPayload,
+  ]);
 
   /* Derived display values */
   const displayPulse = locked ? locked.lockedPulse : nowFloor;
-  const displayPhi = locked ? locked.valuePhi : liveValuePhi;
-  const displayUsd = locked ? locked.valueUsdIndicative : valueUsdIndicative;
+  const displayPhi = locked ? effectiveSendPhi : liveValuePhi;
+  const displayUsd = locked ? effectiveValueUsd : valueUsdIndicative;
   const displayUsdPerPhi = locked ? locked.usdPerPhi : usdPerPhi;
   const displayPhiPerUsd = locked ? locked.phiPerUsd : phiPerUsd;
-  const displayPremium = locked ? (form.premiumPhi ? Number(form.premiumPhi) : 0) : livePremium;
+  const displayPremium = locked ? effectiveSendPhi : livePremium;
   const phiParts = formatPhiParts(displayPhi);
 
   const noteTitle = useMemo(() => `☤KAI ${fPulse(displayPulse)}`, [displayPulse]);
@@ -1006,7 +1222,7 @@ const ExhaleNote: React.FC<NoteProps> = ({
                 title="Freeze current pulse and valuation"
                 disabled={isRendering}
               >
-                {isRendering ? "Rendering…" : "Render — Lock Valuation"}
+                {isRendering ? "Rendering…" : "Render — Lock Send"}
               </button>
             ) : (
               <div className="kk-locked-banner" role="status" aria-live="polite">
@@ -1020,6 +1236,9 @@ const ExhaleNote: React.FC<NoteProps> = ({
             <div className="kk-cta-actions">
               <button className="kk-btn" onClick={onPrint} disabled={!locked} title="Print proof pages">
                 Print / Save PDF
+              </button>
+              <button className="kk-btn kk-btn-ghost" onClick={onSaveSvg} disabled={!locked} title="Export note SVG">
+                Save SVG
               </button>
               <button className="kk-btn kk-btn-ghost" onClick={onSavePng} disabled={!locked} title="Export note PNG">
                 Save PNG
@@ -1121,6 +1340,21 @@ const ExhaleNote: React.FC<NoteProps> = ({
               <label>Valuation Stamp</label>
               <input value={locked ? form.valuationStamp || locked.seal.stamp || "—" : ""} readOnly />
             </div>
+            <div className="kk-row">
+              <label>Send Φ (custom)</label>
+              <input
+                value={sendPhiInput}
+                onChange={(e) => setSendPhiInput(e.target.value)}
+                placeholder={locked ? fTiny(defaultSendPhi) : "Render to set amount"}
+                disabled={!locked}
+                className={sendPhiOverBalance ? "kk-error" : undefined}
+              />
+              {locked && typeof availablePhi === "number" && Number.isFinite(availablePhi) ? (
+                <div className="kk-hint">
+                  Available Φ: {fTiny(availablePhi)} {sendPhiOverBalance ? "(exceeds balance)" : ""}
+                </div>
+              ) : null}
+            </div>
           </div>
 
           <div className="kk-stack">
@@ -1182,11 +1416,14 @@ const ExhaleNote: React.FC<NoteProps> = ({
         <div className="kk-flex">
           {!locked && (
             <button className="kk-btn kk-btn-primary" onClick={handleRenderLock} disabled={isRendering}>
-              {isRendering ? "Rendering…" : "Render — Lock Valuation"}
+            {isRendering ? "Rendering…" : "Render — Lock Send"}
             </button>
           )}
           <button className="kk-btn" onClick={onPrint} disabled={!locked}>
             Print / Save PDF
+          </button>
+          <button className="kk-btn kk-btn-ghost" onClick={onSaveSvg} disabled={!locked}>
+            Save SVG
           </button>
           <button className="kk-btn kk-btn-ghost" onClick={onSavePng} disabled={!locked}>
             Save PNG
