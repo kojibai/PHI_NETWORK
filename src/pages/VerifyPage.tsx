@@ -59,7 +59,7 @@ import { insertPngTextChunks, readPngTextChunk } from "../utils/pngChunks";
 import { getKaiPulseEternalInt } from "../SovereignSolar";
 import { getSendRecordByNonce, listen, markConfirmedByNonce } from "../utils/sendLedger";
 import { recordSigilTransferMovement } from "../utils/sigilTransferRegistry";
-import { isNoteClaimed, markNoteClaimed } from "../components/SigilExplorer/registryStore";
+import { getNoteClaimInfo, getNoteClaimLeader, isNoteClaimed, markNoteClaimed } from "../components/SigilExplorer/registryStore";
 import { pullAndImportRemoteUrls } from "../components/SigilExplorer/remotePull";
 import { useKaiTicker } from "../hooks/useKaiTicker";
 import { useValuation } from "./SigilPage/useValuation";
@@ -117,6 +117,18 @@ function formatProofValue(value: unknown): string {
   }
 }
 
+function normalizeClaimPulse(value: number | null): number | null {
+  if (value == null || !Number.isFinite(value) || value <= 0) return null;
+  if (value > 100_000_000_000) return getKaiPulseEternalInt(new Date(value));
+  return Math.trunc(value);
+}
+
+function formatClaimPulse(value: number | null): string {
+  const normalized = normalizeClaimPulse(value);
+  if (!normalized || !Number.isFinite(normalized)) return "—";
+  return String(normalized);
+}
+
 async function sha256Bytes(data: Uint8Array): Promise<string> {
   return (await sha256Hex(data)).toLowerCase();
 }
@@ -139,6 +151,7 @@ type NoteSendMeta = {
   amountPhi?: number;
   amountUsd?: number;
   childCanonical?: string;
+  transferLeafHashSend?: string;
 };
 
 function buildNoteSendMetaFromObject(value: unknown): NoteSendMeta | null {
@@ -148,8 +161,9 @@ function buildNoteSendMetaFromObject(value: unknown): NoteSendMeta | null {
   const amountPhi = typeof value.amountPhi === "number" && Number.isFinite(value.amountPhi) ? value.amountPhi : undefined;
   const amountUsd = typeof value.amountUsd === "number" && Number.isFinite(value.amountUsd) ? value.amountUsd : undefined;
   const childCanonical = typeof value.childCanonical === "string" ? value.childCanonical.trim() : undefined;
+  const transferLeafHashSend = typeof value.transferLeafHashSend === "string" ? value.transferLeafHashSend.trim() : undefined;
   if (!parentCanonical || !transferNonce) return null;
-  return { parentCanonical, transferNonce, amountPhi, amountUsd, childCanonical };
+  return { parentCanonical, transferNonce, amountPhi, amountUsd, childCanonical, transferLeafHashSend };
 }
 
 function parseNoteSendMeta(raw: string | null): NoteSendMeta | null {
@@ -173,6 +187,14 @@ function parseNoteSendPayload(raw: string | null): Record<string, unknown> | nul
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function readRecordString(value: Record<string, unknown> | null | undefined, key: string): string | null {
+  if (!value) return null;
+  const raw = value[key];
+  if (typeof raw !== "string") return null;
+  const trimmed = raw.trim();
+  return trimmed ? trimmed : null;
 }
 
 function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
@@ -1054,10 +1076,31 @@ export default function VerifyPage(): ReactElement {
     () => (noteSendMeta ? getSendRecordByNonce(noteSendMeta.parentCanonical, noteSendMeta.transferNonce) : null),
     [noteSendMeta, ledgerTick, registryTick],
   );
+  const noteClaimInfo = useMemo(
+    () => (noteSendMeta ? getNoteClaimInfo(noteSendMeta.parentCanonical, noteSendMeta.transferNonce) : null),
+    [noteSendMeta, registryTick],
+  );
+  const noteClaimLeader = useMemo(
+    () => (noteSendMeta ? getNoteClaimLeader(noteSendMeta.parentCanonical) : null),
+    [noteSendMeta, registryTick],
+  );
+  const noteClaimedPulse = noteClaimInfo?.claimedPulse || null;
+  const noteClaimNonce = noteClaimInfo?.nonce ?? noteSendMeta?.transferNonce ?? "";
+  const noteClaimLeaderNonce = noteClaimLeader?.nonce ?? "";
+  const noteClaimTransferHash =
+    noteClaimInfo?.transferLeafHash ??
+    noteSendMeta?.transferLeafHashSend ??
+    readRecordString(noteSendPayloadRaw, "transferLeafHashSend") ??
+    noteSendRecord?.transferLeafHashSend ??
+    "";
   const noteClaimed =
     Boolean(noteSendRecord?.confirmed) ||
     (noteSendMeta ? isNoteClaimed(noteSendMeta.parentCanonical, noteSendMeta.transferNonce) : false);
-  const noteClaimStatus = noteSendMeta ? (noteClaimed ? "CLAIMED" : "UNCLAIMED") : null;
+  const noteClaimStatus = noteSendMeta ? (noteClaimed ? "CLAIMED — SEAL Owned" : "UNCLAIMED — SEAL Available") : null;
+  const noteClaimPulseLabel = useMemo(() => formatClaimPulse(noteClaimedPulse), [noteClaimedPulse]);
+  const noteClaimNonceShort = noteClaimNonce ? ellipsizeMiddle(noteClaimNonce, 8, 6) : "—";
+  const noteClaimLeaderShort = noteClaimLeaderNonce ? ellipsizeMiddle(noteClaimLeaderNonce, 8, 6) : "—";
+  const noteClaimHashShort = noteClaimTransferHash ? ellipsizeMiddle(noteClaimTransferHash, 10, 8) : "—";
   const isNoteUpload = Boolean(noteSendMeta || noteSendPayloadRaw || noteSvgFromPng);
   const isExhaleNoteUpload = isNoteUpload;
 
@@ -1474,10 +1517,18 @@ export default function VerifyPage(): ReactElement {
     const key = `${noteSendMeta.parentCanonical}|${noteSendMeta.transferNonce}`;
     if (noteSendConfirmedRef.current === key) return;
     noteSendConfirmedRef.current = key;
+    const claimedPulse = currentPulse ?? getKaiPulseEternalInt(new Date());
+    const transferLeafHash =
+      noteSendMeta.transferLeafHashSend ??
+      readRecordString(noteSendPayloadRaw, "transferLeafHashSend") ??
+      noteSendRecord?.transferLeafHashSend ??
+      undefined;
     try {
       markConfirmedByNonce(noteSendMeta.parentCanonical, noteSendMeta.transferNonce);
       markNoteClaimed(noteSendMeta.parentCanonical, noteSendMeta.transferNonce, {
         childCanonical: noteSendMeta.childCanonical,
+        transferLeafHash,
+        claimedPulse,
       });
       if (noteSendMeta.childCanonical && noteSendMeta.amountPhi) {
         recordSigilTransferMovement({
@@ -1491,7 +1542,7 @@ export default function VerifyPage(): ReactElement {
       // eslint-disable-next-line no-console
       console.error("note send confirm failed", err);
     }
-  }, [noteSendMeta]);
+  }, [currentPulse, noteSendMeta, noteSendPayloadRaw, noteSendRecord]);
 
   const runOwnerAuthFlow = useCallback(
     async (args: {
@@ -1637,7 +1688,7 @@ export default function VerifyPage(): ReactElement {
   const runVerify = useCallback(async (): Promise<void> => {
     const raw = svgText.trim();
     if (!raw) {
-      setResult({ status: "error", message: "Inhale or remember the sealed SVG (ΦKey).", slug });
+      setResult({ status: "error", message: "Inhale or remember the sealed SVG (Sigil-Glyph).", slug });
       return;
     }
     const receipt = parseSharedReceiptFromText(raw);
@@ -2595,8 +2646,8 @@ if (verified && typeof cacheBundleHash === "string" && cacheBundleHash.trim().le
   const badge: { kind: BadgeKind; title: string; subtitle?: string } = useMemo(() => {
     if (busy) return { kind: "busy", title: "SEALING", subtitle: "Deterministic proof rails executing." };
     if (result.status === "ok") return { kind: "ok", title: "PROOF OF BREATH™", subtitle: "Human-origin seal affirmed." };
-    if (result.status === "error") return { kind: "fail", title: "REJECTED", subtitle: "Inhale a sealed ΦKey, then verify." };
-    return { kind: "idle", title: "STANDBY", subtitle: "Inhale a ΦKey to begin." };
+    if (result.status === "error") return { kind: "fail", title: "REJECTED", subtitle: "Inhale a sealed file, then verify." };
+    return { kind: "idle", title: "STANDBY", subtitle: "Inhale a Sigil / Seal / Note to begin." };
   }, [busy, result.status]);
 
   const kpiPulse = useMemo(
@@ -3306,11 +3357,11 @@ React.useEffect(() => {
   const activePanelTitle =
     panel === "inhale" ? "Inhale" : panel === "capsule" ? "Vessel" : panel === "proof" ? "Proof" : panel === "zk" ? "ZK" : "Audit";
   const detectedStatus = svgText.trim()
-    ? "Detected: Sigil-Glyph (SVG) — Full attestation"
+    ? "Detected input: Sigil-Glyph (SVG) — Full attestation"
     : isNoteUpload
-      ? "Detected: Kai-Note (PNG) — Value note"
+      ? "Detected input: Kai-Note (PNG) — Value note"
       : sharedReceipt
-        ? "Detected: Sigil-Seal (PNG) — Proof seal"
+        ? "Detected input: Sigil-Seal (PNG) — Proof seal"
         : "";
 
   const onDragOver = useCallback((e: React.DragEvent) => {
@@ -3412,7 +3463,16 @@ React.useEffect(() => {
 
           <div className="vkpis" aria-label="Primary identifiers">
             <MiniField label="Pulse" value={kpiPulse} />
-            <MiniField label="Φ-Key" value={kpiPhiKey === "—" ? "—" : ellipsizeMiddle(kpiPhiKey, 12, 10)} title={kpiPhiKey} />
+            <div className="vkpi-stack">
+              <MiniField
+                label="Φ-Key"
+                value={kpiPhiKey === "—" ? "—" : ellipsizeMiddle(kpiPhiKey, 12, 10)}
+                title={kpiPhiKey}
+              />
+              <div className="vkpi-whisper" aria-label="Φ-Key helper">
+                Derived sovereign identifier
+              </div>
+            </div>
           </div>
 
           {proofCapsule ? (
@@ -3460,11 +3520,27 @@ React.useEffect(() => {
                   <div className="vreceipt-note-left">
                     <div className="vreceipt-label">☤Kai-Note (Legal Tender)</div>
                     {noteClaimStatus ? (
-                      <div
-                        className={`vnote-claim ${noteClaimed ? "vnote-claim--claimed" : "vnote-claim--unclaimed"}`}
-                        title={noteClaimed ? "This note has already been claimed." : "This note has not been claimed yet."}
-                      >
-                        {noteClaimStatus}
+                      <div className="vnote-claim-wrap">
+                        <div
+                          className={`vnote-claim ${noteClaimed ? "vnote-claim--claimed" : "vnote-claim--unclaimed"}`}
+                          title={
+                            noteClaimed
+                              ? `Rotation-Seal owned: ${noteClaimNonce || "—"}\nClaimed pulse: ${noteClaimPulseLabel}\nLeaf hash: ${noteClaimTransferHash || "—"}`
+                              : "Rotation-Seal available: this note has not been claimed yet."
+                          }
+                        >
+                          {noteClaimStatus}
+                        </div>
+                        {noteClaimed && noteClaimNonce ? (
+                          <div className="vnote-claim-meta" aria-label="Note claim metadata">
+                            <span className="mono">rotation-seal {noteClaimNonceShort}</span>
+                            <span>claimed pulse {noteClaimPulseLabel}</span>
+                            {noteClaimTransferHash ? <span className="mono">hash {noteClaimHashShort}</span> : null}
+                            {noteClaimLeaderNonce && noteClaimLeaderNonce !== noteClaimNonce ? (
+                              <span className="mono">leader {noteClaimLeaderShort}</span>
+                            ) : null}
+                          </div>
+                        ) : null}
                       </div>
                     ) : null}
                   </div>

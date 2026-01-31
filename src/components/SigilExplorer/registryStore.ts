@@ -33,7 +33,16 @@ let registryHydrated = false;
 let noteClaimsHydrated = false;
 
 export const memoryRegistry: Registry = new Map();
-const noteClaimRegistry: Map<string, Set<string>> = new Map();
+
+export type NoteClaimRecord = {
+  nonce: string;
+  claimedPulse: number;
+  childCanonical?: string;
+  transferLeafHash?: string;
+};
+
+type NoteClaimMap = Map<string, NoteClaimRecord>;
+const noteClaimRegistry: Map<string, NoteClaimMap> = new Map();
 const channel = hasWindow && "BroadcastChannel" in window ? new BroadcastChannel(BC_NAME) : null;
 
 export type AddSource = "local" | "remote" | "hydrate" | "import";
@@ -68,6 +77,17 @@ function readStringField(obj: unknown, key: string): string | undefined {
   if (typeof v !== "string") return undefined;
   const t = v.trim();
   return t ? t : undefined;
+}
+
+function readNumberField(obj: unknown, key: string): number | undefined {
+  if (!isRecord(obj)) return undefined;
+  const v = obj[key];
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (typeof v === "string") {
+    const n = Number(v);
+    if (Number.isFinite(n)) return n;
+  }
+  return undefined;
 }
 
 function readTransferDirectionValue(value: unknown): "send" | "receive" | null {
@@ -133,17 +153,49 @@ function hydrateNoteClaimsFromStorage(): boolean {
       if (!Array.isArray(value)) continue;
       const parentKey = normalizeCanonical(parent);
       if (!parentKey) continue;
-      const set = noteClaimRegistry.get(parentKey) ?? new Set<string>();
+      const map = noteClaimRegistry.get(parentKey) ?? new Map<string, NoteClaimRecord>();
       for (const entry of value) {
-        if (typeof entry !== "string") continue;
-        const nonce = normalizeNonce(entry);
-        if (!nonce) continue;
-        if (!set.has(nonce)) {
-          set.add(nonce);
+        if (typeof entry === "string") {
+          const nonce = normalizeNonce(entry);
+          if (!nonce || map.has(nonce)) continue;
+          map.set(nonce, { nonce, claimedPulse: 0 });
           changed = true;
+          continue;
+        }
+        if (!isRecord(entry)) continue;
+        const nonce = normalizeNonce(readStringField(entry, "nonce"));
+        if (!nonce) continue;
+        const claimedPulse = Number(entry.claimedPulse ?? entry.claimedAt ?? 0);
+        const childCanonical = normalizeCanonical(readStringField(entry, "childCanonical"));
+        const transferLeafHash = readStringField(entry, "transferLeafHash") ?? undefined;
+        const existing = map.get(nonce);
+        const next: NoteClaimRecord = {
+          nonce,
+          claimedPulse: Number.isFinite(claimedPulse) ? claimedPulse : 0,
+          childCanonical: childCanonical || undefined,
+          transferLeafHash,
+        };
+        if (!existing) {
+          map.set(nonce, next);
+          changed = true;
+        } else {
+          const merged: NoteClaimRecord = {
+            nonce,
+            claimedPulse: existing.claimedPulse || next.claimedPulse,
+            childCanonical: existing.childCanonical || next.childCanonical,
+            transferLeafHash: existing.transferLeafHash || next.transferLeafHash,
+          };
+          if (
+            merged.claimedPulse !== existing.claimedPulse ||
+            merged.childCanonical !== existing.childCanonical ||
+            merged.transferLeafHash !== existing.transferLeafHash
+          ) {
+            map.set(nonce, merged);
+            changed = true;
+          }
         }
       }
-      if (set.size > 0) noteClaimRegistry.set(parentKey, set);
+      if (map.size > 0) noteClaimRegistry.set(parentKey, map);
     }
     return changed;
   } catch {
@@ -154,9 +206,9 @@ function hydrateNoteClaimsFromStorage(): boolean {
 function persistNoteClaimsToStorage(): void {
   if (!canStorage) return;
   try {
-    const obj: Record<string, string[]> = {};
-    for (const [parent, nonces] of noteClaimRegistry.entries()) {
-      const list = Array.from(nonces.values());
+    const obj: Record<string, NoteClaimRecord[]> = {};
+    for (const [parent, claims] of noteClaimRegistry.entries()) {
+      const list = Array.from(claims.values());
       if (list.length > 0) obj[parent] = list;
     }
     localStorage.setItem(NOTE_CLAIM_LS_KEY, JSON.stringify(obj));
@@ -174,16 +226,29 @@ function ensureNoteClaimsHydrated(): void {
 export function markNoteClaimed(
   parentCanonical: string,
   transferNonce: string,
-  args?: { childCanonical?: string },
+  args?: { childCanonical?: string; claimedPulse?: number; transferLeafHash?: string },
 ): boolean {
   ensureNoteClaimsHydrated();
   const parentKey = normalizeCanonical(parentCanonical);
   const nonce = normalizeNonce(transferNonce);
   if (!parentKey || !nonce) return false;
-  const set = noteClaimRegistry.get(parentKey) ?? new Set<string>();
-  if (set.has(nonce)) return false;
-  set.add(nonce);
-  noteClaimRegistry.set(parentKey, set);
+  const map = noteClaimRegistry.get(parentKey) ?? new Map<string, NoteClaimRecord>();
+  const existing = map.get(nonce);
+  const claimedPulse = Number.isFinite(args?.claimedPulse ?? NaN) ? Number(args?.claimedPulse) : 0;
+  const next: NoteClaimRecord = {
+    nonce,
+    claimedPulse: existing?.claimedPulse || claimedPulse,
+    childCanonical: existing?.childCanonical || normalizeCanonical(args?.childCanonical),
+    transferLeafHash: existing?.transferLeafHash || args?.transferLeafHash,
+  };
+  const changed =
+    !existing ||
+    next.claimedPulse !== existing.claimedPulse ||
+    next.childCanonical !== existing.childCanonical ||
+    next.transferLeafHash !== existing.transferLeafHash;
+  if (!changed) return false;
+  map.set(nonce, next);
+  noteClaimRegistry.set(parentKey, map);
   persistNoteClaimsToStorage();
   const claimPayload = buildNoteClaimPayload({
     parentCanonical: parentKey,
@@ -206,6 +271,33 @@ export function isNoteClaimed(parentCanonical: string, transferNonce: string): b
   const nonce = normalizeNonce(transferNonce);
   if (!parentKey || !nonce) return false;
   return noteClaimRegistry.get(parentKey)?.has(nonce) ?? false;
+}
+
+export function getNoteClaimInfo(parentCanonical: string, transferNonce: string): NoteClaimRecord | null {
+  ensureNoteClaimsHydrated();
+  const parentKey = normalizeCanonical(parentCanonical);
+  const nonce = normalizeNonce(transferNonce);
+  if (!parentKey || !nonce) return null;
+  return noteClaimRegistry.get(parentKey)?.get(nonce) ?? null;
+}
+
+export function getNoteClaimHistory(parentCanonical: string): NoteClaimRecord[] {
+  ensureNoteClaimsHydrated();
+  const parentKey = normalizeCanonical(parentCanonical);
+  if (!parentKey) return [];
+  const map = noteClaimRegistry.get(parentKey);
+  if (!map) return [];
+  return Array.from(map.values()).sort((a, b) => {
+    const at = a.claimedPulse || 0;
+    const bt = b.claimedPulse || 0;
+    if (at !== bt) return bt - at;
+    return a.nonce.localeCompare(b.nonce);
+  });
+}
+
+export function getNoteClaimLeader(parentCanonical: string): NoteClaimRecord | null {
+  const history = getNoteClaimHistory(parentCanonical);
+  return history[0] ?? null;
 }
 
 function safeDecodeURIComponent(v: string): string {
@@ -522,9 +614,22 @@ export function addUrl(url: string, opts?: AddUrlOptions): boolean {
     const nonce = readStringField(record, "transferNonce") ?? readStringField(record, "nonce");
     const childCanonical =
       readStringField(record, "canonicalHash") ?? readStringField(record, "childHash") ?? readStringField(record, "hash");
+    const transferLeafHash =
+      readStringField(record, "transferLeafHashSend") ??
+      readStringField(record, "transferLeafHashReceive") ??
+      readStringField(record, "leafHash");
+    const claimedPulse =
+      readNumberField(record, "claimedPulse") ??
+      readNumberField(record, "receivePulse") ??
+      readNumberField(record, "pulse") ??
+      0;
     if (parentHash && nonce) {
       markConfirmedByNonce(parentHash, nonce);
-      markNoteClaimed(parentHash, nonce, { childCanonical: childCanonical ?? undefined });
+      markNoteClaimed(parentHash, nonce, {
+        childCanonical: childCanonical ?? undefined,
+        transferLeafHash: transferLeafHash ?? undefined,
+        claimedPulse,
+      });
     }
   }
 
