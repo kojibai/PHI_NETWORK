@@ -138,7 +138,7 @@ import {
   currentCanonical as currentCanonicalUtil,
   currentToken as currentTokenUtil,
 } from "../../utils/urlShort";
-import { getReservedScaledForKind } from "../../utils/sendLedger";
+import { getPendingReservedScaledForKind, getReservedScaledForKind } from "../../utils/sendLedger";
 import { fromScaledBig, toScaledBig } from "../../components/verifier/utils/decimal";
 // registry.ts
 import {
@@ -2009,8 +2009,10 @@ setTimeout(() => setSuppressAuthUntil(0), 0);
   const ledgerReservedScaled = useMemo(() => {
     const h = currentCanonicalUtil(payload ?? null, localHash, legacyInfo);
     if (!h) return 0n;
-    const kind = branchSpentScaled > 0n ? "note" : "all";
-    return getReservedScaledForKind(h, kind);
+    if (branchSpentScaled > 0n) {
+      return getReservedScaledForKind(h, "note") + getPendingReservedScaledForKind(h, "send");
+    }
+    return getReservedScaledForKind(h, "all");
   }, [payload, localHash, legacyInfo, branchSpentScaled]);
 
   const ledgerReservedPhi = useMemo(

@@ -99,7 +99,12 @@ import { embedProofMetadata } from "../../utils/svgProof";
 import { extractProofBundleMetaFromSvg, type ProofBundleMeta } from "../../utils/sigilMetadata";
 import { DEFAULT_ISSUANCE_POLICY, quotePhiForUsd } from "../../utils/phi-issuance";
 import { BREATH_MS } from "../valuation/constants";
-import { recordSend, getReservedScaledForKind, markConfirmedByLeaf } from "../../utils/sendLedger";
+import {
+  recordSend,
+  getPendingReservedScaledForKind,
+  getReservedScaledForKind,
+  markConfirmedByLeaf,
+} from "../../utils/sendLedger";
 import { recordSigilTransferMovement } from "../../utils/sigilTransferRegistry";
 import {
   buildBundleRoot,
@@ -1987,8 +1992,10 @@ const VerifierStamperInner: React.FC = () => {
   const ledgerReservedScaled = useMemo(() => {
     if (!canonical) return 0n;
     try {
-      const kind = branchSpentScaled > 0n ? "note" : "all";
-      return getReservedScaledForKind(canonical, kind);
+      if (branchSpentScaled > 0n) {
+        return getReservedScaledForKind(canonical, "note") + getPendingReservedScaledForKind(canonical, "send");
+      }
+      return getReservedScaledForKind(canonical, "all");
     } catch (err) {
       logError("ledgerReservedScaled", err);
       return 0n;
