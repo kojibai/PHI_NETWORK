@@ -3612,7 +3612,7 @@ React.useEffect(() => {
           {panel === "inhale" ? (
             <div className="vcard" data-panel="inhale">
               <div className="vcard-head">
-                <div className="vcard-title">Inhale Sigil</div>
+                <div className="vcard-title">Inhale: Sigil • Seal • Note</div>
                 <div className="vcard-sub">Drop Sigil-Glyph (SVG) or Sigil-Seal / Kai-Note (PNG) to derive Φ-Key.</div>
               </div>
  
@@ -3654,7 +3654,7 @@ React.useEffect(() => {
                           <img className="vphi-ic" src="/phi.svg" alt="" aria-hidden="true" />
                         </span>
                         <span className="vdrop-copy">
-                          <span className="vdrop-txt">Inhale Sigil</span>
+                          <span className="vdrop-txt">Inhale</span>
                           <span className="vdrop-sub">{dragActive ? "Drop to Inhale" : "Sigil-Glyph (SVG) or Sigil-Seal / Kai-Note (PNG)"}</span>
                           <span className="vdrop-pills" aria-label="Supported formats">
                             <span className="vdrop-pill">SVG</span>
@@ -3666,7 +3666,7 @@ React.useEffect(() => {
                           <span className="vdrop-mark-label">KEY</span>
                         </span>
                       </button>
-                      <div className="vdrop-helper">Original mints only — screenshots won’t verify.</div>
+                      <div className="vdrop-helper">Original minted files only — screenshots won’t verify.</div>
                       {detectedStatus ? <div className="vdrop-detect">{detectedStatus}</div> : null}
 
                       <div className="vcontrol-row" aria-label="Quick actions">
