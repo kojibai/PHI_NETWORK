@@ -72,7 +72,7 @@ import { svgStringToPngBlob, triggerDownload } from "../components/exhale-note/s
 import NotePrinter from "../components/ExhaleNote";
 import { buildNotePayload } from "../components/verifier/utils/notePayload";
 import { buildBanknoteSVG } from "../components/exhale-note/banknoteSvg";
-import type { BanknoteInputs as NoteBanknoteInputs } from "../components/exhale-note/types";
+import type { BanknoteInputs as NoteBanknoteInputs, NoteSendPayload, NoteSendResult } from "../components/exhale-note/types";
 import { safeShowDialog } from "../components/verifier/utils/modal";
 import type { SigilMetadata } from "../components/verifier/types/local";
 import useRollingChartSeries from "../components/VerifierStamper/hooks/useRollingChartSeries";
@@ -143,6 +143,27 @@ function parseJsonString(value: unknown): unknown {
   } catch {
     return value;
   }
+}
+
+function normalizeCanonicalHash(value: string | null | undefined): string {
+  if (typeof value !== "string") return "";
+  const trimmed = value.trim();
+  return trimmed ? trimmed.toLowerCase() : "";
+}
+
+async function resolveNoteParentCanonical(meta: SigilMetadata | null, payload?: NoteSendPayload): Promise<string> {
+  const fromPayload = normalizeCanonicalHash(payload?.parentCanonical);
+  if (fromPayload) return fromPayload;
+  const fromMeta = normalizeCanonicalHash(meta?.canonicalHash);
+  if (fromMeta) return fromMeta;
+  if (!meta) return "";
+  const pulse = Number.isFinite(meta.pulse ?? NaN) ? meta.pulse : meta.kaiPulse;
+  const beat = Number.isFinite(meta.beat ?? NaN) ? meta.beat : undefined;
+  const stepIndex = Number.isFinite(meta.stepIndex ?? NaN) ? meta.stepIndex : undefined;
+  const chakraDay = typeof meta.chakraDay === "string" ? meta.chakraDay : "";
+  const seed = `${pulse ?? ""}|${beat ?? ""}|${stepIndex ?? ""}|${chakraDay ?? ""}`;
+  if (seed === "|||") return "";
+  return (await sha256Hex(seed)).toLowerCase();
 }
 
 type NoteSendMeta = {
@@ -2828,6 +2849,7 @@ body: [
     const raw = result.embedded.raw;
     return isRecord(raw) ? (raw as SigilMetadata) : null;
   }, [result]);
+  const noteOriginCanonical = useMemo(() => normalizeCanonicalHash(noteMeta?.canonicalHash), [noteMeta?.canonicalHash]);
 
   const notePulseNow = useMemo(() => currentPulse ?? getKaiPulseEternalInt(new Date()), [currentPulse]);
 const noteInitial = useMemo<NoteBanknoteInputs>(() => {
@@ -2907,6 +2929,25 @@ const noteInitial = useMemo<NoteBanknoteInputs>(() => {
       verifyUrl: currentVerifyUrl,
     });
   }, [canShowNotePreview, currentVerifyUrl, displayPhi, displayUsd, noteInitial, svgText]);
+
+  const handleNoteSend = useCallback(
+    async (payload: NoteSendPayload): Promise<NoteSendResult | void> => {
+      const parentCanonical = await resolveNoteParentCanonical(noteMeta, payload);
+      const transferNonce = payload.transferNonce?.trim() ?? "";
+      if (!parentCanonical || !transferNonce) return payload;
+      setNoteSendMeta({
+        parentCanonical,
+        transferNonce,
+        amountPhi: payload.amountPhi,
+        amountUsd: payload.amountUsd,
+        childCanonical: payload.childCanonical,
+        transferLeafHashSend: payload.transferLeafHashSend,
+      });
+      setNoteSendPayloadRaw(payload as Record<string, unknown>);
+      return parentCanonical === payload.parentCanonical ? payload : { ...payload, parentCanonical };
+    },
+    [noteMeta],
+  );
 
   const openNote = useCallback(() => {
     if (!noteDlgRef.current) return;
@@ -3721,6 +3762,8 @@ React.useEffect(() => {
                 meta={valuationPayload}
                 availablePhi={ledgerBalance?.remaining}
                 initial={noteInitial}
+                originCanonical={noteOriginCanonical || undefined}
+                onSendNote={handleNoteSend}
               />
             ) : (
               <div style={{ padding: 16, color: "var(--dim)" }}>Load and verify a sigil to render an exhale note.</div>
