@@ -664,8 +664,14 @@ function SignProofIcon(): ReactElement {
   return (
     <svg className="vicon-word" viewBox="0 0 32 24" aria-hidden="true" focusable="false">
       <rect x="1.5" y="1.5" width="29" height="21" rx="6" fill="none" stroke="currentColor" strokeWidth="1.4" opacity="0.95" />
-      <path d="M11.2 9.2 18.6 6.8c.7-.2 1.4.5 1.2 1.2l-2.3 7.4c-.1.4-.5.7-.9.7h-2.2l-2.2 2.2c-.5.5-1.3.2-1.3-.5V15.6l-1.8-1.8c-.5-.5-.2-1.3.5-1.3h2.6Z" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" opacity="0.95" />
-      <path d="M7.2 16.6c2.2-1.6 4.2-1.6 6.4 0 2.2 1.6 4.2 1.6 6.4 0" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" opacity="0.6" />
+      <path d="M9 8.4h14c.6 0 1 .4 1 1v3.6c0 .6-.4 1-1 1H9c-.6 0-1-.4-1-1V9.4c0-.6.4-1 1-1Z" fill="none" stroke="currentColor" strokeWidth="1.4" opacity="0.9" />
+      <path d="M9 14.6h14c.6 0 1 .4 1 1v3.6c0 .6-.4 1-1 1H9c-.6 0-1-.4-1-1v-3.6c0-.6.4-1 1-1Z" fill="none" stroke="currentColor" strokeWidth="1.4" opacity="0.55" />
+      <text x="16" y="12.2" textAnchor="middle" fontSize="6.6" fontWeight="700" fontFamily="system-ui, -apple-system, Segoe UI, sans-serif" fill="currentColor">
+        OMG
+      </text>
+      <text x="16" y="18.4" textAnchor="middle" fontSize="6.6" fontWeight="700" fontFamily="system-ui, -apple-system, Segoe UI, sans-serif" fill="currentColor">
+        WOW
+      </text>
     </svg>
   );
 }
@@ -674,9 +680,14 @@ function DownloadPngIcon(): ReactElement {
   return (
     <svg className="vicon-word" viewBox="0 0 32 24" aria-hidden="true" focusable="false">
       <rect x="1.5" y="1.5" width="29" height="21" rx="6" fill="none" stroke="currentColor" strokeWidth="1.4" opacity="0.95" />
-      <path d="M16 6.6v6.2m0 0-3-3m3 3 3-3" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" opacity="0.95" />
-      <path d="M10.2 17.3h11.6" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" opacity="0.6" />
-      <path d="M21.3 17.3v-3.2h-10.6v3.2" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" opacity="0.6" />
+      <path d="M9 8.4h14c.6 0 1 .4 1 1v3.6c0 .6-.4 1-1 1H9c-.6 0-1-.4-1-1V9.4c0-.6.4-1 1-1Z" fill="none" stroke="currentColor" strokeWidth="1.4" opacity="0.9" />
+      <path d="M9 14.6h14c.6 0 1 .4 1 1v3.6c0 .6-.4 1-1 1H9c-.6 0-1-.4-1-1v-3.6c0-.6.4-1 1-1Z" fill="none" stroke="currentColor" strokeWidth="1.4" opacity="0.55" />
+      <text x="16" y="12.2" textAnchor="middle" fontSize="6.6" fontWeight="700" fontFamily="system-ui, -apple-system, Segoe UI, sans-serif" fill="currentColor">
+        OMG
+      </text>
+      <text x="16" y="18.4" textAnchor="middle" fontSize="6.6" fontWeight="700" fontFamily="system-ui, -apple-system, Segoe UI, sans-serif" fill="currentColor">
+        WOW
+      </text>
     </svg>
   );
 }
