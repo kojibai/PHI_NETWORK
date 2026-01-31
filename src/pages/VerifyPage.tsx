@@ -117,9 +117,16 @@ function formatProofValue(value: unknown): string {
   }
 }
 
+function normalizeClaimPulse(value: number | null): number | null {
+  if (value == null || !Number.isFinite(value) || value <= 0) return null;
+  if (value > 100_000_000_000) return getKaiPulseEternalInt(new Date(value));
+  return Math.trunc(value);
+}
+
 function formatClaimPulse(value: number | null): string {
-  if (!value || !Number.isFinite(value)) return "—";
-  return String(Math.trunc(value));
+  const normalized = normalizeClaimPulse(value);
+  if (!normalized || !Number.isFinite(normalized)) return "—";
+  return String(normalized);
 }
 
 async function sha256Bytes(data: Uint8Array): Promise<string> {
@@ -1089,7 +1096,7 @@ export default function VerifyPage(): ReactElement {
   const noteClaimed =
     Boolean(noteSendRecord?.confirmed) ||
     (noteSendMeta ? isNoteClaimed(noteSendMeta.parentCanonical, noteSendMeta.transferNonce) : false);
-  const noteClaimStatus = noteSendMeta ? (noteClaimed ? "CLAIMED — nonce owned" : "UNCLAIMED — nonce available") : null;
+  const noteClaimStatus = noteSendMeta ? (noteClaimed ? "CLAIMED — SEAL Owned" : "UNCLAIMED — SEAL Available") : null;
   const noteClaimPulseLabel = useMemo(() => formatClaimPulse(noteClaimedPulse), [noteClaimedPulse]);
   const noteClaimNonceShort = noteClaimNonce ? ellipsizeMiddle(noteClaimNonce, 8, 6) : "—";
   const noteClaimLeaderShort = noteClaimLeaderNonce ? ellipsizeMiddle(noteClaimLeaderNonce, 8, 6) : "—";
