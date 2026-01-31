@@ -778,15 +778,36 @@ html.verify-shell, body.verify-shell{
 
 .vdrop-helper{
   margin-top: 8px;
-  font-size: 0.72rem;
-  color: var(--dim);
+  font-size: 0.6rem;
+  color: rgba(220, 242, 255, 0.78);
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(140, 220, 255, 0.2);
+  background: linear-gradient(120deg, rgba(20, 40, 60, 0.6), rgba(16, 20, 36, 0.78));
+  box-shadow: 0 4px 12px rgba(12, 36, 64, 0.28), inset 0 0 10px rgba(140, 220, 255, 0.1);
 }
 
 .vdrop-detect{
   margin-top: 6px;
-  font-size: 0.72rem;
-  color: var(--text);
-  opacity: 0.82;
+  font-size: 0.62rem;
+  color: rgba(228, 248, 255, 0.94);
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(154, 236, 255, 0.32);
+  background: radial-gradient(circle at top, rgba(120, 226, 255, 0.16), rgba(10, 20, 40, 0.82));
+  box-shadow: 0 6px 16px rgba(10, 28, 48, 0.4), inset 0 0 12px rgba(120, 226, 255, 0.18);
+  text-shadow: 0 0 6px rgba(120, 226, 255, 0.45);
 }
 
 .vcontrol-row{
