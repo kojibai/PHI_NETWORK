@@ -1638,38 +1638,74 @@ export function AppChrome(): React.JSX.Element {
                   <div className="nav-head__title">Atrium</div>
                   <div className="nav-head__sub">Breath-Sealed Identity · Kairos-ZK Proof</div>
                 </div>
+<div
+  ref={navListRef}
+  className="nav-list"
+  role="list"
+  aria-label="Atrium navigation tiles"
+>
+  {(() => {
+    const isMintPhiKey = (item: { to: string; label: string }) =>
+      item.to === "/mint" ||
+      (item.label.toLowerCase().includes("mint") &&
+        item.label.toLowerCase().includes("phi"));
 
-                <div ref={navListRef} className="nav-list" role="list" aria-label="Atrium navigation tiles">
-                            <button
-                    type="button"
-                    className="nav-item nav-item--button"
-                    aria-label="Attestation: Proof Of Breath™"
-                    aria-haspopup="dialog"
-                    onClick={openVerify}
-                  >
-                    <div className="nav-item__label">Attestation</div>
-                    <div className="nav-item__desc">Proof Of Breath™</div>
-                  </button>
-                  {navItems.map((item) => (
-                    
-                    <NavLink
-                      key={item.to}
-                      to={item.to}
-                      end={item.end}
-                      className={({ isActive }) => `nav-item ${isActive ? "nav-item--active" : ""}`}
-                      aria-label={`${item.label}: ${item.desc}`}
-                      onPointerEnter={item.to === "/keystream" ? prefetchSigilExplorer : undefined}
-                      onFocus={item.to === "/keystream" ? prefetchSigilExplorer : undefined}
-                      onTouchStart={item.to === "/keystream" ? prefetchSigilExplorer : undefined}
-                      onPointerDown={item.to === "/keystream" ? prefetchSigilExplorer : undefined}
-                    >
-                      <div className="nav-item__label">{item.label}</div>
-                      <div className="nav-item__desc">{item.desc}</div>
-                    </NavLink>
-                  ))}
+    const hasMint = navItems.some(isMintPhiKey);
 
-        
-                </div>
+    return (
+      <>
+        {navItems.map((item) => (
+          <React.Fragment key={item.to}>
+            <NavLink
+              to={item.to}
+              end={item.end}
+              className={({ isActive }) =>
+                `nav-item ${isActive ? "nav-item--active" : ""}`
+              }
+              aria-label={`${item.label}: ${item.desc}`}
+              onPointerEnter={item.to === "/keystream" ? prefetchSigilExplorer : undefined}
+              onFocus={item.to === "/keystream" ? prefetchSigilExplorer : undefined}
+              onTouchStart={item.to === "/keystream" ? prefetchSigilExplorer : undefined}
+              onPointerDown={item.to === "/keystream" ? prefetchSigilExplorer : undefined}
+            >
+              <div className="nav-item__label">{item.label}</div>
+              <div className="nav-item__desc">{item.desc}</div>
+            </NavLink>
+
+            {/* ✅ Insert Attestation right after Mint PhiKey */}
+            {hasMint && isMintPhiKey(item) && (
+              <button
+                type="button"
+                className="nav-item nav-item--button"
+                aria-label="Attestation: Proof Of Breath™"
+                aria-haspopup="dialog"
+                onClick={openVerify}
+              >
+                <div className="nav-item__label">Attestation</div>
+                <div className="nav-item__desc">Proof Of Breath™</div>
+              </button>
+            )}
+          </React.Fragment>
+        ))}
+
+        {/* Fallback: if we can't find Mint, keep Attestation at end */}
+        {!hasMint && (
+          <button
+            type="button"
+            className="nav-item nav-item--button"
+            aria-label="Attestation: Proof Of Breath™"
+            aria-haspopup="dialog"
+            onClick={openVerify}
+          >
+            <div className="nav-item__label">Attestation</div>
+            <div className="nav-item__desc">Proof Of Breath™</div>
+          </button>
+        )}
+      </>
+    );
+  })()}
+</div>
+
 
                 <div className="nav-writ-slot" data-writ-slim="1">
                   <SovereignDeclarations />
