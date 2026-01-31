@@ -757,6 +757,15 @@ html.verify-shell, body.verify-shell{
   background: rgba(0,0,0,0.22);
   padding: 6px 10px;
 }
+.vdrop-keypill{
+  align-items: center;
+}
+.vdrop-keymark{
+  width: 16px;
+  height: 16px;
+  display: block;
+  opacity: 0.95;
+}
 .vdrop-mark-label{
   font-size: 0.58rem;
   letter-spacing: 0.24em;

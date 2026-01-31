@@ -3662,9 +3662,9 @@ React.useEffect(() => {
                             <span className="vdrop-pill">PDF</span>
                           </span>
                         </span>
-                        <span className="vdrop-mark vdrop-mark--phi" aria-label="Derives Φ-Key">
-                          <img className="vphi" src="/phi.svg" alt="" aria-hidden="true" />
-                          <span className="vdrop-mark-label">Φ-Key</span>
+                        <span className="vdrop-mark vdrop-mark--phi vdrop-keypill" aria-label="Derives key">
+                          <img className="vdrop-keymark" src="/phi.svg" alt="" aria-hidden="true" />
+                          <span className="vdrop-mark-label">KEY</span>
                         </span>
                       </button>
                       <div className="vdrop-helper">Original exports only — screenshots won’t verify.</div>
