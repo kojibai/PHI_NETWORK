@@ -28,6 +28,7 @@ export type SendRecord = {
   parentCanonical: string;       // lowercase
   childCanonical: string;        // lowercase
   amountPhiScaled: string;       // BigInt string (Φ·10^18)
+  kind?: "send" | "note";        // reserved spend type
   senderKaiPulse: number;        // pulse at SEND
   transferNonce: string;         // nonce
   senderStamp: string;           // sender stamp
@@ -111,6 +112,7 @@ function migrateIfNeeded(): void {
               parentCanonical,
               childCanonical,
               amountPhiScaled,
+              kind: "send",
               senderKaiPulse,
               transferNonce,
               senderStamp,
@@ -162,6 +164,7 @@ function readAll(): SendRecord[] {
         parentCanonical: lc(rr.parentCanonical as string),
         childCanonical: lc(rr.childCanonical as string),
         amountPhiScaled: coerceBigIntString(rr.amountPhiScaled),
+        kind: rr.kind === "note" ? "note" : "send",
         senderKaiPulse: Number(rr.senderKaiPulse ?? 0) || 0,
         transferNonce: String(rr.transferNonce ?? ""),
         senderStamp: String(rr.senderStamp ?? ""),
@@ -189,6 +192,7 @@ function writeAll(list: SendRecord[]) {
       parentCanonical: lc(r.parentCanonical),
       childCanonical: lc(r.childCanonical),
       amountPhiScaled: coerceBigIntString(r.amountPhiScaled),
+      kind: r.kind === "note" ? "note" : "send",
       createdAt: Number(r.createdAt || nowMs()) || nowMs(),
     }));
     localStorage.setItem(LS_SENDS, JSON.stringify(clean));
@@ -232,6 +236,7 @@ export async function recordSend(rec: Omit<SendRecord, "id" | "createdAt">): Pro
       parentCanonical: lc(rec.parentCanonical),
       childCanonical: lc(rec.childCanonical),
       amountPhiScaled: coerceBigIntString(rec.amountPhiScaled),
+      kind: rec.kind === "note" ? "note" : "send",
       createdAt: nowMs(),
     };
     writeAll([...list, row]);
@@ -313,6 +318,31 @@ export function getSpentScaledFor(parentCanonical: string): bigint {
 export function getReservedScaledFor(parentCanonical: string): bigint {
   const rows = getSendsFor(parentCanonical);
   return rows.reduce<bigint>((acc, r) => acc + BigInt(coerceBigIntString(r.amountPhiScaled)), 0n);
+}
+
+/** Sum of all Φ (scaled) reserved/exhaled from a parent canonical by kind. */
+export function getReservedScaledForKind(
+  parentCanonical: string,
+  kind: "send" | "note" | "all" = "all"
+): bigint {
+  const rows = getSendsFor(parentCanonical);
+  return rows.reduce<bigint>((acc, r) => {
+    if (kind !== "all" && (r.kind ?? "send") !== kind) return acc;
+    return acc + BigInt(coerceBigIntString(r.amountPhiScaled));
+  }, 0n);
+}
+
+/** Sum of all Φ (scaled) pending from a parent canonical by kind. */
+export function getPendingReservedScaledForKind(
+  parentCanonical: string,
+  kind: "send" | "note" | "all" = "all"
+): bigint {
+  const rows = getSendsFor(parentCanonical);
+  return rows.reduce<bigint>((acc, r) => {
+    if (r.confirmed) return acc;
+    if (kind !== "all" && (r.kind ?? "send") !== kind) return acc;
+    return acc + BigInt(coerceBigIntString(r.amountPhiScaled));
+  }, 0n);
 }
 
 /**

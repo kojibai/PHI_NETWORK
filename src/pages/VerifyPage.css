@@ -676,6 +676,12 @@ html.verify-shell, body.verify-shell{
   border-color: rgba(136,190,255,0.28);
   background: linear-gradient(180deg, rgba(118,170,255,0.18), rgba(118,170,255,0.08));
 }
+.vdrop--drag{
+  border-color: rgba(140,255,241,0.65);
+  box-shadow:
+    0 0 0 1px rgba(140,255,241,0.22) inset,
+    0 12px 24px rgba(0,0,0,0.28);
+}
 .vdrop:focus-visible{
   outline: none;
   box-shadow:
@@ -704,6 +710,34 @@ html.verify-shell, body.verify-shell{
   letter-spacing: 0.14em;
   font-size: 0.80rem;
 }
+.vdrop-copy{
+  display:flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.vdrop-sub{
+  font-size: 0.70rem;
+  letter-spacing: 0.10em;
+  font-weight: 700;
+  color: var(--dim);
+}
+.vdrop-pills{
+  display:flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.vdrop-pill{
+  display:inline-flex;
+  align-items:center;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.2);
+  background: rgba(0,0,0,0.16);
+  padding: 2px 8px;
+  font-size: 0.58rem;
+  letter-spacing: 0.18em;
+  font-weight: 800;
+  text-transform: uppercase;
+}
 
 .vdrop-mark{
   margin-left: auto;
@@ -717,6 +751,43 @@ html.verify-shell, body.verify-shell{
 }
 .vphi{ width: 14px; height: 14px; display:block; opacity: 0.95; }
 .vdrop-mark-txt{ font-weight: 1000; letter-spacing: 0.10em; font-size: 0.74rem; opacity: 0.92; }
+.vdrop-mark--phi{
+  gap: 8px;
+  border-color: rgba(255,255,255,0.22);
+  background: rgba(0,0,0,0.22);
+  padding: 6px 10px;
+}
+.vdrop-keypill{
+  align-items: center;
+  gap: 0;
+}
+.vdrop-keymark{
+  width: 16px;
+  height: 16px;
+  display: block;
+  opacity: 0.95;
+}
+.vdrop-mark-label{
+  font-size: 0.58rem;
+  letter-spacing: 0.24em;
+  font-weight: 900;
+  text-transform: uppercase;
+  color: var(--ink);
+  margin-left: 0;
+}
+
+.vdrop-helper{
+  margin-top: 8px;
+  font-size: 0.72rem;
+  color: var(--dim);
+}
+
+.vdrop-detect{
+  margin-top: 6px;
+  font-size: 0.72rem;
+  color: var(--text);
+  opacity: 0.82;
+}
 
 .vcontrol-row{
   display:flex;
