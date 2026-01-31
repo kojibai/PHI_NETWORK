@@ -79,7 +79,7 @@ function makeFileTitle(kaiSig: string, pulse: string, stamp: string): string {
       .replace(/-+/g, "-")
       .slice(0, 180);
 
-  return `KAI-${safe(pulse)}-SIGIL-${safe(serialCore)}—VAL-${safe(stamp)}`;
+  return `☤KAI-NOTE-${safe(pulse)}-${safe(serialCore)}—VAL-${safe(stamp)}`;
 }
 
 function formatPhiParts(val: number): { int: string; frac: string } {

@@ -3646,7 +3646,7 @@ React.useEffect(() => {
                         <span className="vdrop-ic" aria-hidden="true">
                           <img className="vphi-ic" src="/phi.svg" alt="" aria-hidden="true" />
                         </span>
-                        <span className="vdrop-txt">Inhale</span>
+                        <span className="vdrop-txt">Inhale (☤KAI-Sigil_Glyph_x.svg)</span>
                         <span className="vdrop-mark" aria-label="PhiKey mark">
                           <img className="vphi" src="/phi.svg" alt="Φ" />
                           <span className="vdrop-mark-txt">ΦKey</span>
@@ -3726,9 +3726,9 @@ React.useEffect(() => {
     <circle cx="32" cy="32" r="2.2" fill="currentColor" opacity="0.9" />
   </svg>
 </span>
-<span className="vdrop-txt">Proof Of Breath™</span>
+<span className="vdrop-txt">Proof Of Breath™ (☤KAI-NOTE-x.png)</span>
 <span className="vdrop-mark">
-  <span className="vdrop-mark-txt">Sigil-Seal</span>
+  <span className="vdrop-mark-txt">☤KAI-NOTE</span>
 </span>
 
 
