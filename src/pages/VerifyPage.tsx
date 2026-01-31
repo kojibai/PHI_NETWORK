@@ -3304,6 +3304,13 @@ React.useEffect(() => {
 
   const activePanelTitle =
     panel === "inhale" ? "Inhale" : panel === "capsule" ? "Vessel" : panel === "proof" ? "Proof" : panel === "zk" ? "ZK" : "Audit";
+  const detectedStatus = svgText.trim()
+    ? "Detected: Sigil-Glyph (SVG) — Full attestation"
+    : noteSendMeta || noteSvgFromPng || noteProofBundleJson
+      ? "Detected: Kai-Note (PNG) — Value note"
+      : sharedReceipt
+        ? "Detected: Sigil-Seal (PNG) — Quick verify"
+        : "";
 
   const onDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -3605,8 +3612,8 @@ React.useEffect(() => {
           {panel === "inhale" ? (
             <div className="vcard" data-panel="inhale">
               <div className="vcard-head">
-                <div className="vcard-title">Inhale ΦKey</div>
-                <div className="vcard-sub">Tap to inhale a sealed ΦKey. Deep payloads open in Expanded Views.</div>
+                <div className="vcard-title">Inhale Sigil</div>
+                <div className="vcard-sub">Drop Sigil-Glyph (SVG) or Sigil-Seal / Kai-Note (PNG) to derive Φ-Key.</div>
               </div>
  
               <div className="vcard-body vfit">
@@ -3626,7 +3633,7 @@ React.useEffect(() => {
                     ref={pngFileRef}
                     className="vfile"
                     type="file"
-                    accept=".png,image/png,.pdf,application/pdf"
+                    accept=".svg,image/svg+xml,.png,image/png,.pdf,application/pdf"
                     onChange={(e) => {
                       handleFiles(e.currentTarget.files);
                       e.currentTarget.value = "";
@@ -3638,101 +3645,29 @@ React.useEffect(() => {
                     <div className="vcontrol" aria-label="Inhale controls">
                       <button
                         type="button"
-                        className="vdrop"
-                        aria-label="Inhale sealed ΦKey (SVG)"
-                        title="Inhale sealed ΦKey (.svg)"
-                        onClick={() => fileRef.current?.click()}
+                        className={dragActive ? "vdrop vdrop--drag" : "vdrop"}
+                        aria-label="Inhale Sigil"
+                        title="Inhale Sigil"
+                        onClick={() => pngFileRef.current?.click()}
                       >
                         <span className="vdrop-ic" aria-hidden="true">
                           <img className="vphi-ic" src="/phi.svg" alt="" aria-hidden="true" />
                         </span>
-                        <span className="vdrop-txt">Inhale (☤KAI-Sigil_Glyph_x.svg)</span>
-                        <span className="vdrop-mark" aria-label="PhiKey mark">
-                          <img className="vphi" src="/phi.svg" alt="Φ" />
-                          <span className="vdrop-mark-txt">ΦKey</span>
+                        <span className="vdrop-copy">
+                          <span className="vdrop-txt">Inhale Sigil</span>
+                          <span className="vdrop-sub">{dragActive ? "Drop to Inhale" : "Sigil-Glyph (SVG) or Sigil-Seal / Kai-Note (PNG)"}</span>
+                          <span className="vdrop-pills" aria-label="Supported formats">
+                            <span className="vdrop-pill">SVG</span>
+                            <span className="vdrop-pill">PNG</span>
+                          </span>
+                        </span>
+                        <span className="vdrop-mark vdrop-mark--phi vdrop-keypill" aria-label="Derives key">
+                          <img className="vdrop-keymark" src="/phi.svg" alt="" aria-hidden="true" />
+                          <span className="vdrop-mark-label">KEY</span>
                         </span>
                       </button>
-                      <button
-                        type="button"
-                        className="vdrop vdrop--receipt"
-                        aria-label="Verify SigilSeal PNG"
-                        title="Verify SigilSeal PNG"
-                        onClick={() => pngFileRef.current?.click()}
-                      >
-<span className="vdrop-ic" aria-hidden="true">
-  <svg
-    className="vdrop-seal"
-    viewBox="0 0 64 64"
-    width="22"
-    height="22"
-    role="presentation"
-    focusable="false"
-  >
-    {/* Outer ring */}
-    <circle cx="32" cy="32" r="26" fill="none" stroke="currentColor" strokeWidth="2" opacity="0.9" />
-    <circle cx="32" cy="32" r="22" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.55" />
-
-    {/* Ticks */}
-    {Array.from({ length: 16 }).map((_, i) => {
-      const a = (i * Math.PI * 2) / 16;
-      const x1 = 32 + Math.cos(a) * 24;
-      const y1 = 32 + Math.sin(a) * 24;
-      const x2 = 32 + Math.cos(a) * 26;
-      const y2 = 32 + Math.sin(a) * 26;
-      return (
-        <line
-          key={i}
-          x1={x1}
-          y1={y1}
-          x2={x2}
-          y2={y2}
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          opacity="0.85"
-        />
-      );
-    })}
-
-    {/* Inner “breath” rosette */}
-    <path
-      d="M32 16
-         C38 16 44 22 44 28
-         C44 34 38 40 32 40
-         C26 40 20 34 20 28
-         C20 22 26 16 32 16
-         Z"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      opacity="0.8"
-      strokeLinejoin="round"
-    />
-    <path
-      d="M32 22
-         C35.5 22 39 25.5 39 29
-         C39 32.5 35.5 36 32 36
-         C28.5 36 25 32.5 25 29
-         C25 25.5 28.5 22 32 22
-         Z"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.6"
-      opacity="0.7"
-      strokeLinejoin="round"
-    />
-
-    {/* Center dot */}
-    <circle cx="32" cy="32" r="2.2" fill="currentColor" opacity="0.9" />
-  </svg>
-</span>
-<span className="vdrop-txt">Proof Of Breath™ (☤KAI-NOTE-x.png)</span>
-<span className="vdrop-mark">
-  <span className="vdrop-mark-txt">☤KAI-NOTE</span>
-</span>
-
-
-                      </button>
+                      <div className="vdrop-helper">Original mints only — screenshots won’t verify.</div>
+                      {detectedStatus ? <div className="vdrop-detect">{detectedStatus}</div> : null}
 
                       <div className="vcontrol-row" aria-label="Quick actions">
                         <IconBtn icon="⟡" title={busy ? "Verifying…" : "Verify"} ariaLabel="Verify" onClick={() => void runVerify()} disabled={busy} kind="primary" />
@@ -3769,7 +3704,7 @@ React.useEffect(() => {
 
                     <div className="vconsole" aria-label="ΦKey preview">
                       <pre className="vpre">
-                        <code className="mono">{svgPreview || "inhale a sealed ΦKey (.SVG) to begin…"}</code>
+                        <code className="mono">{svgPreview || "Inhale a Sigil-Glyph (SVG) or Sigil-Seal / Kai-Note (PNG) to begin…"}</code>
                       </pre>
                       <div className="vconsole-foot">
                         <div className="vchip" title="Sovereign verification rail">
@@ -3784,7 +3719,7 @@ React.useEffect(() => {
                   </div>
 
                   <div className="vdropzone-hint" aria-hidden="true">
-                    Drag & drop ΦKey or receipt PNG anywhere in this panel
+                    Drag & drop Sigil-Glyph (SVG) or Sigil-Seal / Kai-Note (PNG) anywhere in this panel
                   </div>
                 </div>
 
