@@ -1,7 +1,7 @@
 // src/pages/VerifyPage.tsx
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
 import "./VerifyPage.css";
 
 import VerifierFrame from "../components/KaiVoh/VerifierFrame";
@@ -656,6 +656,63 @@ function ProofMark(): ReactElement {
         opacity="0.95"
       />
       <path d="M8.7 12.2 11 14.4l4.6-4.7" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function SignProofIcon(): ReactElement {
+  const gradientId = useId();
+  const fillId = `${gradientId}-fill`;
+  return (
+    <svg className="vicon-word" viewBox="0 0 32 24" aria-hidden="true" focusable="false">
+      <defs>
+        <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#24f5ff" />
+          <stop offset="55%" stopColor="#7b5bff" />
+          <stop offset="100%" stopColor="#ff46f6" />
+        </linearGradient>
+        <linearGradient id={fillId} x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#24f5ff" stopOpacity="0.18" />
+          <stop offset="100%" stopColor="#ff46f6" stopOpacity="0.1" />
+        </linearGradient>
+      </defs>
+      <rect x="1.5" y="1.5" width="29" height="21" rx="6" fill={`url(#${fillId})`} stroke={`url(#${gradientId})`} strokeWidth="1.4" opacity="0.98" />
+      <path d="M11.2 9.2 18.6 6.8c.7-.2 1.4.5 1.2 1.2l-2.3 7.4c-.1.4-.5.7-.9.7h-2.2l-2.2 2.2c-.5.5-1.3.2-1.3-.5V15.6l-1.8-1.8c-.5-.5-.2-1.3.5-1.3h2.6Z" fill="none" stroke={`url(#${gradientId})`} strokeWidth="1.4" strokeLinejoin="round" opacity="0.95" />
+      <path d="M7.2 16.6c2.2-1.6 4.2-1.6 6.4 0 2.2 1.6 4.2 1.6 6.4 0" fill="none" stroke={`url(#${gradientId})`} strokeWidth="1.4" strokeLinecap="round" opacity="0.7" />
+    </svg>
+  );
+}
+
+function DownloadPngIcon(): ReactElement {
+  const gradientId = useId();
+  const fillId = `${gradientId}-fill`;
+  return (
+    <svg className="vicon-word" viewBox="0 0 32 24" aria-hidden="true" focusable="false">
+      <defs>
+        <linearGradient id={gradientId} x1="1" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#14ffb1" />
+          <stop offset="55%" stopColor="#00a3ff" />
+          <stop offset="100%" stopColor="#9a3bff" />
+        </linearGradient>
+        <linearGradient id={fillId} x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#14ffb1" stopOpacity="0.18" />
+          <stop offset="100%" stopColor="#9a3bff" stopOpacity="0.12" />
+        </linearGradient>
+      </defs>
+      <rect x="1.5" y="1.5" width="29" height="21" rx="6" fill={`url(#${fillId})`} stroke={`url(#${gradientId})`} strokeWidth="1.4" opacity="0.98" />
+      <path d="M16 6.6v6.2m0 0-3-3m3 3 3-3" fill="none" stroke={`url(#${gradientId})`} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" opacity="0.98" />
+      <path d="M10.2 17.3h11.6" fill="none" stroke={`url(#${gradientId})`} strokeWidth="1.4" strokeLinecap="round" opacity="0.65" />
+      <path d="M21.3 17.3v-3.2h-10.6v3.2" fill="none" stroke={`url(#${gradientId})`} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" opacity="0.65" />
+    </svg>
+  );
+}
+
+function NoteDownloadIcon(): ReactElement {
+  return (
+    <svg className="vnote-download-mark" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <rect x="3" y="3.5" width="18" height="14" rx="3" fill="none" stroke="currentColor" strokeWidth="1.8" opacity="0.75" />
+      <path d="M12 6.2v7.6m0 0-3.4-3.4m3.4 3.4 3.4-3.4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M7.5 18.5h9" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" opacity="0.8" />
     </svg>
   );
 }
@@ -3370,12 +3427,22 @@ React.useEffect(() => {
                       aria-label={verificationSigLabel}
                       disabled={!canSignVerification || verificationSigBusy}
                     >
-                      ✍
+                      <span className="vbtn-ic" aria-hidden="true">
+                        <SignProofIcon />
+                      </span>
                     </button>
                   )}
                   {isExhaleNoteUpload ? null : (
-                    <button type="button" className="vbtn vbtn--ghost" onClick={() => void onDownloadVerifiedCard()}>
-                      ⬇
+                    <button
+                      type="button"
+                      className="vbtn vbtn--ghost"
+                      onClick={() => void onDownloadVerifiedCard()}
+                      title="Download proof PNG"
+                      aria-label="Download proof PNG"
+                    >
+                      <span className="vbtn-ic" aria-hidden="true">
+                        <DownloadPngIcon />
+                      </span>
                     </button>
                   )}
                 </div>
@@ -3409,12 +3476,15 @@ React.useEffect(() => {
                     {noteSvgFromPng && result.status === "ok" && !noteClaimed ? (
                       <button
                         type="button"
-                        className="vbtn vbtn--ghost"
+                        className="vbtn vbtn--ghost vbtn--note-download"
                         onClick={onDownloadNotePng}
                         title="Download fresh note PNG"
                         aria-label="Download fresh note PNG"
                       >
-                        ⬇︎Φ
+                        <span className="vbtn-ic vbtn-ic--note-download" aria-hidden="true">
+                          <NoteDownloadIcon />
+                          <img className="vnote-phi-mark" src="/phi.svg" alt="" aria-hidden="true" />
+                        </span>
                       </button>
                     ) : null}
                   </div>

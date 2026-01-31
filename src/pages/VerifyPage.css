@@ -1731,6 +1731,11 @@ dialog.glass-modal .modal-topbar .close-btn:focus-visible{
   margin: 0 !important;
   transform: translateY(0) !important;
 }
+
+.vreceipt-actions .vbtn .vicon-word{
+  width: 22px;
+  height: 16px;
+}
 /* ────────────────────────────────────────────────────────────────
    FIX: Note modal preview button — perfect centering
    (prevents .vbtn-ic 16x16 overrides from squashing the thumbnail)
@@ -1790,14 +1795,26 @@ dialog.glass-modal .modal-topbar .close-btn:focus-visible{
   height: 28px;
   padding: 0 !important;
   border-radius: 10px;
+}
 
-  /* kill baseline/emoji drift */
-  line-height: 1 !important;
-  text-align: center;
-  font-size: 15px;
+.vbtn-ic--note-download{
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 20px;
+  height: 20px;
+}
 
-  /* optical centering for the 2-glyph “⬇︎Φ” combo */
-  letter-spacing: -0.06em;
-  transform: translateX(-0.5px);
-  
+.vbtn-ic--note-download .vnote-download-mark{
+  width: 15px;
+  height: 15px;
+  display: block;
+}
+
+.vbtn-ic--note-download .vnote-phi-mark{
+  width: 12px;
+  height: 12px;
+  display: block;
+  object-fit: contain;
 }
