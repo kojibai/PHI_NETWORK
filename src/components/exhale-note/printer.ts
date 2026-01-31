@@ -1,6 +1,4 @@
 // src/components/exhale-note/printer.ts
-import { esc } from "./sanitize";
-
 let restorePrintRoot: (() => void) | null = null;
 
 function pinPrintRootToBody(el: HTMLElement): () => void {
@@ -305,21 +303,7 @@ export function renderIntoPrintRoot(
   ensurePrintStyles(printRootEl);
   printRootEl.setAttribute("aria-hidden", "false");
 
-  const { svg, pulse, proof } = normalizeArgs(banknoteSVG, frozenPulse, proofPagesHTML);
-
-  const coverPageHTML = `
-    <div class="print-page">
-      <div class="page-stamp-top">
-        <span>KAIROS KURRENSY — Sovereign Harmonik Kingdom</span>
-        <span>Valuation Pulse: ${esc(pulse)}</span>
-      </div>
-      <div class="banknote-frame">${svg}</div>
-      <div class="page-stamp-bot">
-        <span>Σ→sha256(Σ)→Φ • Offline</span>
-        <span>PULSE: ${esc(pulse)}</span>
-      </div>
-    </div>
-  `;
+  const { proof } = normalizeArgs(banknoteSVG, frozenPulse, proofPagesHTML);
 
   const proofHasPageWrappers = /\b(print-page|kk-print-page)\b/.test(proof);
   const normalizedProof = proofHasPageWrappers ? proof : `<div class="print-page">${proof}</div>`;
@@ -327,7 +311,7 @@ export function renderIntoPrintRoot(
   while (printRootEl.firstChild) printRootEl.removeChild(printRootEl.firstChild);
 
   const tmp = document.createElement("div");
-  tmp.innerHTML = coverPageHTML + normalizedProof;
+  tmp.innerHTML = normalizedProof;
 
   const frag = document.createDocumentFragment();
   while (tmp.firstChild) frag.appendChild(tmp.firstChild);

@@ -1,6 +1,6 @@
 // src/components/exhale-note/proofPages.ts
 /*
-  Proof pages (2–4) renderer
+  Proof pages (2–3) renderer
   - Returns an HTML string to drop into your print root (see printer.ts)
   - Exports BOTH a named and default export to satisfy either import style
 */
@@ -18,6 +18,7 @@ export interface ProofPagesParams {
   phiDerived?: string;   // Φ derived from sha256(Σ)
 
   valuePhi: string;
+  valueUsd?: string;
   premiumPhi: string;
   valuationAlg: string;
   valuationStamp?: string;
@@ -33,6 +34,7 @@ export interface ProofPagesParams {
   verifiedAtPulse?: number;
   capsuleHash?: string;
   svgHash?: string;
+  noteSendJson?: string;
 }
 
 /* --- lightweight view helpers matching portal styles --- */
@@ -63,6 +65,7 @@ export function buildProofPagesHTML(p: ProofPagesParams): string {
   const phi = p.phiDerived || "";
 
   const val = p.valuePhi || "0";
+  const usd = p.valueUsd || "—";
   const prem = p.premiumPhi || "0";
   const alg = p.valuationAlg || "phi/kosmos-vφ-5 • 00000000";
   const stamp = p.valuationStamp || "";
@@ -75,6 +78,40 @@ export function buildProofPagesHTML(p: ProofPagesParams): string {
   const capsuleHash = p.capsuleHash || "";
   const svgHash = p.svgHash || "";
   const proofBundleJson = p.proofBundleJson || "";
+  const noteSendJson = p.noteSendJson?.trim() || "";
+
+  let noteSendBlock = "";
+  if (noteSendJson) {
+    let parsed: Record<string, unknown> | null = null;
+    try {
+      const obj = JSON.parse(noteSendJson) as unknown;
+      if (typeof obj === "object" && obj !== null && !Array.isArray(obj)) {
+        parsed = obj as Record<string, unknown>;
+      }
+    } catch {
+      parsed = null;
+    }
+
+    const readStr = (key: string) => (typeof parsed?.[key] === "string" ? String(parsed?.[key]) : "");
+    const readNum = (key: string) =>
+      typeof parsed?.[key] === "number" && Number.isFinite(parsed?.[key] as number) ? String(parsed?.[key]) : "";
+
+    noteSendBlock = `
+      ${cardHead("Note Transfer (Exhale Payload)")}
+        ${kvOpen}
+          ${codeLine("parentCanonical", readStr("parentCanonical") || "—")}
+          ${codeLine("transferNonce", readStr("transferNonce") || "—")}
+          ${codeLine("amountPhi", readNum("amountPhi") || "—")}
+          ${codeLine("amountUsd", readNum("amountUsd") || "—")}
+          ${codeLine("childCanonical", readStr("childCanonical") || "—")}
+        ${kvClose}
+        <div style="margin-top:8px">
+          ${hint("Raw note send JSON (embedded for receipt verification)")}
+          <pre class="out">${esc(noteSendJson)}</pre>
+        </div>
+      ${cardTail}
+    `;
+  }
 
   // Optional ZK block
   const zkBlock =
@@ -169,11 +206,13 @@ export function buildProofPagesHTML(p: ProofPagesParams): string {
           ${codeLine("Algorithm", alg)}
           ${codeLine("Valuation Pulse", frozen)}
           ${codeLine("Value Φ", val)}
+          ${codeLine("Value USD", usd)}
           ${codeLine("Premium Φ", prem)}
           ${codeLine("Valuation Stamp", stamp || "—")}
         ${kvClose}
       ${cardTail}
 
+      ${noteSendBlock}
       ${zkBlock}
       ${bundleBlock}
       ${provDetail}
@@ -194,34 +233,6 @@ export function buildProofPagesHTML(p: ProofPagesParams): string {
 
       <div class="page-stamp-bot">
         <span>All values computed offline</span>
-        <span>PULSE: ${esc(frozen)}</span>
-      </div>
-    </div>
-  `.trim();
-
-  // PAGE 3 — Attestation (reserved; placeholder)
-  const page3 = `
-    <div class="print-page">
-      <div class="page-stamp-top">
-        <span>PROOF PAGE • Attestation (optional)</span>
-        <span>Valuation Pulse: ${esc(frozen)}</span>
-      </div>
-
-      ${cardHead("Registry Attestation")}
-        ${kvOpen}
-          ${codeLine("Valid", "—")}
-          ${codeLine("r (claim)", "—")}
-          ${codeLine("s (signature)", "—")}
-          ${codeLine("kid", "—")}
-        ${kvClose}
-        <div style="margin-top:8px">
-          ${hint("Decoded claim JSON")}
-          <pre class="out">—</pre>
-        </div>
-      ${cardTail}
-
-      <div class="page-stamp-bot">
-        <span>Verifier: offline ECDSA P-256</span>
         <span>PULSE: ${esc(frozen)}</span>
       </div>
     </div>
@@ -256,7 +267,7 @@ export function buildProofPagesHTML(p: ProofPagesParams): string {
     </div>
   `.trim();
 
-  return page2 + page3 + page4;
+  return page2 + page4;
 }
 
 /* allow: import buildProofPagesHTML from './proofPages' */

@@ -57,7 +57,7 @@ import { deriveOwnerPhiKeyFromReceive, type OwnerKeyDerivation } from "../utils/
 import { base64UrlDecode, sha256Hex } from "../utils/sha256";
 import { readPngTextChunk } from "../utils/pngChunks";
 import { getKaiPulseEternalInt } from "../SovereignSolar";
-import { markConfirmedByNonce } from "../utils/sendLedger";
+import { getSendRecordByNonce, markConfirmedByNonce } from "../utils/sendLedger";
 import { recordSigilTransferMovement } from "../utils/sigilTransferRegistry";
 import { useKaiTicker } from "../hooks/useKaiTicker";
 import { useValuation } from "./SigilPage/useValuation";
@@ -132,17 +132,21 @@ type NoteSendMeta = {
   childCanonical?: string;
 };
 
+function buildNoteSendMetaFromObject(value: unknown): NoteSendMeta | null {
+  if (!isRecord(value)) return null;
+  const parentCanonical = typeof value.parentCanonical === "string" ? value.parentCanonical.trim() : "";
+  const transferNonce = typeof value.transferNonce === "string" ? value.transferNonce.trim() : "";
+  const amountPhi = typeof value.amountPhi === "number" && Number.isFinite(value.amountPhi) ? value.amountPhi : undefined;
+  const amountUsd = typeof value.amountUsd === "number" && Number.isFinite(value.amountUsd) ? value.amountUsd : undefined;
+  const childCanonical = typeof value.childCanonical === "string" ? value.childCanonical.trim() : undefined;
+  if (!parentCanonical || !transferNonce) return null;
+  return { parentCanonical, transferNonce, amountPhi, amountUsd, childCanonical };
+}
+
 function parseNoteSendMeta(raw: string | null): NoteSendMeta | null {
   if (!raw) return null;
   try {
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    const parentCanonical = typeof parsed.parentCanonical === "string" ? parsed.parentCanonical.trim() : "";
-    const transferNonce = typeof parsed.transferNonce === "string" ? parsed.transferNonce.trim() : "";
-    const amountPhi = typeof parsed.amountPhi === "number" && Number.isFinite(parsed.amountPhi) ? parsed.amountPhi : undefined;
-    const amountUsd = typeof parsed.amountUsd === "number" && Number.isFinite(parsed.amountUsd) ? parsed.amountUsd : undefined;
-    const childCanonical = typeof parsed.childCanonical === "string" ? parsed.childCanonical.trim() : undefined;
-    if (!parentCanonical || !transferNonce) return null;
-    return { parentCanonical, transferNonce, amountPhi, amountUsd, childCanonical };
+    return buildNoteSendMetaFromObject(JSON.parse(raw));
   } catch {
     return null;
   }
@@ -200,7 +204,7 @@ type DebitLoose = {
   amount?: number;
 };
 
-type EmbeddedPhiSource = "balance" | "embedded" | "live";
+type EmbeddedPhiSource = "balance" | "embedded" | "live" | "note";
 
 type AttestationState = boolean | "missing";
 
@@ -549,6 +553,23 @@ function parsePdfForSharedReceipt(buffer: ArrayBuffer): SharedReceipt | null {
       const candidate = extractNearestJson(text, idx);
       const receipt = buildSharedReceiptFromObject(candidate);
       if (receipt) return receipt;
+      idx = text.indexOf(anchor, idx + anchor.length);
+    }
+  }
+  return null;
+}
+
+function parsePdfForNoteSendMeta(buffer: ArrayBuffer): NoteSendMeta | null {
+  const decoder = new TextDecoder("latin1");
+  const text = decoder.decode(new Uint8Array(buffer));
+  const anchors = ["\"transferNonce\"", "\"parentCanonical\"", "\"amountPhi\"", "\"amountUsd\"", "\"childCanonical\""];
+
+  for (const anchor of anchors) {
+    let idx = text.indexOf(anchor);
+    while (idx >= 0) {
+      const candidate = extractNearestJson(text, idx);
+      const meta = buildNoteSendMetaFromObject(candidate);
+      if (meta) return meta;
       idx = text.indexOf(anchor, idx + anchor.length);
     }
   }
@@ -929,22 +950,36 @@ export default function VerifyPage(): ReactElement {
     return readEmbeddedPhiAmount(result.embedded.raw) ?? readEmbeddedPhiAmount(embeddedProof?.raw);
   }, [embeddedProof?.raw, result]);
 
-  const displayPhi = ledgerBalance?.remaining ?? embeddedPhi ?? liveValuePhi;
+  const noteValuePhi = noteSendMeta?.amountPhi ?? null;
+  const noteValueUsd = noteSendMeta?.amountUsd ?? null;
 
-  const displaySource: EmbeddedPhiSource = ledgerBalance ? "balance" : embeddedPhi != null ? "embedded" : "live";
+  const displayPhi = noteValuePhi ?? ledgerBalance?.remaining ?? embeddedPhi ?? liveValuePhi;
+
+  const displaySource: EmbeddedPhiSource = noteValuePhi != null ? "note" : ledgerBalance ? "balance" : embeddedPhi != null ? "embedded" : "live";
 
   const displayUsd = useMemo(() => {
+    if (noteValueUsd != null && Number.isFinite(noteValueUsd)) return noteValueUsd;
     if (displayPhi == null || !Number.isFinite(usdPerPhi) || usdPerPhi <= 0) return null;
     return displayPhi * usdPerPhi;
-  }, [displayPhi, usdPerPhi]);
+  }, [displayPhi, noteValueUsd, usdPerPhi]);
 
-  const displayLabel = displaySource === "balance" ? "BALANCE" : displaySource === "embedded" ? "GLYPH" : "LIVE";
+  const displayLabel =
+    displaySource === "note" ? "NOTE" : displaySource === "balance" ? "BALANCE" : displaySource === "embedded" ? "GLYPH" : "LIVE";
   const displayAriaLabel =
-    displaySource === "balance"
-      ? "Glyph balance"
-      : displaySource === "embedded"
-        ? "Glyph embedded value"
-        : "Live glyph valuation";
+    displaySource === "note"
+      ? "Exhale note value"
+      : displaySource === "balance"
+        ? "Glyph balance"
+        : displaySource === "embedded"
+          ? "Glyph embedded value"
+          : "Live glyph valuation";
+
+  const noteSendRecord = useMemo(
+    () => (noteSendMeta ? getSendRecordByNonce(noteSendMeta.parentCanonical, noteSendMeta.transferNonce) : null),
+    [noteSendMeta],
+  );
+  const noteClaimed = Boolean(noteSendRecord?.confirmed);
+  const noteClaimStatus = noteSendMeta ? (noteClaimed ? "CLAIMED" : "UNCLAIMED") : null;
 
   const isReceiveGlyph = useMemo(() => {
     const mode = embeddedProof?.mode ?? sharedReceipt?.mode;
@@ -1279,6 +1314,7 @@ export default function VerifyPage(): ReactElement {
       try {
         const buffer = await readFileArrayBuffer(file);
         const receipt = parsePdfForSharedReceipt(buffer);
+        const noteMeta = parsePdfForNoteSendMeta(buffer);
         if (!receipt) {
           setSharedReceipt(null);
           setResult({ status: "error", message: "Receipt PDF is missing embedded proof metadata.", slug });
@@ -1288,6 +1324,7 @@ export default function VerifyPage(): ReactElement {
         setSvgText("");
         setResult({ status: "idle" });
         setNotice("Receipt PDF loaded.");
+        setNoteSendMeta(noteMeta);
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Failed to read receipt PDF.";
         setResult({ status: "error", message: msg, slug });
@@ -3133,6 +3170,14 @@ React.useEffect(() => {
           {proofCapsule ? (
             <div className="vreceipt-row" aria-label="Proof actions">
               <div className="vreceipt-label">Proof</div>
+              {noteClaimStatus ? (
+                <div
+                  className={`vnote-claim ${noteClaimed ? "vnote-claim--claimed" : "vnote-claim--unclaimed"}`}
+                  title={noteClaimed ? "This note has already been claimed." : "This note has not been claimed yet."}
+                >
+                  {noteClaimStatus}
+                </div>
+              ) : null}
               <div className="vreceipt-actions">
                 <button type="button" className="vbtn vbtn--ghost" onClick={() => void onShareReceipt()}>
                    ➦
@@ -3155,8 +3200,9 @@ React.useEffect(() => {
                     type="button"
                     className="vbtn vbtn--ghost"
                     onClick={onDownloadNoteSvg}
-                    title="Download note SVG"
-                    aria-label="Download note SVG"
+                    title={noteClaimed ? "Note already claimed" : "Download note SVG"}
+                    aria-label={noteClaimed ? "Note already claimed" : "Download note SVG"}
+                    disabled={noteClaimed}
                   >
                     ⬇︎Φ
                   </button>
@@ -3600,13 +3646,29 @@ React.useEffect(() => {
                 {result.status === "ok" && displayPhi != null ? (
                   <div className="vmini-grid vmini-grid--2 vvaluation-dashboard" aria-label="Live valuation">
                     <MiniField
-                      label={displaySource === "balance" ? "Glyph Φ balance" : displaySource === "embedded" ? "Glyph Φ value" : "Live Φ value"}
+                      label={
+                        displaySource === "note"
+                          ? "Note Φ value"
+                          : displaySource === "balance"
+                            ? "Glyph Φ balance"
+                            : displaySource === "embedded"
+                              ? "Glyph Φ value"
+                              : "Live Φ value"
+                      }
                       value={fmtPhi(displayPhi)}
                       onClick={() => openChartPopover("phi")}
                       ariaLabel="Open live chart for Φ value"
                     />
                     <MiniField
-                      label={displaySource === "balance" ? "Glyph USD balance" : displaySource === "embedded" ? "Glyph USD value" : "Live USD value"}
+                      label={
+                        displaySource === "note"
+                          ? "Note USD value"
+                          : displaySource === "balance"
+                            ? "Glyph USD balance"
+                            : displaySource === "embedded"
+                              ? "Glyph USD value"
+                              : "Live USD value"
+                      }
                       value={displayUsd == null ? "—" : fmtUsd(displayUsd)}
                       onClick={displayUsd == null ? undefined : () => openChartPopover("usd")}
                       ariaLabel="Open live chart for USD value"

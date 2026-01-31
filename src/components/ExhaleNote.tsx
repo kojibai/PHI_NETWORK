@@ -1056,6 +1056,9 @@ const ExhaleNote: React.FC<NoteProps> = ({
       provenance: form.provenance ?? [],
     });
 
+    const noteSendPayload = buildNoteSendPayload();
+    const noteSendJson = noteSendPayload ? JSON.stringify(noteSendPayload) : "";
+
     const proofPages = buildProofPagesHTML({
       frozenPulse: String(locked.lockedPulse),
       kaiSignature: form.kaiSignature || "",
@@ -1064,6 +1067,7 @@ const ExhaleNote: React.FC<NoteProps> = ({
       shaHex: form.shaHex || "",
       phiDerived: form.phiDerived || "",
       valuePhi: fTiny(effectiveSendPhi),
+      valueUsd: fUsd(effectiveValueUsd),
       premiumPhi: fTiny(effectiveSendPhi),
       valuationAlg: form.valuationAlg || liveAlgString,
       valuationStamp: form.valuationStamp || locked.seal.stamp,
@@ -1071,6 +1075,7 @@ const ExhaleNote: React.FC<NoteProps> = ({
       provenance: form.provenance ?? [],
       sigilSvg: form.sigilSvg || "",
       verifyUrl,
+      noteSendJson,
       proofBundleJson: form.proofBundleJson,
       bundleHash: form.bundleHash,
       receiptHash: form.receiptHash,
@@ -1096,6 +1101,7 @@ const ExhaleNote: React.FC<NoteProps> = ({
     effectiveSendPhi,
     effectiveValueUsd,
     ensureNoteSend,
+    buildNoteSendPayload,
   ]);
 
   const onSaveSvg = useCallback(async () => {
