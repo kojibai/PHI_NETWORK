@@ -682,85 +682,6 @@ const VerifierStamperInner: React.FC = () => {
     [meta, sigilSvgRaw, sealUrl, pulseNow, proofBundleMeta]
   );
 
-  const noteSendBusyRef = useRef(false);
-  const handleNoteSend = useCallback(
-    async (payload: NoteSendPayload): Promise<void> => {
-      if (noteSendBusyRef.current) return;
-      noteSendBusyRef.current = true;
-      try {
-        const parentCanonical = (canonical ?? "").toLowerCase();
-        if (!parentCanonical) throw new Error("Origin sigil not initialized.");
-
-        const amountScaled = toScaledBig(String(payload.amountPhi || 0));
-        if (amountScaled <= 0n) throw new Error("Invalid Φ amount.");
-        if (amountScaled > remainingPhiScaled) {
-          throw new Error(
-            `Exhale exceeds resonance Φ — requested Φ ${fromScaledBigFixed(amountScaled, 4)} but only Φ ${remainingPhiDisplay4} remains on this glyph.`
-          );
-        }
-
-        const metaOpt = meta as SigilMetadataWithOptionals | null;
-        const previousHeadRoot = metaOpt?.transfersWindowRootV14 ?? metaOpt?.transfersWindowRoot ?? "";
-        const senderStamp = payload.valuationStamp || "";
-        const senderKaiPulse = payload.lockedPulse;
-        const transferNonce = payload.transferNonce || genNonce();
-
-        const leafSeed = stableStringify({
-          parent: parentCanonical,
-          nonce: transferNonce,
-          amount: amountScaled.toString(),
-          pulse: senderKaiPulse,
-          stamp: senderStamp,
-          root: previousHeadRoot,
-        });
-        const transferLeafHashSend = (await sha256Hex(leafSeed)).toLowerCase();
-
-        const childSeed = stableStringify({
-          parent: parentCanonical,
-          nonce: transferNonce,
-          senderStamp,
-          senderKaiPulse,
-          prevHead: previousHeadRoot,
-          leafSend: transferLeafHashSend,
-        });
-        const childCanonical = (await sha256Hex(childSeed)).toLowerCase();
-
-        const rec = {
-          parentCanonical,
-          childCanonical,
-          amountPhiScaled: amountScaled.toString(),
-          senderKaiPulse,
-          transferNonce,
-          senderStamp,
-          previousHeadRoot,
-          transferLeafHashSend,
-        };
-
-        await recordSend(rec);
-        recordSigilTransferMovement({
-          hash: childCanonical,
-          direction: "send",
-          amountPhi: payload.amountPhi,
-          amountUsd: payload.amountUsd != null ? payload.amountUsd.toFixed(2) : undefined,
-          sentPulse: senderKaiPulse,
-        });
-        try {
-          getSigilGlobal().registerSend?.(rec);
-        } catch (err) {
-          logError("__SIGIL__.registerSend", err);
-        }
-        try {
-          window.dispatchEvent(new CustomEvent("sigil:sent", { detail: rec }));
-        } catch (err) {
-          logError("dispatchEvent(sigil:sent)", err);
-        }
-      } finally {
-        noteSendBusyRef.current = false;
-      }
-    },
-    [canonical, meta, remainingPhiScaled, remainingPhiDisplay4],
-  );
-
   const openNote = () =>
     switchModal(dlgRef.current, () => {
       const d = noteDlgRef.current;
@@ -2081,6 +2002,85 @@ const VerifierStamperInner: React.FC = () => {
   const remainingPhiDisplay4 = useMemo(
     () => fromScaledBigFixed(roundScaledToDecimals(remainingPhiScaled, 4), 4),
     [remainingPhiScaled]
+  );
+
+  const noteSendBusyRef = useRef(false);
+  const handleNoteSend = useCallback(
+    async (payload: NoteSendPayload): Promise<void> => {
+      if (noteSendBusyRef.current) return;
+      noteSendBusyRef.current = true;
+      try {
+        const parentCanonical = (canonical ?? "").toLowerCase();
+        if (!parentCanonical) throw new Error("Origin sigil not initialized.");
+
+        const amountScaled = toScaledBig(String(payload.amountPhi || 0));
+        if (amountScaled <= 0n) throw new Error("Invalid Φ amount.");
+        if (amountScaled > remainingPhiScaled) {
+          throw new Error(
+            `Exhale exceeds resonance Φ — requested Φ ${fromScaledBigFixed(amountScaled, 4)} but only Φ ${remainingPhiDisplay4} remains on this glyph.`
+          );
+        }
+
+        const metaOpt = meta as SigilMetadataWithOptionals | null;
+        const previousHeadRoot = metaOpt?.transfersWindowRootV14 ?? metaOpt?.transfersWindowRoot ?? "";
+        const senderStamp = payload.valuationStamp || "";
+        const senderKaiPulse = payload.lockedPulse;
+        const transferNonce = payload.transferNonce || genNonce();
+
+        const leafSeed = stableStringify({
+          parent: parentCanonical,
+          nonce: transferNonce,
+          amount: amountScaled.toString(),
+          pulse: senderKaiPulse,
+          stamp: senderStamp,
+          root: previousHeadRoot,
+        });
+        const transferLeafHashSend = (await sha256Hex(leafSeed)).toLowerCase();
+
+        const childSeed = stableStringify({
+          parent: parentCanonical,
+          nonce: transferNonce,
+          senderStamp,
+          senderKaiPulse,
+          prevHead: previousHeadRoot,
+          leafSend: transferLeafHashSend,
+        });
+        const childCanonical = (await sha256Hex(childSeed)).toLowerCase();
+
+        const rec = {
+          parentCanonical,
+          childCanonical,
+          amountPhiScaled: amountScaled.toString(),
+          senderKaiPulse,
+          transferNonce,
+          senderStamp,
+          previousHeadRoot,
+          transferLeafHashSend,
+        };
+
+        await recordSend(rec);
+        recordSigilTransferMovement({
+          hash: childCanonical,
+          direction: "send",
+          amountPhi: payload.amountPhi,
+          amountUsd: payload.amountUsd != null ? payload.amountUsd.toFixed(2) : undefined,
+          sentPulse: senderKaiPulse,
+        });
+        try {
+          getSigilGlobal().registerSend?.(rec);
+        } catch (err) {
+          logError("__SIGIL__.registerSend", err);
+        }
+        try {
+          window.dispatchEvent(new CustomEvent("sigil:sent", { detail: rec }));
+        } catch (err) {
+          logError("dispatchEvent(sigil:sent)", err);
+        }
+      } finally {
+        noteSendBusyRef.current = false;
+      }
+    },
+    [canonical, meta, remainingPhiScaled, remainingPhiDisplay4],
   );
 
   // Snap headline Φ to 6dp for UI (math stays BigInt elsewhere)
