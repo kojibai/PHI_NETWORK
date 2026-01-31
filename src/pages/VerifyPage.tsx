@@ -3306,10 +3306,10 @@ React.useEffect(() => {
     panel === "inhale" ? "Inhale" : panel === "capsule" ? "Vessel" : panel === "proof" ? "Proof" : panel === "zk" ? "ZK" : "Audit";
   const detectedStatus = svgText.trim()
     ? "Detected: Sigil-Glyph (SVG) — Full attestation"
-    : isExhaleNoteUpload
-      ? "Detected: Kai-Note / Sigil-Seal (PNG/PDF) — Quick verify"
+    : noteSendMeta || noteSvgFromPng || noteProofBundleJson
+      ? "Detected: Kai-Note (PNG/PDF) — Value note"
       : sharedReceipt
-        ? "Detected: Receipt (PNG/PDF) — Quick verify"
+        ? "Detected: Sigil-Seal (PNG/PDF) — Quick verify"
         : "";
 
   const onDragOver = useCallback((e: React.DragEvent) => {
@@ -3613,7 +3613,7 @@ React.useEffect(() => {
             <div className="vcard" data-panel="inhale">
               <div className="vcard-head">
                 <div className="vcard-title">Inhale Sigil</div>
-                <div className="vcard-sub">Drop Sigil-Glyph (SVG) or Sigil-Seal / Kai-Note (PNG) to derive ΦKey.</div>
+                <div className="vcard-sub">Drop Sigil-Glyph (SVG) or Sigil-Seal / Kai-Note (PNG/PDF) to derive Φ-Key.</div>
               </div>
  
               <div className="vcard-body vfit">
@@ -3645,7 +3645,7 @@ React.useEffect(() => {
                     <div className="vcontrol" aria-label="Inhale controls">
                       <button
                         type="button"
-                        className="vdrop"
+                        className={dragActive ? "vdrop vdrop--drag" : "vdrop"}
                         aria-label="Inhale Sigil"
                         title="Inhale Sigil"
                         onClick={() => pngFileRef.current?.click()}
@@ -3655,17 +3655,19 @@ React.useEffect(() => {
                         </span>
                         <span className="vdrop-copy">
                           <span className="vdrop-txt">Inhale Sigil</span>
-                          <span className="vdrop-sub">{dragActive ? "Drop to Inhale" : "Sigil-Glyph (SVG) or Sigil-Seal / Kai-Note (PNG)"}</span>
+                          <span className="vdrop-sub">{dragActive ? "Drop to Inhale" : "Sigil-Glyph (SVG) or Sigil-Seal / Kai-Note (PNG/PDF)"}</span>
                           <span className="vdrop-pills" aria-label="Supported formats">
                             <span className="vdrop-pill">SVG</span>
                             <span className="vdrop-pill">PNG</span>
+                            <span className="vdrop-pill">PDF</span>
                           </span>
                         </span>
-                        <span className="vdrop-mark" aria-label="PhiKey mark">
-                          <span className="vdrop-mark-txt">→ ΦKey</span>
+                        <span className="vdrop-mark vdrop-mark--phi" aria-label="Derives Φ-Key">
+                          <img className="vphi" src="/phi.svg" alt="" aria-hidden="true" />
+                          <span className="vdrop-mark-label">Φ-Key</span>
                         </span>
                       </button>
-                      <div className="vdrop-helper">Original exported files only — screenshots won’t verify.</div>
+                      <div className="vdrop-helper">Original exports only — screenshots won’t verify.</div>
                       {detectedStatus ? <div className="vdrop-detect">{detectedStatus}</div> : null}
 
                       <div className="vcontrol-row" aria-label="Quick actions">
