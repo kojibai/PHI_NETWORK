@@ -2830,50 +2830,69 @@ body: [
   }, [result]);
 
   const notePulseNow = useMemo(() => currentPulse ?? getKaiPulseEternalInt(new Date()), [currentPulse]);
+const noteInitial = useMemo<NoteBanknoteInputs>(() => {
+  const rawSvg = svgText.trim() ? svgText.trim() : null;
 
-  const noteInitial = useMemo<NoteBanknoteInputs>(() => {
-    const base = buildNotePayload({
-      meta: noteMeta,
-      sigilSvgRaw: svgText.trim() ? svgText.trim() : null,
-      verifyUrl: currentVerifyUrl,
-      pulseNow: notePulseNow,
-    });
-    const rawBundle = embeddedProof?.raw;
-    const rawRecord = isRecord(rawBundle) ? rawBundle : null;
-    const proofBundleJson = rawRecord ? JSON.stringify(rawRecord) : "";
-    const bundleHashValue =
-      embeddedProof?.bundleHash ??
-      sharedReceipt?.bundleHash ??
-      (rawRecord && typeof rawRecord.bundleHash === "string" ? rawRecord.bundleHash : "");
-    const receiptHashValue =
-      embeddedProof?.receiptHash ??
-      sharedReceipt?.receiptHash ??
-      (rawRecord && typeof rawRecord.receiptHash === "string" ? rawRecord.receiptHash : "");
-    const verifiedAtPulseValue =
-      typeof embeddedProof?.verifiedAtPulse === "number"
+  const base = buildNotePayload({
+    meta: noteMeta,
+    sigilSvgRaw: rawSvg,
+    verifyUrl: currentVerifyUrl,
+    pulseNow: notePulseNow,
+  });
+
+  // ✅ Extract proof bundle straight from the SVG text (first-render safe)
+  const extracted = rawSvg ? extractProofBundleMetaFromSvg(rawSvg) : null;
+
+  const rawBundle = extracted?.raw ?? embeddedProof?.raw;
+  const rawRecord = isRecord(rawBundle) ? rawBundle : null;
+
+  const proofBundleJson = rawRecord ? JSON.stringify(rawRecord) : "";
+
+  const bundleHashValue =
+    extracted?.bundleHash ??
+    embeddedProof?.bundleHash ??
+    sharedReceipt?.bundleHash ??
+    (rawRecord && typeof rawRecord.bundleHash === "string" ? (rawRecord.bundleHash as string) : "");
+
+  const receiptHashValue =
+    (extracted as { receiptHash?: string } | null)?.receiptHash ??
+    embeddedProof?.receiptHash ??
+    sharedReceipt?.receiptHash ??
+    (rawRecord && typeof rawRecord.receiptHash === "string" ? (rawRecord.receiptHash as string) : "");
+
+  const verifiedAtPulseValue =
+    typeof extracted?.verifiedAtPulse === "number"
+      ? extracted.verifiedAtPulse
+      : typeof embeddedProof?.verifiedAtPulse === "number"
         ? embeddedProof.verifiedAtPulse
         : typeof sharedReceipt?.verifiedAtPulse === "number"
           ? sharedReceipt.verifiedAtPulse
           : rawRecord && typeof rawRecord.verifiedAtPulse === "number"
-            ? rawRecord.verifiedAtPulse
+            ? (rawRecord.verifiedAtPulse as number)
             : undefined;
-    const capsuleHashValue =
-      embeddedProof?.capsuleHash ??
-      sharedReceipt?.capsuleHash ??
-      (rawRecord && typeof rawRecord.capsuleHash === "string" ? rawRecord.capsuleHash : "");
-    const svgHashValue =
-      embeddedProof?.svgHash ?? sharedReceipt?.svgHash ?? (rawRecord && typeof rawRecord.svgHash === "string" ? rawRecord.svgHash : "");
 
-    return {
-      ...base,
-      proofBundleJson,
-      bundleHash: bundleHashValue,
-      receiptHash: receiptHashValue,
-      verifiedAtPulse: verifiedAtPulseValue,
-      capsuleHash: capsuleHashValue,
-      svgHash: svgHashValue,
-    };
-  }, [currentVerifyUrl, embeddedProof, noteMeta, notePulseNow, sharedReceipt, svgText]);
+  const capsuleHashValue =
+    extracted?.capsuleHash ??
+    embeddedProof?.capsuleHash ??
+    sharedReceipt?.capsuleHash ??
+    (rawRecord && typeof rawRecord.capsuleHash === "string" ? (rawRecord.capsuleHash as string) : "");
+
+  const svgHashValue =
+    extracted?.svgHash ??
+    embeddedProof?.svgHash ??
+    sharedReceipt?.svgHash ??
+    (rawRecord && typeof rawRecord.svgHash === "string" ? (rawRecord.svgHash as string) : "");
+
+  return {
+    ...base,
+    proofBundleJson,
+    bundleHash: bundleHashValue,
+    receiptHash: receiptHashValue,
+    verifiedAtPulse: verifiedAtPulseValue,
+    capsuleHash: capsuleHashValue,
+    svgHash: svgHashValue,
+  };
+}, [currentVerifyUrl, embeddedProof, noteMeta, notePulseNow, sharedReceipt, svgText]);
 
   const canShowNotePreview = result.status === "ok" && Boolean(svgText.trim());
   const notePreviewSvg = useMemo(() => {
