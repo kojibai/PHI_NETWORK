@@ -2340,6 +2340,28 @@ if (verified && typeof cacheBundleHash === "string" && cacheBundleHash.trim().le
     sharedReceipt?.receivePulse,
     effectiveReceiveSig?.createdAtPulse,
   ]);
+
+  useEffect(() => {
+    if (!noteSendMeta) return;
+    if (effectiveReceivePulse == null) return;
+    const normalizedPulse = normalizeClaimPulse(effectiveReceivePulse);
+    if (normalizedPulse == null) return;
+    const transferLeafHash =
+      noteSendMeta.transferLeafHashSend ??
+      readRecordString(noteSendPayloadRaw, "transferLeafHashSend") ??
+      noteSendRecord?.transferLeafHashSend ??
+      undefined;
+    try {
+      markNoteClaimed(noteSendMeta.parentCanonical, noteSendMeta.transferNonce, {
+        childCanonical: noteSendMeta.childCanonical,
+        transferLeafHash,
+        claimedPulse: normalizedPulse,
+      });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("note claim pulse hydrate failed", err);
+    }
+  }, [effectiveReceivePulse, noteSendMeta, noteSendPayloadRaw, noteSendRecord]);
   const effectiveReceiveBundleHash = useMemo(() => {
     if (embeddedProof?.receiveBundleHash) return embeddedProof.receiveBundleHash;
     if (sharedReceipt?.receiveBundleHash) return sharedReceipt.receiveBundleHash;
