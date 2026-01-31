@@ -494,16 +494,25 @@ function isPdfFile(file: File): boolean {
 }
 
 function extractNearestJson(text: string, anchorIdx: number): unknown | null {
-  const left = Math.max(0, anchorIdx - 20000);
-  const right = Math.min(text.length, anchorIdx + 20000);
-  const slice = text.slice(left, right);
-  let start = slice.lastIndexOf("{", anchorIdx - left);
+  let start = -1;
+  let depth = 0;
+  for (let i = anchorIdx; i >= 0; i -= 1) {
+    const ch = text[i];
+    if (ch === "}") depth += 1;
+    if (ch === "{") {
+      if (depth === 0) {
+        start = i;
+        break;
+      }
+      depth -= 1;
+    }
+  }
   if (start < 0) return null;
 
-  let depth = 0;
   let end = -1;
-  for (let i = start; i < slice.length; i += 1) {
-    const ch = slice[i];
+  depth = 0;
+  for (let i = start; i < text.length; i += 1) {
+    const ch = text[i];
     if (ch === "{") depth += 1;
     if (ch === "}") {
       depth -= 1;
@@ -514,7 +523,7 @@ function extractNearestJson(text: string, anchorIdx: number): unknown | null {
     }
   }
   if (end < 0) return null;
-  const raw = slice.slice(start, end + 1);
+  const raw = text.slice(start, end + 1);
   try {
     return JSON.parse(raw) as unknown;
   } catch {
