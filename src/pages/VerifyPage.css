@@ -326,6 +326,26 @@ html.verify-shell, body.verify-shell{
 .vreceipt-row{ display:flex; align-items:center; justify-content:space-between; gap: 8px; margin-top: 6px; flex-wrap:wrap; }
 .vreceipt-label{ font-size: 0.60rem; letter-spacing: 0.28em; text-transform: uppercase; color: rgba(190,220,255,0.7); }
 .vreceipt-actions{ display:flex; gap: 6px; flex-wrap:wrap; }
+.vnote-claim{
+  font-size: 0.65rem;
+  letter-spacing: 0.2em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  border: 1px solid rgba(255,255,255,0.2);
+  color: rgba(230,240,255,0.9);
+  background: rgba(18,20,30,0.35);
+}
+.vnote-claim--unclaimed{
+  border-color: rgba(79,197,255,0.6);
+  color: rgba(165,227,255,0.95);
+  background: rgba(23,67,100,0.3);
+}
+.vnote-claim--claimed{
+  border-color: rgba(255,145,145,0.6);
+  color: rgba(255,205,205,0.95);
+  background: rgba(92,33,33,0.35);
+}
 .vbtn--ghost{ padding: 8px 12px; border-radius: 999px; font-size: 0.78rem; background: rgba(14,24,36,0.72); border: 1px solid rgba(120,180,255,0.22); color: rgba(230,242,255,0.92); }
 .vbtn--ghost:hover{ border-color: rgba(120,200,255,0.45); }
 

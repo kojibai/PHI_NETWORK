@@ -4,7 +4,7 @@ export type ValuationSnapshot = Readonly<{
   phiValue: number;
   usdValue: number | null;
   usdPerPhi: number | null;
-  source: "balance" | "embedded" | "live" | "unknown";
+  source: "balance" | "embedded" | "live" | "note" | "unknown";
   mode: "origin" | "receive";
 }>;
 
@@ -35,7 +35,14 @@ export function isValuationSnapshot(value: unknown): value is ValuationSnapshot 
   if (usdPerPhi !== null && !isFiniteNumber(usdPerPhi)) return false;
   const usdValue = record.usdValue;
   if (usdValue !== null && !isFiniteNumber(usdValue)) return false;
-  if (record.source !== "balance" && record.source !== "embedded" && record.source !== "live" && record.source !== "unknown") return false;
+  if (
+    record.source !== "balance" &&
+    record.source !== "embedded" &&
+    record.source !== "live" &&
+    record.source !== "note" &&
+    record.source !== "unknown"
+  )
+    return false;
   if (record.mode !== "origin" && record.mode !== "receive") return false;
   return true;
 }

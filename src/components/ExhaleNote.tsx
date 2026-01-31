@@ -18,6 +18,7 @@ import { fetchFromVerifierBridge } from "./exhale-note/bridge";
 import { svgStringToPngBlob, triggerDownload } from "./exhale-note/svgToPng";
 import { insertPngTextChunks } from "../utils/pngChunks";
 import { buildVerifierUrl } from "./KaiVoh/verifierProof";
+import { derivePhiKeyFromSig } from "./VerifierStamper/sigilUtils";
 
 import type {
   NoteProps,
@@ -839,6 +840,18 @@ const ExhaleNote: React.FC<NoteProps> = ({
       sendCommittedRef.current = false;
       setNoteSendResult(null);
 
+      const proofFields = parseProofBundleJson(form.proofBundleJson);
+      const sigmaCanon = (form.sigmaCanon || form.kaiSignature || "").trim();
+      const shaHex = sigmaCanon ? sha256HexJs(sigmaCanon) : "";
+      let phiDerived = form.phiDerived?.trim() || "";
+      if (!phiDerived && sigmaCanon) {
+        try {
+          phiDerived = await derivePhiKeyFromSig(sigmaCanon);
+        } catch {
+          phiDerived = "";
+        }
+      }
+
       setForm((prev) => ({
         ...prev,
         computedPulse: String(lockedPulse),
@@ -847,6 +860,11 @@ const ExhaleNote: React.FC<NoteProps> = ({
         premiumPhi: lockedUnsigned.premium !== undefined ? fTiny(lockedUnsigned.premium) : prev.premiumPhi,
         valuationAlg: prev.valuationAlg || `${lockedUnsigned.algorithm} • ${lockedUnsigned.policyChecksum}`,
         valuePhi: fTiny(sealed.valuePhi),
+        sigmaCanon: sigmaCanon || prev.sigmaCanon,
+        shaHex: shaHex || prev.shaHex,
+        phiDerived: phiDerived || prev.phiDerived,
+        verifiedAtPulse: prev.verifiedAtPulse ?? proofFields.verifiedAtPulse ?? lockedPulse,
+        receiptHash: prev.receiptHash || proofFields.receiptHash || "",
         verifyUrl: resolveVerifyUrl(prev.verifyUrl, defaultVerifyUrl),
       }));
 
@@ -858,7 +876,7 @@ const ExhaleNote: React.FC<NoteProps> = ({
     } finally {
       setIsRendering(false);
     }
-  }, [nowFloor, meta, usdSample, policy, onRender, isRendering, defaultVerifyUrl, availablePhi]);
+  }, [nowFloor, meta, usdSample, policy, onRender, isRendering, defaultVerifyUrl, availablePhi, form]);
 
   /* Bridge hydration + updates */
   const lastBridgeJsonRef = useRef<string>("");
@@ -1056,6 +1074,9 @@ const ExhaleNote: React.FC<NoteProps> = ({
       provenance: form.provenance ?? [],
     });
 
+    const noteSendPayload = buildNoteSendPayload();
+    const noteSendJson = noteSendPayload ? JSON.stringify(noteSendPayload) : "";
+
     const proofPages = buildProofPagesHTML({
       frozenPulse: String(locked.lockedPulse),
       kaiSignature: form.kaiSignature || "",
@@ -1064,6 +1085,7 @@ const ExhaleNote: React.FC<NoteProps> = ({
       shaHex: form.shaHex || "",
       phiDerived: form.phiDerived || "",
       valuePhi: fTiny(effectiveSendPhi),
+      valueUsd: fUsd(effectiveValueUsd),
       premiumPhi: fTiny(effectiveSendPhi),
       valuationAlg: form.valuationAlg || liveAlgString,
       valuationStamp: form.valuationStamp || locked.seal.stamp,
@@ -1071,6 +1093,7 @@ const ExhaleNote: React.FC<NoteProps> = ({
       provenance: form.provenance ?? [],
       sigilSvg: form.sigilSvg || "",
       verifyUrl,
+      noteSendJson,
       proofBundleJson: form.proofBundleJson,
       bundleHash: form.bundleHash,
       receiptHash: form.receiptHash,
@@ -1096,6 +1119,7 @@ const ExhaleNote: React.FC<NoteProps> = ({
     effectiveSendPhi,
     effectiveValueUsd,
     ensureNoteSend,
+    buildNoteSendPayload,
   ]);
 
   const onSaveSvg = useCallback(async () => {

@@ -281,6 +281,19 @@ export function markConfirmedByNonce(parentCanonical: string, transferNonce: str
   }
 }
 
+/** Lookup a send record by parent canonical + transfer nonce. */
+export function getSendRecordByNonce(parentCanonical: string, transferNonce: string): SendRecord | null {
+  const pc = lc(parentCanonical);
+  const nonce = String(transferNonce || "");
+  if (!pc || !nonce) return null;
+  const list = readAll();
+  for (let i = list.length - 1; i >= 0; i -= 1) {
+    const rec = list[i];
+    if (rec.parentCanonical === pc && rec.transferNonce === nonce) return rec;
+  }
+  return null;
+}
+
 /** Get all sends for a given parent canonical (sorted by createdAt ASC). */
 export function getSendsFor(parentCanonical: string): SendRecord[] {
   const pc = lc(parentCanonical);
