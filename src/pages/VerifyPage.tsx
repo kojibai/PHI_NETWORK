@@ -3368,6 +3368,17 @@ React.useEffect(() => {
                 <button type="button" className="vbtn vbtn--ghost" onClick={() => void onCopyReceipt()}>
                   💠
                 </button>
+                {canShowNotePreview ? (
+                  <button
+                    type="button"
+                    className="vbtn vbtn--ghost vbtn--note"
+                    onClick={openNote}
+                    aria-label="Open Exhale note"
+                    title="Open Exhale note"
+                  >
+                    <span className="vbtn-note-preview" aria-hidden="true" dangerouslySetInnerHTML={{ __html: notePreviewSvg }} />
+                  </button>
+                ) : null}
                 {isExhaleNoteUpload ? null : (
                   <button
                     type="button"
@@ -3399,20 +3410,6 @@ React.useEffect(() => {
               </div>
             </div>
 
-          ) : null}
-          {proofCapsule && canShowNotePreview ? (
-            <div className="vnote-row" aria-label="Note preview">
-              <span className="vnote-label">Note</span>
-              <button
-                type="button"
-                className="vnote-preview-btn"
-                onClick={openNote}
-                aria-label="Open Exhale note"
-                title="Open Exhale note"
-              >
-                <span className="vnote-preview" aria-hidden="true" dangerouslySetInnerHTML={{ __html: notePreviewSvg }} />
-              </button>
-            </div>
           ) : null}
         </div>
 

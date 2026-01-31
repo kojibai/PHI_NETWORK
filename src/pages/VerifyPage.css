@@ -326,49 +326,22 @@ html.verify-shell, body.verify-shell{
 .vreceipt-row{ display:flex; align-items:center; justify-content:space-between; gap: 8px; margin-top: 6px; flex-wrap:wrap; }
 .vreceipt-label{ font-size: 0.60rem; letter-spacing: 0.28em; text-transform: uppercase; color: rgba(190,220,255,0.7); }
 .vreceipt-actions{ display:flex; gap: 6px; flex-wrap:wrap; }
-.vnote-row{
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap: 10px;
-  margin-top: 8px;
+.vbtn--note{
+  padding: 6px;
 }
-.vnote-label{
-  font-size: 0.60rem;
-  letter-spacing: 0.28em;
-  text-transform: uppercase;
-  color: rgba(190,220,255,0.7);
-}
-.vnote-preview-btn{
-  appearance: none;
-  padding: 0;
-  border: 1px solid rgba(120,180,255,0.22);
-  background: rgba(10,16,26,0.7);
-  border-radius: 12px;
-  cursor: pointer;
-  transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
-}
-.vnote-preview-btn:hover{
-  border-color: rgba(120,200,255,0.45);
-  box-shadow: 0 12px 24px rgba(0,0,0,0.28), 0 0 0 1px rgba(120,200,255,0.16) inset;
-  transform: translateY(-1px);
-}
-.vnote-preview-btn:focus-visible{
-  outline: 2px solid rgba(120,200,255,0.7);
-  outline-offset: 2px;
-}
-.vnote-preview{
-  border-radius: 12px;
+.vbtn-note-preview{
+  display: block;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
   overflow: hidden;
-  background: rgba(6,10,18,0.75);
-  border: 1px solid rgba(120,180,255,0.16);
-  width: 140px;
-  max-width: 100%;
+  border: 1px solid rgba(120,180,255,0.2);
+  background: rgba(6,10,18,0.8);
 }
-.vnote-preview svg{
+.vbtn-note-preview svg{
   display: block;
   width: 100%;
-  height: auto;
+  height: 100%;
 }
 .vnote-claim{
   font-size: 0.65rem;
