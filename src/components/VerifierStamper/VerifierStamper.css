@@ -418,7 +418,25 @@ dialog.glass-modal.fullscreen[data-open="true"] {
   max-width: 100%;
   overflow: hidden;
 }
+@media (max-width: 720px) {
+  dialog.glass-modal.fullscreen {
+    inline-size: 100vw;
+    max-inline-size: 100vw;
+    block-size: 100vh;
+    max-height: 100vh;
+    margin: 0;
+    border-radius: 0;
+  }
 
+  @supports (width: 100dvw) {
+    dialog.glass-modal.fullscreen {
+      inline-size: 100dvw;
+      max-inline-size: 100dvw;
+      block-size: 100dvh;
+      max-height: 100dvh;
+    }
+  }
+}
 /* ───────────────────────────────────────────────────────────────
    5a) Modal topbar + close button
 ──────────────────────────────────────────────────────────────── */
