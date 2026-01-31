@@ -3763,20 +3763,19 @@ React.useEffect(() => {
                           disabled={!svgText.trim() && !sharedReceipt}
                         />
                       </div>
-                      {hasKASOwnerSig ? (
-                        <div className="vmini-grid vmini-grid--2" aria-label="Attestation status">
-                          <MiniField label="Identity (Steward)" value={identityStatusLabel} />
-                          <MiniField label="Sigil-Glyph (Artifact)" value={artifactStatusLabel} />
-                        </div>
-                      ) : (
-                        <div className="vmini-grid vmini-grid--2" aria-label="Attestation status">
-                          <MiniField label="Sigil-Glyph (Artifact)" value={artifactStatusLabel} />
-                        </div>
-                      )}
-                      <div className="vmini-grid vmini-grid--2" aria-label="Quick readout">
-                        <MiniField label="Inhaled" value={svgText.trim() ? "true" : "false"} />
-                        <MiniField label="Attestation" value={embeddedProof ? "present" : "—"} />
-                      </div>
+{hasKASOwnerSig ? (
+  <div className="vmini-grid vmini-grid--3" aria-label="Attestation status">
+    <MiniField label="Identity (Steward)" value={identityStatusLabel} />
+    <MiniField label="Sigil-Glyph (Artifact)" value={artifactStatusLabel} />
+    <MiniField label="Attestation" value={embeddedProof ? "present" : "—"} />
+  </div>
+) : (
+  <div className="vmini-grid vmini-grid--2" aria-label="Attestation status">
+    <MiniField label="Sigil-Glyph (Artifact)" value={artifactStatusLabel} />
+    <MiniField label="Attestation" value={embeddedProof ? "present" : "—"} />
+  </div>
+)}
+
                     </div>
 
                     <div className="vconsole" aria-label="ΦKey preview">
