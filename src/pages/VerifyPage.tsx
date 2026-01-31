@@ -65,7 +65,7 @@ import type { SigilMetadataLite } from "../utils/valuation";
 import { downloadVerifiedCardPng } from "../og/downloadVerifiedCard";
 import type { VerifiedCardData } from "../og/types";
 import { jcsCanonicalize } from "../utils/jcs";
-import { svgCanonicalForHash } from "../utils/svgProof";
+import { embedProofMetadata, svgCanonicalForHash } from "../utils/svgProof";
 import useRollingChartSeries from "../components/VerifierStamper/hooks/useRollingChartSeries";
 import { BREATH_MS } from "../components/valuation/constants";
 import {
@@ -1364,6 +1364,27 @@ export default function VerifyPage(): ReactElement {
     [onPickFile, onPickReceiptPng, onPickReceiptPdf, slug],
   );
 
+  const confirmNoteSend = useCallback(() => {
+    if (!noteSendMeta) return;
+    const key = `${noteSendMeta.parentCanonical}|${noteSendMeta.transferNonce}`;
+    if (noteSendConfirmedRef.current === key) return;
+    noteSendConfirmedRef.current = key;
+    try {
+      markConfirmedByNonce(noteSendMeta.parentCanonical, noteSendMeta.transferNonce);
+      if (noteSendMeta.childCanonical && noteSendMeta.amountPhi) {
+        recordSigilTransferMovement({
+          hash: noteSendMeta.childCanonical,
+          direction: "receive",
+          amountPhi: noteSendMeta.amountPhi,
+          amountUsd: noteSendMeta.amountUsd != null ? noteSendMeta.amountUsd.toFixed(2) : undefined,
+        });
+      }
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("note send confirm failed", err);
+    }
+  }, [noteSendMeta]);
+
   const runOwnerAuthFlow = useCallback(
     async (args: {
       ownerAuthorSig: KASAuthorSig | null;
@@ -1551,26 +1572,7 @@ if (receipt.receiptHash) {
           embeddedMeta: embeddedProofMeta,
           bundleHashValue: embeddedProofMeta?.bundleHash ?? "",
         });
-        if (noteSendMeta) {
-          const key = `${noteSendMeta.parentCanonical}|${noteSendMeta.transferNonce}`;
-          if (noteSendConfirmedRef.current !== key) {
-            noteSendConfirmedRef.current = key;
-            try {
-              markConfirmedByNonce(noteSendMeta.parentCanonical, noteSendMeta.transferNonce);
-              if (noteSendMeta.childCanonical && noteSendMeta.amountPhi) {
-                recordSigilTransferMovement({
-                  hash: noteSendMeta.childCanonical,
-                  direction: "receive",
-                  amountPhi: noteSendMeta.amountPhi,
-                  amountUsd: noteSendMeta.amountUsd != null ? noteSendMeta.amountUsd.toFixed(2) : undefined,
-                });
-              }
-            } catch (err) {
-              // eslint-disable-next-line no-console
-              console.error("note send confirm failed", err);
-            }
-          }
-        }
+        confirmNoteSend();
       } else {
         setOwnerAuthVerified(null);
         setOwnerAuthStatus("Not present");
@@ -1578,7 +1580,7 @@ if (receipt.receiptHash) {
     } finally {
       setBusy(false);
     }
-  }, [currentPulse, runOwnerAuthFlow, slug, stampAuditFields, svgText, noteSendMeta]);
+  }, [confirmNoteSend, currentPulse, runOwnerAuthFlow, slug, stampAuditFields, svgText]);
 
   const identityAttested: AttestationState = hasKASOwnerSig ? (ownerAuthVerified === null ? "missing" : ownerAuthVerified) : "missing";
 
@@ -2919,17 +2921,25 @@ React.useEffect(() => {
     zkMeta?.zkPoseidonHash,
   ]);
 
+  const onDownloadNoteSvg = useCallback(() => {
+    if (!noteSvgFromPng) return;
+    if (noteClaimed) return;
+    const nonce = noteSendMeta?.transferNonce ? `-${noteSendMeta.transferNonce.slice(0, 8)}` : "";
+    const filename = `kai-note${nonce}.svg`;
+    const bundleForExport = auditBundlePayload
+      ? noteSendMeta
+        ? { ...auditBundlePayload, noteSend: noteSendMeta }
+        : auditBundlePayload
+      : null;
+    const svgWithProof = bundleForExport ? embedProofMetadata(noteSvgFromPng, bundleForExport) : noteSvgFromPng;
+    downloadTextFile(filename, svgWithProof, "image/svg+xml");
+    confirmNoteSend();
+  }, [auditBundlePayload, confirmNoteSend, noteClaimed, noteSendMeta, noteSvgFromPng]);
+
   const onDownloadVerifiedCard = useCallback(async () => {
     if (!verifiedCardData) return;
     await downloadVerifiedCardPng(verifiedCardData);
   }, [verifiedCardData]);
-
-  const onDownloadNoteSvg = useCallback(() => {
-    if (!noteSvgFromPng) return;
-    const nonce = noteSendMeta?.transferNonce ? `-${noteSendMeta.transferNonce.slice(0, 8)}` : "";
-    const filename = `kai-note${nonce}.svg`;
-    downloadTextFile(filename, noteSvgFromPng, "image/svg+xml");
-  }, [noteSendMeta, noteSvgFromPng]);
 
   const receiptPayload = useMemo(() => {
     if (!proofCapsule) return null;
