@@ -3135,7 +3135,7 @@ React.useEffect(() => {
     }
 
     const nonce = nextNonce ? `-${nextNonce.slice(0, 8)}` : "";
-    const filename = `kai-note${nonce}.png`;
+    const filename = `☤KAI-NOTE${nonce}.png`;
     const png = await svgStringToPngBlob(noteSvgFromPng, 2400);
     const noteSendJson = noteSendPayload ? JSON.stringify(noteSendPayload) : "";
     const entries = [
