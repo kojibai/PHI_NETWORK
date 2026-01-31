@@ -1795,14 +1795,26 @@ dialog.glass-modal .modal-topbar .close-btn:focus-visible{
   height: 28px;
   padding: 0 !important;
   border-radius: 10px;
+}
 
-  /* kill baseline/emoji drift */
-  line-height: 1 !important;
-  text-align: center;
-  font-size: 15px;
+.vbtn-ic--note-download{
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  width: 18px;
+  height: 18px;
+}
 
-  /* optical centering for the 2-glyph “⬇︎Φ” combo */
-  letter-spacing: -0.06em;
-  transform: translateX(-0.5px);
-  
+.vbtn-ic--note-download .vnote-download-mark{
+  width: 13px;
+  height: 13px;
+  display: block;
+}
+
+.vbtn-ic--note-download .vnote-phi-mark{
+  width: 11px;
+  height: 11px;
+  display: block;
+  object-fit: contain;
 }

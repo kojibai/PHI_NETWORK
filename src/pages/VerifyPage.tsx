@@ -707,6 +707,15 @@ function DownloadPngIcon(): ReactElement {
   );
 }
 
+function NoteDownloadIcon(): ReactElement {
+  return (
+    <svg className="vnote-download-mark" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <rect x="3.5" y="4" width="17" height="13" rx="3.2" fill="none" stroke="currentColor" strokeWidth="1.6" opacity="0.7" />
+      <path d="M12 6.8v6.4m0 0-2.6-2.6m2.6 2.6 2.6-2.6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 /* ────────────────────────────────────────────────────────────────
    UI atoms
 ─────────────────────────────────────────────────────────────── */
@@ -3466,12 +3475,15 @@ React.useEffect(() => {
                     {noteSvgFromPng && result.status === "ok" && !noteClaimed ? (
                       <button
                         type="button"
-                        className="vbtn vbtn--ghost"
+                        className="vbtn vbtn--ghost vbtn--note-download"
                         onClick={onDownloadNotePng}
                         title="Download fresh note PNG"
                         aria-label="Download fresh note PNG"
                       >
-                        ⬇︎Φ
+                        <span className="vbtn-ic vbtn-ic--note-download" aria-hidden="true">
+                          <NoteDownloadIcon />
+                          <img className="vnote-phi-mark" src="/phi.svg" alt="" aria-hidden="true" />
+                        </span>
                       </button>
                     ) : null}
                   </div>
