@@ -1173,10 +1173,10 @@ useEffect(() => {
     readRecordString(noteSendPayloadRaw, "transferLeafHashSend") ??
     noteSendRecord?.transferLeafHashSend ??
     "";
-  const noteClaimed =
-    noteClaimedImmediate ||
+  const noteClaimedFinal =
     Boolean(noteSendRecord?.confirmed) ||
     (effectiveNoteMeta ? isNoteClaimed(effectiveNoteMeta.parentCanonical, effectiveNoteMeta.transferNonce) : false);
+  const noteClaimed = noteClaimedImmediate || noteClaimedFinal;
   const noteClaimStatus = effectiveNoteMeta ? (noteClaimed ? "CLAIMED — SEAL Owned" : "UNCLAIMED — SEAL Available") : null;
   const noteClaimPulseLabel = useMemo(() => formatClaimPulse(noteClaimedPulse), [noteClaimedPulse]);
   const noteClaimNonceShort = noteClaimNonce ? ellipsizeMiddle(noteClaimNonce, 8, 6) : "—";
@@ -1186,7 +1186,7 @@ useEffect(() => {
   const isExhaleNoteUpload = isNoteUpload;
 
   useEffect(() => {
-    if (!effectiveNoteMeta || noteClaimed) return;
+    if (!effectiveNoteMeta || noteClaimedFinal) return;
     const key = `${effectiveNoteMeta.parentCanonical}|${effectiveNoteMeta.transferNonce}`;
     if (noteClaimRemoteCheckedRef.current === key) return;
     noteClaimRemoteCheckedRef.current = key;
@@ -1205,7 +1205,7 @@ useEffect(() => {
     return () => {
       ac.abort();
     };
-  }, [effectiveNoteMeta, noteClaimed]);
+  }, [effectiveNoteMeta, noteClaimedFinal]);
 
   const isReceiveGlyph = useMemo(() => {
     const mode = embeddedProof?.mode ?? sharedReceipt?.mode;
@@ -3350,7 +3350,7 @@ React.useEffect(() => {
 
   const onDownloadNotePng = useCallback(async () => {
     claimNow();
-    if (!noteSvgFromPng || noteClaimed) return;
+    if (!noteSvgFromPng || noteClaimedFinal) return;
 
     try {
       const payloadBase = noteSendPayloadRaw
@@ -3413,7 +3413,7 @@ React.useEffect(() => {
   }, [
     claimNow,
     confirmNoteSend,
-    noteClaimed,
+    noteClaimedFinal,
     noteProofBundleJson,
     noteSendMeta,
     noteSendPayloadRaw,
@@ -3767,7 +3767,7 @@ React.useEffect(() => {
                         <span className="vbtn-note-preview" aria-hidden="true" dangerouslySetInnerHTML={{ __html: notePreviewSvg }} />
                       </button>
                     ) : null}
-                    {noteSvgFromPng && result.status === "ok" && !noteClaimed ? (
+                    {noteSvgFromPng && result.status === "ok" && !noteClaimedFinal ? (
                       <button
                         type="button"
                         className="vbtn vbtn--ghost vbtn--note-download"
