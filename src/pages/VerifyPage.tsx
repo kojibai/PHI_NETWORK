@@ -989,6 +989,7 @@ export default function VerifyPage(): ReactElement {
   const lastAutoScanKeyRef = useRef<string | null>(null);
   const noteSendConfirmedRef = useRef<string | null>(null);
   const noteClaimRemoteCheckedRef = useRef<string | null>(null);
+  const noteDownloadBypassRef = useRef<boolean>(false);
 
   const slugRaw = useMemo(() => readSlugFromLocation(), []);
   const slug = useMemo(() => parseSlug(slugRaw), [slugRaw]);
@@ -1490,6 +1491,7 @@ useEffect(() => {
       setNoteSendMeta(null);
       setNoteSendPayloadRaw(null);
       setNoteClaimedImmediate(false);
+      noteDownloadBypassRef.current = false;
       setNoteSvgFromPng("");
       setNoteProofBundleJson("");
     },
@@ -1505,6 +1507,7 @@ useEffect(() => {
       setNoteSendMeta(null);
       setNoteSendPayloadRaw(null);
       setNoteClaimedImmediate(false);
+      noteDownloadBypassRef.current = false;
       setNoteSvgFromPng("");
       setNoteProofBundleJson("");
       try {
@@ -1552,6 +1555,7 @@ setNoteSendPayloadRaw(payloadRaw);
       setNoteSendMeta(null);
       setNoteSendPayloadRaw(null);
       setNoteClaimedImmediate(false);
+      noteDownloadBypassRef.current = false;
       setNoteSvgFromPng("");
       setNoteProofBundleJson("");
       try {
@@ -1662,6 +1666,7 @@ const confirmNoteSend = useCallback(() => {
 
 const claimNow = useCallback(() => {
   setNoteClaimedImmediate(true);
+  noteDownloadBypassRef.current = true;
   confirmNoteSend();
 }, [confirmNoteSend]);
 
@@ -3350,7 +3355,7 @@ React.useEffect(() => {
 
   const onDownloadNotePng = useCallback(async () => {
     claimNow();
-    if (!noteSvgFromPng || noteClaimedFinal) return;
+    if (!noteSvgFromPng || (noteClaimedFinal && !noteDownloadBypassRef.current)) return;
 
     try {
       const payloadBase = noteSendPayloadRaw
@@ -3407,6 +3412,7 @@ React.useEffect(() => {
       const msg = err instanceof Error ? err.message : "Note download failed.";
       setNotice(msg);
     } finally {
+      noteDownloadBypassRef.current = false;
       // ✅ ALWAYS flip claim + force UI refresh (mobile-safe)
       confirmNoteSend();
     }
@@ -3974,6 +3980,7 @@ React.useEffect(() => {
                             setResult({ status: "idle" });
                             setNotice("");
                             setNoteClaimedImmediate(false);
+                            noteDownloadBypassRef.current = false;
                           }}
                           disabled={!svgText.trim() && !sharedReceipt}
                         />
