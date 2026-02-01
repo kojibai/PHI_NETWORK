@@ -1193,15 +1193,13 @@ useEffect(() => {
       : noteClaimRemoteStatus === "fresh"
         ? "unclaimed"
         : noteClaimRemoteStatus === "stale"
-          ? "unclaimed"
+          ? "unknown"
           : "checking";
   const noteClaimStatus = effectiveNoteMeta
     ? noteClaimState === "claimed"
       ? "CLAIMED — SEAL Owned"
       : noteClaimState === "unclaimed"
-        ? noteClaimRemoteStatus === "stale"
-          ? "UNCLAIMED — CHECK REGISTRY"
-          : "UNCLAIMED — SEAL Available"
+        ? "UNCLAIMED — SEAL Available"
         : noteClaimState === "unknown"
           ? "UNKNOWN — CHECK REGISTRY"
           : "VERIFYING — PULLING REGISTRY"
@@ -3918,9 +3916,7 @@ if (!noteDownloadBypassRef.current && alreadySpent) {
                             noteClaimState === "claimed"
                               ? `Rotation-Seal owned: ${noteClaimNonce || "—"}\nClaimed pulse: ${noteClaimPulseLabel}\nLeaf hash: ${noteClaimTransferHash || "—"}`
                               : noteClaimState === "unclaimed"
-                                ? noteClaimRemoteStatus === "stale"
-                                  ? "Rotation-Seal status unconfirmed: registry refresh failed."
-                                  : "Rotation-Seal available: this note has not been claimed yet."
+                                ? "Rotation-Seal available: this note has not been claimed yet."
                                 : noteClaimState === "unknown"
                                   ? "Claim status unknown: registry refresh failed."
                                   : "Verifying claim status against the registry."
