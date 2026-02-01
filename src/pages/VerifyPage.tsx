@@ -3412,9 +3412,14 @@ const onDownloadNotePng = useCallback(async () => {
 
     const nextNonce = genNonce();
 
+    const currentCanonical =
+      parentMeta.childCanonical ||
+      readLooseString(payloadBase, "childCanonical", "childHash", "canonicalHash", "hash") ||
+      "";
+
     const childNoteSendPayload: Record<string, unknown> = {
       ...payloadBase,
-      parentCanonical: parentMeta.parentCanonical,
+      parentCanonical: currentCanonical || parentMeta.parentCanonical,
       amountPhi: parentMeta.amountPhi,
       amountUsd: parentMeta.amountUsd,
       transferNonce: nextNonce,

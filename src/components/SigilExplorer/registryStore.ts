@@ -279,7 +279,7 @@ function hydrateNoteClaimsFromStorage(): boolean {
         } else {
           const merged: NoteClaimRecord = {
             nonce,
-            claimedPulse: existing.claimedPulse || next.claimedPulse,
+            claimedPulse: Math.max(existing.claimedPulse || 0, next.claimedPulse || 0),
             childCanonical: existing.childCanonical || next.childCanonical,
             transferLeafHash: existing.transferLeafHash || next.transferLeafHash,
           };
@@ -347,8 +347,7 @@ export function markNoteClaimed(
 
   const next: NoteClaimRecord = {
     nonce,
-    // keep the first non-zero pulse we ever saw, else take new pulse
-    claimedPulse: (existing?.claimedPulse ?? 0) > 0 ? (existing!.claimedPulse as number) : claimedPulse,
+    claimedPulse: Math.max(existing?.claimedPulse ?? 0, claimedPulse ?? 0),
     childCanonical: existing?.childCanonical || childCanonical,
     transferLeafHash: existing?.transferLeafHash || transferLeafHash,
   };
