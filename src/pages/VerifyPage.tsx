@@ -110,7 +110,6 @@ import { decodeSharePayload, encodeSharePayload } from "../utils/shareBundleCode
 function formatProofValue(value: unknown): string {
   if (value === null || value === undefined) return "—";
   if (typeof value === "string") return value;
-  let mintedChildCanonical = "";
   try {
     return JSON.stringify(value, null, 2);
   } catch {
@@ -3487,6 +3486,7 @@ const onDownloadNotePng = useCallback(async () => {
   }
 
   const claimedPulse = currentPulse ?? getKaiPulseEternalInt(new Date());
+  let mintedChildCanonical = "";
 
   try {
     // ────────────────────────────────────────────────────────────────
