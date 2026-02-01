@@ -2717,11 +2717,15 @@ if (!parentCanonical) throw new Error("Origin sigil not initialized.");
     });
 
     try {
-      (updated as SigilMetadataWithOptionals).sendLock = {
-        ...(updated.sendLock ?? { nonce: updated.transferNonce! }),
-        used: true,
-        usedPulse: nowPulse,
-      };
+      const sendNonce = updated.transferNonce ?? updated.sendLock?.nonce ?? "";
+      if (sendNonce) {
+        (updated as SigilMetadataWithOptionals).sendLock = {
+          ...(updated.sendLock ?? { nonce: sendNonce }),
+          nonce: sendNonce,
+          used: true,
+          usedPulse: nowPulse,
+        };
+      }
     } catch (err) {
       logError("send.setUsedLock", err);
     }
