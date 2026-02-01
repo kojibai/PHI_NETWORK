@@ -1188,11 +1188,12 @@ useEffect(() => {
   const noteClaimed = noteClaimedImmediate || noteClaimedFinal;
   const noteClaimStatusCacheRef = useRef<Record<string, "claimed" | "unclaimed">>({});
   const cachedClaimState = noteClaimKey ? noteClaimStatusCacheRef.current[noteClaimKey] : undefined;
+  const hasDeterminateUnclaimed = noteClaimRemoteStatus === "fresh" || cachedClaimState === "unclaimed";
   const noteClaimState = !effectiveNoteMeta
     ? null
     : noteClaimed
       ? "claimed"
-      : noteClaimRemoteStatus === "fresh"
+      : hasDeterminateUnclaimed
         ? "unclaimed"
         : noteClaimRemoteStatus === "stale"
           ? cachedClaimState ?? "unknown"
@@ -1244,7 +1245,7 @@ useEffect(() => {
           return;
         }
         if (res.imported > 0) setRegistryTick((prev) => prev + 1);
-        setNoteClaimRemoteStatus("fresh");
+        setNoteClaimRemoteStatus(res.pulled ? "fresh" : "stale");
       } catch {
         if (ac.signal.aborted) {
           setNoteClaimRemoteStatus("stale");
