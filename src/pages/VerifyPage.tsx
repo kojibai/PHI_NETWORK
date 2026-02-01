@@ -990,6 +990,7 @@ export default function VerifyPage(): ReactElement {
   const noteSendConfirmedRef = useRef<string | null>(null);
   const noteClaimRemoteCheckedRef = useRef<string | null>(null);
   const noteDownloadBypassRef = useRef<boolean>(false);
+  const noteDownloadInFlightRef = useRef<boolean>(false);
 
   const slugRaw = useMemo(() => readSlugFromLocation(), []);
   const slug = useMemo(() => parseSlug(slugRaw), [slugRaw]);
@@ -3354,8 +3355,13 @@ React.useEffect(() => {
   ]);
 
   const onDownloadNotePng = useCallback(async () => {
+    if (noteDownloadInFlightRef.current) return;
+    noteDownloadInFlightRef.current = true;
     claimNow();
-    if (!noteSvgFromPng || (noteClaimedFinal && !noteDownloadBypassRef.current)) return;
+    if (!noteSvgFromPng || (noteClaimedFinal && !noteDownloadBypassRef.current)) {
+      noteDownloadInFlightRef.current = false;
+      return;
+    }
 
     try {
       const payloadBase = noteSendPayloadRaw
@@ -3413,6 +3419,7 @@ React.useEffect(() => {
       setNotice(msg);
     } finally {
       noteDownloadBypassRef.current = false;
+      noteDownloadInFlightRef.current = false;
       // ✅ ALWAYS flip claim + force UI refresh (mobile-safe)
       confirmNoteSend();
     }
@@ -3777,8 +3784,8 @@ React.useEffect(() => {
                       <button
                         type="button"
                         className="vbtn vbtn--ghost vbtn--note-download"
-                        onPointerDown={claimNow}
-                        onTouchStart={claimNow}
+                        onPointerDown={() => void onDownloadNotePng()}
+                        onTouchStart={() => void onDownloadNotePng()}
                         onClick={onDownloadNotePng}
                         title="Download fresh note PNG"
                         aria-label="Download fresh note PNG"
