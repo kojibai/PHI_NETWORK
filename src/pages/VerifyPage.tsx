@@ -1605,65 +1605,78 @@ setNoteSendPayloadRaw(payloadRaw);
     [onPickFile, onPickReceiptPng, onPickReceiptPdf, slug],
   );
 
-const confirmNoteSend = useCallback(() => {
-  // ✅ tolerate missing noteSendMeta (common on receipt PNGs)
-  const effectiveMeta =
-    noteSendMeta ??
-    (noteSendPayloadRaw ? buildNoteSendMetaFromObjectLoose(noteSendPayloadRaw) : null);
+const confirmNoteSend = useCallback(
+  (override?: {
+    meta?: NoteSendMeta;
+    payloadRaw?: Record<string, unknown> | null;
+    claimedPulse?: number;
+  }) => {
+    const overridePayload = override?.payloadRaw ?? null;
+    // ✅ tolerate missing noteSendMeta (common on receipt PNGs)
+    const effectiveMeta =
+      override?.meta ??
+      noteSendMeta ??
+      (overridePayload ? buildNoteSendMetaFromObjectLoose(overridePayload) : null) ??
+      (noteSendPayloadRaw ? buildNoteSendMetaFromObjectLoose(noteSendPayloadRaw) : null);
 
-  if (!effectiveMeta) return;
+    if (!effectiveMeta) return;
 
-  if (!noteSendMeta) {
-    setNoteSendMeta(effectiveMeta);
-  }
-  setNoteClaimedImmediate(true);
-
-  const key = `${effectiveMeta.parentCanonical}|${effectiveMeta.transferNonce}`;
-  if (noteSendConfirmedRef.current === key) return;
-  noteSendConfirmedRef.current = key;
-
-  const claimedPulse = currentPulse ?? getKaiPulseEternalInt(new Date());
-
-  // ✅ don’t rely on noteSendRecord memo (it’s tied to noteSendMeta); fetch directly
-  const rec = getSendRecordByNonce(effectiveMeta.parentCanonical, effectiveMeta.transferNonce);
-
-  const transferLeafHash =
-    effectiveMeta.transferLeafHashSend ??
-    readRecordString(noteSendPayloadRaw, "transferLeafHashSend") ??
-    readRecordString(noteSendPayloadRaw, "transferLeafHash") ??
-    readRecordString(noteSendPayloadRaw, "leafHash") ??
-    rec?.transferLeafHashSend ??
-    undefined;
-
-  try {
-    // Send ledger confirm (best-effort)
-    markConfirmedByNonce(effectiveMeta.parentCanonical, effectiveMeta.transferNonce);
-
-    // Note claim registry (this is what your UI uses to show CLAIMED)
-    markNoteClaimed(effectiveMeta.parentCanonical, effectiveMeta.transferNonce, {
-      childCanonical: effectiveMeta.childCanonical,
-      transferLeafHash,
-      claimedPulse,
-    });
-
-    // Optional movement trace
-    if (effectiveMeta.childCanonical && effectiveMeta.amountPhi) {
-      recordSigilTransferMovement({
-        hash: effectiveMeta.childCanonical,
-        direction: "receive",
-        amountPhi: effectiveMeta.amountPhi,
-        amountUsd: effectiveMeta.amountUsd != null ? effectiveMeta.amountUsd.toFixed(2) : undefined,
-      });
+    if (!noteSendMeta) {
+      setNoteSendMeta(effectiveMeta);
     }
-  } catch (err) {
-    // eslint-disable-next-line no-console
-    console.error("note send confirm failed", err);
-  } finally {
-    // ✅ force re-render even if iOS storage/broadcast events don’t fire
-    setLedgerTick((prev) => prev + 1);
-    setRegistryTick((prev) => prev + 1);
-  }
-}, [currentPulse, noteSendMeta, noteSendPayloadRaw]);
+    setNoteClaimedImmediate(true);
+
+    const key = `${effectiveMeta.parentCanonical}|${effectiveMeta.transferNonce}`;
+    if (noteSendConfirmedRef.current === key) return;
+    noteSendConfirmedRef.current = key;
+
+    const claimedPulse = override?.claimedPulse ?? currentPulse ?? getKaiPulseEternalInt(new Date());
+
+    // ✅ don’t rely on noteSendRecord memo (it’s tied to noteSendMeta); fetch directly
+    const rec = getSendRecordByNonce(effectiveMeta.parentCanonical, effectiveMeta.transferNonce);
+
+    const transferLeafHash =
+      effectiveMeta.transferLeafHashSend ??
+      readRecordString(overridePayload, "transferLeafHashSend") ??
+      readRecordString(overridePayload, "transferLeafHash") ??
+      readRecordString(overridePayload, "leafHash") ??
+      readRecordString(noteSendPayloadRaw, "transferLeafHashSend") ??
+      readRecordString(noteSendPayloadRaw, "transferLeafHash") ??
+      readRecordString(noteSendPayloadRaw, "leafHash") ??
+      rec?.transferLeafHashSend ??
+      undefined;
+
+    try {
+      // Send ledger confirm (best-effort)
+      markConfirmedByNonce(effectiveMeta.parentCanonical, effectiveMeta.transferNonce);
+
+      // Note claim registry (this is what your UI uses to show CLAIMED)
+      markNoteClaimed(effectiveMeta.parentCanonical, effectiveMeta.transferNonce, {
+        childCanonical: effectiveMeta.childCanonical,
+        transferLeafHash,
+        claimedPulse,
+      });
+
+      // Optional movement trace
+      if (effectiveMeta.childCanonical && effectiveMeta.amountPhi) {
+        recordSigilTransferMovement({
+          hash: effectiveMeta.childCanonical,
+          direction: "receive",
+          amountPhi: effectiveMeta.amountPhi,
+          amountUsd: effectiveMeta.amountUsd != null ? effectiveMeta.amountUsd.toFixed(2) : undefined,
+        });
+      }
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("note send confirm failed", err);
+    } finally {
+      // ✅ force re-render even if iOS storage/broadcast events don’t fire
+      setLedgerTick((prev) => prev + 1);
+      setRegistryTick((prev) => prev + 1);
+    }
+  },
+  [currentPulse, noteSendMeta, noteSendPayloadRaw],
+);
 
   const runOwnerAuthFlow = useCallback(
     async (args: {
@@ -3358,6 +3371,9 @@ React.useEffect(() => {
       return;
     }
 
+    let mintedMeta: NoteSendMeta | null = null;
+    let mintedPayloadRaw: Record<string, unknown> | null = null;
+    const claimedPulse = currentPulse ?? getKaiPulseEternalInt(new Date());
     try {
       const payloadBase = noteSendPayloadRaw
         ? { ...noteSendPayloadRaw }
@@ -3384,6 +3400,10 @@ React.useEffect(() => {
 
       if (noteSendPayload && "childCanonical" in noteSendPayload) {
         delete (noteSendPayload as { childCanonical?: unknown }).childCanonical;
+      }
+      if (noteSendPayload) {
+        mintedMeta = buildNoteSendMetaFromObjectLoose(noteSendPayload);
+        mintedPayloadRaw = noteSendPayload as Record<string, unknown>;
       }
 
       const nonce = nextNonce ? `-${nextNonce.slice(0, 8)}` : "";
@@ -3416,9 +3436,22 @@ React.useEffect(() => {
       noteDownloadBypassRef.current = false;
       noteDownloadInFlightRef.current = false;
       // ✅ ALWAYS flip claim + force UI refresh (mobile-safe)
-      confirmNoteSend();
+      if (mintedMeta) {
+        confirmNoteSend({ meta: mintedMeta, payloadRaw: mintedPayloadRaw, claimedPulse });
+      } else {
+        confirmNoteSend();
+      }
     }
-  }, [confirmNoteSend, noteClaimedFinal, noteProofBundleJson, noteSendMeta, noteSendPayloadRaw, noteSvgFromPng, sharedReceipt]);
+  }, [
+    confirmNoteSend,
+    currentPulse,
+    noteClaimedFinal,
+    noteProofBundleJson,
+    noteSendMeta,
+    noteSendPayloadRaw,
+    noteSvgFromPng,
+    sharedReceipt,
+  ]);
 
   const onDownloadVerifiedCard = useCallback(async () => {
     if (!verifiedCardData) return;
