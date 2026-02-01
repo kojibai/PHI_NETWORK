@@ -3359,35 +3359,47 @@ React.useEffect(() => {
     }
 
     try {
-      const payloadBase = noteSendPayloadRaw
-        ? { ...noteSendPayloadRaw }
-        : noteSendMeta
-          ? {
-              parentCanonical: noteSendMeta.parentCanonical,
-              amountPhi: noteSendMeta.amountPhi,
-              amountUsd: noteSendMeta.amountUsd,
-              childCanonical: noteSendMeta.childCanonical,
-            }
-          : null;
-
-      if (payloadBase) {
-        const scrubKeys = [
-          "claimedPulse",
-          "receivePulse",
-          "receiveSig",
-          "receiveBundleHash",
-          "receiveProof",
-          "receiveHash",
-          "transferLeafHashReceive",
-          "transferDirection",
-          "transferMode",
-          "transferKind",
-          "phiDirection",
-        ];
-        for (const key of scrubKeys) {
-          if (key in payloadBase) delete (payloadBase as Record<string, unknown>)[key];
+      const payloadBase = (() => {
+        if (noteSendPayloadRaw) {
+          const allowedKeys = [
+            "amountPhi",
+            "amountPhiScaled",
+            "amountUsd",
+            "lockedPulse",
+            "valuationStamp",
+            "verifyUrl",
+            "parentCanonical",
+            "senderKaiPulse",
+            "senderStamp",
+            "previousHeadRoot",
+            "transferLeafHashSend",
+          ] as const;
+          const next: Record<string, unknown> = {};
+          for (const key of allowedKeys) {
+            if (key in noteSendPayloadRaw) next[key] = noteSendPayloadRaw[key];
+          }
+          if (!next.parentCanonical && noteSendMeta?.parentCanonical) {
+            next.parentCanonical = noteSendMeta.parentCanonical;
+          }
+          if (next.amountPhi == null && noteSendMeta?.amountPhi != null) {
+            next.amountPhi = noteSendMeta.amountPhi;
+          }
+          if (next.amountUsd == null && noteSendMeta?.amountUsd != null) {
+            next.amountUsd = noteSendMeta.amountUsd;
+          }
+          return Object.keys(next).length > 0 ? next : null;
         }
-      }
+
+        if (noteSendMeta) {
+          return {
+            parentCanonical: noteSendMeta.parentCanonical,
+            amountPhi: noteSendMeta.amountPhi,
+            amountUsd: noteSendMeta.amountUsd,
+          } satisfies Record<string, unknown>;
+        }
+
+        return null;
+      })();
 
       const nextNonce = genNonce();
 
