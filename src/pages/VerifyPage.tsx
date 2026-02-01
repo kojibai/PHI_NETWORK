@@ -1220,6 +1220,7 @@ useEffect(() => {
     if (!effectiveNoteMeta || noteClaimedFinal || !noteClaimKey) return;
     if (noteClaimRemoteStatus === "checking") return;
     if (noteClaimRemoteStatus === "fresh" && noteClaimRemoteCheckedRef.current === noteClaimKey) return;
+    if (noteClaimRemoteStatus === "stale" && noteClaimRemoteCheckedRef.current === noteClaimKey) return;
     noteClaimRemoteCheckedRef.current = noteClaimKey;
     setNoteClaimRemoteStatus("checking");
     const ac = new AbortController();
