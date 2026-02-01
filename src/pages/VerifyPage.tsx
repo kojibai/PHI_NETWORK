@@ -3528,9 +3528,9 @@ const onDownloadNotePng = useCallback(async () => {
         parentMeta.transferNonce,
       ));
 
+    const effectiveParentCanonical = resolvedParentLeafCanonical || parentMeta.parentCanonical;
     if (!resolvedParentLeafCanonical) {
-      setNotice("Missing parent canonical leaf. Cannot mint a child note from this file.");
-      return;
+      setNotice("Parent canonical leaf missing; exporting with origin canonical.");
     }
 
     const nextSenderStamp =
@@ -3555,7 +3555,7 @@ const onDownloadNotePng = useCallback(async () => {
     const nextTransferLeafHashSend =
       nextAmountScaled && nextSenderStamp && nextPreviousHeadRoot
         ? await deriveTransferLeafHashSend({
-            parentCanonical: resolvedParentLeafCanonical,
+            parentCanonical: effectiveParentCanonical,
             transferNonce: nextNonce,
             amountScaled: nextAmountScaled,
             senderKaiPulse: nextSenderKaiPulse,
@@ -3572,14 +3572,14 @@ const onDownloadNotePng = useCallback(async () => {
             previousHeadRoot: nextPreviousHeadRoot,
             transferLeafHashSend: nextTransferLeafHashSend,
           },
-          resolvedParentLeafCanonical,
+          effectiveParentCanonical,
           nextNonce,
         )
       : "";
 
     const childNoteSendPayload: Record<string, unknown> = {
       ...payloadBase,
-      parentCanonical: resolvedParentLeafCanonical,
+      parentCanonical: effectiveParentCanonical,
       amountPhi: parentMeta.amountPhi,
       amountUsd: parentMeta.amountUsd,
       amountPhiScaled: nextAmountScaled || payloadBase.amountPhiScaled,
