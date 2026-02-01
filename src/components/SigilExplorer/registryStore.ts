@@ -369,6 +369,7 @@ export function markNoteClaimed(
   });
 
   upsertRegistryPayload(claimUrl, claimPayload);
+  persistRegistryToStorage();
   enqueueInhaleKrystal(claimUrl, claimPayload);
 
   // ✅ notify listeners (mobile-safe)

@@ -3370,6 +3370,25 @@ React.useEffect(() => {
             }
           : null;
 
+      if (payloadBase) {
+        const scrubKeys = [
+          "claimedPulse",
+          "receivePulse",
+          "receiveSig",
+          "receiveBundleHash",
+          "receiveProof",
+          "receiveHash",
+          "transferLeafHashReceive",
+          "transferDirection",
+          "transferMode",
+          "transferKind",
+          "phiDirection",
+        ];
+        for (const key of scrubKeys) {
+          if (key in payloadBase) delete (payloadBase as Record<string, unknown>)[key];
+        }
+      }
+
       const nextNonce = genNonce();
 
       const noteSendPayload = payloadBase
