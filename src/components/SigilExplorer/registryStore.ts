@@ -68,6 +68,7 @@ type NoteClaimArgs = {
   transferNonce: string;
   childCanonical?: string;
   claimedPulse?: number;
+  transferLeafHash?: string;
 };
 
 type RegistryEvent =
@@ -214,7 +215,7 @@ function normalizeNonce(raw: string | undefined | null): string {
 }
 
 function buildNoteClaimPayload(args: NoteClaimArgs): SigilUrlPayloadLoose {
-  const { parentCanonical, transferNonce, childCanonical, claimedPulse } = args;
+  const { parentCanonical, transferNonce, childCanonical, claimedPulse, transferLeafHash } = args;
   const claimedPulseValue = Number.isFinite(claimedPulse ?? NaN) ? Number(claimedPulse) : 0;
   const payload: SigilUrlPayloadLoose = {
     pulse: claimedPulseValue,
@@ -231,6 +232,7 @@ function buildNoteClaimPayload(args: NoteClaimArgs): SigilUrlPayloadLoose {
     payload.childHash = childCanonical;
     payload.hash = childCanonical;
   }
+  if (transferLeafHash) payload.transferLeafHash = transferLeafHash;
   return payload;
 }
 
@@ -353,7 +355,7 @@ function ensureNoteClaimsHydrated(): void {
 function ensureClaimUrlPersisted(
   parentCanonical: string,
   transferNonce: string,
-  args?: { childCanonical?: string; claimedPulse?: number },
+  args?: { childCanonical?: string; claimedPulse?: number; transferLeafHash?: string },
 ): boolean {
   const parentKey = normalizeCanonical(parentCanonical);
   const nonce = normalizeNonce(transferNonce);
@@ -364,6 +366,7 @@ function ensureClaimUrlPersisted(
     transferNonce: nonce,
     childCanonical: normalizeCanonical(args?.childCanonical) || undefined,
     claimedPulse: args?.claimedPulse,
+    transferLeafHash: args?.transferLeafHash,
   });
 
   const claimUrl = buildNoteClaimUrl({
@@ -371,6 +374,7 @@ function ensureClaimUrlPersisted(
     transferNonce: nonce,
     childCanonical: normalizeCanonical(args?.childCanonical) || undefined,
     claimedPulse: args?.claimedPulse,
+    transferLeafHash: args?.transferLeafHash,
   });
 
   const changed = upsertRegistryPayload(claimUrl, claimPayload);
@@ -399,6 +403,7 @@ function ensureClaimUrlsFromClaims(): void {
         transferNonce: record.nonce,
         childCanonical: record.childCanonical,
         claimedPulse: record.claimedPulse,
+        transferLeafHash: record.transferLeafHash,
       });
 
       const claimUrl = buildNoteClaimUrl({
@@ -406,6 +411,7 @@ function ensureClaimUrlsFromClaims(): void {
         transferNonce: record.nonce,
         childCanonical: record.childCanonical,
         claimedPulse: record.claimedPulse,
+        transferLeafHash: record.transferLeafHash,
       });
 
       changed = upsertRegistryPayload(claimUrl, claimPayload) || changed;
@@ -481,6 +487,7 @@ export function markNoteClaimed(
     transferNonce: nonce,
     childCanonical: next.childCanonical,
     claimedPulse: next.claimedPulse || undefined,
+    transferLeafHash: next.transferLeafHash,
   });
 
   const claimUrl = buildNoteClaimUrl({
@@ -488,6 +495,7 @@ export function markNoteClaimed(
     transferNonce: nonce,
     childCanonical: next.childCanonical,
     claimedPulse: next.claimedPulse || undefined,
+    transferLeafHash: next.transferLeafHash,
   });
 
   // These are idempotent; call every time so registry repairs itself after cache clears.
@@ -527,6 +535,7 @@ export function getNoteClaimInfo(parentCanonical: string, transferNonce: string)
     ensureClaimUrlPersisted(parentKey, nonce, {
       childCanonical: record.childCanonical,
       claimedPulse: record.claimedPulse,
+      transferLeafHash: record.transferLeafHash,
     });
   }
   return record;
