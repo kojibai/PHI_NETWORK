@@ -3357,6 +3357,12 @@ React.useEffect(() => {
       noteDownloadInFlightRef.current = false;
       return;
     }
+    let confirmIssued = false;
+    const confirmOnce = () => {
+      if (confirmIssued) return;
+      confirmIssued = true;
+      confirmNoteSend();
+    };
 
     try {
       const payloadBase = noteSendPayloadRaw
@@ -3401,11 +3407,13 @@ React.useEffect(() => {
       ].filter((entry): entry is { keyword: string; text: string } => Boolean(entry));
 
       if (entries.length === 0) {
+        confirmOnce();
         triggerDownload(filename, png, "image/png");
       } else {
         const bytes = new Uint8Array(await png.arrayBuffer());
         const enriched = insertPngTextChunks(bytes, entries);
         const finalBlob = new Blob([enriched as BlobPart], { type: "image/png" });
+        confirmOnce();
         triggerDownload(filename, finalBlob, "image/png");
       }
 
@@ -3416,7 +3424,7 @@ React.useEffect(() => {
       noteDownloadBypassRef.current = false;
       noteDownloadInFlightRef.current = false;
       // ✅ ALWAYS flip claim + force UI refresh (mobile-safe)
-      confirmNoteSend();
+      confirmOnce();
     }
   }, [confirmNoteSend, noteClaimedFinal, noteProofBundleJson, noteSendMeta, noteSendPayloadRaw, noteSvgFromPng, sharedReceipt]);
 
