@@ -11,7 +11,7 @@ import {
   resolveLineageBackwards,
   type SigilSharePayloadLoose as SigilUrlPayloadLoose,
 } from "../../utils/sigilUrl";
-import { getInMemorySigilUrls } from "../../utils/sigilRegistry";
+import { getInMemorySigilUrls, registerSigilUrl } from "../../utils/sigilRegistry";
 import { markConfirmedByNonce } from "../../utils/sendLedger";
 import {
   canonicalizeUrl,
@@ -399,6 +399,7 @@ export function markNoteClaimed(
 
   // These are idempotent; persist locally and enqueue for remote durability (localStorage alone is not durable).
   upsertRegistryPayload(claimUrl, claimPayload);
+  registerSigilUrl(claimUrl);
   enqueueInhaleKrystal(claimUrl, claimPayload);
 
   // ✅ persist registry list EVERY TIME
