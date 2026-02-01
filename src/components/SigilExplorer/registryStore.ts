@@ -315,11 +315,54 @@ function persistNoteClaimsToStorage(): void {
   }
 }
 
+function persistRegistryFallbackUrls(): void {
+  if (!canStorage) return;
+  try {
+    const urls = Array.from(memoryRegistry.keys());
+    localStorage.setItem(MODAL_FALLBACK_LS_KEY, JSON.stringify(urls));
+  } catch {
+    // ignore quota issues
+  }
+}
+
 function ensureNoteClaimsHydrated(): void {
   if (noteClaimsHydrated) return;
   noteClaimsHydrated = true;
   hydrateNoteClaimsFromStorage();
 }
+
+function ensureClaimUrlPersisted(
+  parentCanonical: string,
+  transferNonce: string,
+  args?: { childCanonical?: string; claimedPulse?: number },
+): boolean {
+  const parentKey = normalizeCanonical(parentCanonical);
+  const nonce = normalizeNonce(transferNonce);
+  if (!parentKey || !nonce) return false;
+
+  const claimPayload = buildNoteClaimPayload({
+    parentCanonical: parentKey,
+    transferNonce: nonce,
+    childCanonical: normalizeCanonical(args?.childCanonical) || undefined,
+    claimedPulse: args?.claimedPulse,
+  });
+
+  const claimUrl = buildNoteClaimUrl({
+    parentCanonical: parentKey,
+    transferNonce: nonce,
+    childCanonical: normalizeCanonical(args?.childCanonical) || undefined,
+    claimedPulse: args?.claimedPulse,
+  });
+
+  const changed = upsertRegistryPayload(claimUrl, claimPayload);
+  if (changed) {
+    persistRegistryToStorage();
+    persistRegistryFallbackUrls();
+  }
+
+  return changed;
+}
+
 export function markNoteClaimed(
   parentCanonical: string,
   transferNonce: string,
@@ -366,8 +409,9 @@ export function markNoteClaimed(
   }
 
   // ─────────────────────────────────────────────────────────────
-  // 2) ALWAYS materialize + persist the claim URL into the global registry
-  //    (this is the “infinite generations” fix)
+  // 2) ALWAYS materialize + persist the claim URL into the global registry.
+  //    Invariant: any claim update must persist BOTH the claim map and
+  //    the registry URL list so claims rehydrate across refreshes.
   // ─────────────────────────────────────────────────────────────
   const claimPayload = buildNoteClaimPayload({
     parentCanonical: parentKey,
@@ -391,14 +435,7 @@ export function markNoteClaimed(
   persistRegistryToStorage();
 
   // Optional: keep modal fallback aligned too
-  if (canStorage) {
-    try {
-      const urls = Array.from(memoryRegistry.keys());
-      localStorage.setItem(MODAL_FALLBACK_LS_KEY, JSON.stringify(urls));
-    } catch {
-      /* ignore */
-    }
-  }
+  persistRegistryFallbackUrls();
 
   safeRegistryPost({ type: "note:claim", parentCanonical: parentKey, transferNonce: nonce });
 
@@ -418,10 +455,18 @@ export function isNoteClaimed(parentCanonical: string, transferNonce: string): b
 
 export function getNoteClaimInfo(parentCanonical: string, transferNonce: string): NoteClaimRecord | null {
   ensureNoteClaimsHydrated();
+  ensureRegistryHydrated();
   const parentKey = normalizeCanonical(parentCanonical);
   const nonce = normalizeNonce(transferNonce);
   if (!parentKey || !nonce) return null;
-  return noteClaimRegistry.get(parentKey)?.get(nonce) ?? null;
+  const record = noteClaimRegistry.get(parentKey)?.get(nonce) ?? null;
+  if (record) {
+    ensureClaimUrlPersisted(parentKey, nonce, {
+      childCanonical: record.childCanonical,
+      claimedPulse: record.claimedPulse,
+    });
+  }
+  return record;
 }
 
 export function getNoteClaimHistory(parentCanonical: string): NoteClaimRecord[] {
