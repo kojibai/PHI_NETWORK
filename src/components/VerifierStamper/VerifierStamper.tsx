@@ -2716,6 +2716,16 @@ if (!parentCanonical) throw new Error("Origin sigil not initialized.");
       message: "Transfer sealed.",
     });
 
+    try {
+      (updated as SigilMetadataWithOptionals).sendLock = {
+        ...(updated.sendLock ?? { nonce: updated.transferNonce! }),
+        used: true,
+        usedPulse: nowPulse,
+      };
+    } catch (err) {
+      logError("send.setUsedLock", err);
+    }
+
     // Optional: seal segment after cap
     const windowSize = (updated.transfers ?? []).length;
     const cap = updated.segmentSize ?? SEGMENT_SIZE;

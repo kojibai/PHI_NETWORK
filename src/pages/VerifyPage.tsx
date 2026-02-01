@@ -36,7 +36,7 @@ import {
   type ProofBundleLike,
 } from "../components/KaiVoh/verifierProof";
 import { extractProofBundleMetaFromSvg, type ProofBundleMeta } from "../utils/sigilMetadata";
-import { derivePhiKeyFromSig, genNonce } from "../components/VerifierStamper/sigilUtils";
+import { derivePhiKeyFromSig, genNonce, stableStringify } from "../components/VerifierStamper/sigilUtils";
 import { tryVerifyGroth16 } from "../components/VerifierStamper/zk";
 import { isKASAuthorSig, type KASAuthorSig } from "../utils/authorSig";
 import {
@@ -57,7 +57,7 @@ import { deriveOwnerPhiKeyFromReceive, type OwnerKeyDerivation } from "../utils/
 import { base64UrlDecode, sha256Hex } from "../utils/sha256";
 import { insertPngTextChunks, readPngTextChunk } from "../utils/pngChunks";
 import { getKaiPulseEternalInt } from "../SovereignSolar";
-import { getSendRecordByNonce, listen, markConfirmedByNonce } from "../utils/sendLedger";
+import { getSendRecordByNonce, getSendsFor, listen, markConfirmedByNonce, recordSend } from "../utils/sendLedger";
 import { recordSigilTransferMovement } from "../utils/sigilTransferRegistry";
 import { getNoteClaimInfo, getNoteClaimLeader, isNoteClaimed, markNoteClaimed, listenRegistry } from "../components/SigilExplorer/registryStore";
 import { pullAndImportRemoteUrls } from "../components/SigilExplorer/remotePull";
@@ -75,6 +75,7 @@ import { buildBanknoteSVG } from "../components/exhale-note/banknoteSvg";
 import type { BanknoteInputs as NoteBanknoteInputs, NoteSendPayload, NoteSendResult } from "../components/exhale-note/types";
 import { safeShowDialog } from "../components/verifier/utils/modal";
 import type { SigilMetadata } from "../components/verifier/types/local";
+import { toScaledBig } from "../components/verifier/utils/decimal";
 import useRollingChartSeries from "../components/VerifierStamper/hooks/useRollingChartSeries";
 import { BREATH_MS } from "../components/valuation/constants";
 import {
@@ -1175,9 +1176,13 @@ useEffect(() => {
     readRecordString(noteSendPayloadRaw, "transferLeafHashSend") ??
     noteSendRecord?.transferLeafHashSend ??
     "";
+  const noteClaimCanonical = useMemo(() => {
+    if (!effectiveNoteMeta) return "";
+    return normalizeCanonicalHash(effectiveNoteMeta.childCanonical) || normalizeCanonicalHash(effectiveNoteMeta.parentCanonical);
+  }, [effectiveNoteMeta]);
   const noteClaimedFinal =
     Boolean(noteSendRecord?.confirmed) ||
-    (effectiveNoteMeta ? isNoteClaimed(effectiveNoteMeta.parentCanonical, effectiveNoteMeta.transferNonce) : false);
+    (noteClaimCanonical ? isNoteClaimed(noteClaimCanonical, effectiveNoteMeta?.transferNonce ?? "") : false);
   const noteClaimed = noteClaimedImmediate || noteClaimedFinal;
   const noteClaimStatus = effectiveNoteMeta ? (noteClaimed ? "CLAIMED — SEAL Owned" : "UNCLAIMED — SEAL Available") : null;
   const noteClaimPulseLabel = useMemo(() => formatClaimPulse(noteClaimedPulse), [noteClaimedPulse]);
@@ -3388,6 +3393,22 @@ const onDownloadNotePng = useCallback(async () => {
     return;
   }
 
+  const spentCanonical =
+    normalizeCanonicalHash(parentMeta.childCanonical) || normalizeCanonicalHash(parentMeta.parentCanonical);
+  if (!spentCanonical) {
+    setNotice("Missing parent canonical. Cannot mint a child note from this file.");
+    noteDownloadBypassRef.current = false;
+    noteDownloadInFlightRef.current = false;
+    return;
+  }
+
+  if (!noteDownloadBypassRef.current && getSendsFor(spentCanonical).length > 0) {
+    setNotice("Already claimed/spent.");
+    noteDownloadBypassRef.current = false;
+    noteDownloadInFlightRef.current = false;
+    return;
+  }
+
   // If parent is already claimed, do not allow minting a child
   if (!noteDownloadBypassRef.current && noteClaimedFinal) {
     noteDownloadBypassRef.current = false;
@@ -3402,7 +3423,7 @@ const onDownloadNotePng = useCallback(async () => {
     // 2) Build NEW child note payload (new nonce) to embed into the export
     //    IMPORTANT: this NEW nonce must NOT be marked claimed here.
     // ────────────────────────────────────────────────────────────────
-    const payloadBase = parentPayloadRaw ? { ...parentPayloadRaw } : {};
+    const payloadBase: Record<string, unknown> = parentPayloadRaw ? { ...parentPayloadRaw } : {};
 
     // Strip any parent-leaf fields we must not carry forward
     delete (payloadBase as { transferLeafHashSend?: unknown }).transferLeafHashSend;
@@ -3412,12 +3433,53 @@ const onDownloadNotePng = useCallback(async () => {
 
     const nextNonce = genNonce();
 
+    const payloadAmountScaled =
+      typeof payloadBase.amountPhiScaled === "string" ? payloadBase.amountPhiScaled.trim() : "";
+    const amountPhiScaled =
+      payloadAmountScaled ||
+      (typeof parentMeta.amountPhi === "number" && Number.isFinite(parentMeta.amountPhi)
+        ? toScaledBig(String(parentMeta.amountPhi)).toString()
+        : "0");
+    const senderKaiPulse =
+      typeof payloadBase.senderKaiPulse === "number" && Number.isFinite(payloadBase.senderKaiPulse)
+        ? payloadBase.senderKaiPulse
+        : typeof payloadBase.lockedPulse === "number" && Number.isFinite(payloadBase.lockedPulse)
+          ? payloadBase.lockedPulse
+          : 0;
+    const senderStamp =
+      readRecordString(payloadBase, "senderStamp") ?? readRecordString(payloadBase, "valuationStamp") ?? "";
+    const previousHeadRoot = readRecordString(payloadBase, "previousHeadRoot") ?? "";
+    const leafSeed = stableStringify({
+      parent: spentCanonical,
+      nonce: nextNonce,
+      amount: amountPhiScaled,
+      pulse: senderKaiPulse,
+      stamp: senderStamp,
+      root: previousHeadRoot,
+    });
+    const transferLeafHashSend = (await sha256Hex(leafSeed)).toLowerCase();
+    const childSeed = stableStringify({
+      parent: spentCanonical,
+      nonce: nextNonce,
+      senderStamp,
+      senderKaiPulse,
+      prevHead: previousHeadRoot,
+      leafSend: transferLeafHashSend,
+    });
+    const childCanonical = (await sha256Hex(childSeed)).toLowerCase();
+
     const childNoteSendPayload: Record<string, unknown> = {
       ...payloadBase,
-      parentCanonical: parentMeta.parentCanonical,
+      parentCanonical: spentCanonical,
       amountPhi: parentMeta.amountPhi,
+      amountPhiScaled,
       amountUsd: parentMeta.amountUsd,
       transferNonce: nextNonce,
+      childCanonical,
+      senderKaiPulse,
+      senderStamp,
+      previousHeadRoot,
+      transferLeafHashSend,
     };
 
     const nonceSuffix = nextNonce ? `-${String(nextNonce).slice(0, 8)}` : "";
@@ -3443,6 +3505,18 @@ const onDownloadNotePng = useCallback(async () => {
       const finalBlob = new Blob([enriched as BlobPart], { type: "image/png" });
       triggerDownload(filename, finalBlob, "image/png");
     }
+
+    await recordSend({
+      parentCanonical: spentCanonical,
+      childCanonical,
+      amountPhiScaled,
+      kind: "note",
+      senderKaiPulse,
+      transferNonce: nextNonce,
+      senderStamp,
+      previousHeadRoot,
+      transferLeafHashSend,
+    });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Note download failed.";
     setNotice(msg);
