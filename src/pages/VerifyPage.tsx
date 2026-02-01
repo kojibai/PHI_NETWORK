@@ -1231,7 +1231,10 @@ useEffect(() => {
     (async () => {
       try {
         const res = await pullAndImportRemoteUrls(ac.signal);
-        if (ac.signal.aborted) return;
+        if (ac.signal.aborted) {
+          setNoteClaimRemoteStatus("stale");
+          return;
+        }
         if (res.imported > 0) setRegistryTick((prev) => prev + 1);
         setNoteClaimRemoteStatus("fresh");
       } catch {
