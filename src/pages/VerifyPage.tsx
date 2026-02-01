@@ -59,7 +59,15 @@ import { insertPngTextChunks, readPngTextChunk } from "../utils/pngChunks";
 import { getKaiPulseEternalInt } from "../SovereignSolar";
 import { getSendRecordByNonce, listen, markConfirmedByNonce } from "../utils/sendLedger";
 import { recordSigilTransferMovement } from "../utils/sigilTransferRegistry";
-import { getNoteClaimInfo, getNoteClaimLeader, isNoteClaimed, markNoteClaimed, listenRegistry } from "../components/SigilExplorer/registryStore";
+import {
+  getNoteClaimInfo,
+  getNoteClaimLeader,
+  hydrateNoteClaimFromIndex,
+  isNoteClaimed,
+  listenRegistry,
+  markNoteClaimed,
+} from "../components/SigilExplorer/registryStore";
+import { buildNoteId, hasClaim } from "../state/claimIndex";
 import { pullAndImportRemoteUrls } from "../components/SigilExplorer/remotePull";
 import { useKaiTicker } from "../hooks/useKaiTicker";
 import { useValuation } from "./SigilPage/useValuation";
@@ -1005,6 +1013,7 @@ export default function VerifyPage(): ReactElement {
   const [noteSendMeta, setNoteSendMeta] = useState<NoteSendMeta | null>(null);
   const [noteSendPayloadRaw, setNoteSendPayloadRaw] = useState<Record<string, unknown> | null>(null);
   const [noteClaimedImmediate, setNoteClaimedImmediate] = useState<boolean>(false);
+  const [noteClaimedSticky, setNoteClaimedSticky] = useState<boolean>(false);
   const [noteSvgFromPng, setNoteSvgFromPng] = useState<string>("");
   const [noteProofBundleJson, setNoteProofBundleJson] = useState<string>("");
 
@@ -1123,6 +1132,10 @@ useEffect(() => {
     () => noteSendMeta ?? (noteSendPayloadRaw ? buildNoteSendMetaFromObjectLoose(noteSendPayloadRaw) : null),
     [noteSendMeta, noteSendPayloadRaw],
   );
+  const noteClaimId = useMemo(
+    () => (effectiveNoteMeta ? buildNoteId(effectiveNoteMeta.parentCanonical, effectiveNoteMeta.transferNonce) : null),
+    [effectiveNoteMeta?.parentCanonical, effectiveNoteMeta?.transferNonce],
+  );
 
   const noteValuePhi = noteSendMeta?.amountPhi ?? null;
   const noteValueUsd = noteSendMeta?.amountUsd ?? null;
@@ -1178,7 +1191,36 @@ useEffect(() => {
   const noteClaimedFinal =
     Boolean(noteSendRecord?.confirmed) ||
     (effectiveNoteMeta ? isNoteClaimed(effectiveNoteMeta.parentCanonical, effectiveNoteMeta.transferNonce) : false);
-  const noteClaimed = noteClaimedImmediate || noteClaimedFinal;
+  useEffect(() => {
+    let active = true;
+    setNoteClaimedSticky(false);
+    if (!effectiveNoteMeta || !noteClaimId) {
+      return () => {
+        active = false;
+      };
+    }
+
+    (async () => {
+      try {
+        const claimed = await hasClaim(noteClaimId);
+        if (!active) return;
+        if (claimed) setNoteClaimedSticky(true);
+        const hydrated = await hydrateNoteClaimFromIndex(
+          effectiveNoteMeta.parentCanonical,
+          effectiveNoteMeta.transferNonce,
+        );
+        if (active && hydrated) setRegistryTick((prev) => prev + 1);
+      } catch {
+        // ignore claim index failures
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [effectiveNoteMeta?.parentCanonical, effectiveNoteMeta?.transferNonce, noteClaimId]);
+
+  const noteClaimed = noteClaimedImmediate || noteClaimedSticky || noteClaimedFinal;
   const noteClaimStatus = effectiveNoteMeta ? (noteClaimed ? "CLAIMED — SEAL Owned" : "UNCLAIMED — SEAL Available") : null;
   const noteClaimPulseLabel = useMemo(() => formatClaimPulse(noteClaimedPulse), [noteClaimedPulse]);
   const noteClaimNonceShort = noteClaimNonce ? ellipsizeMiddle(noteClaimNonce, 8, 6) : "—";
