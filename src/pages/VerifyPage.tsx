@@ -1223,6 +1223,9 @@ useEffect(() => {
     noteClaimRemoteCheckedRef.current = noteClaimKey;
     setNoteClaimRemoteStatus("checking");
     const ac = new AbortController();
+    const timeoutId = window.setTimeout(() => {
+      ac.abort();
+    }, 2500);
 
     (async () => {
       try {
@@ -1231,12 +1234,18 @@ useEffect(() => {
         if (res.imported > 0) setRegistryTick((prev) => prev + 1);
         setNoteClaimRemoteStatus("fresh");
       } catch {
-        if (ac.signal.aborted) return;
+        if (ac.signal.aborted) {
+          setNoteClaimRemoteStatus("stale");
+          return;
+        }
         setNoteClaimRemoteStatus("stale");
+      } finally {
+        window.clearTimeout(timeoutId);
       }
     })();
 
     return () => {
+      window.clearTimeout(timeoutId);
       ac.abort();
     };
   }, [effectiveNoteMeta, noteClaimedFinal, noteClaimKey, noteClaimRemoteStatus]);
