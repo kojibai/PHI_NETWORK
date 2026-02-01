@@ -13,65 +13,47 @@ export type ApiSealResponse = {
 };
 
 const hasWindow = typeof window !== "undefined";
-const canStorage = hasWindow && typeof window.localStorage !== "undefined";
+const canStorage =
+  hasWindow &&
+  (() => {
+    try {
+      return typeof window.localStorage !== "undefined";
+    } catch {
+      return false;
+    }
+  })();
 
 /* ─────────────────────────────────────────────────────────────────────
- *  LAH-MAH-TOR API (Primary + IKANN Failover, soft-fail backup)
+ *  LAH-MAH-TOR API (Primary + Backup + Same-Origin Proxy First)
  *
- *  IMPORTANT DEV RULE:
- *  - In local dev (localhost / 127.0.0.1), NEVER use window.location.origin
- *    as the API base. That points at Vite (5173) and causes 413 for large POSTs.
- *  - Instead, use a relative base that routes through Vite proxy to the real API.
+ *  Mobile reality:
+ *  - Cross-origin fetch to LIVE_BASE_URL/LIVE_BACKUP_URL can throw due to CORS.
+ *  - On iOS, repeated retry loops + failed fetches can destabilize the tab.
  *
- *  Vite proxy example:
- *    server.proxy["/sigils"] = { target: "http://localhost:8787", changeOrigin: true }
- *  Then DEV_API_BASE = "" (or "/" ) will work with makeUrl(base)=> `${base}/sigils/...`
- *  OR set DEV_API_BASE = "" and keep paths absolute.
+ *  Strategy:
+ *  1) Prefer SAME-ORIGIN proxy FIRST when app is not hosted on API domains.
+ *     (This avoids CORS entirely when proxy routes exist.)
+ *  2) If cross-origin base throws (CORS/network), suppress it for a cooldown window
+ *     so we don't spam retries.
+ *  3) Backup suppression stays, plus generalized base suppression.
  * ─────────────────────────────────────────────────────────────────── */
+
 export const LIVE_BASE_URL = "https://m.kai.ac";
 export const LIVE_BACKUP_URL = "https://memory.kaiklok.com";
-const PROXY_API_BASE = ""; // same-origin proxy ("/sigils" handled by the app server)
-const ENABLE_PROXY_IN_PROD = import.meta.env.VITE_SIGIL_PROXY === "true";
+
+/**
+ * PROXY_API_BASE:
+ * - "" means same-origin relative requests: fetch("/sigils/...")
+ * - Your hosting layer (or dev proxy) must route /sigils to the real API.
+ */
+const PROXY_API_BASE = "";
 
 /**
  * Dev API base:
- * Use relative URLs so requests go through Vite's dev server proxy,
- * not to the Vite server as an API destination.
- *
- * With your current config (proxy for "/sigils"), a blank base is best:
- *   fetch("/sigils/inhale") -> Vite proxies to the real API target.
+ * With Vite proxy configured for "/sigils", "" is best:
+ * fetch("/sigils/inhale") -> Vite proxies to API target.
  */
-export const DEV_API_BASE = ""; // relative (same-origin), uses Vite proxy for /sigils
-
-function isLocalDevOrigin(origin: string): boolean {
-  return origin.startsWith("http://localhost:") || origin.startsWith("http://127.0.0.1:");
-}
-
-function shouldTrySameOriginProxy(origin: string): boolean {
-  if (!origin || origin === "null") return false;
-  if (isLocalDevOrigin(origin)) return true;
-  if (import.meta.env.DEV) return true;
-  if (!ENABLE_PROXY_IN_PROD) return false;
-  if (origin === LIVE_BASE_URL || origin === LIVE_BACKUP_URL) return false;
-  return true;
-}
-
-function selectPrimaryBase(primary: string, backup: string): string {
-  if (!hasWindow) return primary;
-
-  const origin = window.location.origin;
-
-  // LOCAL DEV: always use relative base (Vite proxy) — never the page origin as an API host.
-  if (isLocalDevOrigin(origin)) return DEV_API_BASE;
-
-  // If you're actually hosted on the API domains, allow same-origin.
-  if (origin === primary || origin === backup) return origin;
-
-  return primary;
-}
-
-const API_BASE_PRIMARY = selectPrimaryBase(LIVE_BASE_URL, LIVE_BACKUP_URL);
-const API_BASE_FALLBACK = API_BASE_PRIMARY === LIVE_BASE_URL ? LIVE_BACKUP_URL : LIVE_BASE_URL;
+export const DEV_API_BASE = "";
 
 export const API_SEAL_PATH = "/sigils/seal";
 export const API_URLS_PATH = "/sigils/urls";
@@ -82,19 +64,102 @@ const API_BASE_HINT_LS_KEY = "kai:lahmahtorBase:v1";
 /** Backup suppression: if backup fails, suppress it for a cooldown window (no spam). */
 const API_BACKUP_DEAD_UNTIL_LS_KEY = "kai:lahmahtorBackupDeadUntil:v1";
 const API_BACKUP_COOLDOWN_MS = 2 * 60 * 1000; // 2 minutes
-
 let apiBackupDeadUntil = 0;
+
+/** General base suppression (covers primary too when CORS/network fails). */
+const API_DEAD_MAP_LS_KEY = "kai:lahmahtorDeadMap:v1";
+const API_BASE_COOLDOWN_MS = 2 * 60 * 1000; // 2 minutes
+let apiDeadMap: Record<string, number> = {};
+
+/** Sticky base (only for real remote bases; proxy is always attempted first). */
+let apiBaseHint: string = LIVE_BASE_URL;
+
+let hydrated = false;
 
 function nowMs(): number {
   return Date.now();
 }
 
+function isLocalDevOrigin(origin: string): boolean {
+  return origin.startsWith("http://localhost:") || origin.startsWith("http://127.0.0.1:");
+}
+
+function isApiDomainOrigin(origin: string): boolean {
+  return origin === LIVE_BASE_URL || origin === LIVE_BACKUP_URL;
+}
+
+function isHttpsPage(): boolean {
+  if (!hasWindow) return true;
+  try {
+    return window.location.protocol === "https:";
+  } catch {
+    return true;
+  }
+}
+
+function loadApiDeadMap(): void {
+  if (!canStorage) return;
+  try {
+    const raw = localStorage.getItem(API_DEAD_MAP_LS_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object") return;
+
+    const next: Record<string, number> = {};
+    for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+      const n = Number(v);
+      if (typeof k === "string" && Number.isFinite(n) && n > 0) next[k] = n;
+    }
+    apiDeadMap = next;
+  } catch {
+    // ignore
+  }
+}
+
+function saveApiDeadMap(): void {
+  if (!canStorage) return;
+  try {
+    localStorage.setItem(API_DEAD_MAP_LS_KEY, JSON.stringify(apiDeadMap));
+  } catch {
+    // ignore
+  }
+}
+
+function isBaseSuppressed(base: string): boolean {
+  if (!base) return false; // proxy base is never suppressed
+  const until = apiDeadMap[base] ?? 0;
+  return until > 0 && nowMs() < until;
+}
+
+function clearBaseSuppression(base: string): void {
+  if (!base) return;
+  if (!apiDeadMap[base]) return;
+  delete apiDeadMap[base];
+  saveApiDeadMap();
+}
+
+function markBaseDead(base: string): void {
+  if (!base) return;
+  apiDeadMap[base] = nowMs() + API_BASE_COOLDOWN_MS;
+  saveApiDeadMap();
+
+  // If we were "hinted" to a base that is now dead, fall back.
+  if (apiBaseHint === base) {
+    apiBaseHint = LIVE_BASE_URL;
+    saveApiBaseHint();
+  }
+}
+
 export function loadApiBackupDeadUntil(): void {
   if (!canStorage) return;
-  const raw = localStorage.getItem(API_BACKUP_DEAD_UNTIL_LS_KEY);
-  if (!raw) return;
-  const n = Number(raw);
-  if (Number.isFinite(n) && n > 0) apiBackupDeadUntil = n;
+  try {
+    const raw = localStorage.getItem(API_BACKUP_DEAD_UNTIL_LS_KEY);
+    if (!raw) return;
+    const n = Number(raw);
+    if (Number.isFinite(n) && n > 0) apiBackupDeadUntil = n;
+  } catch {
+    // ignore
+  }
 }
 
 function saveApiBackupDeadUntil(): void {
@@ -119,86 +184,153 @@ function clearBackupSuppression(): void {
 function markBackupDead(): void {
   apiBackupDeadUntil = nowMs() + API_BACKUP_COOLDOWN_MS;
   saveApiBackupDeadUntil();
+
   // never “stick” to fallback if it’s failing
-  if (apiBaseHint === API_BASE_FALLBACK) {
-    apiBaseHint = API_BASE_PRIMARY;
+  const primary = selectPrimaryBase(LIVE_BASE_URL, LIVE_BACKUP_URL);
+  const fallback = primary === LIVE_BASE_URL ? LIVE_BACKUP_URL : LIVE_BASE_URL;
+  if (apiBaseHint === fallback) {
+    apiBaseHint = primary;
     saveApiBaseHint();
   }
 }
 
-/** Sticky base: whichever succeeded last is attempted first (prod only). */
-let apiBaseHint: string = API_BASE_PRIMARY;
+function shouldTrySameOriginProxy(origin: string): boolean {
+  if (!origin || origin === "null") return false;
+
+  // Local dev always uses proxy base "".
+  if (isLocalDevOrigin(origin)) return true;
+
+  // If you're hosted on API domains, don't proxy (just use same-origin).
+  if (isApiDomainOrigin(origin)) return false;
+
+  // In prod on a non-API domain (phi.network, etc.), try proxy first.
+  return true;
+}
+
+function selectPrimaryBase(primary: string, backup: string): string {
+  if (!hasWindow) return primary;
+  const origin = window.location.origin;
+
+  // LOCAL DEV: always use relative base (Vite proxy).
+  if (isLocalDevOrigin(origin)) return DEV_API_BASE;
+
+  // If hosted on API domains, allow same-origin.
+  if (origin === primary || origin === backup) return origin;
+
+  return primary;
+}
+
+const API_BASE_PRIMARY = selectPrimaryBase(LIVE_BASE_URL, LIVE_BACKUP_URL);
+const API_BASE_FALLBACK = API_BASE_PRIMARY === LIVE_BASE_URL ? LIVE_BACKUP_URL : LIVE_BASE_URL;
 
 export function loadApiBaseHint(): void {
   if (!canStorage) return;
 
-  // In local dev we only ever use DEV_API_BASE (proxy), so hints are irrelevant.
+  // Local dev: proxy only
   if (hasWindow && isLocalDevOrigin(window.location.origin)) {
     apiBaseHint = DEV_API_BASE;
     return;
   }
 
-  const raw = localStorage.getItem(API_BASE_HINT_LS_KEY);
-  if (raw === API_BASE_PRIMARY) {
-    apiBaseHint = raw;
-    return;
+  try {
+    const raw = localStorage.getItem(API_BASE_HINT_LS_KEY);
+    if (raw === API_BASE_PRIMARY) {
+      apiBaseHint = raw;
+      return;
+    }
+    if (raw === API_BASE_FALLBACK) {
+      apiBaseHint = isBackupSuppressed() ? API_BASE_PRIMARY : raw;
+      return;
+    }
+  } catch {
+    // ignore
   }
-  if (raw === API_BASE_FALLBACK) {
-    apiBaseHint = isBackupSuppressed() ? API_BASE_PRIMARY : raw;
-  }
+
+  apiBaseHint = API_BASE_PRIMARY;
 }
 
 function saveApiBaseHint(): void {
   if (!canStorage) return;
   try {
-    localStorage.setItem(API_BASE_HINT_LS_KEY, apiBaseHint);
+    // only persist hints for real remote bases (not proxy "")
+    if (apiBaseHint === API_BASE_PRIMARY || apiBaseHint === API_BASE_FALLBACK) {
+      localStorage.setItem(API_BASE_HINT_LS_KEY, apiBaseHint);
+    }
   } catch {
     // ignore
   }
 }
 
+function ensureHydrated(): void {
+  if (hydrated) return;
+  hydrated = true;
+  loadApiBackupDeadUntil();
+  loadApiDeadMap();
+  loadApiBaseHint();
+}
+
 function apiBases(): string[] {
-  // LOCAL DEV: single base, always via relative URL + Vite proxy.
+  ensureHydrated();
+
+  // LOCAL DEV: single base via Vite proxy.
   if (hasWindow && isLocalDevOrigin(window.location.origin)) {
     return [DEV_API_BASE];
   }
 
-  const wantFallbackFirst = apiBaseHint === API_BASE_FALLBACK && !isBackupSuppressed();
-  const list = wantFallbackFirst
-    ? [API_BASE_FALLBACK, API_BASE_PRIMARY]
-    : [API_BASE_PRIMARY, API_BASE_FALLBACK];
-
+  // SSR: just attempt primary then fallback (proxy doesn’t exist server-side).
   if (!hasWindow) {
-    // SSR: keep both, but still respect suppression if it was set before render.
-    return isBackupSuppressed() ? list.filter((b) => b !== API_BASE_FALLBACK) : list;
+    const list = isBackupSuppressed()
+      ? [API_BASE_PRIMARY].filter((b) => !isBaseSuppressed(b))
+      : [API_BASE_PRIMARY, API_BASE_FALLBACK].filter((b) => !isBaseSuppressed(b));
+    return list.length ? list : [API_BASE_PRIMARY];
   }
-
-  const isHttpsPage = window.location.protocol === "https:";
-  // Never try http fallback from an https page (browser will block + log loudly)
-  const protocolFiltered = isHttpsPage ? list.filter((b) => b.startsWith("https://")) : list;
 
   const pageOrigin = window.location.origin;
 
-  // If app is hosted on the API domains, use same-origin only.
-  if (pageOrigin === LIVE_BASE_URL || pageOrigin === LIVE_BACKUP_URL) {
-    return protocolFiltered.filter((b) => b === pageOrigin);
+  // If app is hosted on API domains, use same-origin only.
+  if (isApiDomainOrigin(pageOrigin)) {
+    return [pageOrigin];
   }
 
-  const filtered = isBackupSuppressed()
+  const bases: string[] = [];
+
+  // ✅ Always try same-origin proxy first for non-API origins.
+  if (shouldTrySameOriginProxy(pageOrigin)) {
+    bases.push(PROXY_API_BASE);
+  }
+
+  const wantFallbackFirst = apiBaseHint === API_BASE_FALLBACK && !isBackupSuppressed();
+  const ordered = wantFallbackFirst
+    ? [API_BASE_FALLBACK, API_BASE_PRIMARY]
+    : [API_BASE_PRIMARY, API_BASE_FALLBACK];
+
+  const protocolFiltered = isHttpsPage()
+    ? ordered.filter((b) => b.startsWith("https://"))
+    : ordered;
+
+  const filteredByBackup = isBackupSuppressed()
     ? protocolFiltered.filter((b) => b !== API_BASE_FALLBACK)
     : protocolFiltered;
-  const shouldProxy = hasWindow && shouldTrySameOriginProxy(pageOrigin);
-  return shouldProxy ? [PROXY_API_BASE, ...filtered] : filtered;
+
+  const filteredByDead = filteredByBackup.filter((b) => !isBaseSuppressed(b));
+
+  // If both remotes are suppressed/dead, we’ll rely on proxy only.
+  for (const b of filteredByDead) bases.push(b);
+
+  return bases;
 }
 
 function shouldFailoverStatus(status: number): boolean {
-  // 0 = network/CORS/unknown from wrapper
+  // 0 = network/CORS/unknown (caller uses 0 in wrappers)
   if (status === 0) return true;
+
   // common “route didn’t exist here but exists on the other base”
   if (status === 404) return true;
-  // transient / throttling / upstream
-  if (status === 408 || status === 429) return true;
+
+  // request too large / gateway / transient / throttling / upstream
+  if (status === 408 || status === 413 || status === 429) return true;
   if (status >= 500) return true;
+
   return false;
 }
 
@@ -226,19 +358,41 @@ export async function apiFetchWithFailover(
         // if backup works again, clear suppression
         if (base === API_BASE_FALLBACK) clearBackupSuppression();
 
-        apiBaseHint = base;
-        saveApiBaseHint();
+        // if a remote base works again, clear suppression
+        if (base === API_BASE_PRIMARY || base === API_BASE_FALLBACK) clearBaseSuppression(base);
+
+        // only persist hints for real remote bases
+        if (base === API_BASE_PRIMARY || base === API_BASE_FALLBACK) {
+          apiBaseHint = base;
+          saveApiBaseHint();
+        }
+
         return res;
       }
 
-      // If backup is failing (404/5xx/etc), suppress it so it never “causes issues”.
+      // Suppress backup if it's failing.
       if (base === API_BASE_FALLBACK && shouldFailoverStatus(res.status)) markBackupDead();
+
+      // If proxy is returning failover-ish statuses (404/413/etc), just try remotes next.
+      // If remotes are returning failover-ish statuses, we’ll try others, but also
+      // treat repeated failure as "dead" if it keeps happening.
+      if ((base === API_BASE_PRIMARY || base === API_BASE_FALLBACK) && shouldFailoverStatus(res.status)) {
+        // For persistent 4xx/5xx, short cooldown helps reduce spam.
+        // (We don't mark dead on every 404 because that could be real routing mismatch,
+        // but it still helps on iOS when the endpoint is simply not reachable.)
+        if (res.status === 0 || res.status >= 500 || res.status === 404) {
+          markBaseDead(base);
+        }
+      }
 
       // If this status is “final”, stop here; otherwise try the other base.
       if (!shouldFailoverStatus(res.status)) return res;
     } catch {
-      // network failure → try next base
-      if (base === API_BASE_FALLBACK) markBackupDead();
+      // network/CORS failure → mark remote dead (cooldown) so we stop spamming.
+      if (base === API_BASE_PRIMARY || base === API_BASE_FALLBACK) {
+        markBaseDead(base);
+        if (base === API_BASE_FALLBACK) markBackupDead();
+      }
       continue;
     }
   }

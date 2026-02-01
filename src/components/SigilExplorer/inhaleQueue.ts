@@ -3,10 +3,26 @@
 
 import { apiFetchWithFailover, API_INHALE_PATH } from "./apiClient";
 import type { SigilSharePayloadLoose } from "./types";
-import { canonicalizeUrl, extractPayloadFromUrl, isPTildeUrl, looksLikeBareToken, parseStreamToken, streamUrlFromToken } from "./url";
+import {
+  canonicalizeUrl,
+  extractPayloadFromUrl,
+  isPTildeUrl,
+  looksLikeBareToken,
+  parseStreamToken,
+  streamUrlFromToken,
+} from "./url";
 import { memoryRegistry, isOnline } from "./registryStore";
 
 const hasWindow = typeof window !== "undefined";
+const canStorage =
+  hasWindow &&
+  (() => {
+    try {
+      return typeof window.localStorage !== "undefined";
+    } catch {
+      return false;
+    }
+  })();
 
 const INHALE_BATCH_MAX = 200;
 const INHALE_BATCH_MAX_BYTES = 220_000;
@@ -23,6 +39,12 @@ let inhaleRetryMs = 0;
 
 const canMatchMedia = hasWindow && typeof window.matchMedia === "function";
 const isCoarsePointer = canMatchMedia && window.matchMedia("(pointer: coarse)").matches;
+
+function isVisible(): boolean {
+  if (!hasWindow) return false;
+  if (typeof document === "undefined") return true;
+  return document.visibilityState === "visible";
+}
 
 function shouldFastFlush(): boolean {
   if (!hasWindow) return false;
@@ -41,6 +63,24 @@ function scheduleFastFlush(): void {
   }
 }
 
+// ✅ Wake flush when the tab becomes visible or returns online (mobile-safe)
+if (hasWindow) {
+  try {
+    window.addEventListener("online", () => scheduleFastFlush());
+  } catch {
+    // ignore
+  }
+  if (typeof document !== "undefined") {
+    try {
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") scheduleFastFlush();
+      });
+    } catch {
+      // ignore
+    }
+  }
+}
+
 function randId(): string {
   if (hasWindow && typeof window.crypto?.randomUUID === "function") {
     return window.crypto.randomUUID();
@@ -53,19 +93,25 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 }
 
 function saveInhaleQueueToStorage(): void {
-  if (!hasWindow) return;
+  if (!canStorage) return;
   try {
     const json = JSON.stringify([...inhaleQueue.entries()]);
     localStorage.setItem(INHALE_QUEUE_LS_KEY, json);
   } catch {
-    // ignore quota issues
+    // ignore quota/private-mode issues
   }
 }
 
 function loadInhaleQueueFromStorage(): void {
-  if (!hasWindow) return;
-  const raw = localStorage.getItem(INHALE_QUEUE_LS_KEY);
+  if (!canStorage) return;
+  let raw: string | null = null;
+  try {
+    raw = localStorage.getItem(INHALE_QUEUE_LS_KEY);
+  } catch {
+    return;
+  }
   if (!raw) return;
+
   try {
     const arr = JSON.parse(raw) as unknown;
     if (!Array.isArray(arr)) return;
@@ -95,6 +141,7 @@ function enqueueInhaleRawKrystal(krystal: Record<string, unknown>): void {
     inhaleFlushTimer = null;
     void flushInhaleQueue();
   }, INHALE_DEBOUNCE_MS);
+
   scheduleFastFlush();
 }
 
@@ -111,6 +158,7 @@ function enqueueInhaleKrystal(url: string, payload: SigilSharePayloadLoose): voi
     inhaleFlushTimer = null;
     void flushInhaleQueue();
   }, INHALE_DEBOUNCE_MS);
+
   scheduleFastFlush();
 }
 
@@ -211,6 +259,10 @@ function forceInhaleUrls(urls: readonly string[]): void {
 
 async function flushInhaleQueue(): Promise<void> {
   if (!hasWindow) return;
+
+  // ✅ Don’t run flush work in background tabs (iOS stability)
+  if (!isVisible()) return;
+
   if (!isOnline()) return;
   if (inhaleInFlight) return;
   if (inhaleQueue.size === 0) return;
@@ -221,16 +273,13 @@ async function flushInhaleQueue(): Promise<void> {
     const batch: Record<string, unknown>[] = [];
     const keys: string[] = [];
     const encoder = typeof TextEncoder !== "undefined" ? new TextEncoder() : null;
-    let currentBytes = 2;
     let droppedOversize = false;
 
     for (const [k, v] of inhaleQueue) {
-      const next = [...batch, v];
+      const next = batch.length === 0 ? [v] : [...batch, v];
       const jsonPreview = JSON.stringify(next);
       const size =
-        encoder != null
-          ? encoder.encode(jsonPreview).byteLength
-          : new Blob([jsonPreview]).size;
+        encoder != null ? encoder.encode(jsonPreview).byteLength : new Blob([jsonPreview]).size;
 
       if (batch.length === 0 && size > INHALE_BATCH_MAX_BYTES) {
         inhaleQueue.delete(k);
@@ -238,25 +287,19 @@ async function flushInhaleQueue(): Promise<void> {
         continue;
       }
 
-      if (
-        batch.length > 0 &&
-        (batch.length >= INHALE_BATCH_MAX || size > INHALE_BATCH_MAX_BYTES)
-      ) {
+      if (batch.length > 0 && (batch.length >= INHALE_BATCH_MAX || size > INHALE_BATCH_MAX_BYTES)) {
         break;
       }
 
       batch.push(v);
       keys.push(k);
-      currentBytes = size;
 
-      if (batch.length >= INHALE_BATCH_MAX || currentBytes >= INHALE_BATCH_MAX_BYTES) {
+      if (batch.length >= INHALE_BATCH_MAX || size >= INHALE_BATCH_MAX_BYTES) {
         break;
       }
     }
 
-    if (droppedOversize) {
-      saveInhaleQueueToStorage();
-    }
+    if (droppedOversize) saveInhaleQueueToStorage();
 
     if (batch.length === 0) {
       inhaleRetryMs = 0;
@@ -291,9 +334,9 @@ async function flushInhaleQueue(): Promise<void> {
     const res = await apiFetchWithFailover(makeUrl, { method: "POST", body: fd });
     if (!res || !res.ok) throw new Error(`inhale failed: ${res?.status ?? 0}`);
 
+    // best-effort parse; not required
     try {
-      const _parsed = (await res.json()) as unknown;
-      void _parsed;
+      void (await res.json());
     } catch {
       // ignore
     }
@@ -309,7 +352,17 @@ async function flushInhaleQueue(): Promise<void> {
       }, 10);
     }
   } catch {
-    inhaleRetryMs = Math.min(inhaleRetryMs ? inhaleRetryMs * 2 : INHALE_RETRY_BASE_MS, INHALE_RETRY_MAX_MS);
+    // ✅ If offline/hidden, don’t spin retries—listeners will wake us.
+    if (!isOnline() || !isVisible()) {
+      inhaleRetryMs = 0;
+      return;
+    }
+
+    inhaleRetryMs = Math.min(
+      inhaleRetryMs ? inhaleRetryMs * 2 : INHALE_RETRY_BASE_MS,
+      INHALE_RETRY_MAX_MS,
+    );
+
     inhaleFlushTimer = window.setTimeout(() => {
       inhaleFlushTimer = null;
       void flushInhaleQueue();
