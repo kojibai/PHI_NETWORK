@@ -1665,6 +1665,32 @@ const confirmNoteSend = useCallback(() => {
   }
 }, [currentPulse, noteSendMeta, noteSendPayloadRaw]);
 
+const persistNoteClaimPayload = useCallback(
+  (payload: Record<string, unknown>, childCanonical?: string | null) => {
+    const meta = buildNoteSendMetaFromObjectLoose(payload);
+    if (!meta) return;
+    const claimedPulse = currentPulse ?? getKaiPulseEternalInt(new Date());
+    const transferLeafHash =
+      readRecordString(payload, "transferLeafHashSend") ??
+      readRecordString(payload, "transferLeafHash") ??
+      readRecordString(payload, "leafHash") ??
+      undefined;
+
+    try {
+      markConfirmedByNonce(meta.parentCanonical, meta.transferNonce);
+      markNoteClaimed(meta.parentCanonical, meta.transferNonce, {
+        childCanonical: childCanonical ?? meta.childCanonical,
+        transferLeafHash,
+        claimedPulse,
+      });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("note claim persist failed", err);
+    }
+  },
+  [currentPulse],
+);
+
   const runOwnerAuthFlow = useCallback(
     async (args: {
       ownerAuthorSig: KASAuthorSig | null;
@@ -3358,6 +3384,8 @@ React.useEffect(() => {
       return;
     }
 
+    let noteSendPayload: Record<string, unknown> | null = null;
+
     try {
       const payloadBase = noteSendPayloadRaw
         ? { ...noteSendPayloadRaw }
@@ -3372,7 +3400,7 @@ React.useEffect(() => {
 
       const nextNonce = genNonce();
 
-      const noteSendPayload = payloadBase
+      noteSendPayload = payloadBase
         ? {
             ...payloadBase,
             parentCanonical: payloadBase.parentCanonical || noteSendMeta?.parentCanonical,
@@ -3381,6 +3409,11 @@ React.useEffect(() => {
             transferNonce: nextNonce,
           }
         : null;
+
+      const childCanonicalForClaim =
+        (noteSendPayload && typeof noteSendPayload.childCanonical === "string"
+          ? noteSendPayload.childCanonical
+          : null) ?? noteSendMeta?.childCanonical ?? null;
 
       if (noteSendPayload && "childCanonical" in noteSendPayload) {
         delete (noteSendPayload as { childCanonical?: unknown }).childCanonical;
@@ -3400,6 +3433,9 @@ React.useEffect(() => {
         { keyword: "phi_note_svg", text: noteSvgFromPng },
       ].filter((entry): entry is { keyword: string; text: string } => Boolean(entry));
 
+      if (noteSendPayload) {
+        persistNoteClaimPayload(noteSendPayload, childCanonicalForClaim);
+      }
       if (entries.length === 0) {
         triggerDownload(filename, png, "image/png");
       } else {
@@ -3416,9 +3452,18 @@ React.useEffect(() => {
       noteDownloadBypassRef.current = false;
       noteDownloadInFlightRef.current = false;
       // ✅ ALWAYS flip claim + force UI refresh (mobile-safe)
-      confirmNoteSend();
+      if (!noteSendPayload) confirmNoteSend();
     }
-  }, [confirmNoteSend, noteClaimedFinal, noteProofBundleJson, noteSendMeta, noteSendPayloadRaw, noteSvgFromPng, sharedReceipt]);
+  }, [
+    confirmNoteSend,
+    noteClaimedFinal,
+    noteProofBundleJson,
+    noteSendMeta,
+    noteSendPayloadRaw,
+    noteSvgFromPng,
+    persistNoteClaimPayload,
+    sharedReceipt,
+  ]);
 
   const onDownloadVerifiedCard = useCallback(async () => {
     if (!verifiedCardData) return;
