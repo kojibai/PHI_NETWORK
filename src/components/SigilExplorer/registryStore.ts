@@ -325,10 +325,29 @@ function persistRegistryFallbackUrls(): void {
   }
 }
 
+function readStoredRegistryUrls(): Set<string> | null {
+  if (!canStorage) return null;
+  try {
+    const raw = localStorage.getItem(REGISTRY_LS_KEY);
+    if (!raw) return null;
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return null;
+    const set = new Set<string>();
+    for (const entry of parsed) {
+      if (typeof entry !== "string") continue;
+      set.add(canonicalizeUrl(entry));
+    }
+    return set;
+  } catch {
+    return null;
+  }
+}
+
 function ensureNoteClaimsHydrated(): void {
   if (noteClaimsHydrated) return;
   noteClaimsHydrated = true;
   hydrateNoteClaimsFromStorage();
+  ensureClaimUrlsFromClaims();
 }
 
 function ensureClaimUrlPersisted(
@@ -355,12 +374,52 @@ function ensureClaimUrlPersisted(
   });
 
   const changed = upsertRegistryPayload(claimUrl, claimPayload);
-  if (changed) {
+  const stored = readStoredRegistryUrls();
+  const needsPersist =
+    changed || stored === null || (stored ? !stored.has(canonicalizeUrl(claimUrl)) : false);
+
+  if (needsPersist) {
     persistRegistryToStorage();
     persistRegistryFallbackUrls();
   }
 
   return changed;
+}
+
+function ensureClaimUrlsFromClaims(): void {
+  let changed = false;
+  let storageMissing = false;
+  const stored = readStoredRegistryUrls();
+  if (stored === null && canStorage) storageMissing = true;
+
+  for (const [parentKey, claims] of noteClaimRegistry.entries()) {
+    for (const record of claims.values()) {
+      const claimPayload = buildNoteClaimPayload({
+        parentCanonical: parentKey,
+        transferNonce: record.nonce,
+        childCanonical: record.childCanonical,
+        claimedPulse: record.claimedPulse,
+      });
+
+      const claimUrl = buildNoteClaimUrl({
+        parentCanonical: parentKey,
+        transferNonce: record.nonce,
+        childCanonical: record.childCanonical,
+        claimedPulse: record.claimedPulse,
+      });
+
+      changed = upsertRegistryPayload(claimUrl, claimPayload) || changed;
+
+      if (stored && !stored.has(canonicalizeUrl(claimUrl))) {
+        storageMissing = true;
+      }
+    }
+  }
+
+  if (changed || storageMissing) {
+    persistRegistryToStorage();
+    persistRegistryFallbackUrls();
+  }
 }
 
 export function markNoteClaimed(
@@ -379,7 +438,7 @@ export function markNoteClaimed(
   const claimedPulse =
     typeof args?.claimedPulse === "number" && Number.isFinite(args.claimedPulse) ? args.claimedPulse : 0;
 
-  const childCanonical = normalizeCanonical(args?.childCanonical);
+  const childCanonical = normalizeCanonical(args?.childCanonical) || undefined;
   const transferLeafHash = typeof args?.transferLeafHash === "string" ? args.transferLeafHash : undefined;
 
   // ─────────────────────────────────────────────────────────────
@@ -388,12 +447,16 @@ export function markNoteClaimed(
   const map = noteClaimRegistry.get(parentKey) ?? new Map<string, NoteClaimRecord>();
   const existing = map.get(nonce);
 
+  const existingPulse = existing?.claimedPulse ?? 0;
+  const nextClaimedPulse = claimedPulse > existingPulse ? claimedPulse : existingPulse;
+  const nextChildCanonical = childCanonical || existing?.childCanonical;
+  const nextTransferLeafHash = transferLeafHash || existing?.transferLeafHash;
+
   const next: NoteClaimRecord = {
     nonce,
-    // keep the first non-zero pulse we ever saw, else take new pulse
-    claimedPulse: (existing?.claimedPulse ?? 0) > 0 ? (existing!.claimedPulse as number) : claimedPulse,
-    childCanonical: existing?.childCanonical || childCanonical,
-    transferLeafHash: existing?.transferLeafHash || transferLeafHash,
+    claimedPulse: nextClaimedPulse,
+    childCanonical: nextChildCanonical,
+    transferLeafHash: nextTransferLeafHash,
   };
 
   const claimChanged =
@@ -416,15 +479,15 @@ export function markNoteClaimed(
   const claimPayload = buildNoteClaimPayload({
     parentCanonical: parentKey,
     transferNonce: nonce,
-    childCanonical: childCanonical || undefined,
-    claimedPulse: next.claimedPulse || claimedPulse || undefined,
+    childCanonical: next.childCanonical,
+    claimedPulse: next.claimedPulse || undefined,
   });
 
   const claimUrl = buildNoteClaimUrl({
     parentCanonical: parentKey,
     transferNonce: nonce,
-    childCanonical: childCanonical || undefined,
-    claimedPulse: next.claimedPulse || claimedPulse || undefined,
+    childCanonical: next.childCanonical,
+    claimedPulse: next.claimedPulse || undefined,
   });
 
   // These are idempotent; call every time so registry repairs itself after cache clears.
