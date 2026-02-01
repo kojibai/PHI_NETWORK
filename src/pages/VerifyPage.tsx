@@ -1590,60 +1590,67 @@ setNoteSendPayloadRaw(payloadRaw);
     [onPickFile, onPickReceiptPng, onPickReceiptPdf, slug],
   );
 
-const confirmNoteSend = useCallback(() => {
-  // ✅ tolerate missing noteSendMeta (common on receipt PNGs)
-  const effectiveMeta =
-    noteSendMeta ??
-    (noteSendPayloadRaw ? buildNoteSendMetaFromObjectLoose(noteSendPayloadRaw) : null);
+  const applyNoteClaim = useCallback(
+    (meta: NoteSendMeta | null, payloadRaw?: Record<string, unknown> | null): void => {
+      if (!meta) return;
 
-  if (!effectiveMeta) return;
+      const key = `${meta.parentCanonical}|${meta.transferNonce}`;
+      if (noteSendConfirmedRef.current === key) return;
+      noteSendConfirmedRef.current = key;
 
-  const key = `${effectiveMeta.parentCanonical}|${effectiveMeta.transferNonce}`;
-  if (noteSendConfirmedRef.current === key) return;
-  noteSendConfirmedRef.current = key;
+      const claimedPulse = currentPulse ?? getKaiPulseEternalInt(new Date());
 
-  const claimedPulse = currentPulse ?? getKaiPulseEternalInt(new Date());
+      // ✅ don’t rely on noteSendRecord memo (it’s tied to noteSendMeta); fetch directly
+      const rec = getSendRecordByNonce(meta.parentCanonical, meta.transferNonce);
 
-  // ✅ don’t rely on noteSendRecord memo (it’s tied to noteSendMeta); fetch directly
-  const rec = getSendRecordByNonce(effectiveMeta.parentCanonical, effectiveMeta.transferNonce);
+      const transferLeafHash =
+        meta.transferLeafHashSend ??
+        readRecordString(payloadRaw, "transferLeafHashSend") ??
+        readRecordString(payloadRaw, "transferLeafHash") ??
+        readRecordString(payloadRaw, "leafHash") ??
+        rec?.transferLeafHashSend ??
+        undefined;
 
-  const transferLeafHash =
-    effectiveMeta.transferLeafHashSend ??
-    readRecordString(noteSendPayloadRaw, "transferLeafHashSend") ??
-    readRecordString(noteSendPayloadRaw, "transferLeafHash") ??
-    readRecordString(noteSendPayloadRaw, "leafHash") ??
-    rec?.transferLeafHashSend ??
-    undefined;
+      try {
+        // Send ledger confirm (best-effort)
+        markConfirmedByNonce(meta.parentCanonical, meta.transferNonce);
 
-  try {
-    // Send ledger confirm (best-effort)
-    markConfirmedByNonce(effectiveMeta.parentCanonical, effectiveMeta.transferNonce);
+        // Note claim registry (this is what your UI uses to show CLAIMED)
+        markNoteClaimed(meta.parentCanonical, meta.transferNonce, {
+          childCanonical: meta.childCanonical,
+          transferLeafHash,
+          claimedPulse,
+        });
 
-    // Note claim registry (this is what your UI uses to show CLAIMED)
-    markNoteClaimed(effectiveMeta.parentCanonical, effectiveMeta.transferNonce, {
-      childCanonical: effectiveMeta.childCanonical,
-      transferLeafHash,
-      claimedPulse,
-    });
+        // Optional movement trace
+        if (meta.childCanonical && meta.amountPhi) {
+          recordSigilTransferMovement({
+            hash: meta.childCanonical,
+            direction: "receive",
+            amountPhi: meta.amountPhi,
+            amountUsd: meta.amountUsd != null ? meta.amountUsd.toFixed(2) : undefined,
+          });
+        }
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error("note send confirm failed", err);
+      } finally {
+        // ✅ force re-render even if iOS storage/broadcast events don’t fire
+        setLedgerTick((prev) => prev + 1);
+        setRegistryTick((prev) => prev + 1);
+      }
+    },
+    [currentPulse],
+  );
 
-    // Optional movement trace
-    if (effectiveMeta.childCanonical && effectiveMeta.amountPhi) {
-      recordSigilTransferMovement({
-        hash: effectiveMeta.childCanonical,
-        direction: "receive",
-        amountPhi: effectiveMeta.amountPhi,
-        amountUsd: effectiveMeta.amountUsd != null ? effectiveMeta.amountUsd.toFixed(2) : undefined,
-      });
-    }
-  } catch (err) {
-    // eslint-disable-next-line no-console
-    console.error("note send confirm failed", err);
-  } finally {
-    // ✅ force re-render even if iOS storage/broadcast events don’t fire
-    setLedgerTick((prev) => prev + 1);
-    setRegistryTick((prev) => prev + 1);
-  }
-}, [currentPulse, noteSendMeta, noteSendPayloadRaw]);
+  const confirmNoteSend = useCallback(() => {
+    // ✅ tolerate missing noteSendMeta (common on receipt PNGs)
+    const effectiveMeta =
+      noteSendMeta ??
+      (noteSendPayloadRaw ? buildNoteSendMetaFromObjectLoose(noteSendPayloadRaw) : null);
+
+    applyNoteClaim(effectiveMeta, noteSendPayloadRaw);
+  }, [applyNoteClaim, noteSendMeta, noteSendPayloadRaw]);
 
   const runOwnerAuthFlow = useCallback(
     async (args: {
@@ -3331,6 +3338,9 @@ React.useEffect(() => {
   const onDownloadNotePng = useCallback(async () => {
     if (!noteSvgFromPng || noteClaimed) return;
 
+    let downloadMeta: NoteSendMeta | null = null;
+    let downloadPayloadRaw: Record<string, unknown> | null = null;
+
     try {
       const payloadBase = noteSendPayloadRaw
         ? { ...noteSendPayloadRaw }
@@ -3357,6 +3367,11 @@ React.useEffect(() => {
 
       if (noteSendPayload && "childCanonical" in noteSendPayload) {
         delete (noteSendPayload as { childCanonical?: unknown }).childCanonical;
+      }
+
+      if (noteSendPayload) {
+        downloadPayloadRaw = noteSendPayload as Record<string, unknown>;
+        downloadMeta = buildNoteSendMetaFromObjectLoose(downloadPayloadRaw);
       }
 
       const nonce = nextNonce ? `-${nextNonce.slice(0, 8)}` : "";
@@ -3386,10 +3401,14 @@ React.useEffect(() => {
       const msg = err instanceof Error ? err.message : "Note download failed.";
       setNotice(msg);
     } finally {
+      if (downloadMeta) {
+        applyNoteClaim(downloadMeta, downloadPayloadRaw);
+      }
       // ✅ ALWAYS flip claim + force UI refresh (mobile-safe)
       confirmNoteSend();
     }
   }, [
+    applyNoteClaim,
     confirmNoteSend,
     noteClaimed,
     noteProofBundleJson,
