@@ -55,6 +55,7 @@ import {
 import { assertionToJson, verifyOwnerWebAuthnAssertion } from "../utils/webauthnOwner";
 import { deriveOwnerPhiKeyFromReceive, type OwnerKeyDerivation } from "../utils/ownerPhiKey";
 import { base64UrlDecode, sha256Hex } from "../utils/sha256";
+import { stableStringify } from "../components/VerifierStamper/sigilUtils";
 import { insertPngTextChunks, readPngTextChunk } from "../utils/pngChunks";
 import { getKaiPulseEternalInt } from "../SovereignSolar";
 import { getSendRecordByNonce, listen, markConfirmedByNonce } from "../utils/sendLedger";
@@ -258,6 +259,103 @@ function readRecordString(value: Record<string, unknown> | null | undefined, key
   if (typeof raw !== "string") return null;
   const trimmed = raw.trim();
   return trimmed ? trimmed : null;
+}
+
+function readRecordStringAny(value: Record<string, unknown> | null | undefined, ...keys: string[]): string | null {
+  for (const key of keys) {
+    const v = readRecordString(value, key);
+    if (v) return v;
+  }
+  return null;
+}
+
+function readRecordNumberAny(value: Record<string, unknown> | null | undefined, ...keys: string[]): number | null {
+  if (!value) return null;
+  for (const key of keys) {
+    const raw = value[key];
+    if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+    if (typeof raw === "string") {
+      const n = Number(raw);
+      if (Number.isFinite(n)) return n;
+    }
+  }
+  return null;
+}
+
+function toScaledPhi18(amountPhi: number): string {
+  const safe = Number.isFinite(amountPhi) ? amountPhi : 0;
+  return safe.toFixed(18).replace(".", "");
+}
+
+async function deriveTransferLeafHashSend(args: {
+  parentCanonical: string;
+  transferNonce: string;
+  amountScaled: string;
+  senderKaiPulse: number;
+  senderStamp: string;
+  previousHeadRoot: string;
+}): Promise<string> {
+  const leafSeed = stableStringify({
+    parent: args.parentCanonical,
+    nonce: args.transferNonce,
+    amount: args.amountScaled,
+    pulse: args.senderKaiPulse,
+    stamp: args.senderStamp,
+    root: args.previousHeadRoot,
+  });
+  return (await sha256Hex(leafSeed)).toLowerCase();
+}
+
+async function deriveChildCanonicalFromPayload(
+  payload: Record<string, unknown> | null,
+  parentCanonical: string,
+  transferNonce: string,
+): Promise<string | null> {
+  if (!payload || !parentCanonical || !transferNonce) return null;
+
+  const senderStamp =
+    readRecordStringAny(payload, "senderStamp", "valuationStamp", "stamp") ?? "";
+  const senderKaiPulse =
+    readRecordNumberAny(payload, "senderKaiPulse", "lockedPulse", "pulse") ?? 0;
+  const previousHeadRoot =
+    readRecordStringAny(
+      payload,
+      "previousHeadRoot",
+      "transfersWindowRootV14",
+      "transfersWindowRoot",
+      "previousRoot",
+      "root",
+    ) ?? "";
+
+  const existingLeafHash =
+    readRecordStringAny(payload, "transferLeafHashSend", "transferLeafHash", "leafHash") ?? "";
+
+  let leafHash = existingLeafHash;
+  if (!leafHash) {
+    const amountScaled =
+      readRecordStringAny(payload, "amountPhiScaled", "amountScaled") ??
+      (Number.isFinite(Number(payload.amountPhi)) ? toScaledPhi18(Number(payload.amountPhi)) : "");
+    if (!amountScaled || !senderKaiPulse || !senderStamp || !previousHeadRoot) return null;
+    leafHash = await deriveTransferLeafHashSend({
+      parentCanonical,
+      transferNonce,
+      amountScaled,
+      senderKaiPulse,
+      senderStamp,
+      previousHeadRoot,
+    });
+  }
+
+  if (!senderKaiPulse || !previousHeadRoot) return null;
+  const childSeed = stableStringify({
+    parent: parentCanonical,
+    nonce: transferNonce,
+    senderStamp,
+    senderKaiPulse,
+    prevHead: previousHeadRoot,
+    leafSend: leafHash,
+  });
+  return (await sha256Hex(childSeed)).toLowerCase();
 }
 
 function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
@@ -1531,11 +1629,11 @@ useEffect(() => {
         setSvgText("");
         setResult({ status: "idle" });
         setNotice("Receipt PNG loaded.");
-const payloadRaw = parseNoteSendPayload(noteSendJson);
-const meta = parseNoteSendMeta(noteSendJson) ?? (payloadRaw ? buildNoteSendMetaFromObjectLoose(payloadRaw) : null);
+        const payloadRaw = parseNoteSendPayload(noteSendJson);
+        const meta = parseNoteSendMeta(noteSendJson) ?? (payloadRaw ? buildNoteSendMetaFromObjectLoose(payloadRaw) : null);
 
-setNoteSendMeta(meta);
-setNoteSendPayloadRaw(payloadRaw);
+        setNoteSendMeta(meta);
+        setNoteSendPayloadRaw(payloadRaw);
 
         setNoteSvgFromPng(noteSvg ?? "");
         setNoteProofBundleJson(text);
@@ -1647,8 +1745,8 @@ const confirmNoteSend = useCallback(
       undefined;
     const childCanonical =
       effectiveMeta.childCanonical ||
-      readRecordString(overridePayload, "childCanonical", "childHash", "canonicalHash", "hash") ||
-      readRecordString(noteSendPayloadRaw, "childCanonical", "childHash", "canonicalHash", "hash") ||
+      readRecordStringAny(overridePayload, "childCanonical", "childHash", "canonicalHash", "hash") ||
+      readRecordStringAny(noteSendPayloadRaw, "childCanonical", "childHash", "canonicalHash", "hash") ||
       rec?.childCanonical ||
       undefined;
 
@@ -3389,7 +3487,7 @@ const onDownloadNotePng = useCallback(async () => {
   const parentLeafCanonical =
     parentMeta?.childCanonical ||
     noteSendRecord?.childCanonical ||
-    readRecordString(parentPayloadRaw, "childCanonical", "childHash", "canonicalHash", "hash") ||
+    readRecordStringAny(parentPayloadRaw, "childCanonical", "childHash", "canonicalHash", "hash") ||
     "";
 
   if (!parentMeta?.parentCanonical || !parentMeta.transferNonce) {
@@ -3398,13 +3496,6 @@ const onDownloadNotePng = useCallback(async () => {
     noteDownloadInFlightRef.current = false;
     return;
   }
-  if (!parentLeafCanonical) {
-    setNotice("Missing parent canonical leaf. Cannot mint a child note from this file.");
-    noteDownloadBypassRef.current = false;
-    noteDownloadInFlightRef.current = false;
-    return;
-  }
-
   // If parent is already claimed, do not allow minting a child
   if (!noteDownloadBypassRef.current && noteClaimedFinal) {
     noteDownloadBypassRef.current = false;
@@ -3429,12 +3520,75 @@ const onDownloadNotePng = useCallback(async () => {
 
     const nextNonce = genNonce();
 
+    const resolvedParentLeafCanonical =
+      parentLeafCanonical ||
+      (await deriveChildCanonicalFromPayload(
+        parentPayloadRaw,
+        parentMeta.parentCanonical,
+        parentMeta.transferNonce,
+      ));
+
+    if (!resolvedParentLeafCanonical) {
+      setNotice("Missing parent canonical leaf. Cannot mint a child note from this file.");
+      return;
+    }
+
+    const nextSenderStamp =
+      readRecordStringAny(payloadBase, "senderStamp", "valuationStamp", "stamp") ??
+      readRecordStringAny(parentPayloadRaw, "senderStamp", "valuationStamp", "stamp") ??
+      "";
+    const nextPreviousHeadRoot =
+      readRecordStringAny(
+        payloadBase,
+        "previousHeadRoot",
+        "transfersWindowRootV14",
+        "transfersWindowRoot",
+        "previousRoot",
+        "root",
+      ) ??
+      "";
+    const nextAmountScaled =
+      readRecordStringAny(payloadBase, "amountPhiScaled", "amountScaled") ??
+      (Number.isFinite(parentMeta.amountPhi) ? toScaledPhi18(parentMeta.amountPhi) : "");
+    const nextSenderKaiPulse = claimedPulse;
+
+    const nextTransferLeafHashSend =
+      nextAmountScaled && nextSenderStamp && nextPreviousHeadRoot
+        ? await deriveTransferLeafHashSend({
+            parentCanonical: resolvedParentLeafCanonical,
+            transferNonce: nextNonce,
+            amountScaled: nextAmountScaled,
+            senderKaiPulse: nextSenderKaiPulse,
+            senderStamp: nextSenderStamp,
+            previousHeadRoot: nextPreviousHeadRoot,
+          })
+        : "";
+
+    const nextChildCanonical = nextTransferLeafHashSend
+      ? await deriveChildCanonicalFromPayload(
+          {
+            senderStamp: nextSenderStamp,
+            senderKaiPulse: nextSenderKaiPulse,
+            previousHeadRoot: nextPreviousHeadRoot,
+            transferLeafHashSend: nextTransferLeafHashSend,
+          },
+          resolvedParentLeafCanonical,
+          nextNonce,
+        )
+      : "";
+
     const childNoteSendPayload: Record<string, unknown> = {
       ...payloadBase,
-      parentCanonical: parentLeafCanonical,
+      parentCanonical: resolvedParentLeafCanonical,
       amountPhi: parentMeta.amountPhi,
       amountUsd: parentMeta.amountUsd,
+      amountPhiScaled: nextAmountScaled || payloadBase.amountPhiScaled,
       transferNonce: nextNonce,
+      senderKaiPulse: nextSenderKaiPulse,
+      senderStamp: nextSenderStamp,
+      previousHeadRoot: nextPreviousHeadRoot,
+      transferLeafHashSend: nextTransferLeafHashSend || payloadBase.transferLeafHashSend,
+      childCanonical: nextChildCanonical || undefined,
     };
 
     const nonceSuffix = nextNonce ? `-${String(nextNonce).slice(0, 8)}` : "";
