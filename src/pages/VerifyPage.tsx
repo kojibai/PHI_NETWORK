@@ -3328,76 +3328,89 @@ React.useEffect(() => {
     zkMeta?.zkPoseidonHash,
   ]);
 
-const onDownloadNotePng = useCallback(async () => {
-  if (!noteSvgFromPng || noteClaimed) return;
+  const onDownloadNotePng = useCallback(async () => {
+    if (!noteSvgFromPng || noteClaimed) return;
 
-  try {
-    const payloadBase = noteSendPayloadRaw
-      ? { ...noteSendPayloadRaw }
-      : noteSendMeta
+    const claimedPulse = currentPulse ?? getKaiPulseEternalInt(new Date());
+
+    try {
+      const payloadBase = noteSendPayloadRaw
+        ? { ...noteSendPayloadRaw }
+        : noteSendMeta
+          ? {
+              parentCanonical: noteSendMeta.parentCanonical,
+              amountPhi: noteSendMeta.amountPhi,
+              amountUsd: noteSendMeta.amountUsd,
+              childCanonical: noteSendMeta.childCanonical,
+            }
+          : null;
+
+      const nextNonce = genNonce();
+
+      const noteSendPayload = payloadBase
         ? {
-            parentCanonical: noteSendMeta.parentCanonical,
-            amountPhi: noteSendMeta.amountPhi,
-            amountUsd: noteSendMeta.amountUsd,
-            childCanonical: noteSendMeta.childCanonical,
+            ...payloadBase,
+            parentCanonical: payloadBase.parentCanonical || noteSendMeta?.parentCanonical,
+            amountPhi: noteSendMeta?.amountPhi ?? payloadBase.amountPhi,
+            amountUsd: noteSendMeta?.amountUsd ?? payloadBase.amountUsd,
+            transferNonce: nextNonce,
           }
         : null;
 
-    const nextNonce = genNonce();
+      if (noteSendPayload && "childCanonical" in noteSendPayload) {
+        delete (noteSendPayload as { childCanonical?: unknown }).childCanonical;
+      }
 
-    const noteSendPayload = payloadBase
-      ? {
-          ...payloadBase,
-          parentCanonical: payloadBase.parentCanonical || noteSendMeta?.parentCanonical,
-          amountPhi: noteSendMeta?.amountPhi ?? payloadBase.amountPhi,
-          amountUsd: noteSendMeta?.amountUsd ?? payloadBase.amountUsd,
-          transferNonce: nextNonce,
+      const nonce = nextNonce ? `-${nextNonce.slice(0, 8)}` : "";
+      const filename = `☤KAI-NOTE${nonce}.png`;
+
+      const png = await svgStringToPngBlob(noteSvgFromPng, 2400);
+
+      const noteSendJson = noteSendPayload ? JSON.stringify(noteSendPayload) : "";
+      const entries = [
+        noteProofBundleJson ? { keyword: "phi_proof_bundle", text: noteProofBundleJson } : null,
+        sharedReceipt?.bundleHash ? { keyword: "phi_bundle_hash", text: sharedReceipt.bundleHash } : null,
+        sharedReceipt?.receiptHash ? { keyword: "phi_receipt_hash", text: sharedReceipt.receiptHash } : null,
+        noteSendJson ? { keyword: "phi_note_send", text: noteSendJson } : null,
+        { keyword: "phi_note_svg", text: noteSvgFromPng },
+      ].filter((entry): entry is { keyword: string; text: string } => Boolean(entry));
+
+      if (entries.length === 0) {
+        triggerDownload(filename, png, "image/png");
+      } else {
+        const bytes = new Uint8Array(await png.arrayBuffer());
+        const enriched = insertPngTextChunks(bytes, entries);
+        const finalBlob = new Blob([enriched as BlobPart], { type: "image/png" });
+        triggerDownload(filename, finalBlob, "image/png");
+      }
+
+      if (noteSendPayload) {
+        const rotatedMeta = buildNoteSendMetaFromObjectLoose(noteSendPayload);
+        if (rotatedMeta) {
+          markNoteClaimed(rotatedMeta.parentCanonical, rotatedMeta.transferNonce, {
+            childCanonical: rotatedMeta.childCanonical,
+            claimedPulse,
+          });
+          setRegistryTick((prev) => prev + 1);
         }
-      : null;
-
-    if (noteSendPayload && "childCanonical" in noteSendPayload) {
-      delete (noteSendPayload as { childCanonical?: unknown }).childCanonical;
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Note download failed.";
+      setNotice(msg);
+    } finally {
+      // ✅ ALWAYS flip claim + force UI refresh (mobile-safe)
+      confirmNoteSend();
     }
-
-    const nonce = nextNonce ? `-${nextNonce.slice(0, 8)}` : "";
-    const filename = `☤KAI-NOTE${nonce}.png`;
-
-    const png = await svgStringToPngBlob(noteSvgFromPng, 2400);
-
-    const noteSendJson = noteSendPayload ? JSON.stringify(noteSendPayload) : "";
-    const entries = [
-      noteProofBundleJson ? { keyword: "phi_proof_bundle", text: noteProofBundleJson } : null,
-      sharedReceipt?.bundleHash ? { keyword: "phi_bundle_hash", text: sharedReceipt.bundleHash } : null,
-      sharedReceipt?.receiptHash ? { keyword: "phi_receipt_hash", text: sharedReceipt.receiptHash } : null,
-      noteSendJson ? { keyword: "phi_note_send", text: noteSendJson } : null,
-      { keyword: "phi_note_svg", text: noteSvgFromPng },
-    ].filter((entry): entry is { keyword: string; text: string } => Boolean(entry));
-
-    if (entries.length === 0) {
-      triggerDownload(filename, png, "image/png");
-      return;
-    }
-
-    const bytes = new Uint8Array(await png.arrayBuffer());
-    const enriched = insertPngTextChunks(bytes, entries);
-    const finalBlob = new Blob([enriched as BlobPart], { type: "image/png" });
-    triggerDownload(filename, finalBlob, "image/png");
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : "Note download failed.";
-    setNotice(msg);
-  } finally {
-    // ✅ ALWAYS flip claim + force UI refresh (mobile-safe)
-    confirmNoteSend();
-  }
-}, [
-  confirmNoteSend,
-  noteClaimed,
-  noteProofBundleJson,
-  noteSendMeta,
-  noteSendPayloadRaw,
-  noteSvgFromPng,
-  sharedReceipt,
-]);
+  }, [
+    confirmNoteSend,
+    currentPulse,
+    noteClaimed,
+    noteProofBundleJson,
+    noteSendMeta,
+    noteSendPayloadRaw,
+    noteSvgFromPng,
+    sharedReceipt,
+  ]);
 
   const onDownloadVerifiedCard = useCallback(async () => {
     if (!verifiedCardData) return;
