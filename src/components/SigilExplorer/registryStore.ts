@@ -409,6 +409,7 @@ export function markNoteClaimed(
 
 
 export function isNoteClaimed(parentCanonical: string, _transferNonce: string): boolean {
+  void _transferNonce;
   const parentKey = normalizeCanonical(parentCanonical);
   if (!parentKey) return false;
   return getSendsFor(parentKey).length > 0;

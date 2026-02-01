@@ -2717,7 +2717,8 @@ if (!parentCanonical) throw new Error("Origin sigil not initialized.");
     });
 
     try {
-      const sendNonce = updated.transferNonce ?? updated.sendLock?.nonce ?? "";
+      const sendNonce =
+        updated.transferNonce ?? (updated as SigilMetadataWithOptionals).sendLock?.nonce ?? "";
       if (sendNonce) {
         (updated as SigilMetadataWithOptionals).sendLock = {
           ...(updated.sendLock ?? { nonce: sendNonce }),
