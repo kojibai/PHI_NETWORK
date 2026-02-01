@@ -18,6 +18,7 @@ import {
   extractPayloadFromUrl,
   isPTildeUrl,
   looksLikeBareToken,
+  parseHashFromUrl,
   parseStreamToken,
   streamUrlFromToken,
 } from "./url";
@@ -241,6 +242,59 @@ function buildNoteClaimUrl(args: NoteClaimArgs): string {
   return makeSigilUrlLoose(args.parentCanonical, payload, { absolute: true });
 }
 
+function buildClaimedChildPayload(args: {
+  parentCanonical: string;
+  childCanonical: string;
+  transferNonce: string;
+  claimedPulse?: number;
+  transferLeafHash?: string;
+}): SigilSharePayloadLoose {
+  const parentUrl = canonicalizeUrl(`/s/${args.parentCanonical}`);
+  const parentPayload = memoryRegistry.get(parentUrl);
+  const originCandidate =
+    typeof parentPayload?.originUrl === "string" && parentPayload.originUrl.trim()
+      ? parentPayload.originUrl
+      : typeof parentPayload?.parentUrl === "string" && parentPayload.parentUrl.trim()
+        ? parentPayload.parentUrl
+        : parentUrl;
+  const originUrl = canonicalizeUrl(originCandidate);
+
+  const claimedPulseValue = Number.isFinite(args.claimedPulse ?? NaN) ? Number(args.claimedPulse) : 0;
+
+  const payload: SigilSharePayloadLoose = {
+    parentUrl,
+    originUrl,
+    canonicalHash: args.childCanonical,
+    parentHash: args.parentCanonical,
+    originHash: originUrl ? parseHashFromUrl(originUrl) : undefined,
+    transferNonce: args.transferNonce,
+    transferDirection: "receive",
+  };
+
+  if (claimedPulseValue > 0) payload.pulse = claimedPulseValue;
+  if (args.transferLeafHash) payload.transferLeafHash = args.transferLeafHash;
+
+  return payload;
+}
+
+function ensureClaimedChildPersisted(
+  parentCanonical: string,
+  transferNonce: string,
+  args?: { childCanonical?: string; claimedPulse?: number; transferLeafHash?: string },
+): boolean {
+  const childCanonical = normalizeCanonical(args?.childCanonical);
+  if (!childCanonical) return false;
+  const payload = buildClaimedChildPayload({
+    parentCanonical,
+    childCanonical,
+    transferNonce,
+    claimedPulse: args?.claimedPulse,
+    transferLeafHash: args?.transferLeafHash,
+  });
+  const childUrl = canonicalizeUrl(`/s/${childCanonical}`);
+  return upsertRegistryPayload(childUrl, payload);
+}
+
 function hydrateNoteClaimsFromStorage(): boolean {
   if (!canStorage) return false;
   try {
@@ -387,6 +441,7 @@ function ensureClaimUrlPersisted(
     persistRegistryFallbackUrls();
   }
 
+  ensureClaimedChildPersisted(parentKey, nonce, args);
   return changed;
 }
 
@@ -415,6 +470,12 @@ function ensureClaimUrlsFromClaims(): void {
       });
 
       changed = upsertRegistryPayload(claimUrl, claimPayload) || changed;
+      changed =
+        ensureClaimedChildPersisted(parentKey, record.nonce, {
+          childCanonical: record.childCanonical,
+          claimedPulse: record.claimedPulse,
+          transferLeafHash: record.transferLeafHash,
+        }) || changed;
 
       if (stored && !stored.has(canonicalizeUrl(claimUrl))) {
         storageMissing = true;
@@ -501,6 +562,11 @@ export function markNoteClaimed(
   // These are idempotent; call every time so registry repairs itself after cache clears.
   upsertRegistryPayload(claimUrl, claimPayload);
   enqueueInhaleKrystal(claimUrl, claimPayload);
+  ensureClaimedChildPersisted(parentKey, nonce, {
+    childCanonical: next.childCanonical,
+    claimedPulse: next.claimedPulse,
+    transferLeafHash: next.transferLeafHash,
+  });
 
   // ✅ persist registry list EVERY TIME
   persistRegistryToStorage();
