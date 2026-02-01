@@ -11,7 +11,7 @@ import {
   resolveLineageBackwards,
   type SigilSharePayloadLoose as SigilUrlPayloadLoose,
 } from "../../utils/sigilUrl";
-import { getInMemorySigilUrls } from "../../utils/sigilRegistry";
+import { getInMemorySigilUrls, registerSigilUrl } from "../../utils/sigilRegistry";
 import { markConfirmedByNonce } from "../../utils/sendLedger";
 import {
   canonicalizeUrl,
@@ -368,6 +368,7 @@ export function markNoteClaimed(
     claimedPulse,
   });
 
+  registerSigilUrl(claimUrl);
   upsertRegistryPayload(claimUrl, claimPayload);
   enqueueInhaleKrystal(claimUrl, claimPayload);
 
