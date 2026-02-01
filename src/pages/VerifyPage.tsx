@@ -1605,29 +1605,16 @@ setNoteSendPayloadRaw(payloadRaw);
     [onPickFile, onPickReceiptPng, onPickReceiptPdf, slug],
   );
 
-type NoteSendConfirmOverride = {
-  meta?: NoteSendMeta | null;
-  payloadRaw?: Record<string, unknown> | null;
-};
-
-const confirmNoteSend = useCallback((override?: NoteSendConfirmOverride) => {
-  const overrideMeta = override?.meta ?? null;
-  const overridePayload = override?.payloadRaw ?? null;
-
+const confirmNoteSend = useCallback(() => {
   // ✅ tolerate missing noteSendMeta (common on receipt PNGs)
   const effectiveMeta =
-    overrideMeta ??
     noteSendMeta ??
-    (overridePayload ? buildNoteSendMetaFromObjectLoose(overridePayload) : null) ??
     (noteSendPayloadRaw ? buildNoteSendMetaFromObjectLoose(noteSendPayloadRaw) : null);
 
   if (!effectiveMeta) return;
 
-  if (!noteSendMeta || overrideMeta) {
+  if (!noteSendMeta) {
     setNoteSendMeta(effectiveMeta);
-  }
-  if (overridePayload) {
-    setNoteSendPayloadRaw(overridePayload);
   }
   setNoteClaimedImmediate(true);
 
@@ -1637,16 +1624,14 @@ const confirmNoteSend = useCallback((override?: NoteSendConfirmOverride) => {
 
   const claimedPulse = currentPulse ?? getKaiPulseEternalInt(new Date());
 
-  const payloadForLookup = overridePayload ?? noteSendPayloadRaw;
-
   // ✅ don’t rely on noteSendRecord memo (it’s tied to noteSendMeta); fetch directly
   const rec = getSendRecordByNonce(effectiveMeta.parentCanonical, effectiveMeta.transferNonce);
 
   const transferLeafHash =
     effectiveMeta.transferLeafHashSend ??
-    readRecordString(payloadForLookup, "transferLeafHashSend") ??
-    readRecordString(payloadForLookup, "transferLeafHash") ??
-    readRecordString(payloadForLookup, "leafHash") ??
+    readRecordString(noteSendPayloadRaw, "transferLeafHashSend") ??
+    readRecordString(noteSendPayloadRaw, "transferLeafHash") ??
+    readRecordString(noteSendPayloadRaw, "leafHash") ??
     rec?.transferLeafHashSend ??
     undefined;
 
@@ -1679,6 +1664,32 @@ const confirmNoteSend = useCallback((override?: NoteSendConfirmOverride) => {
     setRegistryTick((prev) => prev + 1);
   }
 }, [currentPulse, noteSendMeta, noteSendPayloadRaw]);
+
+const persistNoteClaimPayload = useCallback(
+  (payload: Record<string, unknown>, childCanonical?: string | null) => {
+    const meta = buildNoteSendMetaFromObjectLoose(payload);
+    if (!meta) return;
+    const claimedPulse = currentPulse ?? getKaiPulseEternalInt(new Date());
+    const transferLeafHash =
+      readRecordString(payload, "transferLeafHashSend") ??
+      readRecordString(payload, "transferLeafHash") ??
+      readRecordString(payload, "leafHash") ??
+      undefined;
+
+    try {
+      markConfirmedByNonce(meta.parentCanonical, meta.transferNonce);
+      markNoteClaimed(meta.parentCanonical, meta.transferNonce, {
+        childCanonical: childCanonical ?? meta.childCanonical,
+        transferLeafHash,
+        claimedPulse,
+      });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("note claim persist failed", err);
+    }
+  },
+  [currentPulse],
+);
 
   const runOwnerAuthFlow = useCallback(
     async (args: {
@@ -3399,6 +3410,11 @@ React.useEffect(() => {
           }
         : null;
 
+      const childCanonicalForClaim =
+        (noteSendPayload && typeof noteSendPayload.childCanonical === "string"
+          ? noteSendPayload.childCanonical
+          : null) ?? noteSendMeta?.childCanonical ?? null;
+
       if (noteSendPayload && "childCanonical" in noteSendPayload) {
         delete (noteSendPayload as { childCanonical?: unknown }).childCanonical;
       }
@@ -3418,11 +3434,7 @@ React.useEffect(() => {
       ].filter((entry): entry is { keyword: string; text: string } => Boolean(entry));
 
       if (noteSendPayload) {
-        const nextMeta = buildNoteSendMetaFromObjectLoose(noteSendPayload) ?? noteSendMeta;
-        confirmNoteSend({
-          meta: nextMeta,
-          payloadRaw: noteSendPayload,
-        });
+        persistNoteClaimPayload(noteSendPayload, childCanonicalForClaim);
       }
       if (entries.length === 0) {
         triggerDownload(filename, png, "image/png");
@@ -3442,7 +3454,16 @@ React.useEffect(() => {
       // ✅ ALWAYS flip claim + force UI refresh (mobile-safe)
       if (!noteSendPayload) confirmNoteSend();
     }
-  }, [confirmNoteSend, noteClaimedFinal, noteProofBundleJson, noteSendMeta, noteSendPayloadRaw, noteSvgFromPng, sharedReceipt]);
+  }, [
+    confirmNoteSend,
+    noteClaimedFinal,
+    noteProofBundleJson,
+    noteSendMeta,
+    noteSendPayloadRaw,
+    noteSvgFromPng,
+    persistNoteClaimPayload,
+    sharedReceipt,
+  ]);
 
   const onDownloadVerifiedCard = useCallback(async () => {
     if (!verifiedCardData) return;
