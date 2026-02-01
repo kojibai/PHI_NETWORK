@@ -1645,6 +1645,12 @@ const confirmNoteSend = useCallback(
       readRecordString(noteSendPayloadRaw, "leafHash") ??
       rec?.transferLeafHashSend ??
       undefined;
+    const childCanonical =
+      effectiveMeta.childCanonical ||
+      readRecordString(overridePayload, "childCanonical", "childHash", "canonicalHash", "hash") ||
+      readRecordString(noteSendPayloadRaw, "childCanonical", "childHash", "canonicalHash", "hash") ||
+      rec?.childCanonical ||
+      undefined;
 
     try {
       // Send ledger confirm (best-effort)
@@ -1652,7 +1658,7 @@ const confirmNoteSend = useCallback(
 
       // Note claim registry (this is what your UI uses to show CLAIMED)
       markNoteClaimed(effectiveMeta.parentCanonical, effectiveMeta.transferNonce, {
-        childCanonical: effectiveMeta.childCanonical,
+        childCanonical,
         transferLeafHash,
         claimedPulse,
       });
@@ -3380,9 +3386,20 @@ const onDownloadNotePng = useCallback(async () => {
     (noteSendMeta ?? (noteSendPayloadRaw ? buildNoteSendMetaFromObjectLoose(noteSendPayloadRaw) : null));
 
   const parentPayloadRaw: Record<string, unknown> | null = noteSendPayloadRaw ?? null;
+  const parentLeafCanonical =
+    parentMeta?.childCanonical ||
+    noteSendRecord?.childCanonical ||
+    readRecordString(parentPayloadRaw, "childCanonical", "childHash", "canonicalHash", "hash") ||
+    "";
 
   if (!parentMeta?.parentCanonical || !parentMeta.transferNonce) {
     setNotice("Missing parent rotation-seal (transferNonce). Cannot mint a child note from this file.");
+    noteDownloadBypassRef.current = false;
+    noteDownloadInFlightRef.current = false;
+    return;
+  }
+  if (!parentLeafCanonical) {
+    setNotice("Missing parent canonical leaf. Cannot mint a child note from this file.");
     noteDownloadBypassRef.current = false;
     noteDownloadInFlightRef.current = false;
     return;
@@ -3414,7 +3431,7 @@ const onDownloadNotePng = useCallback(async () => {
 
     const childNoteSendPayload: Record<string, unknown> = {
       ...payloadBase,
-      parentCanonical: parentMeta.parentCanonical,
+      parentCanonical: parentLeafCanonical,
       amountPhi: parentMeta.amountPhi,
       amountUsd: parentMeta.amountUsd,
       transferNonce: nextNonce,
@@ -3468,6 +3485,7 @@ const onDownloadNotePng = useCallback(async () => {
   noteProofBundleJson,
   noteSendMeta,
   noteSendPayloadRaw,
+  noteSendRecord,
   noteSvgFromPng,
   sharedReceipt,
 ]);
