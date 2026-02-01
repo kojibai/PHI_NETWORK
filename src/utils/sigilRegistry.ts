@@ -2,7 +2,7 @@
 /* ─────────────────────────────────────────────────────────────
    sigilRegistry.ts — Shared bridge into the Sigil Explorer
    - Single entrypoint for “a sigil/stream URL was just created”
-   - Canonical storage in localStorage (with legacy fallback key)
+   - Canonical localStorage cache (durability requires remote sync or embedded ledger)
    - BroadcastChannel for cross-tab sync
    - DOM CustomEvent("sigil:url-registered") for same-tab listeners
    - Optional global hook: window.__SIGIL__.registerSigilUrl

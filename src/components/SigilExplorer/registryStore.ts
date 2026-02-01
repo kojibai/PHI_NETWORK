@@ -213,6 +213,19 @@ function normalizeNonce(raw: string | undefined | null): string {
   return raw ? raw.trim() : "";
 }
 
+function readTransferNonceFromUrl(url: string): string | undefined {
+  try {
+    const base = hasWindow ? window.location.origin : "http://localhost";
+    const parsed = new URL(url, base);
+    const raw = parsed.searchParams.get("t");
+    if (!raw) return undefined;
+    const trimmed = raw.trim();
+    return trimmed ? trimmed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function buildNoteClaimPayload(args: NoteClaimArgs): SigilUrlPayloadLoose {
   const { parentCanonical, transferNonce, childCanonical, claimedPulse } = args;
   const claimedPulseValue = Number.isFinite(claimedPulse ?? NaN) ? Number(claimedPulse) : 0;
@@ -227,6 +240,7 @@ function buildNoteClaimPayload(args: NoteClaimArgs): SigilUrlPayloadLoose {
   };
   if (claimedPulseValue > 0) payload.claimedPulse = claimedPulseValue;
   if (childCanonical) {
+    payload.childCanonical = childCanonical;
     payload.canonicalHash = childCanonical;
     payload.childHash = childCanonical;
     payload.hash = childCanonical;
@@ -383,7 +397,7 @@ export function markNoteClaimed(
     claimedPulse: next.claimedPulse || claimedPulse || undefined,
   });
 
-  // These are idempotent; call every time so registry repairs itself after cache clears.
+  // These are idempotent; persist locally and enqueue for remote durability (localStorage alone is not durable).
   upsertRegistryPayload(claimUrl, claimPayload);
   enqueueInhaleKrystal(claimUrl, claimPayload);
 
@@ -754,7 +768,10 @@ export function addUrl(url: string, opts?: AddUrlOptions): boolean {
   if (readTransferDirectionFromPayload(extracted) === "receive") {
     const record = extracted as unknown as Record<string, unknown>;
     const parentHash = readStringField(record, "parentHash") ?? readStringField(record, "parentCanonical");
-    const nonce = readStringField(record, "transferNonce") ?? readStringField(record, "nonce");
+    const nonce =
+      readStringField(record, "transferNonce") ??
+      readStringField(record, "nonce") ??
+      readTransferNonceFromUrl(abs);
     const childCanonical =
       readStringField(record, "canonicalHash") ??
       readStringField(record, "childHash") ??
