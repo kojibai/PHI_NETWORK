@@ -1590,60 +1590,66 @@ setNoteSendPayloadRaw(payloadRaw);
     [onPickFile, onPickReceiptPng, onPickReceiptPdf, slug],
   );
 
-const confirmNoteSend = useCallback(() => {
-  // ✅ tolerate missing noteSendMeta (common on receipt PNGs)
-  const effectiveMeta =
-    noteSendMeta ??
-    (noteSendPayloadRaw ? buildNoteSendMetaFromObjectLoose(noteSendPayloadRaw) : null);
+  const confirmNoteSend = useCallback(
+    (override?: {
+      meta?: NoteSendMeta | null;
+      payloadRaw?: Record<string, unknown> | null;
+    }) => {
+      const payloadRaw = override?.payloadRaw ?? noteSendPayloadRaw;
+      // ✅ tolerate missing noteSendMeta (common on receipt PNGs)
+      const effectiveMeta =
+        override?.meta ?? noteSendMeta ?? (payloadRaw ? buildNoteSendMetaFromObjectLoose(payloadRaw) : null);
 
-  if (!effectiveMeta) return;
+      if (!effectiveMeta) return;
 
-  const key = `${effectiveMeta.parentCanonical}|${effectiveMeta.transferNonce}`;
-  if (noteSendConfirmedRef.current === key) return;
-  noteSendConfirmedRef.current = key;
+      const key = `${effectiveMeta.parentCanonical}|${effectiveMeta.transferNonce}`;
+      if (noteSendConfirmedRef.current === key) return;
+      noteSendConfirmedRef.current = key;
 
-  const claimedPulse = currentPulse ?? getKaiPulseEternalInt(new Date());
+      const claimedPulse = currentPulse ?? getKaiPulseEternalInt(new Date());
 
-  // ✅ don’t rely on noteSendRecord memo (it’s tied to noteSendMeta); fetch directly
-  const rec = getSendRecordByNonce(effectiveMeta.parentCanonical, effectiveMeta.transferNonce);
+      // ✅ don’t rely on noteSendRecord memo (it’s tied to noteSendMeta); fetch directly
+      const rec = getSendRecordByNonce(effectiveMeta.parentCanonical, effectiveMeta.transferNonce);
 
-  const transferLeafHash =
-    effectiveMeta.transferLeafHashSend ??
-    readRecordString(noteSendPayloadRaw, "transferLeafHashSend") ??
-    readRecordString(noteSendPayloadRaw, "transferLeafHash") ??
-    readRecordString(noteSendPayloadRaw, "leafHash") ??
-    rec?.transferLeafHashSend ??
-    undefined;
+      const transferLeafHash =
+        effectiveMeta.transferLeafHashSend ??
+        readRecordString(payloadRaw, "transferLeafHashSend") ??
+        readRecordString(payloadRaw, "transferLeafHash") ??
+        readRecordString(payloadRaw, "leafHash") ??
+        rec?.transferLeafHashSend ??
+        undefined;
 
-  try {
-    // Send ledger confirm (best-effort)
-    markConfirmedByNonce(effectiveMeta.parentCanonical, effectiveMeta.transferNonce);
+      try {
+        // Send ledger confirm (best-effort)
+        markConfirmedByNonce(effectiveMeta.parentCanonical, effectiveMeta.transferNonce);
 
-    // Note claim registry (this is what your UI uses to show CLAIMED)
-    markNoteClaimed(effectiveMeta.parentCanonical, effectiveMeta.transferNonce, {
-      childCanonical: effectiveMeta.childCanonical,
-      transferLeafHash,
-      claimedPulse,
-    });
+        // Note claim registry (this is what your UI uses to show CLAIMED)
+        markNoteClaimed(effectiveMeta.parentCanonical, effectiveMeta.transferNonce, {
+          childCanonical: effectiveMeta.childCanonical,
+          transferLeafHash,
+          claimedPulse,
+        });
 
-    // Optional movement trace
-    if (effectiveMeta.childCanonical && effectiveMeta.amountPhi) {
-      recordSigilTransferMovement({
-        hash: effectiveMeta.childCanonical,
-        direction: "receive",
-        amountPhi: effectiveMeta.amountPhi,
-        amountUsd: effectiveMeta.amountUsd != null ? effectiveMeta.amountUsd.toFixed(2) : undefined,
-      });
-    }
-  } catch (err) {
-    // eslint-disable-next-line no-console
-    console.error("note send confirm failed", err);
-  } finally {
-    // ✅ force re-render even if iOS storage/broadcast events don’t fire
-    setLedgerTick((prev) => prev + 1);
-    setRegistryTick((prev) => prev + 1);
-  }
-}, [currentPulse, noteSendMeta, noteSendPayloadRaw]);
+        // Optional movement trace
+        if (effectiveMeta.childCanonical && effectiveMeta.amountPhi) {
+          recordSigilTransferMovement({
+            hash: effectiveMeta.childCanonical,
+            direction: "receive",
+            amountPhi: effectiveMeta.amountPhi,
+            amountUsd: effectiveMeta.amountUsd != null ? effectiveMeta.amountUsd.toFixed(2) : undefined,
+          });
+        }
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error("note send confirm failed", err);
+      } finally {
+        // ✅ force re-render even if iOS storage/broadcast events don’t fire
+        setLedgerTick((prev) => prev + 1);
+        setRegistryTick((prev) => prev + 1);
+      }
+    },
+    [currentPulse, noteSendMeta, noteSendPayloadRaw],
+  );
 
   const runOwnerAuthFlow = useCallback(
     async (args: {
@@ -3328,76 +3334,87 @@ React.useEffect(() => {
     zkMeta?.zkPoseidonHash,
   ]);
 
-const onDownloadNotePng = useCallback(async () => {
-  if (!noteSvgFromPng || noteClaimed) return;
+  const onDownloadNotePng = useCallback(async () => {
+    if (!noteSvgFromPng || noteClaimed) return;
 
-  try {
-    const payloadBase = noteSendPayloadRaw
-      ? { ...noteSendPayloadRaw }
-      : noteSendMeta
+    let payloadMeta: NoteSendMeta | null = null;
+    let noteSendPayload: Record<string, unknown> | null = null;
+
+    try {
+      const payloadBase = noteSendPayloadRaw
+        ? { ...noteSendPayloadRaw }
+        : noteSendMeta
+          ? {
+              parentCanonical: noteSendMeta.parentCanonical,
+              amountPhi: noteSendMeta.amountPhi,
+              amountUsd: noteSendMeta.amountUsd,
+              childCanonical: noteSendMeta.childCanonical,
+            }
+          : null;
+
+      const nextNonce = genNonce();
+
+      noteSendPayload = payloadBase
         ? {
-            parentCanonical: noteSendMeta.parentCanonical,
-            amountPhi: noteSendMeta.amountPhi,
-            amountUsd: noteSendMeta.amountUsd,
-            childCanonical: noteSendMeta.childCanonical,
+            ...payloadBase,
+            parentCanonical: payloadBase.parentCanonical || noteSendMeta?.parentCanonical,
+            amountPhi: noteSendMeta?.amountPhi ?? payloadBase.amountPhi,
+            amountUsd: noteSendMeta?.amountUsd ?? payloadBase.amountUsd,
+            transferNonce: nextNonce,
           }
         : null;
 
-    const nextNonce = genNonce();
+      if (noteSendPayload && "childCanonical" in noteSendPayload) {
+        delete (noteSendPayload as { childCanonical?: unknown }).childCanonical;
+      }
 
-    const noteSendPayload = payloadBase
-      ? {
-          ...payloadBase,
-          parentCanonical: payloadBase.parentCanonical || noteSendMeta?.parentCanonical,
-          amountPhi: noteSendMeta?.amountPhi ?? payloadBase.amountPhi,
-          amountUsd: noteSendMeta?.amountUsd ?? payloadBase.amountUsd,
-          transferNonce: nextNonce,
+      if (noteSendPayload) {
+        payloadMeta = buildNoteSendMetaFromObjectLoose(noteSendPayload);
+        if (payloadMeta) {
+          setNoteSendMeta(payloadMeta);
+          setNoteSendPayloadRaw(noteSendPayload);
         }
-      : null;
+      }
 
-    if (noteSendPayload && "childCanonical" in noteSendPayload) {
-      delete (noteSendPayload as { childCanonical?: unknown }).childCanonical;
+      const nonce = nextNonce ? `-${nextNonce.slice(0, 8)}` : "";
+      const filename = `☤KAI-NOTE${nonce}.png`;
+
+      const png = await svgStringToPngBlob(noteSvgFromPng, 2400);
+
+      const noteSendJson = noteSendPayload ? JSON.stringify(noteSendPayload) : "";
+      const entries = [
+        noteProofBundleJson ? { keyword: "phi_proof_bundle", text: noteProofBundleJson } : null,
+        sharedReceipt?.bundleHash ? { keyword: "phi_bundle_hash", text: sharedReceipt.bundleHash } : null,
+        sharedReceipt?.receiptHash ? { keyword: "phi_receipt_hash", text: sharedReceipt.receiptHash } : null,
+        noteSendJson ? { keyword: "phi_note_send", text: noteSendJson } : null,
+        { keyword: "phi_note_svg", text: noteSvgFromPng },
+      ].filter((entry): entry is { keyword: string; text: string } => Boolean(entry));
+
+      if (entries.length === 0) {
+        triggerDownload(filename, png, "image/png");
+        return;
+      }
+
+      const bytes = new Uint8Array(await png.arrayBuffer());
+      const enriched = insertPngTextChunks(bytes, entries);
+      const finalBlob = new Blob([enriched as BlobPart], { type: "image/png" });
+      triggerDownload(filename, finalBlob, "image/png");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Note download failed.";
+      setNotice(msg);
+    } finally {
+      // ✅ ALWAYS flip claim + force UI refresh (mobile-safe)
+      confirmNoteSend({ meta: payloadMeta, payloadRaw: noteSendPayload });
     }
-
-    const nonce = nextNonce ? `-${nextNonce.slice(0, 8)}` : "";
-    const filename = `☤KAI-NOTE${nonce}.png`;
-
-    const png = await svgStringToPngBlob(noteSvgFromPng, 2400);
-
-    const noteSendJson = noteSendPayload ? JSON.stringify(noteSendPayload) : "";
-    const entries = [
-      noteProofBundleJson ? { keyword: "phi_proof_bundle", text: noteProofBundleJson } : null,
-      sharedReceipt?.bundleHash ? { keyword: "phi_bundle_hash", text: sharedReceipt.bundleHash } : null,
-      sharedReceipt?.receiptHash ? { keyword: "phi_receipt_hash", text: sharedReceipt.receiptHash } : null,
-      noteSendJson ? { keyword: "phi_note_send", text: noteSendJson } : null,
-      { keyword: "phi_note_svg", text: noteSvgFromPng },
-    ].filter((entry): entry is { keyword: string; text: string } => Boolean(entry));
-
-    if (entries.length === 0) {
-      triggerDownload(filename, png, "image/png");
-      return;
-    }
-
-    const bytes = new Uint8Array(await png.arrayBuffer());
-    const enriched = insertPngTextChunks(bytes, entries);
-    const finalBlob = new Blob([enriched as BlobPart], { type: "image/png" });
-    triggerDownload(filename, finalBlob, "image/png");
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : "Note download failed.";
-    setNotice(msg);
-  } finally {
-    // ✅ ALWAYS flip claim + force UI refresh (mobile-safe)
-    confirmNoteSend();
-  }
-}, [
-  confirmNoteSend,
-  noteClaimed,
-  noteProofBundleJson,
-  noteSendMeta,
-  noteSendPayloadRaw,
-  noteSvgFromPng,
-  sharedReceipt,
-]);
+  }, [
+    confirmNoteSend,
+    noteClaimed,
+    noteProofBundleJson,
+    noteSendMeta,
+    noteSendPayloadRaw,
+    noteSvgFromPng,
+    sharedReceipt,
+  ]);
 
   const onDownloadVerifiedCard = useCallback(async () => {
     if (!verifiedCardData) return;
