@@ -14,6 +14,11 @@ import {
 import { getInMemorySigilUrls } from "../../utils/sigilRegistry";
 import { markConfirmedByNonce } from "../../utils/sendLedger";
 import {
+  buildNoteId,
+  getClaim as getClaimIndexRecord,
+  setClaim as setClaimIndexRecord,
+} from "../../state/claimIndex";
+import {
   canonicalizeUrl,
   extractPayloadFromUrl,
   isPTildeUrl,
@@ -213,6 +218,35 @@ function normalizeNonce(raw: string | undefined | null): string {
   return raw ? raw.trim() : "";
 }
 
+function mergeNoteClaimRecord(parentCanonical: string, transferNonce: string, next: NoteClaimRecord): boolean {
+  const parentKey = normalizeCanonical(parentCanonical);
+  const nonce = normalizeNonce(transferNonce);
+  if (!parentKey || !nonce) return false;
+
+  const map = noteClaimRegistry.get(parentKey) ?? new Map<string, NoteClaimRecord>();
+  const existing = map.get(nonce);
+
+  const merged: NoteClaimRecord = {
+    nonce,
+    claimedPulse: existing?.claimedPulse || next.claimedPulse,
+    childCanonical: existing?.childCanonical || next.childCanonical,
+    transferLeafHash: existing?.transferLeafHash || next.transferLeafHash,
+  };
+
+  const changed =
+    !existing ||
+    merged.claimedPulse !== existing.claimedPulse ||
+    merged.childCanonical !== existing.childCanonical ||
+    merged.transferLeafHash !== existing.transferLeafHash;
+
+  if (changed) {
+    map.set(nonce, merged);
+    noteClaimRegistry.set(parentKey, map);
+  }
+
+  return changed;
+}
+
 function buildNoteClaimPayload(args: NoteClaimArgs): SigilUrlPayloadLoose {
   const { parentCanonical, transferNonce, childCanonical, claimedPulse } = args;
   const claimedPulseValue = Number.isFinite(claimedPulse ?? NaN) ? Number(claimedPulse) : 0;
@@ -266,13 +300,13 @@ function hydrateNoteClaimsFromStorage(): boolean {
         const claimedPulse = Number(entry.claimedPulse ?? entry.claimedAt ?? 0);
         const childCanonical = normalizeCanonical(readStringField(entry, "childCanonical"));
         const transferLeafHash = readStringField(entry, "transferLeafHash") ?? undefined;
-        const existing = map.get(nonce);
         const next: NoteClaimRecord = {
           nonce,
           claimedPulse: Number.isFinite(claimedPulse) ? claimedPulse : 0,
           childCanonical: childCanonical || undefined,
           transferLeafHash,
         };
+        const existing = map.get(nonce);
         if (!existing) {
           map.set(nonce, next);
           changed = true;
@@ -321,6 +355,28 @@ function ensureNoteClaimsHydrated(): void {
   hydrateNoteClaimsFromStorage();
 }
 
+export async function hydrateNoteClaimFromIndex(parentCanonical: string, transferNonce: string): Promise<boolean> {
+  ensureNoteClaimsHydrated();
+  const parentKey = normalizeCanonical(parentCanonical);
+  const nonce = normalizeNonce(transferNonce);
+  if (!parentKey || !nonce) return false;
+
+  const noteId = buildNoteId(parentKey, nonce);
+  const record = await getClaimIndexRecord(noteId);
+  if (!record) return false;
+
+  const claimedPulseValue = record.claimedAtPulse ? Number(record.claimedAtPulse) : NaN;
+  const claimedPulse = Number.isFinite(claimedPulseValue) ? claimedPulseValue : 0;
+
+  const changed = mergeNoteClaimRecord(parentKey, nonce, {
+    nonce,
+    claimedPulse,
+  });
+
+  if (changed) persistNoteClaimsToStorage();
+  return changed;
+}
+
 export function markNoteClaimed(
   parentCanonical: string,
   transferNonce: string,
@@ -331,29 +387,25 @@ export function markNoteClaimed(
   const nonce = normalizeNonce(transferNonce);
   if (!parentKey || !nonce) return false;
 
-  const map = noteClaimRegistry.get(parentKey) ?? new Map<string, NoteClaimRecord>();
-  const existing = map.get(nonce);
   const claimedPulse = Number.isFinite(args?.claimedPulse ?? NaN) ? Number(args?.claimedPulse) : 0;
-
   const next: NoteClaimRecord = {
     nonce,
-    claimedPulse: existing?.claimedPulse || claimedPulse,
-    childCanonical: existing?.childCanonical || normalizeCanonical(args?.childCanonical),
-    transferLeafHash: existing?.transferLeafHash || args?.transferLeafHash,
+    claimedPulse,
+    childCanonical: normalizeCanonical(args?.childCanonical) || undefined,
+    transferLeafHash: args?.transferLeafHash,
   };
 
-  const changed =
-    !existing ||
-    next.claimedPulse !== existing.claimedPulse ||
-    next.childCanonical !== existing.childCanonical ||
-    next.transferLeafHash !== existing.transferLeafHash;
+  const changed = mergeNoteClaimRecord(parentKey, nonce, next);
 
   if (!changed) return false;
 
-  map.set(nonce, next);
-  noteClaimRegistry.set(parentKey, map);
-
   persistNoteClaimsToStorage();
+  void setClaimIndexRecord({
+    noteId: buildNoteId(parentKey, nonce),
+    claimedAtMs: Date.now(),
+    claimedAtPulse: claimedPulse > 0 ? String(claimedPulse) : undefined,
+    schemaVersion: 1,
+  });
 
   const claimPayload = buildNoteClaimPayload({
     parentCanonical: parentKey,
