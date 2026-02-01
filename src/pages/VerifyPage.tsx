@@ -1605,16 +1605,29 @@ setNoteSendPayloadRaw(payloadRaw);
     [onPickFile, onPickReceiptPng, onPickReceiptPdf, slug],
   );
 
-const confirmNoteSend = useCallback(() => {
+type NoteSendConfirmOverride = {
+  meta?: NoteSendMeta | null;
+  payloadRaw?: Record<string, unknown> | null;
+};
+
+const confirmNoteSend = useCallback((override?: NoteSendConfirmOverride) => {
+  const overrideMeta = override?.meta ?? null;
+  const overridePayload = override?.payloadRaw ?? null;
+
   // ✅ tolerate missing noteSendMeta (common on receipt PNGs)
   const effectiveMeta =
+    overrideMeta ??
     noteSendMeta ??
+    (overridePayload ? buildNoteSendMetaFromObjectLoose(overridePayload) : null) ??
     (noteSendPayloadRaw ? buildNoteSendMetaFromObjectLoose(noteSendPayloadRaw) : null);
 
   if (!effectiveMeta) return;
 
-  if (!noteSendMeta) {
+  if (!noteSendMeta || overrideMeta) {
     setNoteSendMeta(effectiveMeta);
+  }
+  if (overridePayload) {
+    setNoteSendPayloadRaw(overridePayload);
   }
   setNoteClaimedImmediate(true);
 
@@ -1624,14 +1637,16 @@ const confirmNoteSend = useCallback(() => {
 
   const claimedPulse = currentPulse ?? getKaiPulseEternalInt(new Date());
 
+  const payloadForLookup = overridePayload ?? noteSendPayloadRaw;
+
   // ✅ don’t rely on noteSendRecord memo (it’s tied to noteSendMeta); fetch directly
   const rec = getSendRecordByNonce(effectiveMeta.parentCanonical, effectiveMeta.transferNonce);
 
   const transferLeafHash =
     effectiveMeta.transferLeafHashSend ??
-    readRecordString(noteSendPayloadRaw, "transferLeafHashSend") ??
-    readRecordString(noteSendPayloadRaw, "transferLeafHash") ??
-    readRecordString(noteSendPayloadRaw, "leafHash") ??
+    readRecordString(payloadForLookup, "transferLeafHashSend") ??
+    readRecordString(payloadForLookup, "transferLeafHash") ??
+    readRecordString(payloadForLookup, "leafHash") ??
     rec?.transferLeafHashSend ??
     undefined;
 
@@ -3358,6 +3373,8 @@ React.useEffect(() => {
       return;
     }
 
+    let noteSendPayload: Record<string, unknown> | null = null;
+
     try {
       const payloadBase = noteSendPayloadRaw
         ? { ...noteSendPayloadRaw }
@@ -3372,7 +3389,7 @@ React.useEffect(() => {
 
       const nextNonce = genNonce();
 
-      const noteSendPayload = payloadBase
+      noteSendPayload = payloadBase
         ? {
             ...payloadBase,
             parentCanonical: payloadBase.parentCanonical || noteSendMeta?.parentCanonical,
@@ -3400,6 +3417,13 @@ React.useEffect(() => {
         { keyword: "phi_note_svg", text: noteSvgFromPng },
       ].filter((entry): entry is { keyword: string; text: string } => Boolean(entry));
 
+      if (noteSendPayload) {
+        const nextMeta = buildNoteSendMetaFromObjectLoose(noteSendPayload) ?? noteSendMeta;
+        confirmNoteSend({
+          meta: nextMeta,
+          payloadRaw: noteSendPayload,
+        });
+      }
       if (entries.length === 0) {
         triggerDownload(filename, png, "image/png");
       } else {
@@ -3416,7 +3440,7 @@ React.useEffect(() => {
       noteDownloadBypassRef.current = false;
       noteDownloadInFlightRef.current = false;
       // ✅ ALWAYS flip claim + force UI refresh (mobile-safe)
-      confirmNoteSend();
+      if (!noteSendPayload) confirmNoteSend();
     }
   }, [confirmNoteSend, noteClaimedFinal, noteProofBundleJson, noteSendMeta, noteSendPayloadRaw, noteSvgFromPng, sharedReceipt]);
 
