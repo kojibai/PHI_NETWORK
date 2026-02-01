@@ -84,6 +84,7 @@ export {
   parseImportedJson,
   addUrl,
   isOnline,
+  listenRegistry,
 } from "./registryStore";
 
 /* Inhale queue */

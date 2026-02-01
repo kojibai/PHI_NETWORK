@@ -14,6 +14,8 @@ import { sha256Hex } from "../components/VerifierStamper/crypto"; // adjust path
 const LS_SENDS = "kai:sends:v1";
 const MIGRATE_KEYS = ["sigil:send-ledger"]; // best-effort compatibility
 const BC_SENDS = "kai-sends-v1";
+const EVT_SENDS = "kai:sends:v1:changed";
+const LS_SENDS_BUMP = `${LS_SENDS}:bump`;
 
 const hasWindow = typeof window !== "undefined";
 const canStorage = hasWindow && !!window.localStorage;
@@ -373,27 +375,82 @@ function safePost(evt: LedgerEvent) {
   } catch {
     /* ignore */
   }
+  try {
+    // BroadcastChannel is unreliable on iOS WebViews; CustomEvent keeps same-tab reactive.
+    if (hasWindow) window.dispatchEvent(new CustomEvent(EVT_SENDS, { detail: evt }));
+  } catch {
+    /* ignore */
+  }
+  if (!channel && canStorage) {
+    try {
+      localStorage.setItem(LS_SENDS_BUMP, String(Date.now()));
+    } catch {
+      /* ignore */
+    }
+  }
 }
 
 /** Simple invalidation listener (coarse). */
 export function listen(cb: () => void): () => void {
-  if (!channel) return () => {};
-  const onMsg = () => cb();
-  channel.addEventListener("message", onMsg as EventListener);
-  return () => channel.removeEventListener("message", onMsg as EventListener);
+  let queued = false;
+  const schedule = () => {
+    if (queued) return;
+    queued = true;
+    queueMicrotask(() => {
+      queued = false;
+      cb();
+    });
+  };
+
+  const onMsg = () => schedule();
+  const onCustom = () => schedule();
+  const onStorage = (ev: StorageEvent) => {
+    if (!ev) return;
+    const key = ev.key ?? "";
+    if (key === LS_SENDS || key === LS_SENDS_BUMP || MIGRATE_KEYS.includes(key)) schedule();
+  };
+
+  if (channel) channel.addEventListener("message", onMsg as EventListener);
+  if (hasWindow) window.addEventListener(EVT_SENDS, onCustom as EventListener);
+  if (hasWindow) window.addEventListener("storage", onStorage);
+
+  return () => {
+    if (channel) channel.removeEventListener("message", onMsg as EventListener);
+    if (hasWindow) window.removeEventListener(EVT_SENDS, onCustom as EventListener);
+    if (hasWindow) window.removeEventListener("storage", onStorage);
+  };
 }
 
 /** Detailed listener (optional). */
 export function listenDetailed(cb: (e: LedgerEvent) => void): () => void {
-  if (!channel) return () => {};
   const onMsg = (ev: MessageEvent) => {
     const data = ev?.data;
     if (!data || typeof data !== "object") return;
     const t = (data as LedgerEvent).type;
     if (t === "send:add" || t === "send:update") cb(data as LedgerEvent);
   };
-  channel.addEventListener("message", onMsg as EventListener);
-  return () => channel.removeEventListener("message", onMsg as EventListener);
+  const onCustom = (ev: Event) => {
+    const detail = (ev as CustomEvent).detail as LedgerEvent | undefined;
+    if (!detail || typeof detail !== "object") return;
+    if (detail.type === "send:add" || detail.type === "send:update") cb(detail);
+  };
+  const onStorage = (ev: StorageEvent) => {
+    if (!ev) return;
+    const key = ev.key ?? "";
+    if (key === LS_SENDS || key === LS_SENDS_BUMP || MIGRATE_KEYS.includes(key)) {
+      cb({ type: "send:update" });
+    }
+  };
+
+  if (channel) channel.addEventListener("message", onMsg as EventListener);
+  if (hasWindow) window.addEventListener(EVT_SENDS, onCustom as EventListener);
+  if (hasWindow) window.addEventListener("storage", onStorage);
+
+  return () => {
+    if (channel) channel.removeEventListener("message", onMsg as EventListener);
+    if (hasWindow) window.removeEventListener(EVT_SENDS, onCustom as EventListener);
+    if (hasWindow) window.removeEventListener("storage", onStorage);
+  };
 }
 
 /* ──────────────────────────

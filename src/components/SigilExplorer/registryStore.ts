@@ -24,6 +24,8 @@ export const REGISTRY_LS_KEY = "kai:sigils:v1"; // explorer’s persisted URL li
 export const MODAL_FALLBACK_LS_KEY = "sigil:urls"; // composer/modal fallback URL list
 export const NOTE_CLAIM_LS_KEY = "kai:sigil-claims:v1"; // persistent note-claim registry
 const BC_NAME = "kai-sigil-registry";
+const EVT_REGISTRY = "kai:registry:v1:changed";
+const LS_REGISTRY_BUMP = `${REGISTRY_LS_KEY}:bump`;
 
 const WITNESS_ADD_MAX = 512;
 
@@ -66,6 +68,66 @@ export function isOnline(): boolean {
   if (!hasWindow) return false;
   if (typeof navigator === "undefined") return true;
   return navigator.onLine;
+}
+
+type RegistryEvent = { type: "sigil:add"; url?: string } | { type: "registry:update" };
+
+function notifyRegistryChange(evt: RegistryEvent, broadcast = true): void {
+  if (broadcast) {
+    try {
+      channel?.postMessage(evt);
+    } catch {
+      /* ignore */
+    }
+  }
+  try {
+    // BroadcastChannel is unreliable on iOS WebViews; CustomEvent keeps same-tab reactive.
+    if (hasWindow) window.dispatchEvent(new CustomEvent(EVT_REGISTRY, { detail: evt }));
+  } catch {
+    /* ignore */
+  }
+  if (broadcast && !channel && canStorage) {
+    try {
+      localStorage.setItem(LS_REGISTRY_BUMP, String(Date.now()));
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+export function listenRegistry(cb: () => void): () => void {
+  let queued = false;
+  const schedule = () => {
+    if (queued) return;
+    queued = true;
+    queueMicrotask(() => {
+      queued = false;
+      cb();
+    });
+  };
+  const onMsg = () => schedule();
+  const onCustom = () => schedule();
+  const onStorage = (ev: StorageEvent) => {
+    if (!ev) return;
+    const key = ev.key ?? "";
+    if (
+      key === REGISTRY_LS_KEY ||
+      key === NOTE_CLAIM_LS_KEY ||
+      key === MODAL_FALLBACK_LS_KEY ||
+      key === LS_REGISTRY_BUMP
+    ) {
+      schedule();
+    }
+  };
+  if (channel) channel.addEventListener("message", onMsg as EventListener);
+  if (hasWindow) window.addEventListener(EVT_REGISTRY, onCustom as EventListener);
+  if (hasWindow) window.addEventListener("storage", onStorage);
+
+  return () => {
+    if (channel) channel.removeEventListener("message", onMsg as EventListener);
+    if (hasWindow) window.removeEventListener(EVT_REGISTRY, onCustom as EventListener);
+    if (hasWindow) window.removeEventListener("storage", onStorage);
+  };
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {
@@ -267,6 +329,7 @@ export function markNoteClaimed(
   });
   upsertRegistryPayload(claimUrl, claimPayload);
   enqueueInhaleKrystal(claimUrl, claimPayload);
+  notifyRegistryChange({ type: "registry:update" });
   return true;
 }
 
@@ -657,7 +720,7 @@ export function addUrl(url: string, opts?: AddUrlOptions): boolean {
 
   if (changed) {
     if (persist) persistRegistryToStorage();
-    if (channel && broadcast) channel.postMessage({ type: "sigil:add", url: abs });
+    notifyRegistryChange({ type: "sigil:add", url: abs }, broadcast);
 
     if (enqueueToApi) {
       const latest = memoryRegistry.get(abs);
