@@ -3549,7 +3549,7 @@ const onDownloadNotePng = useCallback(async () => {
       "";
     const nextAmountScaled =
       readRecordStringAny(payloadBase, "amountPhiScaled", "amountScaled") ??
-      (Number.isFinite(parentMeta.amountPhi) ? toScaledPhi18(parentMeta.amountPhi) : "");
+      (Number.isFinite(parentMeta.amountPhi ?? NaN) ? toScaledPhi18(parentMeta.amountPhi ?? 0) : "");
     const nextSenderKaiPulse = claimedPulse;
 
     const nextTransferLeafHashSend =
