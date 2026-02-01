@@ -110,6 +110,7 @@ import { decodeSharePayload, encodeSharePayload } from "../utils/shareBundleCode
 function formatProofValue(value: unknown): string {
   if (value === null || value === undefined) return "—";
   if (typeof value === "string") return value;
+  let mintedChildCanonical = "";
   try {
     return JSON.stringify(value, null, 2);
   } catch {
@@ -3514,6 +3515,7 @@ const onDownloadNotePng = useCallback(async () => {
       senderStamp,
       previousHeadRoot,
     });
+    mintedChildCanonical = childCanonical;
 
     const childNoteSendPayload: Record<string, unknown> = {
       ...payloadBase,
@@ -3563,8 +3565,13 @@ const onDownloadNotePng = useCallback(async () => {
     // 3) CLAIM THE PARENT LEAF (the note you just used to mint the child)
     //    This is the key: parent shows CLAIMED, child stays UNCLAIMED.
     // ────────────────────────────────────────────────────────────────
+    if (!parentMeta) return;
     confirmNoteSend({
-      meta: parentMeta,
+      meta: {
+        ...parentMeta,
+        parentCanonical: immediateParentCanonical,
+        childCanonical: mintedChildCanonical || parentMeta.childCanonical,
+      },
       payloadRaw: parentPayloadRaw,
       claimedPulse,
     });
