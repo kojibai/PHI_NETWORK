@@ -22,7 +22,7 @@ import {
   streamUrlFromToken,
 } from "./url";
 import { byKaiTime } from "./format";
-import { enqueueInhaleKrystal } from "./inhaleQueue";
+import { enqueueInhaleKrystal, forceInhaleUrls } from "./inhaleQueue";
 
 export const REGISTRY_LS_KEY = "kai:sigils:v1"; // explorer’s persisted URL list
 export const MODAL_FALLBACK_LS_KEY = "sigil:urls"; // composer/modal fallback URL list
@@ -369,7 +369,9 @@ export function markNoteClaimed(
   });
 
   upsertRegistryPayload(claimUrl, claimPayload);
+  persistRegistryToStorage();
   enqueueInhaleKrystal(claimUrl, claimPayload);
+  forceInhaleUrls([claimUrl]);
 
   // ✅ notify listeners (mobile-safe)
   safeRegistryPost({ type: "note:claim", parentCanonical: parentKey, transferNonce: nonce });
