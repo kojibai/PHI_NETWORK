@@ -432,6 +432,16 @@ html.verify-shell, body.verify-shell{
   color: rgba(255,205,205,0.95);
   background: rgba(92,33,33,0.35);
 }
+.vnote-claim--checking{
+  border-color: rgba(255,226,138,0.55);
+  color: rgba(255,236,190,0.95);
+  background: rgba(88,72,30,0.35);
+}
+.vnote-claim--unknown{
+  border-color: rgba(210,210,210,0.4);
+  color: rgba(220,220,220,0.9);
+  background: rgba(42,42,42,0.35);
+}
 .vbtn--ghost{ padding: 8px 12px; border-radius: 999px; font-size: 0.78rem; background: rgba(14,24,36,0.72); border: 1px solid rgba(120,180,255,0.22); color: rgba(230,242,255,0.92); }
 .vbtn--ghost:hover{ border-color: rgba(120,200,255,0.45); }
 

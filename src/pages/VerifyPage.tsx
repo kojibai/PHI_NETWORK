@@ -1006,6 +1006,7 @@ export default function VerifyPage(): ReactElement {
   const [noteSendMeta, setNoteSendMeta] = useState<NoteSendMeta | null>(null);
   const [noteSendPayloadRaw, setNoteSendPayloadRaw] = useState<Record<string, unknown> | null>(null);
   const [noteClaimedImmediate, setNoteClaimedImmediate] = useState<boolean>(false);
+  const [noteClaimRemoteStatus, setNoteClaimRemoteStatus] = useState<"idle" | "checking" | "fresh" | "stale">("idle");
   const [noteSvgFromPng, setNoteSvgFromPng] = useState<string>("");
   const [noteProofBundleJson, setNoteProofBundleJson] = useState<string>("");
 
@@ -1176,12 +1177,33 @@ useEffect(() => {
     readRecordString(noteSendPayloadRaw, "transferLeafHashSend") ??
     noteSendRecord?.transferLeafHashSend ??
     "";
-const noteClaimedFinal =
-  Boolean(noteSendRecord?.confirmed) ||
-  (effectiveNoteMeta ? isNoteClaimed(effectiveNoteMeta.parentCanonical, effectiveNoteMeta.transferNonce) : false);
+  const noteClaimedFinal =
+    Boolean(noteSendRecord?.confirmed) ||
+    (effectiveNoteMeta ? isNoteClaimed(effectiveNoteMeta.parentCanonical, effectiveNoteMeta.transferNonce) : false);
+  const noteClaimKey = useMemo(
+    () => (effectiveNoteMeta ? `${effectiveNoteMeta.parentCanonical}|${effectiveNoteMeta.transferNonce}` : null),
+    [effectiveNoteMeta],
+  );
 
   const noteClaimed = noteClaimedImmediate || noteClaimedFinal;
-  const noteClaimStatus = effectiveNoteMeta ? (noteClaimed ? "CLAIMED — SEAL Owned" : "UNCLAIMED — SEAL Available") : null;
+  const noteClaimState = !effectiveNoteMeta
+    ? null
+    : noteClaimed
+      ? "claimed"
+      : noteClaimRemoteStatus === "fresh"
+        ? "unclaimed"
+        : noteClaimRemoteStatus === "stale"
+          ? "unknown"
+          : "checking";
+  const noteClaimStatus = effectiveNoteMeta
+    ? noteClaimState === "claimed"
+      ? "CLAIMED — SEAL Owned"
+      : noteClaimState === "unclaimed"
+        ? "UNCLAIMED — SEAL Available"
+        : noteClaimState === "unknown"
+          ? "UNKNOWN — CHECK REGISTRY"
+          : "VERIFYING — PULLING REGISTRY"
+    : null;
   const noteClaimPulseLabel = useMemo(() => formatClaimPulse(noteClaimedPulse), [noteClaimedPulse]);
   const noteClaimNonceShort = noteClaimNonce ? ellipsizeMiddle(noteClaimNonce, 8, 6) : "—";
   const noteClaimLeaderShort = noteClaimLeaderNonce ? ellipsizeMiddle(noteClaimLeaderNonce, 8, 6) : "—";
@@ -1190,10 +1212,16 @@ const noteClaimedFinal =
   const isExhaleNoteUpload = isNoteUpload;
 
   useEffect(() => {
-    if (!effectiveNoteMeta || noteClaimedFinal) return;
-    const key = `${effectiveNoteMeta.parentCanonical}|${effectiveNoteMeta.transferNonce}`;
-    if (noteClaimRemoteCheckedRef.current === key) return;
-    noteClaimRemoteCheckedRef.current = key;
+    setNoteClaimRemoteStatus(effectiveNoteMeta ? "idle" : "idle");
+    noteClaimRemoteCheckedRef.current = null;
+  }, [noteClaimKey]);
+
+  useEffect(() => {
+    if (!effectiveNoteMeta || noteClaimedFinal || !noteClaimKey) return;
+    if (noteClaimRemoteStatus === "checking") return;
+    if (noteClaimRemoteStatus === "fresh" && noteClaimRemoteCheckedRef.current === noteClaimKey) return;
+    noteClaimRemoteCheckedRef.current = noteClaimKey;
+    setNoteClaimRemoteStatus("checking");
     const ac = new AbortController();
 
     (async () => {
@@ -1201,15 +1229,17 @@ const noteClaimedFinal =
         const res = await pullAndImportRemoteUrls(ac.signal);
         if (ac.signal.aborted) return;
         if (res.imported > 0) setRegistryTick((prev) => prev + 1);
+        setNoteClaimRemoteStatus("fresh");
       } catch {
-        // ignore remote registry failures
+        if (ac.signal.aborted) return;
+        setNoteClaimRemoteStatus("stale");
       }
     })();
 
     return () => {
       ac.abort();
     };
-  }, [effectiveNoteMeta, noteClaimedFinal]);
+  }, [effectiveNoteMeta, noteClaimedFinal, noteClaimKey, noteClaimRemoteStatus]);
 
   const isReceiveGlyph = useMemo(() => {
     const mode = embeddedProof?.mode ?? sharedReceipt?.mode;
@@ -3860,11 +3890,23 @@ if (!noteDownloadBypassRef.current && alreadySpent) {
                     {noteClaimStatus ? (
                       <div className="vnote-claim-wrap">
                         <div
-                          className={`vnote-claim ${noteClaimed ? "vnote-claim--claimed" : "vnote-claim--unclaimed"}`}
+                          className={`vnote-claim ${
+                            noteClaimState === "claimed"
+                              ? "vnote-claim--claimed"
+                              : noteClaimState === "unclaimed"
+                                ? "vnote-claim--unclaimed"
+                                : noteClaimState === "unknown"
+                                  ? "vnote-claim--unknown"
+                                  : "vnote-claim--checking"
+                          }`}
                           title={
-                            noteClaimed
+                            noteClaimState === "claimed"
                               ? `Rotation-Seal owned: ${noteClaimNonce || "—"}\nClaimed pulse: ${noteClaimPulseLabel}\nLeaf hash: ${noteClaimTransferHash || "—"}`
-                              : "Rotation-Seal available: this note has not been claimed yet."
+                              : noteClaimState === "unclaimed"
+                                ? "Rotation-Seal available: this note has not been claimed yet."
+                                : noteClaimState === "unknown"
+                                  ? "Claim status unknown: registry refresh failed."
+                                  : "Verifying claim status against the registry."
                           }
                         >
                           {noteClaimStatus}
