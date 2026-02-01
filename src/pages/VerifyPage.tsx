@@ -3331,8 +3331,6 @@ React.useEffect(() => {
   const onDownloadNotePng = useCallback(async () => {
     if (!noteSvgFromPng || noteClaimed) return;
 
-    const claimedPulse = currentPulse ?? getKaiPulseEternalInt(new Date());
-
     try {
       const payloadBase = noteSendPayloadRaw
         ? { ...noteSendPayloadRaw }
@@ -3384,16 +3382,6 @@ React.useEffect(() => {
         triggerDownload(filename, finalBlob, "image/png");
       }
 
-      if (noteSendPayload) {
-        const rotatedMeta = buildNoteSendMetaFromObjectLoose(noteSendPayload);
-        if (rotatedMeta) {
-          markNoteClaimed(rotatedMeta.parentCanonical, rotatedMeta.transferNonce, {
-            childCanonical: rotatedMeta.childCanonical,
-            claimedPulse,
-          });
-          setRegistryTick((prev) => prev + 1);
-        }
-      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Note download failed.";
       setNotice(msg);
@@ -3403,7 +3391,6 @@ React.useEffect(() => {
     }
   }, [
     confirmNoteSend,
-    currentPulse,
     noteClaimed,
     noteProofBundleJson,
     noteSendMeta,
