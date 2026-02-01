@@ -101,6 +101,7 @@ import { DEFAULT_ISSUANCE_POLICY, quotePhiForUsd } from "../../utils/phi-issuanc
 import { BREATH_MS } from "../valuation/constants";
 import {
   recordSend,
+  getSendsFor,
   getPendingReservedScaledForKind,
   getReservedScaledForKind,
   markConfirmedByLeaf,
@@ -2108,6 +2109,9 @@ if (!parentCanonical && meta) {
 }
 
 if (!parentCanonical) throw new Error("Origin sigil not initialized.");
+        if (getSendsFor(parentCanonical).length > 0) {
+          throw new Error("Already claimed/spent.");
+        }
 
         const amountScaled = toScaledBig(String(payload.amountPhi || 0));
         if (amountScaled <= 0n) throw new Error("Invalid Φ amount.");
@@ -2529,6 +2533,10 @@ if (!parentCanonical) throw new Error("Origin sigil not initialized.");
       parentCanonical =
         (updated.canonicalHash as string | undefined)?.toLowerCase() ||
         (await sha256Hex(`${updated.pulse}|${updated.beat}|${updated.stepIndex}|${updated.chakraDay}`)).toLowerCase();
+      if (getSendsFor(parentCanonical).length > 0) {
+        setError("Already claimed/spent.");
+        return;
+      }
 
       if (me) {
         (updated as SigilMetadataWithOptionals).creatorPublicKey ??= me.spkiB64u;
@@ -2617,6 +2625,7 @@ if (!parentCanonical) throw new Error("Origin sigil not initialized.");
       };
       try {
         await recordSend(rec);
+        updated.sendLock = { ...(updated.sendLock ?? { nonce: updated.transferNonce! }), used: true, usedPulse: nowPulse };
       } catch (err) {
         logError("recordSend", err);
       }

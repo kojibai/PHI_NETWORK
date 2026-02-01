@@ -12,7 +12,7 @@ import {
   type SigilSharePayloadLoose as SigilUrlPayloadLoose,
 } from "../../utils/sigilUrl";
 import { getInMemorySigilUrls } from "../../utils/sigilRegistry";
-import { markConfirmedByNonce } from "../../utils/sendLedger";
+import { getSendsFor, markConfirmedByNonce } from "../../utils/sendLedger";
 import {
   canonicalizeUrl,
   extractPayloadFromUrl,
@@ -409,10 +409,12 @@ export function markNoteClaimed(
 
 
 export function isNoteClaimed(parentCanonical: string, transferNonce: string): boolean {
-  ensureNoteClaimsHydrated();
   const parentKey = normalizeCanonical(parentCanonical);
+  if (!parentKey) return false;
+  if (getSendsFor(parentKey).length > 0) return true;
+  ensureNoteClaimsHydrated();
   const nonce = normalizeNonce(transferNonce);
-  if (!parentKey || !nonce) return false;
+  if (!nonce) return false;
   return noteClaimRegistry.get(parentKey)?.has(nonce) ?? false;
 }
 
