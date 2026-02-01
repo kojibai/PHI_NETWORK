@@ -3371,9 +3371,9 @@ React.useEffect(() => {
       return;
     }
 
-    let mintedMeta: NoteSendMeta | null = null;
-    let mintedPayloadRaw: Record<string, unknown> | null = null;
-    const claimedPulse = currentPulse ?? getKaiPulseEternalInt(new Date());
+    const parentMeta =
+      noteSendMeta ?? (noteSendPayloadRaw ? buildNoteSendMetaFromObjectLoose(noteSendPayloadRaw) : null);
+    const parentPayloadRaw = noteSendPayloadRaw ?? null;
     try {
       const payloadBase = noteSendPayloadRaw
         ? { ...noteSendPayloadRaw }
@@ -3400,10 +3400,6 @@ React.useEffect(() => {
 
       if (noteSendPayload && "childCanonical" in noteSendPayload) {
         delete (noteSendPayload as { childCanonical?: unknown }).childCanonical;
-      }
-      if (noteSendPayload) {
-        mintedMeta = buildNoteSendMetaFromObjectLoose(noteSendPayload);
-        mintedPayloadRaw = noteSendPayload as Record<string, unknown>;
       }
 
       const nonce = nextNonce ? `-${nextNonce.slice(0, 8)}` : "";
@@ -3436,15 +3432,14 @@ React.useEffect(() => {
       noteDownloadBypassRef.current = false;
       noteDownloadInFlightRef.current = false;
       // ✅ ALWAYS flip claim + force UI refresh (mobile-safe)
-      if (mintedMeta) {
-        confirmNoteSend({ meta: mintedMeta, payloadRaw: mintedPayloadRaw, claimedPulse });
+      if (parentMeta) {
+        confirmNoteSend({ meta: parentMeta, payloadRaw: parentPayloadRaw });
       } else {
         confirmNoteSend();
       }
     }
   }, [
     confirmNoteSend,
-    currentPulse,
     noteClaimedFinal,
     noteProofBundleJson,
     noteSendMeta,
