@@ -3565,16 +3565,17 @@ const onDownloadNotePng = useCallback(async () => {
     // 3) CLAIM THE PARENT LEAF (the note you just used to mint the child)
     //    This is the key: parent shows CLAIMED, child stays UNCLAIMED.
     // ────────────────────────────────────────────────────────────────
-    if (!parentMeta) return;
-    confirmNoteSend({
-      meta: {
-        ...parentMeta,
-        parentCanonical: immediateParentCanonical,
-        childCanonical: mintedChildCanonical || parentMeta.childCanonical,
-      },
-      payloadRaw: parentPayloadRaw,
-      claimedPulse,
-    });
+    if (parentMeta) {
+      confirmNoteSend({
+        meta: {
+          ...parentMeta,
+          parentCanonical: immediateParentCanonical,
+          childCanonical: mintedChildCanonical || parentMeta.childCanonical,
+        },
+        payloadRaw: parentPayloadRaw,
+        claimedPulse,
+      });
+    }
   }
 }, [
   confirmNoteSend,
