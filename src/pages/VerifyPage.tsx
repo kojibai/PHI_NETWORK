@@ -59,7 +59,7 @@ import { insertPngTextChunks, readPngTextChunk } from "../utils/pngChunks";
 import { getKaiPulseEternalInt } from "../SovereignSolar";
 import { getSendRecordByNonce, listen, markConfirmedByNonce } from "../utils/sendLedger";
 import { recordSigilTransferMovement } from "../utils/sigilTransferRegistry";
-import { getNoteClaimInfo, getNoteClaimLeader, isNoteClaimed, markNoteClaimed } from "../components/SigilExplorer/registryStore";
+import { getNoteClaimInfo, getNoteClaimLeader, isNoteClaimed, markNoteClaimed, listenRegistry } from "../components/SigilExplorer/registryStore";
 import { pullAndImportRemoteUrls } from "../components/SigilExplorer/remotePull";
 import { useKaiTicker } from "../hooks/useKaiTicker";
 import { useValuation } from "./SigilPage/useValuation";
@@ -186,15 +186,57 @@ function buildNoteSendMetaFromObject(value: unknown): NoteSendMeta | null {
   if (!parentCanonical || !transferNonce) return null;
   return { parentCanonical, transferNonce, amountPhi, amountUsd, childCanonical, transferLeafHashSend };
 }
+function readLooseString(obj: Record<string, unknown>, ...keys: string[]): string {
+  for (const k of keys) {
+    const v = obj[k];
+    if (typeof v === "string") {
+      const t = v.trim();
+      if (t) return t;
+    }
+  }
+  return "";
+}
+
+function readLooseNumber(obj: Record<string, unknown>, ...keys: string[]): number | undefined {
+  for (const k of keys) {
+    const v = obj[k];
+    if (typeof v === "number" && Number.isFinite(v)) return v;
+    if (typeof v === "string") {
+      const n = Number(v);
+      if (Number.isFinite(n)) return n;
+    }
+  }
+  return undefined;
+}
+
+function buildNoteSendMetaFromObjectLoose(value: unknown): NoteSendMeta | null {
+  if (!isRecord(value)) return null;
+
+  const parentCanonical = readLooseString(value, "parentCanonical", "parentHash", "parent");
+  const transferNonce = readLooseString(value, "transferNonce", "nonce", "n");
+
+  if (!parentCanonical || !transferNonce) return null;
+
+  const amountPhi = readLooseNumber(value, "amountPhi", "phi", "valuePhi");
+  const amountUsd = readLooseNumber(value, "amountUsd", "usd", "valueUsd");
+
+  const childCanonical = readLooseString(value, "childCanonical", "childHash", "canonicalHash", "hash") || undefined;
+
+  const transferLeafHashSend =
+    readLooseString(value, "transferLeafHashSend", "transferLeafHash", "leafHash", "l") || undefined;
+
+  return { parentCanonical, transferNonce, amountPhi, amountUsd, childCanonical, transferLeafHashSend };
+}
 
 function parseNoteSendMeta(raw: string | null): NoteSendMeta | null {
   if (!raw) return null;
   try {
-    return buildNoteSendMetaFromObject(JSON.parse(raw));
+    return buildNoteSendMetaFromObjectLoose(JSON.parse(raw));
   } catch {
     return null;
   }
 }
+
 
 function parseNoteSendPayload(raw: string | null): Record<string, unknown> | null {
   if (!raw) return null;
@@ -1006,6 +1048,11 @@ export default function VerifyPage(): ReactElement {
       setLedgerTick((prev) => prev + 1);
     });
   }, []);
+useEffect(() => {
+  return listenRegistry(() => {
+    setRegistryTick((prev) => prev + 1);
+  });
+}, []);
 
   const { pulse: currentPulse } = useKaiTicker();
   const searchParams = useMemo(() => new URLSearchParams(typeof window !== "undefined" ? window.location.search : ""), []);
@@ -1471,8 +1518,12 @@ export default function VerifyPage(): ReactElement {
         setSvgText("");
         setResult({ status: "idle" });
         setNotice("Receipt PNG loaded.");
-        setNoteSendMeta(parseNoteSendMeta(noteSendJson));
-        setNoteSendPayloadRaw(parseNoteSendPayload(noteSendJson));
+const payloadRaw = parseNoteSendPayload(noteSendJson);
+const meta = parseNoteSendMeta(noteSendJson) ?? (payloadRaw ? buildNoteSendMetaFromObjectLoose(payloadRaw) : null);
+
+setNoteSendMeta(meta);
+setNoteSendPayloadRaw(payloadRaw);
+
         setNoteSvgFromPng(noteSvg ?? "");
         setNoteProofBundleJson(text);
       } catch (err) {
@@ -1540,48 +1591,59 @@ export default function VerifyPage(): ReactElement {
   );
 
 const confirmNoteSend = useCallback(() => {
-  if (!noteSendMeta) return;
+  // ✅ tolerate missing noteSendMeta (common on receipt PNGs)
+  const effectiveMeta =
+    noteSendMeta ??
+    (noteSendPayloadRaw ? buildNoteSendMetaFromObjectLoose(noteSendPayloadRaw) : null);
 
-  const key = `${noteSendMeta.parentCanonical}|${noteSendMeta.transferNonce}`;
+  if (!effectiveMeta) return;
+
+  const key = `${effectiveMeta.parentCanonical}|${effectiveMeta.transferNonce}`;
   if (noteSendConfirmedRef.current === key) return;
   noteSendConfirmedRef.current = key;
 
   const claimedPulse = currentPulse ?? getKaiPulseEternalInt(new Date());
+
+  // ✅ don’t rely on noteSendRecord memo (it’s tied to noteSendMeta); fetch directly
+  const rec = getSendRecordByNonce(effectiveMeta.parentCanonical, effectiveMeta.transferNonce);
+
   const transferLeafHash =
-    noteSendMeta.transferLeafHashSend ??
+    effectiveMeta.transferLeafHashSend ??
     readRecordString(noteSendPayloadRaw, "transferLeafHashSend") ??
-    noteSendRecord?.transferLeafHashSend ??
+    readRecordString(noteSendPayloadRaw, "transferLeafHash") ??
+    readRecordString(noteSendPayloadRaw, "leafHash") ??
+    rec?.transferLeafHashSend ??
     undefined;
 
   try {
-    // Writes to external stores (localStorage-backed)
-    markConfirmedByNonce(noteSendMeta.parentCanonical, noteSendMeta.transferNonce);
-    markNoteClaimed(noteSendMeta.parentCanonical, noteSendMeta.transferNonce, {
-      childCanonical: noteSendMeta.childCanonical,
+    // Send ledger confirm (best-effort)
+    markConfirmedByNonce(effectiveMeta.parentCanonical, effectiveMeta.transferNonce);
+
+    // Note claim registry (this is what your UI uses to show CLAIMED)
+    markNoteClaimed(effectiveMeta.parentCanonical, effectiveMeta.transferNonce, {
+      childCanonical: effectiveMeta.childCanonical,
       transferLeafHash,
       claimedPulse,
     });
 
-    if (noteSendMeta.childCanonical && noteSendMeta.amountPhi) {
+    // Optional movement trace
+    if (effectiveMeta.childCanonical && effectiveMeta.amountPhi) {
       recordSigilTransferMovement({
-        hash: noteSendMeta.childCanonical,
+        hash: effectiveMeta.childCanonical,
         direction: "receive",
-        amountPhi: noteSendMeta.amountPhi,
-        amountUsd: noteSendMeta.amountUsd != null ? noteSendMeta.amountUsd.toFixed(2) : undefined,
+        amountPhi: effectiveMeta.amountPhi,
+        amountUsd: effectiveMeta.amountUsd != null ? effectiveMeta.amountUsd.toFixed(2) : undefined,
       });
     }
   } catch (err) {
     // eslint-disable-next-line no-console
     console.error("note send confirm failed", err);
   } finally {
-    /**
-     * ✅ CRITICAL: force the UI to re-render even when BroadcastChannel
-     * is missing/unreliable (mobile Safari / WKWebView).
-     */
+    // ✅ force re-render even if iOS storage/broadcast events don’t fire
     setLedgerTick((prev) => prev + 1);
     setRegistryTick((prev) => prev + 1);
   }
-}, [currentPulse, noteSendMeta, noteSendPayloadRaw, noteSendRecord]);
+}, [currentPulse, noteSendMeta, noteSendPayloadRaw]);
 
   const runOwnerAuthFlow = useCallback(
     async (args: {

@@ -4,6 +4,7 @@
 // - Normalizes canonicals to lowercase
 // - Computes a deterministic record id (sha256 over a fixed-key payload)
 // - Broadcasts changes across tabs via BroadcastChannel
+// - ✅ Mobile-safe invalidation: CustomEvent (same-tab) + storage bump (cross-tab)
 // - Exposes helpers for parent-spent and child-incoming base lookups
 
 import { sha256Hex } from "../components/VerifierStamper/crypto"; // adjust path if needed
@@ -15,8 +16,12 @@ const LS_SENDS = "kai:sends:v1";
 const MIGRATE_KEYS = ["sigil:send-ledger"]; // best-effort compatibility
 const BC_SENDS = "kai-sends-v1";
 
+// ✅ universal invalidation channels (mobile-safe)
+const EVT_SENDS = "kai:sends:v1:changed";
+const LS_SENDS_BUMP = `${LS_SENDS}:bump`;
+
 const hasWindow = typeof window !== "undefined";
-const canStorage = hasWindow && !!window.localStorage;
+const canStorage = hasWindow && typeof window.localStorage !== "undefined";
 const channel: BroadcastChannel | null =
   hasWindow && "BroadcastChannel" in window ? new BroadcastChannel(BC_SENDS) : null;
 
@@ -24,18 +29,18 @@ const channel: BroadcastChannel | null =
    Types
 ────────────────────────── */
 export type SendRecord = {
-  id: string;                    // deterministic (sha256 of fixed payload)
-  parentCanonical: string;       // lowercase
-  childCanonical: string;        // lowercase
-  amountPhiScaled: string;       // BigInt string (Φ·10^18)
-  kind?: "send" | "note";        // reserved spend type
-  senderKaiPulse: number;        // pulse at SEND
-  transferNonce: string;         // nonce
-  senderStamp: string;           // sender stamp
-  previousHeadRoot: string;      // v14 prev-head root at SEND
-  transferLeafHashSend: string;  // leaf hash (SEND side)
-  confirmed?: boolean;           // set true on receive
-  createdAt: number;             // ms epoch
+  id: string; // deterministic (sha256 of fixed payload)
+  parentCanonical: string; // lowercase
+  childCanonical: string; // lowercase
+  amountPhiScaled: string; // BigInt string (Φ·10^18)
+  kind?: "send" | "note"; // reserved spend type
+  senderKaiPulse: number; // pulse at SEND
+  transferNonce: string; // nonce
+  senderStamp: string; // sender stamp
+  previousHeadRoot: string; // v14 prev-head root at SEND
+  transferLeafHashSend: string; // leaf hash (SEND side)
+  confirmed?: boolean; // set true on receive
+  createdAt: number; // ms epoch
 };
 
 type LedgerEvent =
@@ -94,9 +99,7 @@ function migrateIfNeeded(): void {
             const rec = r || {};
             const parentCanonical = lc((rec.parentCanonical ?? rec.parent ?? rec.p) as string);
             const childCanonical = lc((rec.childCanonical ?? rec.child ?? rec.c) as string);
-            const amountPhiScaled = coerceBigIntString(
-              (rec.amountPhiScaled ?? rec.amountScaled ?? rec.a) as string
-            );
+            const amountPhiScaled = coerceBigIntString((rec.amountPhiScaled ?? rec.amountScaled ?? rec.a) as string);
             const senderKaiPulse = Number(rec.senderKaiPulse ?? rec.k ?? 0) || 0;
             const transferNonce = String(rec.transferNonce ?? rec.n ?? "");
             const senderStamp = String(rec.senderStamp ?? rec.s ?? "");
@@ -204,9 +207,7 @@ function writeAll(list: SendRecord[]) {
 /* ──────────────────────────
    Deterministic ID
 ────────────────────────── */
-export async function buildSendId(
-  rec: Omit<SendRecord, "id" | "createdAt" | "confirmed">
-): Promise<string> {
+export async function buildSendId(rec: Omit<SendRecord, "id" | "createdAt" | "confirmed">): Promise<string> {
   const payload = JSON.stringify({
     p: lc(rec.parentCanonical),
     c: lc(rec.childCanonical),
@@ -308,10 +309,7 @@ export function getSendsFor(parentCanonical: string): SendRecord[] {
 /** Sum of all Φ (scaled) exhaled from a parent canonical. */
 export function getSpentScaledFor(parentCanonical: string): bigint {
   const rows = getSendsFor(parentCanonical);
-  return rows.reduce<bigint>(
-    (acc, r) => (r.confirmed ? acc + BigInt(coerceBigIntString(r.amountPhiScaled)) : acc),
-    0n
-  );
+  return rows.reduce<bigint>((acc, r) => (r.confirmed ? acc + BigInt(coerceBigIntString(r.amountPhiScaled)) : acc), 0n);
 }
 
 /** Sum of all Φ (scaled) reserved/exhaled from a parent canonical (confirmed + pending). */
@@ -321,10 +319,7 @@ export function getReservedScaledFor(parentCanonical: string): bigint {
 }
 
 /** Sum of all Φ (scaled) reserved/exhaled from a parent canonical by kind. */
-export function getReservedScaledForKind(
-  parentCanonical: string,
-  kind: "send" | "note" | "all" = "all"
-): bigint {
+export function getReservedScaledForKind(parentCanonical: string, kind: "send" | "note" | "all" = "all"): bigint {
   const rows = getSendsFor(parentCanonical);
   return rows.reduce<bigint>((acc, r) => {
     if (kind !== "all" && (r.kind ?? "send") !== kind) return acc;
@@ -333,10 +328,7 @@ export function getReservedScaledForKind(
 }
 
 /** Sum of all Φ (scaled) pending from a parent canonical by kind. */
-export function getPendingReservedScaledForKind(
-  parentCanonical: string,
-  kind: "send" | "note" | "all" = "all"
-): bigint {
+export function getPendingReservedScaledForKind(parentCanonical: string, kind: "send" | "note" | "all" = "all"): bigint {
   const rows = getSendsFor(parentCanonical);
   return rows.reduce<bigint>((acc, r) => {
     if (r.confirmed) return acc;
@@ -366,34 +358,121 @@ export function getIncomingBaseScaledFor(childCanonical: string): bigint {
   return 0n;
 }
 
-/** Fire-and-forget cross-tab notification. */
+/* ──────────────────────────
+   ✅ Mobile-safe invalidation
+────────────────────────── */
+
+/**
+ * Emit an invalidation event that works:
+ * - same-tab: CustomEvent (works everywhere, including iOS WKWebView)
+ * - cross-tab: localStorage bump (storage event), even if BroadcastChannel is missing/flaky
+ */
+function emitLocal(evt: LedgerEvent) {
+  if (!hasWindow) return;
+
+  // Same-tab signal
+  try {
+    window.dispatchEvent(new CustomEvent(EVT_SENDS, { detail: evt }));
+  } catch {
+    /* ignore */
+  }
+
+  // Cross-tab signal (storage event fires in *other* tabs)
+  try {
+    if (canStorage) localStorage.setItem(LS_SENDS_BUMP, String(Date.now()));
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Fire-and-forget notification. */
 function safePost(evt: LedgerEvent) {
   try {
     channel?.postMessage(evt);
   } catch {
     /* ignore */
   }
+  emitLocal(evt);
 }
 
 /** Simple invalidation listener (coarse). */
 export function listen(cb: () => void): () => void {
-  if (!channel) return () => {};
-  const onMsg = () => cb();
-  channel.addEventListener("message", onMsg as EventListener);
-  return () => channel.removeEventListener("message", onMsg as EventListener);
+  if (!hasWindow) return () => {};
+
+  let scheduled = false;
+  const fire = () => {
+    if (scheduled) return;
+    scheduled = true;
+    queueMicrotask(() => {
+      scheduled = false;
+      cb();
+    });
+  };
+
+  const unsubs: Array<() => void> = [];
+
+  // BroadcastChannel (if available)
+  if (channel) {
+    const onMsg = () => fire();
+    channel.addEventListener("message", onMsg as EventListener);
+    unsubs.push(() => channel.removeEventListener("message", onMsg as EventListener));
+  }
+
+  // Same-tab CustomEvent (always)
+  const onEvt = () => fire();
+  window.addEventListener(EVT_SENDS, onEvt as EventListener);
+  unsubs.push(() => window.removeEventListener(EVT_SENDS, onEvt as EventListener));
+
+  // Cross-tab storage fallback
+  const onStorage = (e: StorageEvent) => {
+    const k = e.key || "";
+    if (k === LS_SENDS || k === LS_SENDS_BUMP || MIGRATE_KEYS.includes(k)) fire();
+  };
+  window.addEventListener("storage", onStorage);
+  unsubs.push(() => window.removeEventListener("storage", onStorage));
+
+  return () => unsubs.forEach((fn) => fn());
 }
 
 /** Detailed listener (optional). */
 export function listenDetailed(cb: (e: LedgerEvent) => void): () => void {
-  if (!channel) return () => {};
-  const onMsg = (ev: MessageEvent) => {
-    const data = ev?.data;
-    if (!data || typeof data !== "object") return;
-    const t = (data as LedgerEvent).type;
-    if (t === "send:add" || t === "send:update") cb(data as LedgerEvent);
+  if (!hasWindow) return () => {};
+
+  const unsubs: Array<() => void> = [];
+
+  // BroadcastChannel (if available)
+  if (channel) {
+    const onMsg = (ev: MessageEvent) => {
+      const data = ev?.data;
+      if (!data || typeof data !== "object") return;
+      const t = (data as LedgerEvent).type;
+      if (t === "send:add" || t === "send:update") cb(data as LedgerEvent);
+    };
+    channel.addEventListener("message", onMsg as EventListener);
+    unsubs.push(() => channel.removeEventListener("message", onMsg as EventListener));
+  }
+
+  // Same-tab CustomEvent (always)
+  const onEvt = (ev: Event) => {
+    const detail = (ev as CustomEvent).detail as LedgerEvent | undefined;
+    if (!detail) return;
+    const t = detail.type;
+    if (t === "send:add" || t === "send:update") cb(detail);
   };
-  channel.addEventListener("message", onMsg as EventListener);
-  return () => channel.removeEventListener("message", onMsg as EventListener);
+  window.addEventListener(EVT_SENDS, onEvt as EventListener);
+  unsubs.push(() => window.removeEventListener(EVT_SENDS, onEvt as EventListener));
+
+  // Cross-tab storage fallback (coarse)
+  const onStorage = (e: StorageEvent) => {
+    const k = e.key || "";
+    if (k === LS_SENDS || k === LS_SENDS_BUMP || MIGRATE_KEYS.includes(k)) {
+      cb({ type: "send:update" });
+    }
+  };
+  window.addEventListener("storage", onStorage);
+  unsubs.push(() => window.removeEventListener("storage", onStorage));
+
+  return () => unsubs.forEach((fn) => fn());
 }
 
 /* ──────────────────────────
