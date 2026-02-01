@@ -989,6 +989,8 @@ export default function VerifyPage(): ReactElement {
   const lastAutoScanKeyRef = useRef<string | null>(null);
   const noteSendConfirmedRef = useRef<string | null>(null);
   const noteClaimRemoteCheckedRef = useRef<string | null>(null);
+  const noteDownloadBypassRef = useRef<boolean>(false);
+  const noteDownloadInFlightRef = useRef<boolean>(false);
 
   const slugRaw = useMemo(() => readSlugFromLocation(), []);
   const slug = useMemo(() => parseSlug(slugRaw), [slugRaw]);
@@ -1002,6 +1004,7 @@ export default function VerifyPage(): ReactElement {
   const [sharedReceipt, setSharedReceipt] = useState<SharedReceipt | null>(initialReceiptResult.receipt);
   const [noteSendMeta, setNoteSendMeta] = useState<NoteSendMeta | null>(null);
   const [noteSendPayloadRaw, setNoteSendPayloadRaw] = useState<Record<string, unknown> | null>(null);
+  const [noteClaimedImmediate, setNoteClaimedImmediate] = useState<boolean>(false);
   const [noteSvgFromPng, setNoteSvgFromPng] = useState<string>("");
   const [noteProofBundleJson, setNoteProofBundleJson] = useState<string>("");
 
@@ -1116,6 +1119,11 @@ useEffect(() => {
     return readEmbeddedPhiAmount(result.embedded.raw) ?? readEmbeddedPhiAmount(embeddedProof?.raw);
   }, [embeddedProof?.raw, result]);
 
+  const effectiveNoteMeta = useMemo(
+    () => noteSendMeta ?? (noteSendPayloadRaw ? buildNoteSendMetaFromObjectLoose(noteSendPayloadRaw) : null),
+    [noteSendMeta, noteSendPayloadRaw],
+  );
+
   const noteValuePhi = noteSendMeta?.amountPhi ?? null;
   const noteValueUsd = noteSendMeta?.amountUsd ?? null;
 
@@ -1141,16 +1149,16 @@ useEffect(() => {
           : "Live glyph valuation";
 
   const noteSendRecord = useMemo(
-    () => (noteSendMeta ? getSendRecordByNonce(noteSendMeta.parentCanonical, noteSendMeta.transferNonce) : null),
-    [noteSendMeta, ledgerTick, registryTick],
+    () => (effectiveNoteMeta ? getSendRecordByNonce(effectiveNoteMeta.parentCanonical, effectiveNoteMeta.transferNonce) : null),
+    [effectiveNoteMeta, ledgerTick, registryTick],
   );
   const noteClaimInfo = useMemo(
-    () => (noteSendMeta ? getNoteClaimInfo(noteSendMeta.parentCanonical, noteSendMeta.transferNonce) : null),
-    [noteSendMeta, registryTick],
+    () => (effectiveNoteMeta ? getNoteClaimInfo(effectiveNoteMeta.parentCanonical, effectiveNoteMeta.transferNonce) : null),
+    [effectiveNoteMeta, registryTick],
   );
   const noteClaimLeader = useMemo(
-    () => (noteSendMeta ? getNoteClaimLeader(noteSendMeta.parentCanonical) : null),
-    [noteSendMeta, registryTick],
+    () => (effectiveNoteMeta ? getNoteClaimLeader(effectiveNoteMeta.parentCanonical) : null),
+    [effectiveNoteMeta, registryTick],
   );
   const noteClaimedPulse = useMemo(() => {
     const registryPulse = normalizeClaimPulse(noteClaimInfo?.claimedPulse ?? null);
@@ -1159,18 +1167,19 @@ useEffect(() => {
       embeddedProof?.receivePulse ?? sharedReceipt?.receivePulse ?? receiveSig?.createdAtPulse ?? null,
     );
   }, [embeddedProof?.receivePulse, noteClaimInfo?.claimedPulse, receiveSig?.createdAtPulse, sharedReceipt?.receivePulse]);
-  const noteClaimNonce = noteClaimInfo?.nonce ?? noteSendMeta?.transferNonce ?? "";
+  const noteClaimNonce = noteClaimInfo?.nonce ?? effectiveNoteMeta?.transferNonce ?? "";
   const noteClaimLeaderNonce = noteClaimLeader?.nonce ?? "";
   const noteClaimTransferHash =
     noteClaimInfo?.transferLeafHash ??
-    noteSendMeta?.transferLeafHashSend ??
+    effectiveNoteMeta?.transferLeafHashSend ??
     readRecordString(noteSendPayloadRaw, "transferLeafHashSend") ??
     noteSendRecord?.transferLeafHashSend ??
     "";
-  const noteClaimed =
+  const noteClaimedFinal =
     Boolean(noteSendRecord?.confirmed) ||
-    (noteSendMeta ? isNoteClaimed(noteSendMeta.parentCanonical, noteSendMeta.transferNonce) : false);
-  const noteClaimStatus = noteSendMeta ? (noteClaimed ? "CLAIMED — SEAL Owned" : "UNCLAIMED — SEAL Available") : null;
+    (effectiveNoteMeta ? isNoteClaimed(effectiveNoteMeta.parentCanonical, effectiveNoteMeta.transferNonce) : false);
+  const noteClaimed = noteClaimedImmediate || noteClaimedFinal;
+  const noteClaimStatus = effectiveNoteMeta ? (noteClaimed ? "CLAIMED — SEAL Owned" : "UNCLAIMED — SEAL Available") : null;
   const noteClaimPulseLabel = useMemo(() => formatClaimPulse(noteClaimedPulse), [noteClaimedPulse]);
   const noteClaimNonceShort = noteClaimNonce ? ellipsizeMiddle(noteClaimNonce, 8, 6) : "—";
   const noteClaimLeaderShort = noteClaimLeaderNonce ? ellipsizeMiddle(noteClaimLeaderNonce, 8, 6) : "—";
@@ -1179,8 +1188,8 @@ useEffect(() => {
   const isExhaleNoteUpload = isNoteUpload;
 
   useEffect(() => {
-    if (!noteSendMeta || noteClaimed) return;
-    const key = `${noteSendMeta.parentCanonical}|${noteSendMeta.transferNonce}`;
+    if (!effectiveNoteMeta || noteClaimedFinal) return;
+    const key = `${effectiveNoteMeta.parentCanonical}|${effectiveNoteMeta.transferNonce}`;
     if (noteClaimRemoteCheckedRef.current === key) return;
     noteClaimRemoteCheckedRef.current = key;
     const ac = new AbortController();
@@ -1198,7 +1207,7 @@ useEffect(() => {
     return () => {
       ac.abort();
     };
-  }, [noteClaimed, noteSendMeta]);
+  }, [effectiveNoteMeta, noteClaimedFinal]);
 
   const isReceiveGlyph = useMemo(() => {
     const mode = embeddedProof?.mode ?? sharedReceipt?.mode;
@@ -1482,6 +1491,8 @@ useEffect(() => {
       setNotice("");
       setNoteSendMeta(null);
       setNoteSendPayloadRaw(null);
+      setNoteClaimedImmediate(false);
+      noteDownloadBypassRef.current = false;
       setNoteSvgFromPng("");
       setNoteProofBundleJson("");
     },
@@ -1496,6 +1507,8 @@ useEffect(() => {
       }
       setNoteSendMeta(null);
       setNoteSendPayloadRaw(null);
+      setNoteClaimedImmediate(false);
+      noteDownloadBypassRef.current = false;
       setNoteSvgFromPng("");
       setNoteProofBundleJson("");
       try {
@@ -1542,6 +1555,8 @@ setNoteSendPayloadRaw(payloadRaw);
       }
       setNoteSendMeta(null);
       setNoteSendPayloadRaw(null);
+      setNoteClaimedImmediate(false);
+      noteDownloadBypassRef.current = false;
       setNoteSvgFromPng("");
       setNoteProofBundleJson("");
       try {
@@ -1598,6 +1613,11 @@ const confirmNoteSend = useCallback(() => {
 
   if (!effectiveMeta) return;
 
+  if (!noteSendMeta) {
+    setNoteSendMeta(effectiveMeta);
+  }
+  setNoteClaimedImmediate(true);
+
   const key = `${effectiveMeta.parentCanonical}|${effectiveMeta.transferNonce}`;
   if (noteSendConfirmedRef.current === key) return;
   noteSendConfirmedRef.current = key;
@@ -1644,6 +1664,12 @@ const confirmNoteSend = useCallback(() => {
     setRegistryTick((prev) => prev + 1);
   }
 }, [currentPulse, noteSendMeta, noteSendPayloadRaw]);
+
+const claimNow = useCallback(() => {
+  setNoteClaimedImmediate(true);
+  noteDownloadBypassRef.current = true;
+  confirmNoteSend();
+}, [confirmNoteSend]);
 
   const runOwnerAuthFlow = useCallback(
     async (args: {
@@ -2443,21 +2469,21 @@ if (verified && typeof cacheBundleHash === "string" && cacheBundleHash.trim().le
   ]);
 
 useEffect(() => {
-  if (!noteSendMeta) return;
+  if (!effectiveNoteMeta) return;
   if (effectiveReceivePulse == null) return;
 
   const normalizedPulse = normalizeClaimPulse(effectiveReceivePulse);
   if (normalizedPulse == null) return;
 
   const transferLeafHash =
-    noteSendMeta.transferLeafHashSend ??
+    effectiveNoteMeta.transferLeafHashSend ??
     readRecordString(noteSendPayloadRaw, "transferLeafHashSend") ??
     noteSendRecord?.transferLeafHashSend ??
     undefined;
 
   try {
-    markNoteClaimed(noteSendMeta.parentCanonical, noteSendMeta.transferNonce, {
-      childCanonical: noteSendMeta.childCanonical,
+    markNoteClaimed(effectiveNoteMeta.parentCanonical, effectiveNoteMeta.transferNonce, {
+      childCanonical: effectiveNoteMeta.childCanonical,
       transferLeafHash,
       claimedPulse: normalizedPulse,
     });
@@ -2468,7 +2494,7 @@ useEffect(() => {
     // eslint-disable-next-line no-console
     console.error("note claim pulse hydrate failed", err);
   }
-}, [effectiveReceivePulse, noteSendMeta, noteSendPayloadRaw, noteSendRecord]);
+}, [effectiveNoteMeta, effectiveReceivePulse, noteSendPayloadRaw, noteSendRecord]);
 
   const effectiveReceiveBundleHash = useMemo(() => {
     if (embeddedProof?.receiveBundleHash) return embeddedProof.receiveBundleHash;
@@ -3329,7 +3355,13 @@ React.useEffect(() => {
   ]);
 
   const onDownloadNotePng = useCallback(async () => {
-    if (!noteSvgFromPng || noteClaimed) return;
+    if (noteDownloadInFlightRef.current) return;
+    noteDownloadInFlightRef.current = true;
+    claimNow();
+    if (!noteSvgFromPng || (noteClaimedFinal && !noteDownloadBypassRef.current)) {
+      noteDownloadInFlightRef.current = false;
+      return;
+    }
 
     try {
       const payloadBase = noteSendPayloadRaw
@@ -3386,12 +3418,15 @@ React.useEffect(() => {
       const msg = err instanceof Error ? err.message : "Note download failed.";
       setNotice(msg);
     } finally {
+      noteDownloadBypassRef.current = false;
+      noteDownloadInFlightRef.current = false;
       // ✅ ALWAYS flip claim + force UI refresh (mobile-safe)
       confirmNoteSend();
     }
   }, [
+    claimNow,
     confirmNoteSend,
-    noteClaimed,
+    noteClaimedFinal,
     noteProofBundleJson,
     noteSendMeta,
     noteSendPayloadRaw,
@@ -3745,10 +3780,12 @@ React.useEffect(() => {
                         <span className="vbtn-note-preview" aria-hidden="true" dangerouslySetInnerHTML={{ __html: notePreviewSvg }} />
                       </button>
                     ) : null}
-                    {noteSvgFromPng && result.status === "ok" && !noteClaimed ? (
+                    {noteSvgFromPng && result.status === "ok" && !noteClaimedFinal ? (
                       <button
                         type="button"
                         className="vbtn vbtn--ghost vbtn--note-download"
+                        onPointerDown={() => void onDownloadNotePng()}
+                        onTouchStart={() => void onDownloadNotePng()}
                         onClick={onDownloadNotePng}
                         title="Download fresh note PNG"
                         aria-label="Download fresh note PNG"
@@ -3949,6 +3986,8 @@ React.useEffect(() => {
                             setSharedReceipt(null);
                             setResult({ status: "idle" });
                             setNotice("");
+                            setNoteClaimedImmediate(false);
+                            noteDownloadBypassRef.current = false;
                           }}
                           disabled={!svgText.trim() && !sharedReceipt}
                         />
