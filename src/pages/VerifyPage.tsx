@@ -3374,6 +3374,12 @@ React.useEffect(() => {
     const parentMeta =
       noteSendMeta ?? (noteSendPayloadRaw ? buildNoteSendMetaFromObjectLoose(noteSendPayloadRaw) : null);
     const parentPayloadRaw = noteSendPayloadRaw ?? null;
+    const claimedPulse = currentPulse ?? getKaiPulseEternalInt(new Date());
+    if (parentMeta) {
+      confirmNoteSend({ meta: parentMeta, payloadRaw: parentPayloadRaw, claimedPulse });
+    } else {
+      confirmNoteSend({ claimedPulse });
+    }
     try {
       const payloadBase = noteSendPayloadRaw
         ? { ...noteSendPayloadRaw }
@@ -3446,6 +3452,7 @@ React.useEffect(() => {
     noteSendPayloadRaw,
     noteSvgFromPng,
     sharedReceipt,
+    currentPulse,
   ]);
 
   const onDownloadVerifiedCard = useCallback(async () => {
