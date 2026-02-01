@@ -103,6 +103,9 @@ import {
 } from "../utils/valuationSnapshot";
 import { decodeSharePayload, encodeSharePayload } from "../utils/shareBundleCodec";
 
+const PENDING_NOTE_CLAIM_LS = "kai:pending-note-claim:v1";
+const PENDING_NOTE_CLAIM_STALE_MS = 10 * 60 * 1000;
+
 /* ────────────────────────────────────────────────────────────────
    Utilities
 ─────────────────────────────────────────────────────────────── */
@@ -245,6 +248,48 @@ function parseNoteSendPayload(raw: string | null): Record<string, unknown> | nul
     return isRecord(parsed) ? parsed : null;
   } catch {
     return null;
+  }
+}
+
+type PendingClaim = {
+  parentCanonical: string;
+  transferNonce: string;
+  claimedPulse: number;
+  createdAtMs: number;
+};
+
+function writePendingClaim(pending: PendingClaim): void {
+  try {
+    localStorage.setItem(PENDING_NOTE_CLAIM_LS, JSON.stringify(pending));
+  } catch {
+    // ignore storage failures
+  }
+}
+
+function readPendingClaim(): PendingClaim | null {
+  try {
+    const raw = localStorage.getItem(PENDING_NOTE_CLAIM_LS);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as unknown;
+    if (!isRecord(parsed)) return null;
+    const parentCanonical =
+      typeof parsed.parentCanonical === "string" ? parsed.parentCanonical.trim() : "";
+    const transferNonce = typeof parsed.transferNonce === "string" ? parsed.transferNonce.trim() : "";
+    const claimedPulse = typeof parsed.claimedPulse === "number" ? parsed.claimedPulse : NaN;
+    const createdAtMs = typeof parsed.createdAtMs === "number" ? parsed.createdAtMs : NaN;
+    if (!parentCanonical || !transferNonce) return null;
+    if (!Number.isFinite(claimedPulse) || !Number.isFinite(createdAtMs)) return null;
+    return { parentCanonical, transferNonce, claimedPulse, createdAtMs };
+  } catch {
+    return null;
+  }
+}
+
+function clearPendingClaim(): void {
+  try {
+    localStorage.removeItem(PENDING_NOTE_CLAIM_LS);
+  } catch {
+    // ignore storage failures
   }
 }
 
@@ -1677,6 +1722,21 @@ const confirmNoteSend = useCallback(
   },
   [currentPulse, noteSendMeta, noteSendPayloadRaw],
 );
+
+  useEffect(() => {
+    const pending = readPendingClaim();
+    if (!pending) return;
+    const ageMs = Date.now() - pending.createdAtMs;
+    if (!Number.isFinite(ageMs) || ageMs < 0 || ageMs > PENDING_NOTE_CLAIM_STALE_MS) {
+      clearPendingClaim();
+      return;
+    }
+    confirmNoteSend({
+      meta: { parentCanonical: pending.parentCanonical, transferNonce: pending.transferNonce },
+      claimedPulse: pending.claimedPulse,
+    });
+    clearPendingClaim();
+  }, [confirmNoteSend]);
 
   const runOwnerAuthFlow = useCallback(
     async (args: {
@@ -3416,14 +3476,28 @@ React.useEffect(() => {
         { keyword: "phi_note_svg", text: noteSvgFromPng },
       ].filter((entry): entry is { keyword: string; text: string } => Boolean(entry));
 
+      let finalBlob: Blob;
       if (entries.length === 0) {
-        triggerDownload(filename, png, "image/png");
+        finalBlob = png;
       } else {
         const bytes = new Uint8Array(await png.arrayBuffer());
         const enriched = insertPngTextChunks(bytes, entries);
-        const finalBlob = new Blob([enriched as BlobPart], { type: "image/png" });
-        triggerDownload(filename, finalBlob, "image/png");
+        finalBlob = new Blob([enriched as BlobPart], { type: "image/png" });
       }
+
+      if (parentMeta) {
+        const claimedPulse = currentPulse ?? getKaiPulseEternalInt(new Date());
+        writePendingClaim({
+          parentCanonical: parentMeta.parentCanonical,
+          transferNonce: parentMeta.transferNonce,
+          claimedPulse,
+          createdAtMs: Date.now(),
+        });
+        confirmNoteSend({ meta: parentMeta, payloadRaw: parentPayloadRaw, claimedPulse });
+        clearPendingClaim();
+      }
+
+      triggerDownload(filename, finalBlob, "image/png");
 
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Note download failed.";
@@ -3431,15 +3505,10 @@ React.useEffect(() => {
     } finally {
       noteDownloadBypassRef.current = false;
       noteDownloadInFlightRef.current = false;
-      // ✅ ALWAYS flip claim + force UI refresh (mobile-safe)
-      if (parentMeta) {
-        confirmNoteSend({ meta: parentMeta, payloadRaw: parentPayloadRaw });
-      } else {
-        confirmNoteSend();
-      }
     }
   }, [
     confirmNoteSend,
+    currentPulse,
     noteClaimedFinal,
     noteProofBundleJson,
     noteSendMeta,
