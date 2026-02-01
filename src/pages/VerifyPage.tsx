@@ -1186,6 +1186,8 @@ useEffect(() => {
   );
 
   const noteClaimed = noteClaimedImmediate || noteClaimedFinal;
+  const noteClaimStatusCacheRef = useRef<Record<string, "claimed" | "unclaimed">>({});
+  const cachedClaimState = noteClaimKey ? noteClaimStatusCacheRef.current[noteClaimKey] : undefined;
   const noteClaimState = !effectiveNoteMeta
     ? null
     : noteClaimed
@@ -1193,7 +1195,7 @@ useEffect(() => {
       : noteClaimRemoteStatus === "fresh"
         ? "unclaimed"
         : noteClaimRemoteStatus === "stale"
-          ? "unknown"
+          ? cachedClaimState ?? "unknown"
           : "checking";
   const noteClaimStatus = effectiveNoteMeta
     ? noteClaimState === "claimed"
@@ -1210,6 +1212,12 @@ useEffect(() => {
   const noteClaimHashShort = noteClaimTransferHash ? ellipsizeMiddle(noteClaimTransferHash, 10, 8) : "—";
   const isNoteUpload = Boolean(noteSendMeta || noteSendPayloadRaw || noteSvgFromPng);
   const isExhaleNoteUpload = isNoteUpload;
+
+  useEffect(() => {
+    if (!noteClaimKey) return;
+    if (noteClaimRemoteStatus !== "fresh") return;
+    noteClaimStatusCacheRef.current[noteClaimKey] = noteClaimed ? "claimed" : "unclaimed";
+  }, [noteClaimKey, noteClaimRemoteStatus, noteClaimed]);
 
   useEffect(() => {
     setNoteClaimRemoteStatus(effectiveNoteMeta ? "idle" : "idle");
