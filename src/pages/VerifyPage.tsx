@@ -1665,12 +1665,6 @@ const confirmNoteSend = useCallback(() => {
   }
 }, [currentPulse, noteSendMeta, noteSendPayloadRaw]);
 
-const claimNow = useCallback(() => {
-  setNoteClaimedImmediate(true);
-  noteDownloadBypassRef.current = true;
-  confirmNoteSend();
-}, [confirmNoteSend]);
-
   const runOwnerAuthFlow = useCallback(
     async (args: {
       ownerAuthorSig: KASAuthorSig | null;
@@ -3357,8 +3351,9 @@ React.useEffect(() => {
   const onDownloadNotePng = useCallback(async () => {
     if (noteDownloadInFlightRef.current) return;
     noteDownloadInFlightRef.current = true;
-    claimNow();
+    noteDownloadBypassRef.current = true;
     if (!noteSvgFromPng || (noteClaimedFinal && !noteDownloadBypassRef.current)) {
+      noteDownloadBypassRef.current = false;
       noteDownloadInFlightRef.current = false;
       return;
     }
@@ -3423,16 +3418,7 @@ React.useEffect(() => {
       // ✅ ALWAYS flip claim + force UI refresh (mobile-safe)
       confirmNoteSend();
     }
-  }, [
-    claimNow,
-    confirmNoteSend,
-    noteClaimedFinal,
-    noteProofBundleJson,
-    noteSendMeta,
-    noteSendPayloadRaw,
-    noteSvgFromPng,
-    sharedReceipt,
-  ]);
+  }, [confirmNoteSend, noteClaimedFinal, noteProofBundleJson, noteSendMeta, noteSendPayloadRaw, noteSvgFromPng, sharedReceipt]);
 
   const onDownloadVerifiedCard = useCallback(async () => {
     if (!verifiedCardData) return;
@@ -3784,8 +3770,6 @@ React.useEffect(() => {
                       <button
                         type="button"
                         className="vbtn vbtn--ghost vbtn--note-download"
-                        onPointerDown={() => void onDownloadNotePng()}
-                        onTouchStart={() => void onDownloadNotePng()}
                         onClick={onDownloadNotePng}
                         title="Download fresh note PNG"
                         aria-label="Download fresh note PNG"
