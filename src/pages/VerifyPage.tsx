@@ -36,7 +36,7 @@ import {
   type ProofBundleLike,
 } from "../components/KaiVoh/verifierProof";
 import { extractProofBundleMetaFromSvg, type ProofBundleMeta } from "../utils/sigilMetadata";
-import { derivePhiKeyFromSig, genNonce } from "../components/VerifierStamper/sigilUtils";
+import { derivePhiKeyFromSig, genNonce, stableStringify } from "../components/VerifierStamper/sigilUtils";
 import { tryVerifyGroth16 } from "../components/VerifierStamper/zk";
 import { isKASAuthorSig, type KASAuthorSig } from "../utils/authorSig";
 import {
@@ -258,6 +258,91 @@ function readRecordString(value: Record<string, unknown> | null | undefined, key
   if (typeof raw !== "string") return null;
   const trimmed = raw.trim();
   return trimmed ? trimmed : null;
+}
+
+type NoteChildIdentityInput = {
+  parentCanonical: string;
+  transferNonce: string;
+  amountScaled: string;
+  senderKaiPulse: number;
+  senderStamp: string;
+  previousHeadRoot: string;
+};
+
+async function computeNoteChildIdentity(input: NoteChildIdentityInput): Promise<{
+  transferLeafHashSend: string;
+  childCanonical: string;
+}> {
+  const transferLeafHashSend = (
+    await sha256Hex(
+      stableStringify({
+        parent: input.parentCanonical,
+        nonce: input.transferNonce,
+        amount: input.amountScaled,
+        pulse: input.senderKaiPulse,
+        stamp: input.senderStamp,
+        root: input.previousHeadRoot,
+      })
+    )
+  ).toLowerCase();
+  const childCanonical = (
+    await sha256Hex(
+      stableStringify({
+        parent: input.parentCanonical,
+        nonce: input.transferNonce,
+        senderStamp: input.senderStamp,
+        senderKaiPulse: input.senderKaiPulse,
+        prevHead: input.previousHeadRoot,
+        leafSend: transferLeafHashSend,
+      })
+    )
+  ).toLowerCase();
+  return { transferLeafHashSend, childCanonical };
+}
+
+async function deriveChildCanonicalFromPayload(payload: Record<string, unknown>): Promise<string> {
+  const parentCanonical = normalizeCanonicalHash(readLooseString(payload, "parentCanonical", "parentHash", "parent"));
+  const transferNonce = readLooseString(payload, "transferNonce", "nonce", "n");
+  if (!parentCanonical || !transferNonce) return "";
+  const amountScaled =
+    readLooseString(payload, "amountPhiScaled") ||
+    String(readLooseNumber(payload, "amountPhi") ?? 0);
+  const senderKaiPulse = readLooseNumber(payload, "senderKaiPulse", "lockedPulse") ?? 0;
+  const senderStamp = readLooseString(payload, "senderStamp", "valuationStamp");
+  const previousHeadRoot = readLooseString(payload, "previousHeadRoot", "prevHead", "prevHeadRoot");
+  const { childCanonical } = await computeNoteChildIdentity({
+    parentCanonical,
+    transferNonce,
+    amountScaled,
+    senderKaiPulse,
+    senderStamp,
+    previousHeadRoot,
+  });
+  return childCanonical;
+}
+
+async function resolveImmediateParentCanonical(args: {
+  meta: SigilMetadata | null;
+  noteMeta: NoteSendMeta | null;
+  payloadRaw: Record<string, unknown> | null;
+}): Promise<string> {
+  const direct = normalizeCanonicalHash(args.noteMeta?.childCanonical);
+  if (direct) return direct;
+  const payloadCanonical = normalizeCanonicalHash(
+    readRecordString(args.payloadRaw, "childCanonical") ??
+      readRecordString(args.payloadRaw, "canonicalHash") ??
+      readRecordString(args.payloadRaw, "childHash") ??
+      readRecordString(args.payloadRaw, "hash") ??
+      ""
+  );
+  if (payloadCanonical) return payloadCanonical;
+  const metaCanonical = normalizeCanonicalHash(args.meta?.canonicalHash);
+  if (metaCanonical) return metaCanonical;
+  if (args.payloadRaw) {
+    const derived = await deriveChildCanonicalFromPayload(args.payloadRaw);
+    if (derived) return derived;
+  }
+  return normalizeCanonicalHash(args.noteMeta?.parentCanonical);
 }
 
 function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
@@ -3380,8 +3465,13 @@ const onDownloadNotePng = useCallback(async () => {
     (noteSendMeta ?? (noteSendPayloadRaw ? buildNoteSendMetaFromObjectLoose(noteSendPayloadRaw) : null));
 
   const parentPayloadRaw: Record<string, unknown> | null = noteSendPayloadRaw ?? null;
+  const immediateParentCanonical = await resolveImmediateParentCanonical({
+    meta: noteMeta,
+    noteMeta: parentMeta,
+    payloadRaw: parentPayloadRaw,
+  });
 
-  if (!parentMeta?.parentCanonical || !parentMeta.transferNonce) {
+  if (!immediateParentCanonical || !parentMeta?.transferNonce) {
     setNotice("Missing parent rotation-seal (transferNonce). Cannot mint a child note from this file.");
     noteDownloadBypassRef.current = false;
     noteDownloadInFlightRef.current = false;
@@ -3408,16 +3498,35 @@ const onDownloadNotePng = useCallback(async () => {
     delete (payloadBase as { transferLeafHashSend?: unknown }).transferLeafHashSend;
     delete (payloadBase as { transferLeafHash?: unknown }).transferLeafHash;
     delete (payloadBase as { leafHash?: unknown }).leafHash;
-    delete (payloadBase as { childCanonical?: unknown }).childCanonical;
 
     const nextNonce = genNonce();
+    const amountScaled =
+      readLooseString(payloadBase, "amountPhiScaled") ||
+      String(readLooseNumber(payloadBase, "amountPhi") ?? parentMeta.amountPhi ?? 0);
+    const senderKaiPulse = readLooseNumber(payloadBase, "senderKaiPulse", "lockedPulse") ?? 0;
+    const senderStamp = readLooseString(payloadBase, "senderStamp", "valuationStamp");
+    const previousHeadRoot = readLooseString(payloadBase, "previousHeadRoot", "prevHead", "prevHeadRoot");
+    const { transferLeafHashSend, childCanonical } = await computeNoteChildIdentity({
+      parentCanonical: immediateParentCanonical,
+      transferNonce: nextNonce,
+      amountScaled,
+      senderKaiPulse,
+      senderStamp,
+      previousHeadRoot,
+    });
 
     const childNoteSendPayload: Record<string, unknown> = {
       ...payloadBase,
-      parentCanonical: parentMeta.parentCanonical,
+      // We intentionally advance parentCanonical to the immediate parent and preserve child canonical identity so registry rehydration can deterministically reconstruct claim state across arbitrary generations.
+      parentCanonical: immediateParentCanonical,
       amountPhi: parentMeta.amountPhi,
       amountUsd: parentMeta.amountUsd,
       transferNonce: nextNonce,
+      transferLeafHashSend,
+      childCanonical,
+      canonicalHash: childCanonical,
+      childHash: childCanonical,
+      hash: childCanonical,
     };
 
     const nonceSuffix = nextNonce ? `-${String(nextNonce).slice(0, 8)}` : "";
@@ -3464,6 +3573,7 @@ const onDownloadNotePng = useCallback(async () => {
   confirmNoteSend,
   currentPulse,
   effectiveNoteMeta,
+  noteMeta,
   noteClaimedFinal,
   noteProofBundleJson,
   noteSendMeta,
