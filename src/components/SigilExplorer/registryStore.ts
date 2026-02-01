@@ -334,11 +334,12 @@ export function markNoteClaimed(
   const map = noteClaimRegistry.get(parentKey) ?? new Map<string, NoteClaimRecord>();
   const existing = map.get(nonce);
   const claimedPulse = Number.isFinite(args?.claimedPulse ?? NaN) ? Number(args?.claimedPulse) : 0;
+  const normalizedChildCanonical = normalizeCanonical(args?.childCanonical);
 
   const next: NoteClaimRecord = {
     nonce,
     claimedPulse: existing?.claimedPulse || claimedPulse,
-    childCanonical: existing?.childCanonical || normalizeCanonical(args?.childCanonical),
+    childCanonical: existing?.childCanonical || normalizedChildCanonical,
     transferLeafHash: existing?.transferLeafHash || args?.transferLeafHash,
   };
 
@@ -358,17 +359,18 @@ export function markNoteClaimed(
   const claimPayload = buildNoteClaimPayload({
     parentCanonical: parentKey,
     transferNonce: nonce,
-    childCanonical: args?.childCanonical,
+    childCanonical: normalizedChildCanonical || undefined,
     claimedPulse,
   });
   const claimUrl = buildNoteClaimUrl({
     parentCanonical: parentKey,
     transferNonce: nonce,
-    childCanonical: args?.childCanonical,
+    childCanonical: normalizedChildCanonical || undefined,
     claimedPulse,
   });
 
   upsertRegistryPayload(claimUrl, claimPayload);
+  persistRegistryToStorage();
   enqueueInhaleKrystal(claimUrl, claimPayload);
 
   // ✅ notify listeners (mobile-safe)
