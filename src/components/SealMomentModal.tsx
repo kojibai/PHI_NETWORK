@@ -214,7 +214,7 @@ const SealMomentModal: FC<Props> = ({
           share?: (data: ShareData) => Promise<void>;
         };
         await nav.share?.({
-          title: "Kairos Sigil-Glyph",
+          title: "☤Kairos Sigil-Glyph",
           text: "Sealed Kairos Moment",
           url,
         });

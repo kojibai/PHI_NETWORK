@@ -37,7 +37,7 @@ export function runOgImageEffect(params: {
       const chakra = (payload.chakraDay ?? "Throat") as keyof typeof CHAKRA_THEME;
       const accent = CHAKRA_THEME[chakra]?.accent || "#00FFD0";
       const pulseStr = payload.pulse || 0;
-      const title = "Kairos Sigil-Glyph — Sealed Kairos Moment";
+      const title = "☤Kairos Sigil-Glyph — Sealed Kairos Moment";
 
       const stepsNum: number = (payload.stepsPerBeat ?? 44) as number;
       const stepIdx = Math.floor((payload.pulse % (stepsNum * 11)) / 11);

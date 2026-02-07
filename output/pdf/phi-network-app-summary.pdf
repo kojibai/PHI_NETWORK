@@ -1,0 +1,183 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R /F2 6 0 R >> >> >>
+endobj
+4 0 obj
+<< /Length 2677 >>
+stream
+BT
+/F1 13.50 Tf
+54.00 738.00 Td
+17.28 TL
+(Phi Network Sovereign Gate \(verify.kai\) — App Summary) Tj
+ET
+BT
+/F1 13.50 Tf
+54.00 710.35 Td
+17.28 TL
+(What It Is) Tj
+ET
+BT
+/F2 10.50 Tf
+54.00 689.62 Td
+13.44 TL
+(Phi Network Sovereign Gate is a KaiOS-style web client for the Phi Network,) Tj
+T*
+(anchoring money, identity, and verification to Kai-Klok time and Proof of) Tj
+T*
+(Breath. It exposes the Verifier \(Inhale/Exhale\) and KaiVoh emission surfaces.) Tj
+ET
+BT
+/F1 13.50 Tf
+54.00 642.58 Td
+17.28 TL
+(Who It’s For) Tj
+ET
+BT
+/F2 10.50 Tf
+54.00 621.84 Td
+13.44 TL
+(People using the Phi Network to mint, verify, transfer, or emit value/content) Tj
+T*
+(under Phi Keys and Sigil-Glyph identities.) Tj
+ET
+BT
+/F1 13.50 Tf
+54.00 588.24 Td
+17.28 TL
+(What It Does) Tj
+ET
+BT
+/F2 10.50 Tf
+54.00 567.50 Td
+13.44 TL
+(- Inhale/Exhale console to mint/receive/send Phi value \(Verifier\).) Tj
+ET
+BT
+/F2 10.50 Tf
+54.00 554.06 Td
+13.44 TL
+(- Verify sigil-glyphs and transfers; display proof and signature metadata.) Tj
+ET
+BT
+/F2 10.50 Tf
+54.00 540.62 Td
+13.44 TL
+(- PhiStream / history view for resonance stream activity.) Tj
+ET
+BT
+/F2 10.50 Tf
+54.00 527.18 Td
+13.44 TL
+(- Live Kai-Klok pulse/beat/step display for all actions.) Tj
+ET
+BT
+/F2 10.50 Tf
+54.00 513.74 Td
+13.44 TL
+(- KaiVoh emission surface for posts, signals, and receipts with sigil) Tj
+T*
+(provenance.) Tj
+ET
+BT
+/F2 10.50 Tf
+54.00 486.86 Td
+13.44 TL
+(- Offline-auditable verification assets \(ZK files in public/zk\).) Tj
+ET
+BT
+/F1 13.50 Tf
+54.00 468.05 Td
+17.28 TL
+(How It Works) Tj
+ET
+BT
+/F2 10.50 Tf
+54.00 447.31 Td
+13.44 TL
+(- React + TypeScript app built with Vite; routed with react-router; App shell) Tj
+T*
+(lazy-loads pages and modals.) Tj
+ET
+BT
+/F2 10.50 Tf
+54.00 420.43 Td
+13.44 TL
+(- Verify flow in src/pages/VerifyPage.tsx parses sigils, builds proof bundles,) Tj
+T*
+(hashes content, and runs Groth16 verification.) Tj
+ET
+BT
+/F2 10.50 Tf
+54.00 393.55 Td
+13.44 TL
+(- Sigil Explorer pulls from API bases with primary/fallback selection and) Tj
+T*
+(optional same-origin proxy; state tracked in registryStore.) Tj
+ET
+BT
+/F2 10.50 Tf
+54.00 366.67 Td
+13.44 TL
+(- Kai-Klok time and valuation utilities feed live pulse/price displays across) Tj
+T*
+(the UI.) Tj
+ET
+BT
+/F1 13.50 Tf
+54.00 334.42 Td
+17.28 TL
+(How To Run) Tj
+ET
+BT
+/F2 10.50 Tf
+54.00 313.68 Td
+13.44 TL
+(- Node.js >= 20.19.0 \(package.json engines\).) Tj
+ET
+BT
+/F2 10.50 Tf
+54.00 300.24 Td
+13.44 TL
+(- Install deps: pnpm install \(or npm install\).) Tj
+ET
+BT
+/F2 10.50 Tf
+54.00 286.80 Td
+13.44 TL
+(- Optional env: VITE_API_BASE \(src/utils/constants.ts\).) Tj
+ET
+BT
+/F2 10.50 Tf
+54.00 273.36 Td
+13.44 TL
+(- Start dev server: pnpm dev \(or npm run dev\).) Tj
+ET
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>
+endobj
+6 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>
+endobj
+xref
+0 7
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000251 00000 n 
+0000002980 00000 n 
+0000003055 00000 n 
+trailer
+<< /Size 7 /Root 1 0 R >>
+startxref
+3123
+%%EOF

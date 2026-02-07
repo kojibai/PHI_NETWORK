@@ -530,7 +530,7 @@ export default function VerifySigil(): React.JSX.Element {
           <header className="sp-header">
             <h1 className="sp-title">Verify ☤Kai Sigil-Glyph</h1>
             <p className="sp-subtitle">
-              Proof-of-Breath™ verifier for Kairos Sigil-Glyphs. Inhale a Sigil
+              Proof-of-Breath™ verifier for ☤Kairos Sigil-Glyphs. Inhale a Sigil
               ΦKey or open this page with a <code>?p=</code> payload to verify its
               seal.
             </p>

@@ -190,7 +190,7 @@ export async function svgBlobForExport(
   ensureXmlns(clone);
   ensureTitleAndDesc(
     clone,
-    options?.title || "Kairos Sigil-Glyph — Sealed Kairos Moment",
+    options?.title || "☤Kairos Sigil-Glyph — Sealed Kairos Moment",
     options?.desc || "Deterministic sigil-glyph with sovereign metadata."
   );
 

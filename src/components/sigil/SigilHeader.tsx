@@ -282,7 +282,7 @@ export default function SigilHeader(props: SigilHeaderProps) {
       <div className="sp-kicker">Sovereign Harmonik Kingdom</div>
 
       <h1 className="sp-title">
-        Kairos Sigil-Glyph
+        ☤Kairos Sigil-Glyph
         <span className="sp-title-glow" aria-hidden />
       </h1>
 
