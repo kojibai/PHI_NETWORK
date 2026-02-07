@@ -159,7 +159,7 @@ function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
 
 export async function verifyVerificationSig(receiptHash: string, sig: VerificationSig): Promise<boolean> {
   try {
-    const { challengeBytes, challengeB64 } = verificationReceiptChallenge(receiptHash);
+    const {challengeB64 } = verificationReceiptChallenge(receiptHash);
     if (sig.challenge !== challengeB64) return false;
 
     const clientDataBytes = base64UrlDecode(sig.clientDataJSON);
