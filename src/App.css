@@ -466,26 +466,85 @@ a:hover {
   background: radial-gradient(circle at 45% 35%, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0));
   mix-blend-mode: screen;
 }
-
 .kai-splash__ring {
   position: absolute;
   inset: 8%;
   border-radius: 50%;
-  border: 1px solid rgba(51, 246, 255, 0.35);
-  box-shadow:
-    0 0 0 10px rgba(51, 246, 255, 0.12),
-    0 0 0 1px rgba(255, 255, 255, 0.08) inset;
+  isolation: isolate;
+
+  /* iOS circular edge hardening */
+  clip-path: inset(0 round 9999px);
+  -webkit-mask-image: radial-gradient(white, white);
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  will-change: transform, opacity;
+
+  /* keep your existing breath */
   animation: kai-splash-pulse var(--phi-breath) ease-in-out infinite;
 }
 
+/* Glow (REPLACES the spread box-shadow that causes mobile artifacts) */
+.kai-splash__ring::before {
+  content: "";
+  position: absolute;
+  inset: -14px; /* how far the glow can extend */
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 50%, rgba(51, 246, 255, 0.28), transparent 60%);
+  filter: blur(14px);
+  opacity: 0.55;
+
+  /* make it a ring-shaped glow (not a filled disc) */
+  -webkit-mask: radial-gradient(
+    farthest-side,
+    transparent calc(100% - 22px),
+    #000 calc(100% - 18px)
+  );
+  mask: radial-gradient(
+    farthest-side,
+    transparent calc(100% - 22px),
+    #000 calc(100% - 18px)
+  );
+
+  transform: translateZ(0);
+}
+
+/* Crisp ring stroke + subtle inner highlight */
+.kai-splash__ring::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(51, 246, 255, 0.35);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08) inset;
+  transform: translateZ(0);
+}
+
+/* Inner ring: same structure, different tint + opposite breath */
 .kai-splash__ring--inner {
   inset: 16%;
-  border: 1px solid rgba(155, 91, 255, 0.35);
-  box-shadow:
-    0 0 0 8px rgba(155, 91, 255, 0.16),
-    0 0 0 1px rgba(255, 255, 255, 0.05) inset;
   animation: kai-splash-pulse var(--phi-breath) ease-in-out infinite reverse;
 }
+
+.kai-splash__ring--inner::before {
+  background: radial-gradient(circle at 50% 50%, rgba(155, 91, 255, 0.26), transparent 60%);
+  opacity: 0.52;
+  -webkit-mask: radial-gradient(
+    farthest-side,
+    transparent calc(100% - 20px),
+    #000 calc(100% - 16px)
+  );
+  mask: radial-gradient(
+    farthest-side,
+    transparent calc(100% - 20px),
+    #000 calc(100% - 16px)
+  );
+}
+
+.kai-splash__ring--inner::after {
+  border: 1px solid rgba(155, 91, 255, 0.35);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+}
+
 
 .kai-splash__rays {
   position: absolute;
@@ -630,6 +689,9 @@ a:hover {
   .kai-splash__flare {
     animation: none;
   }
+}
+.kai-splash__badge {
+  transform: translateZ(0);
 }
 
 /* ────────────────────────────────────────────────────────────────
