@@ -78,6 +78,8 @@ import {
 /** Remote pull (exhale) */
 import { pullAndImportRemoteUrls } from "./remotePull";
 import { msUntilNextKaiBreath } from "./kaiCadence";
+import { getWebAuthnAssertionJson, listStoredKasPasskeys, verifyWebAuthnAssertion } from "../../utils/webauthnReceive";
+import { derivePhiKeyFromPubKeyJwk } from "../../utils/webauthnKAS";
 
 /** Username claim witness registry */
 import {
@@ -121,6 +123,15 @@ type PulseViewTarget = {
   originUrl?: string;
   originHash?: string;
   anchor?: { x: number; y: number };
+};
+
+type ApiStateRow = {
+  url?: unknown;
+  payload?: unknown;
+};
+
+type ApiStateResponse = {
+  registry?: ApiStateRow[];
 };
 
 const SIGIL_EXPLORER_OPEN_EVENT = "sigil:explorer:open";
@@ -215,6 +226,52 @@ function readBoolean(value: unknown): boolean | undefined {
 function readQuality(value: unknown): "low" | "med" | "high" | undefined {
   if (value === "low" || value === "med" || value === "high") return value;
   return undefined;
+}
+
+function sanitizeFilenamePart(value: string): string {
+  const compact = value.trim().replace(/\s+/g, "_");
+  const safe = compact.replace(/[^a-zA-Z0-9._-]/g, "-");
+  return safe || "phikey";
+}
+
+function triggerBlobDownload(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function readPhiKeyFromPayload(payload: unknown): string {
+  if (!payload || typeof payload !== "object") return "";
+  const rec = payload as Record<string, unknown>;
+  const candidates = [rec.userPhiKey, rec.phiKey, rec.phikey];
+  for (const value of candidates) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return "";
+}
+
+function listStoredPhiKeysForCredId(credId: string): string[] {
+  if (!hasWindow || typeof window.localStorage === "undefined") return [];
+  const prefix = "kai:kas1:passkey:";
+  const out: string[] = [];
+  for (let i = 0; i < window.localStorage.length; i += 1) {
+    const key = window.localStorage.key(i);
+    if (!key || !key.startsWith(prefix)) continue;
+    const phiKey = key.slice(prefix.length).trim();
+    if (!phiKey) continue;
+    const raw = window.localStorage.getItem(key);
+    if (!raw) continue;
+    try {
+      const parsed = JSON.parse(raw) as { credId?: unknown };
+      if (parsed && typeof parsed.credId === "string" && parsed.credId === credId) out.push(phiKey);
+    } catch {
+      // ignore malformed cache rows
+    }
+  }
+  return Array.from(new Set(out));
 }
 
 function buildValuationMeta(payload: SigilSharePayloadLoose): SigilMetadataLite {
@@ -1167,6 +1224,9 @@ function ExplorerToolbar({
   onAdd,
   onImport,
   onExport,
+  onRemember,
+  rememberBusy,
+  rememberStatus,
   total,
   lastAdded,
   viewMode,
@@ -1175,6 +1235,9 @@ function ExplorerToolbar({
   onAdd: (u: string) => void;
   onImport: (f: File) => void;
   onExport: () => void;
+  onRemember: () => void;
+  rememberBusy: boolean;
+  rememberStatus?: string;
   total: number;
   lastAdded?: string;
   viewMode: "keystream" | "lattice";
@@ -1240,6 +1303,16 @@ function ExplorerToolbar({
             <button className="kx-export" onClick={onExport} aria-label="Export registry to JSON" type="button">
               Exhale
             </button>
+            <button
+              className="kx-export"
+              onClick={onRemember}
+              aria-label="Remember passkey glyph recovery"
+              type="button"
+              disabled={rememberBusy}
+              title="Face ID / Touch ID recovery"
+            >
+              {rememberBusy ? "Remembering…" : "Remember"}
+            </button>
           </div>
 
           <div className="kx-view-toggle" role="group" aria-label="Explorer view mode">
@@ -1262,6 +1335,11 @@ function ExplorerToolbar({
                 Last: {short(lastAdded, 8)}
               </span>
             )}
+            {rememberStatus ? (
+              <span className="kx-pill subtle" title={rememberStatus}>
+                {rememberStatus}
+              </span>
+            ) : null}
           </div>
         </div>
       </div>
@@ -1279,6 +1357,8 @@ const SigilExplorer: React.FC = () => {
   const [usernameClaims, setUsernameClaims] = useState<UsernameClaimRegistry>(() => getUsernameClaimRegistry());
   const [nowPulse, setNowPulse] = useState(() => getKaiPulseEternalInt(new Date()));
   const [viewMode, setViewMode] = useState<"keystream" | "lattice">("keystream");
+  const [rememberBusy, setRememberBusy] = useState(false);
+  const [rememberStatus, setRememberStatus] = useState<string | undefined>(undefined);
   const [pulseView, setPulseView] = useState<{
     open: boolean;
     pulse: number | null;
@@ -2318,12 +2398,123 @@ const SigilExplorer: React.FC = () => {
     URL.revokeObjectURL(a.href);
   }, [markInteracting]);
 
+  const handleRemember = useCallback(async () => {
+    if (rememberBusy) return;
+
+    markInteracting(UI_TOGGLE_INTERACT_MS);
+    setRememberBusy(true);
+    setRememberStatus("Waiting for passkey confirmation…");
+
+    try {
+      const stored = listStoredKasPasskeys();
+      if (stored.length === 0) {
+        throw new Error("No saved passkey was found on this browser.");
+      }
+
+      const challenge = crypto.getRandomValues(new Uint8Array(32));
+      const assertion = await getWebAuthnAssertionJson({
+        challenge,
+        allowCredIds: stored.map((item) => item.credId),
+        preferInternal: true,
+      });
+
+      const matched = stored.find((item) => item.credId === assertion.rawId);
+      if (!matched) {
+        throw new Error("This passkey is not linked to local Φ-Key records.");
+      }
+
+      const verified = await verifyWebAuthnAssertion({
+        assertion,
+        expectedChallenge: challenge,
+        pubKeyJwk: matched.pubKeyJwk,
+        expectedCredId: matched.credId,
+      });
+      if (!verified) throw new Error("Passkey verification failed.");
+
+      const resolvedPhiKey = await derivePhiKeyFromPubKeyJwk(matched.pubKeyJwk);
+      const linkedPhiKeys = listStoredPhiKeysForCredId(matched.credId);
+      if (!linkedPhiKeys.includes(resolvedPhiKey)) linkedPhiKeys.push(resolvedPhiKey);
+      const linkedSet = new Set(linkedPhiKeys.filter(Boolean));
+      if (linkedSet.size === 0) {
+        throw new Error("No Φ-Keys are linked to that credential on this browser.");
+      }
+
+      setRememberStatus(`Passkey verified for ${linkedSet.size} Φ-Key${linkedSet.size === 1 ? "" : "s"}. Fetching glyphs…`);
+
+      const stateRes = await apiFetchWithFailover((base) => `${base}/sigils/state`, { method: "GET" });
+      if (!stateRes || !stateRes.ok) {
+        throw new Error(`State pull failed (${stateRes?.status ?? 0}).`);
+      }
+
+      const stateJson = (await stateRes.json()) as ApiStateResponse;
+      const rows = Array.isArray(stateJson.registry) ? stateJson.registry : [];
+      const byPhi = new Map<string, string[]>();
+
+      for (const row of rows) {
+        if (!row || typeof row !== "object") continue;
+        const url = typeof row.url === "string" ? row.url.trim() : "";
+        if (!url) continue;
+        const ownerPhi = readPhiKeyFromPayload(row.payload).trim();
+        if (!ownerPhi || !linkedSet.has(ownerPhi)) continue;
+        const list = byPhi.get(ownerPhi) ?? [];
+        list.push(url);
+        byPhi.set(ownerPhi, list);
+      }
+
+      let groupCount = 0;
+      for (const urls of byPhi.values()) {
+        if (urls.length > 0) groupCount += 1;
+      }
+      if (groupCount === 0) {
+        setRememberStatus("Passkey verified. No remote glyphs found for linked Φ-Keys.");
+        return;
+      }
+
+      const { default: JSZip } = await import("jszip");
+      const parentZip = new JSZip();
+      let totalGlyphs = 0;
+
+      for (const phiKey of Array.from(byPhi.keys()).sort()) {
+        const urls = Array.from(new Set(byPhi.get(phiKey) ?? []));
+        if (urls.length === 0) continue;
+
+        const childZip = new JSZip();
+        childZip.file(
+          "manifest.json",
+          JSON.stringify({ phiKey, recoveredAt: Date.now(), count: urls.length, urls }, null, 2),
+        );
+        urls.forEach((url, idx) => {
+          childZip.file(`sigil_${String(idx + 1).padStart(4, "0")}.url.txt`, `${url}\n`);
+        });
+
+        const childBlob = await childZip.generateAsync({ type: "blob", compression: "DEFLATE" });
+        const safePhi = sanitizeFilenamePart(phiKey);
+        parentZip.file(`${safePhi}.zip`, childBlob);
+        totalGlyphs += urls.length;
+      }
+
+      const parentBlob = await parentZip.generateAsync({ type: "blob", compression: "DEFLATE" });
+      triggerBlobDownload(parentBlob, `remembered_phikeys_${Date.now()}.zip`);
+      setRememberStatus(`Remember complete: ${totalGlyphs} glyph URLs across ${groupCount} Φ-Key zip${groupCount === 1 ? "" : "s"}.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Remember failed.";
+      setRememberStatus(message);
+    } finally {
+      setRememberBusy(false);
+    }
+  }, [markInteracting, rememberBusy]);
+
   return (
     <div className="sigil-explorer" aria-label="Kairos Keystream Explorer">
       <ExplorerToolbar
         onAdd={handleAdd}
         onImport={handleImport}
         onExport={handleExport}
+        onRemember={() => {
+          void handleRemember();
+        }}
+        rememberBusy={rememberBusy}
+        rememberStatus={rememberStatus}
         total={totalKeys}
         lastAdded={lastAdded}
         viewMode={viewMode}
