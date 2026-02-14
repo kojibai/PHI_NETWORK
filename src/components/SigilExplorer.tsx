@@ -2333,6 +2333,34 @@ async function copyText(text: string): Promise<void> {
   }
 }
 
+function sanitizeFilenamePart(value: string): string {
+  return value.trim().replace(/[^a-z0-9._-]+/giu, "_").slice(0, 48) || "sigil";
+}
+
+function downloadJsonFile(filename: string, data: unknown): void {
+  if (!hasWindow) return;
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function downloadNodeKeyFile(node: SigilNode): void {
+  const hash = resolveCanonicalHashFromNode(node) || "";
+  const sig = typeof node.payload.kaiSignature === "string" ? node.payload.kaiSignature : "";
+  const token = sanitizeFilenamePart(hash || sig || `pulse_${node.payload.pulse}`);
+
+  downloadJsonFile(`sigil_key_${token}.json`, {
+    url: node.url,
+    openUrl: explorerOpenUrl(node.url),
+    urls: node.urls,
+    payload: node.payload,
+  });
+}
+
 /* ─────────────────────────────────────────────────────────────────────
  *  Scoped inline styles (surgical)
  *  ───────────────────────────────────────────────────────────────────── */
@@ -2502,6 +2530,16 @@ function SigilTreeNode({
           >
             ⧉
           </button>
+
+          <button
+            className="node-copy"
+            aria-label="Download this key"
+            onClick={() => downloadNodeKeyFile(node)}
+            title="Download this key"
+            type="button"
+          >
+            ⤓
+          </button>
         </div>
       </div>
 
@@ -2604,6 +2642,9 @@ function OriginPanel({
           <button className="o-copy" onClick={() => void copyText(openHref)} title="Copy origin URL" type="button">
             Remember Origin
           </button>
+          <button className="o-copy" onClick={() => downloadNodeKeyFile(root)} title="Download origin key" type="button">
+            Download Origin Key
+          </button>
         </div>
       </header>
 
@@ -2635,6 +2676,8 @@ function ExplorerToolbar({
   onImport,
   onExport,
   onRecover,
+  onDownloadRecovered,
+  recoveredCount,
   recoverBusy,
   recoverStatus,
   total,
@@ -2644,6 +2687,8 @@ function ExplorerToolbar({
   onImport: (f: File) => void;
   onExport: () => void;
   onRecover: () => void;
+  onDownloadRecovered: () => void;
+  recoveredCount: number;
   recoverBusy: boolean;
   recoverStatus?: string;
   total: number;
@@ -2730,6 +2775,17 @@ function ExplorerToolbar({
             >
               {recoverBusy ? "Recovering…" : "Recover My Glyphs"}
             </button>
+
+            <button
+              className="kx-export"
+              onClick={onDownloadRecovered}
+              aria-label="Download recovered glyph keys"
+              type="button"
+              disabled={recoveredCount === 0}
+              title="Download recovered keys"
+            >
+              Download Recovered ({recoveredCount})
+            </button>
           </div>
 
           <div className="kx-stats" aria-live="polite">
@@ -2762,6 +2818,8 @@ const SigilExplorer: React.FC = () => {
   const [lastAdded, setLastAdded] = useState<string | undefined>(undefined);
   const [recoverBusy, setRecoverBusy] = useState(false);
   const [recoverStatus, setRecoverStatus] = useState<string | undefined>(undefined);
+  const [recoveredUrls, setRecoveredUrls] = useState<string[]>([]);
+  const [recoveredPhiKey, setRecoveredPhiKey] = useState<string>("");
   const [usernameClaims, setUsernameClaims] = useState<UsernameClaimRegistry>(() => getUsernameClaimRegistry());
 
   const unmounted = useRef(false);
@@ -3769,6 +3827,7 @@ breathTimer = null;
       }
 
       const phiKey = await derivePhiKeyFromPubKeyJwk(matched.pubKeyJwk);
+      setRecoveredPhiKey(phiKey);
       setRecoverStatus(`Passkey verified for ${short(phiKey, 8)}. Recovering…`);
 
       const stateResult = await apiFetchJsonWithFailover<ApiStateResponse>((base) => `${base}/sigils/state`);
@@ -3790,6 +3849,7 @@ breathTimer = null;
 
       const uniqueRecovered = Array.from(new Set(recoveredUrls));
       if (uniqueRecovered.length === 0) {
+        setRecoveredUrls([]);
         setRecoverStatus(`Passkey verified for ${short(phiKey, 8)}. No remote glyphs found.`);
         return;
       }
@@ -3814,6 +3874,7 @@ breathTimer = null;
         bump();
       }
 
+      setRecoveredUrls(uniqueRecovered);
       setRecoverStatus(`Recovered ${imported} glyph${imported === 1 ? "" : "s"} for ${short(phiKey, 8)}.`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Recovery failed.";
@@ -3822,6 +3883,17 @@ breathTimer = null;
       setRecoverBusy(false);
     }
   }, [bump, recoverBusy]);
+
+  const handleDownloadRecovered = useCallback(() => {
+    if (recoveredUrls.length === 0) return;
+    const token = sanitizeFilenamePart(recoveredPhiKey || "phikey");
+    downloadJsonFile(`recovered_sigils_${token}.json`, {
+      phiKey: recoveredPhiKey || null,
+      recoveredAt: Date.now(),
+      count: recoveredUrls.length,
+      urls: recoveredUrls,
+    });
+  }, [recoveredPhiKey, recoveredUrls]);
 
   return (
     <div className="sigil-explorer">
@@ -3832,6 +3904,8 @@ breathTimer = null;
         onImport={handleImport}
         onExport={handleExport}
         onRecover={handleRecoverByPasskey}
+        onDownloadRecovered={handleDownloadRecovered}
+        recoveredCount={recoveredUrls.length}
         recoverBusy={recoverBusy}
         recoverStatus={recoverStatus}
         total={memoryRegistry.size}
