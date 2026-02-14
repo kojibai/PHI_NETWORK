@@ -45,6 +45,12 @@ import { extractPayloadFromUrl, resolveLineageBackwards, getOriginUrl } from "..
 import type { SigilSharePayloadLoose } from "../utils/sigilUrl";
 import { normalizeClaimGlyphRef, normalizeUsername } from "../utils/usernameClaim";
 import {
+  getWebAuthnAssertionJson,
+  listStoredKasPasskeys,
+  verifyWebAuthnAssertion,
+} from "../utils/webauthnReceive";
+import { derivePhiKeyFromPubKeyJwk } from "../utils/webauthnKAS";
+import {
   getUsernameClaimRegistry,
   ingestUsernameClaimGlyph,
   subscribeUsernameClaimRegistry,
@@ -131,6 +137,15 @@ type ApiInhaleResponse = {
   latest_pulse: number | null;
   errors: string[];
   urls?: string[] | null;
+};
+
+type ApiStateRow = {
+  url?: unknown;
+  payload?: unknown;
+};
+
+type ApiStateResponse = {
+  registry?: ApiStateRow[];
 };
 
 type SyncReason = "open" | "pulse" | "visible" | "focus" | "online" | "import";
@@ -2619,12 +2634,18 @@ function ExplorerToolbar({
   onAdd,
   onImport,
   onExport,
+  onRecover,
+  recoverBusy,
+  recoverStatus,
   total,
   lastAdded,
 }: {
   onAdd: (u: string) => void;
   onImport: (f: File) => void;
   onExport: () => void;
+  onRecover: () => void;
+  recoverBusy: boolean;
+  recoverStatus?: string;
   total: number;
   lastAdded?: string;
 }) {
@@ -2698,6 +2719,17 @@ function ExplorerToolbar({
             <button className="kx-export" onClick={onExport} aria-label="Export registry to JSON" type="button">
               Exhale
             </button>
+
+            <button
+              className="kx-export"
+              onClick={onRecover}
+              aria-label="Recover all glyphs for my passkey"
+              type="button"
+              disabled={recoverBusy}
+              title="Face ID / Touch ID recovery"
+            >
+              {recoverBusy ? "Recovering…" : "Recover My Glyphs"}
+            </button>
           </div>
 
           <div className="kx-stats" aria-live="polite">
@@ -2707,6 +2739,11 @@ function ExplorerToolbar({
             {lastAdded && (
               <span className="kx-pill subtle" title={lastAdded}>
                 Last: {short(lastAdded, 8)}
+              </span>
+            )}
+            {recoverStatus && (
+              <span className="kx-pill subtle" title={recoverStatus}>
+                {recoverStatus}
               </span>
             )}
           </div>
@@ -2723,6 +2760,8 @@ const SigilExplorer: React.FC = () => {
   const [registryRev, setRegistryRev] = useState(0);
   const [transferRev, setTransferRev] = useState(0);
   const [lastAdded, setLastAdded] = useState<string | undefined>(undefined);
+  const [recoverBusy, setRecoverBusy] = useState(false);
+  const [recoverStatus, setRecoverStatus] = useState<string | undefined>(undefined);
   const [usernameClaims, setUsernameClaims] = useState<UsernameClaimRegistry>(() => getUsernameClaimRegistry());
 
   const unmounted = useRef(false);
@@ -3696,6 +3735,94 @@ breathTimer = null;
     URL.revokeObjectURL(url);
   }, []);
 
+  const handleRecoverByPasskey = useCallback(async () => {
+    if (recoverBusy) return;
+    setRecoverBusy(true);
+    setRecoverStatus("Waiting for passkey confirmation…");
+
+    try {
+      const stored = listStoredKasPasskeys();
+      if (stored.length === 0) {
+        throw new Error("No saved passkey was found on this browser for recovery.");
+      }
+
+      const challenge = crypto.getRandomValues(new Uint8Array(32));
+      const assertion = await getWebAuthnAssertionJson({
+        challenge,
+        allowCredIds: stored.map((item) => item.credId),
+        preferInternal: true,
+      });
+
+      const matched = stored.find((item) => item.credId === assertion.rawId);
+      if (!matched) {
+        throw new Error("This passkey is not linked to a local Φ-Key record on this browser.");
+      }
+
+      const verified = await verifyWebAuthnAssertion({
+        assertion,
+        expectedChallenge: challenge,
+        pubKeyJwk: matched.pubKeyJwk,
+        expectedCredId: matched.credId,
+      });
+      if (!verified) {
+        throw new Error("Passkey verification failed.");
+      }
+
+      const phiKey = await derivePhiKeyFromPubKeyJwk(matched.pubKeyJwk);
+      setRecoverStatus(`Passkey verified for ${short(phiKey, 8)}. Recovering…`);
+
+      const stateResult = await apiFetchJsonWithFailover<ApiStateResponse>((base) => `${base}/sigils/state`);
+      if (!stateResult.ok) {
+        throw new Error(`State pull failed (${stateResult.status}).`);
+      }
+
+      const registryRows = Array.isArray(stateResult.value.registry) ? stateResult.value.registry : [];
+      const recoveredUrls: string[] = [];
+      for (const row of registryRows) {
+        if (!row || typeof row !== "object") continue;
+        const url = typeof row.url === "string" ? row.url.trim() : "";
+        const payload = row.payload;
+        if (!url || !payload || typeof payload !== "object") continue;
+        const ownerPhi = readPhiKeyFromPayload(payload as SigilSharePayloadLoose).trim();
+        if (!ownerPhi || ownerPhi !== phiKey) continue;
+        recoveredUrls.push(url);
+      }
+
+      const uniqueRecovered = Array.from(new Set(recoveredUrls));
+      if (uniqueRecovered.length === 0) {
+        setRecoverStatus(`Passkey verified for ${short(phiKey, 8)}. No remote glyphs found.`);
+        return;
+      }
+
+      let imported = 0;
+      for (const url of uniqueRecovered) {
+        if (
+          addUrl(url, {
+            includeAncestry: true,
+            broadcast: false,
+            persist: false,
+            source: "remote",
+            enqueueToApi: false,
+          })
+        ) {
+          imported += 1;
+        }
+      }
+
+      if (imported > 0) {
+        persistRegistryToStorage();
+        bump();
+      }
+
+      setRecoverStatus(`Recovered ${imported} glyph${imported === 1 ? "" : "s"} for ${short(phiKey, 8)}.`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Recovery failed.";
+      setRecoverStatus(msg);
+    } finally {
+      setRecoverBusy(false);
+    }
+  }, [bump, recoverBusy]);
+
   return (
     <div className="sigil-explorer">
       <Styles />
@@ -3704,6 +3831,9 @@ breathTimer = null;
         onAdd={handleAdd}
         onImport={handleImport}
         onExport={handleExport}
+        onRecover={handleRecoverByPasskey}
+        recoverBusy={recoverBusy}
+        recoverStatus={recoverStatus}
         total={memoryRegistry.size}
         lastAdded={lastAdded}
       />
