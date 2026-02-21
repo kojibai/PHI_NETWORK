@@ -129,6 +129,42 @@ test("worker fallback control flag can be toggled", () => {
   assert.equal(typeof streamStore.setStreamWorkerFailedForTests, "function");
 });
 
+
+
+test("syncStreamDelta paginates until latest seal", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalGetSeal = streamStore.streamStore.getSeal;
+  const originalApplyDelta = streamStore.streamStore.applyDelta;
+
+  let localSeal = "old-seal";
+  const applied = [];
+  const responses = [
+    { seal: "page-1", latestPulse: 10, total: 3 },
+    { seal: "page-1", latestSeal: "page-3", rows: [{ token: "t1", url: "https://x/p/t1" }] },
+    { seal: "page-2", latestSeal: "page-3", rows: [{ token: "t2", url: "https://x/p/t2" }] },
+    { seal: "page-3", latestSeal: "page-3", rows: [{ token: "t3", url: "https://x/p/t3" }] },
+  ];
+
+  globalThis.fetch = async () => ({ ok: true, json: async () => responses.shift() });
+  streamStore.streamStore.getSeal = async () => localSeal;
+  streamStore.streamStore.applyDelta = async (delta) => {
+    applied.push(delta);
+    if (delta.seal) localSeal = delta.seal;
+  };
+
+  try {
+    const changed = await streamSync.syncStreamDelta(1);
+    assert.equal(changed, 3);
+    assert.equal(applied.length, 3);
+    assert.equal(applied[0].seal, "page-1");
+    assert.equal(applied[2].seal, "page-3");
+    assert.equal(localSeal, "page-3");
+  } finally {
+    globalThis.fetch = originalFetch;
+    streamStore.streamStore.getSeal = originalGetSeal;
+    streamStore.streamStore.applyDelta = originalApplyDelta;
+  }
+});
 test("virtual list windowing computes bounded start/end", () => {
   const nearTop = streamList.computeVirtualWindow(0, 900, 100);
   assert.equal(nearTop.start, 0);
