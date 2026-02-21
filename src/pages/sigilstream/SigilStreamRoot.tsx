@@ -125,6 +125,8 @@ import {
 
 /* PhiStream auto-add */
 import { autoAddVisitedPayloadToPhiStream } from "./core/phiStreamAutoAdd";
+import { syncStreamDelta } from "../../lib/stream/streamSync";
+import { streamStore } from "../../lib/stream/streamStore";
 
 /** Simple source shape */
 type Source = { url: string };
@@ -1568,6 +1570,28 @@ function SigilStreamInner(): React.JSX.Element {
       cancelled = true;
     };
   }, [ms2IngestMany, rehydrateUsernameClaimsFromHistory]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    let dead = false;
+    void (async () => {
+      const changed = await syncStreamDelta(300);
+      if (!changed || dead) return;
+      const page = await streamStore.getFeedPage(null, 120);
+      if (dead) return;
+      const urls = page.rows.map((row) => row.url);
+      setSources((prev) => {
+        const seen = new Set(prev.map((row) => row.url));
+        const fresh = urls.filter((url) => !seen.has(url));
+        if (!fresh.length) return prev;
+        prependUniqueToStorage(fresh);
+        return [...fresh.map((url) => ({ url })), ...prev];
+      });
+    })();
+    return () => {
+      dead = true;
+    };
+  }, []);
 
   /**
    * Ingest add= links from CURRENT location every time it changes.
