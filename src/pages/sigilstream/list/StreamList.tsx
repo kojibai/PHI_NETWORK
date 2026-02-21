@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import FeedCard from "../../../components/FeedCard";
 import { streamStore, type StreamPreview } from "../../../lib/stream/streamStore";
 
@@ -45,18 +45,27 @@ export function StreamList({ urls }: Props): React.JSX.Element {
   const [visibleCount, setVisibleCount] = useState(BATCH);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [previewMap, setPreviewMap] = useState<Record<string, StreamPreview>>({});
+  const ingestedRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     let dead = false;
     void (async () => {
-      await streamStore.ingestUrls(urls);
+      const fresh = urls.filter((u) => !ingestedRef.current.has(u));
+      if (fresh.length === 0) {
+        if (!dead) setHydrated(true);
+        return;
+      }
+
+      await streamStore.ingestUrls(fresh);
       const map: Record<string, StreamPreview> = {};
-      for (const u of urls) {
+      for (const u of fresh) {
         const p = await streamStore.getPreview(u);
         if (p) map[u] = p;
       }
+
       if (!dead) {
-        setPreviewMap(map);
+        setPreviewMap((prev) => ({ ...prev, ...map }));
+        for (const u of fresh) ingestedRef.current.add(u);
         setHydrated(true);
       }
     })();
