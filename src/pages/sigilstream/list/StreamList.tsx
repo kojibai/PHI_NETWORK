@@ -51,7 +51,7 @@ export function StreamList({ urls }: Props): React.JSX.Element {
     void (async () => {
       await streamStore.ingestUrls(urls);
       const map: Record<string, StreamPreview> = {};
-      for (const u of urls.slice(0, visibleCount + 20)) {
+      for (const u of urls) {
         const p = await streamStore.getPreview(u);
         if (p) map[u] = p;
       }
@@ -63,7 +63,7 @@ export function StreamList({ urls }: Props): React.JSX.Element {
     return () => {
       dead = true;
     };
-  }, [urls, visibleCount]);
+  }, [urls]);
 
   useEffect(() => {
     const t = window.setInterval(() => setVisibleCount((v) => Math.min(urls.length, v + BATCH)), 120);

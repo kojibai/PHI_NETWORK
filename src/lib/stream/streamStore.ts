@@ -26,7 +26,7 @@ export type StreamDeltaRow = {
   deleted?: boolean;
 };
 
-export type StreamDelta = { seal?: string; rows: StreamDeltaRow[] };
+export type StreamDelta = { seal?: string; latestSeal?: string; rows: StreamDeltaRow[] };
 export type StreamFeedPage = { rows: StreamPreview[]; nextCursor: string | null };
 
 const DB_NAME = "kai-stream-v1";
@@ -258,19 +258,28 @@ export const streamStore = {
   },
 
   async applyDelta(delta: StreamDelta): Promise<void> {
+    const persisted = await idbGetAll();
+    const baseline = new Map(persisted.map((row) => [row.token, row]));
+    for (const [token, row] of mem.entries()) {
+      baseline.set(token, row);
+    }
+
+    const next = applyDeltaRowsToRecords(baseline, delta);
     const upserts: StreamRecord[] = [];
     const deletes: string[] = [];
-    const next = applyDeltaRowsToRecords(mem, delta);
+
     for (const [token, record] of next.entries()) {
       upserts.push(record);
       mem.set(token, record);
     }
-    for (const token of [...mem.keys()]) {
+
+    for (const token of baseline.keys()) {
       if (!next.has(token)) {
         mem.delete(token);
         deletes.push(token);
       }
     }
+
     await idbPutMany(upserts);
     await idbDeleteMany(deletes);
     if (delta.seal) await idbSetMeta("seal", delta.seal);

@@ -19,13 +19,31 @@ async function fetchJson<T>(url: string): Promise<T | null> {
 }
 
 export async function syncStreamDelta(limit = 200): Promise<number> {
-  const localSeal = await streamStore.getSeal();
   const head = await fetchJson<StreamHead>("/api/stream/head");
   if (!head) return 0;
+
+  let localSeal = await streamStore.getSeal();
   if (localSeal && localSeal === head.seal) return 0;
-  const url = buildSyncUrl(localSeal, limit);
-  const delta = await fetchJson<StreamDelta>(url);
-  if (!delta) return 0;
-  await streamStore.applyDelta({ ...delta, seal: head.seal });
-  return delta.rows.length;
+
+  let totalChanged = 0;
+  for (let page = 0; page < 20; page += 1) {
+    const url = buildSyncUrl(localSeal, limit);
+    const delta = await fetchJson<StreamDelta>(url);
+    if (!delta) return totalChanged;
+
+    if (!delta.rows.length) {
+      if (delta.latestSeal && delta.latestSeal !== localSeal) {
+        await streamStore.applyDelta({ rows: [], seal: delta.latestSeal, latestSeal: delta.latestSeal });
+      }
+      break;
+    }
+
+    await streamStore.applyDelta(delta);
+    totalChanged += delta.rows.length;
+    localSeal = delta.seal ?? localSeal;
+
+    if (delta.latestSeal && delta.seal === delta.latestSeal) break;
+  }
+
+  return totalChanged;
 }
