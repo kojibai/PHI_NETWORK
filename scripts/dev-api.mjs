@@ -22,10 +22,29 @@ const readJson = async (req) => {
 const payloadTokenFromUrl = (rawUrl) => {
   const value = String(rawUrl || "").trim();
   if (!value) return null;
-  const idx = value.indexOf("/p/");
-  if (idx === -1) return null;
-  const token = value.slice(idx + 3).split(/[?#]/)[0].trim();
-  return token || null;
+
+  let parsed;
+  try {
+    parsed = new URL(value);
+  } catch {
+    parsed = new URL(value, "http://localhost");
+  }
+
+  const path = parsed.pathname || "";
+  const fromPath =
+    path.match(/\/p\/([^/?#]+)/u)?.[1]
+    ?? path.match(/\/(?:stream|feed)\/p\/([^/?#]+)/u)?.[1]
+    ?? path.match(/\/p(?:~|%7[Ee])\/?([^/?#]+)/u)?.[1];
+  if (fromPath) return decodeURIComponent(fromPath).trim() || null;
+
+  const hashStr = parsed.hash && parsed.hash.startsWith("#") ? parsed.hash.slice(1) : "";
+  const hashParams = new URLSearchParams(hashStr);
+  for (const key of ["t", "p", "token", "capsule"]) {
+    const candidate = hashParams.get(key) ?? parsed.searchParams.get(key);
+    if (candidate?.trim()) return candidate.trim();
+  }
+
+  return null;
 };
 
 const loadStreamRows = async () => {
@@ -47,7 +66,7 @@ const loadStreamRows = async () => {
       token,
       url,
       pulse: Number(row?.pulse) || 0,
-      updatedAt: Number(row?.updatedAt) || Date.now(),
+      updatedAt: Number(row?.updatedAt) || 0,
       preview: {
         title: String(row?.title || "memory").slice(0, 72),
         author: String(row?.author || "@unknown"),

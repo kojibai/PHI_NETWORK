@@ -51,7 +51,7 @@ export async function loadStreamRows(): Promise<StreamRow[]> {
       token,
       url,
       pulse: Number(payload.pulse) || 0,
-      updatedAt: Number(payload.ts) || Date.now(),
+      updatedAt: Number(payload.ts) || 0,
       preview: {
         title: payload.caption?.slice(0, 72) || payload.body?.kind || "memory",
         author: payload.author || "@unknown",
