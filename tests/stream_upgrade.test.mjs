@@ -136,6 +136,7 @@ test("syncStreamDelta paginates until latest seal", async () => {
   const originalFetch = globalThis.fetch;
   const originalGetSeal = streamStore.streamStore.getSeal;
   const originalApplyDelta = streamStore.streamStore.applyDelta;
+  const originalGetSourceDigest = streamStore.streamStore.getSourceDigest;
 
   let localSeal = "old-seal";
   const applied = [];
@@ -148,6 +149,7 @@ test("syncStreamDelta paginates until latest seal", async () => {
 
   globalThis.fetch = async () => ({ ok: true, json: async () => responses.shift() });
   streamStore.streamStore.getSeal = async () => localSeal;
+  streamStore.streamStore.getSourceDigest = async () => "digest-a";
   streamStore.streamStore.applyDelta = async (delta) => {
     applied.push(delta);
     if (delta.seal) localSeal = delta.seal;
@@ -164,8 +166,48 @@ test("syncStreamDelta paginates until latest seal", async () => {
     globalThis.fetch = originalFetch;
     streamStore.streamStore.getSeal = originalGetSeal;
     streamStore.streamStore.applyDelta = originalApplyDelta;
+    streamStore.streamStore.getSourceDigest = originalGetSourceDigest;
   }
 });
+
+
+test("syncStreamDelta forces snapshot when source digest changes", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalGetSeal = streamStore.streamStore.getSeal;
+  const originalGetSourceDigest = streamStore.streamStore.getSourceDigest;
+  const originalApplyDelta = streamStore.streamStore.applyDelta;
+
+  const seenUrls = [];
+  const applied = [];
+  const responses = [
+    { seal: "head-seal", latestPulse: 10, total: 2, sourceDigest: "digest-b" },
+    { seal: "next-seal", latestSeal: "next-seal", rows: [{ token: "t1", url: "https://x/p/t1" }] },
+  ];
+
+  globalThis.fetch = async (url) => {
+    seenUrls.push(String(url));
+    return { ok: true, json: async () => responses.shift() };
+  };
+
+  streamStore.streamStore.getSeal = async () => "head-seal";
+  streamStore.streamStore.getSourceDigest = async () => "digest-a";
+  streamStore.streamStore.applyDelta = async (delta) => {
+    applied.push(delta);
+  };
+
+  try {
+    const changed = await streamSync.syncStreamDelta(50);
+    assert.equal(changed, 1);
+    assert.equal(seenUrls[1], "/api/stream/snapshot?compact=1&limit=50");
+    assert.equal(applied[0].sourceDigest, "digest-b");
+  } finally {
+    globalThis.fetch = originalFetch;
+    streamStore.streamStore.getSeal = originalGetSeal;
+    streamStore.streamStore.getSourceDigest = originalGetSourceDigest;
+    streamStore.streamStore.applyDelta = originalApplyDelta;
+  }
+});
+
 test("virtual list windowing computes bounded start/end", () => {
   const nearTop = streamList.computeVirtualWindow(0, 900, 100);
   assert.equal(nearTop.start, 0);
