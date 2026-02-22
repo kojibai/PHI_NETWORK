@@ -118,8 +118,9 @@ test("delta apply correctness updates and deletes records", () => {
 });
 
 test("offline-first sync path uses snapshot for empty local seal", () => {
-  assert.equal(streamSync.buildSyncUrl(null, 200), "/api/stream/snapshot?compact=1");
+  assert.equal(streamSync.buildSyncUrl(null, 200), "/api/stream/snapshot?compact=1&limit=200");
   assert.equal(streamSync.buildSyncUrl("abc", 200), "/api/stream/delta?after=abc&limit=200");
+  assert.equal(streamSync.buildSyncUrl("abc", 200, "cur"), "/api/stream/delta?after=abc&limit=200&cursor=cur");
 });
 
 test("worker fallback control flag can be toggled", () => {

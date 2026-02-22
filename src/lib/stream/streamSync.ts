@@ -2,10 +2,12 @@ import { streamStore, type StreamDelta } from "./streamStore";
 
 export type StreamHead = { seal: string; latestPulse: number; total: number };
 
-export function buildSyncUrl(localSeal: string | null, limit: number): string {
+export function buildSyncUrl(localSeal: string | null, limit: number, cursor: string | null = null): string {
+  const encodedLimit = encodeURIComponent(String(limit));
+  const cursorPart = cursor ? `&cursor=${encodeURIComponent(cursor)}` : "";
   return localSeal
-    ? `/api/stream/delta?after=${encodeURIComponent(localSeal)}&limit=${encodeURIComponent(String(limit))}`
-    : "/api/stream/snapshot?compact=1";
+    ? `/api/stream/delta?after=${encodeURIComponent(localSeal)}&limit=${encodedLimit}${cursorPart}`
+    : `/api/stream/snapshot?compact=1&limit=${encodedLimit}${cursorPart}`;
 }
 
 async function fetchJson<T>(url: string): Promise<T | null> {
@@ -26,9 +28,11 @@ export async function syncStreamDelta(limit = 200): Promise<number> {
   if (localSeal && localSeal === head.seal) return 0;
 
   let totalChanged = 0;
-  for (let page = 0; page < 20; page += 1) {
-    const url = buildSyncUrl(localSeal, limit);
-    const delta = await fetchJson<StreamDelta>(url);
+  let cursor: string | null = null;
+
+  for (let page = 0; page < 40; page += 1) {
+    const url = buildSyncUrl(localSeal, limit, cursor);
+    const delta = await fetchJson<StreamDelta & { nextCursor?: string | null }>(url);
     if (!delta) return totalChanged;
 
     if (!delta.rows.length) {
@@ -41,8 +45,9 @@ export async function syncStreamDelta(limit = 200): Promise<number> {
     await streamStore.applyDelta(delta);
     totalChanged += delta.rows.length;
     localSeal = delta.seal ?? localSeal;
+    cursor = delta.nextCursor ?? null;
 
-    if (delta.latestSeal && delta.seal === delta.latestSeal) break;
+    if (!cursor && delta.latestSeal && delta.seal === delta.latestSeal) break;
   }
 
   return totalChanged;
