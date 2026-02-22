@@ -26,7 +26,7 @@ export type StreamDeltaRow = {
   deleted?: boolean;
 };
 
-export type StreamDelta = { seal?: string; latestSeal?: string; rows: StreamDeltaRow[] };
+export type StreamDelta = { seal?: string; latestSeal?: string; sourceDigest?: string; rows: StreamDeltaRow[] };
 export type StreamFeedPage = { rows: StreamPreview[]; nextCursor: string | null };
 
 const DB_NAME = "kai-stream-v1";
@@ -283,6 +283,7 @@ export const streamStore = {
     await idbPutMany(upserts);
     await idbDeleteMany(deletes);
     if (delta.seal) await idbSetMeta("seal", delta.seal);
+    if (delta.sourceDigest) await idbSetMeta("sourceDigest", delta.sourceDigest);
   },
 
   async getPreview(urlOrToken: string): Promise<StreamPreview | null> {
@@ -307,5 +308,9 @@ export const streamStore = {
 
   async getSeal(): Promise<string | null> {
     return idbGetMeta<string>("seal");
+  },
+
+  async getSourceDigest(): Promise<string | null> {
+    return idbGetMeta<string>("sourceDigest");
   },
 };

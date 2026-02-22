@@ -127,6 +127,7 @@ const getStreamIndex = async () => {
   for (let i = 0; i < cachedIndex.seals.length; i += 1) prefixIndexBySeal.set(cachedIndex.seals[i], i);
 
   return {
+    sourceDigest: cachedIndex.sourceDigest,
     rows: cachedIndex.rows,
     latestSeal: cachedIndex.seals[cachedIndex.seals.length - 1] ?? "0",
     latestPulse: cachedIndex.rows[cachedIndex.rows.length - 1]?.pulse ?? 0,
@@ -165,7 +166,7 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "GET" && url.pathname === "/api/stream/head") {
     const index = await getStreamIndex();
-    sendJson(res, 200, { seal: index.latestSeal, latestPulse: index.latestPulse, total: index.rows.length });
+    sendJson(res, 200, { seal: index.latestSeal, latestPulse: index.latestPulse, total: index.rows.length, sourceDigest: index.sourceDigest });
     return;
   }
 

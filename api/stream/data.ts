@@ -27,6 +27,7 @@ type PersistedIndex = {
 };
 
 type StreamIndex = {
+  sourceDigest: string;
   rows: StreamRow[];
   latestSeal: string;
   latestPulse: number;
@@ -136,6 +137,7 @@ export async function getStreamIndex(): Promise<StreamIndex> {
   }
 
   return {
+    sourceDigest: persisted.sourceDigest,
     rows: persisted.rows,
     latestSeal: persisted.seals[persisted.seals.length - 1] ?? "0",
     latestPulse: persisted.rows[persisted.rows.length - 1]?.pulse ?? 0,

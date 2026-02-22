@@ -1,6 +1,6 @@
 import { streamStore, type StreamDelta } from "./streamStore";
 
-export type StreamHead = { seal: string; latestPulse: number; total: number };
+export type StreamHead = { seal: string; latestPulse: number; total: number; sourceDigest?: string };
 
 export function buildSyncUrl(localSeal: string | null, limit: number, cursor: string | null = null): string {
   const encodedLimit = encodeURIComponent(String(limit));
@@ -24,8 +24,14 @@ export async function syncStreamDelta(limit = 200): Promise<number> {
   const head = await fetchJson<StreamHead>("/api/stream/head");
   if (!head) return 0;
 
-  let localSeal = await streamStore.getSeal();
-  if (localSeal && localSeal === head.seal) return 0;
+  let [localSeal, localSourceDigest] = await Promise.all([streamStore.getSeal(), streamStore.getSourceDigest()]);
+
+  const sourceDigestChanged =
+    Boolean(head.sourceDigest) && Boolean(localSourceDigest) && head.sourceDigest !== localSourceDigest;
+
+  if (!sourceDigestChanged && localSeal && localSeal === head.seal) return 0;
+
+  if (sourceDigestChanged) localSeal = null;
 
   let totalChanged = 0;
   let cursor: string | null = null;
@@ -37,12 +43,17 @@ export async function syncStreamDelta(limit = 200): Promise<number> {
 
     if (!delta.rows.length) {
       if (delta.latestSeal && delta.latestSeal !== localSeal) {
-        await streamStore.applyDelta({ rows: [], seal: delta.latestSeal, latestSeal: delta.latestSeal });
+        await streamStore.applyDelta({
+          rows: [],
+          seal: delta.latestSeal,
+          latestSeal: delta.latestSeal,
+          sourceDigest: head.sourceDigest,
+        });
       }
       break;
     }
 
-    await streamStore.applyDelta(delta);
+    await streamStore.applyDelta({ ...delta, sourceDigest: head.sourceDigest });
     totalChanged += delta.rows.length;
     localSeal = delta.seal ?? localSeal;
     cursor = delta.nextCursor ?? null;
