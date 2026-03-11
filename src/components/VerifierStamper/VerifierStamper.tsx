@@ -3462,20 +3462,18 @@ if (!parentCanonical) throw new Error("Origin sigil not initialized.");
                     </div>
 
                     <div className="chart-popover-body" style={S.popBody}>
-                      <React.Suspense fallback={<div style={{ padding: 16, color: "var(--dim)" }}>Loading chart…</div>}>
-                        <LiveChart
-                          data={chartData}
-                          live={headerPhi}
-                          pv={pvForChart}
-                          premiumX={1}
-                          momentX={1}
-                          colors={["rgba(167,255,244,1)"]}
-                          usdPerPhi={usdPerPhi}
-                          mode={chartFocus === "usd" ? "usd" : "phi"}
-                          isChildGlyph={canonicalContext === "derivative"}
-                          reflowKey={chartReflowKey}
-                        />
-                      </React.Suspense>
+                      <LiveChart
+                        data={chartData}
+                        live={headerPhi}
+                        pv={pvForChart}
+                        premiumX={1}
+                        momentX={1}
+                        colors={["rgba(167,255,244,1)"]}
+                        usdPerPhi={usdPerPhi}
+                        mode={chartFocus === "usd" ? "usd" : "phi"}
+                        isChildGlyph={canonicalContext === "derivative"}
+                        reflowKey={chartReflowKey}
+                      />
                     </div>
                   </div>
                 </div>
@@ -3980,9 +3978,7 @@ if (!parentCanonical) throw new Error("Origin sigil not initialized.");
 export default function VerifierStamper() {
   return (
     <VerifierErrorBoundary onReset={() => {}}>
-      <React.Suspense fallback={<div style={{ padding: 16 }}>Loading…</div>}>
-        <VerifierStamperInner />
-      </React.Suspense>
+      <VerifierStamperInner />
     </VerifierErrorBoundary>
   );
 }

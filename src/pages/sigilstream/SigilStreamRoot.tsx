@@ -67,6 +67,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import "./styles/sigilstream.css";
 
 import { useFastPress } from "../../hooks/useFastPress";
+import { computeMobileLiteMode, useMobileLiteMode } from "../../hooks/useMobileLiteMode";
 
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
@@ -238,6 +239,40 @@ const KKS_MONTH_NAMES: readonly string[] = [
 type IdleDeadlineLike = { timeRemaining(): number };
 type IdleInvoker = (cb: (deadline: IdleDeadlineLike) => void) => number;
 
+type StreamPerfBudget = {
+  maxNodes: number;
+  maxChildren: number;
+  maxWalk: number;
+  usernameRehydrateLimit: number;
+  sourceScanBatch: number;
+  graphTrimBatch: number;
+  idleFallbackMs: number;
+};
+
+const STREAM_PERF_BUDGET: StreamPerfBudget = (() => {
+  const lite = computeMobileLiteMode();
+  if (lite) {
+    return {
+      maxNodes: 5000,
+      maxChildren: 512,
+      maxWalk: 768,
+      usernameRehydrateLimit: 192,
+      sourceScanBatch: 72,
+      graphTrimBatch: 96,
+      idleFallbackMs: 24,
+    };
+  }
+  return {
+    maxNodes: 12000,
+    maxChildren: 2048,
+    maxWalk: 2048,
+    usernameRehydrateLimit: 1024,
+    sourceScanBatch: 256,
+    graphTrimBatch: 192,
+    idleFallbackMs: 0,
+  };
+})();
+
 /**
  * Schedule non-critical work after the first paint.
  * Falls back to setTimeout(0) when requestIdleCallback isn’t available.
@@ -255,7 +290,7 @@ function runWhenIdle(fn: () => void): void {
     });
     return;
   }
-  window.setTimeout(fn, 0);
+  window.setTimeout(fn, STREAM_PERF_BUDGET.idleFallbackMs);
 }
 
 function pulseToMonthName(pulse: number): string {
@@ -549,10 +584,10 @@ function withHashAddTokens(baseUrl: string, addTokens: readonly string[]): strin
 ──────────────────────────────────────────────────────────────── */
 
 const MSV2_KEY = "sf:memoryStream:v2";
-const MSV2_MAX_NODES = 20000;
-const MSV2_MAX_CHILDREN = 4096;
-const MSV2_MAX_WALK = 4096;
-const USERNAME_REHYDRATE_LIMIT = 2048;
+const MSV2_MAX_NODES = STREAM_PERF_BUDGET.maxNodes;
+const MSV2_MAX_CHILDREN = STREAM_PERF_BUDGET.maxChildren;
+const MSV2_MAX_WALK = STREAM_PERF_BUDGET.maxWalk;
+const USERNAME_REHYDRATE_LIMIT = STREAM_PERF_BUDGET.usernameRehydrateLimit;
 
 type MemoryStreamV2 = {
   v: 2;
@@ -689,7 +724,9 @@ function ms2IngestUrl(g: MemoryStreamV2, rawUrl: string): boolean {
     // soft trim: drop children lists for very old/unknown nodes
     // (keeps parents, keeps pulses)
     const keys = Object.keys(g.childrenOf);
-    for (let i = 0; i < Math.min(256, keys.length); i++) delete g.childrenOf[keys[i]];
+    for (let i = 0; i < Math.min(STREAM_PERF_BUDGET.graphTrimBatch, keys.length); i++) {
+      delete g.childrenOf[keys[i]];
+    }
     changed = true;
   }
 
@@ -1415,6 +1452,7 @@ function SigilStreamInner(): React.JSX.Element {
   const toasts = useToasts();
   const loc = useLocation();
   const navigate = useNavigate();
+  const mobileLite = useMobileLiteMode();
   const keystreamPress = useFastPress<HTMLAnchorElement>((e) => {
     e.preventDefault();
     navigate("/keystream");
@@ -1433,24 +1471,39 @@ function SigilStreamInner(): React.JSX.Element {
   const claimsHydratedRef = useRef(false);
 
   const ms2IngestMany = useCallback((urls: readonly string[], pulseHint?: number) => {
-    runWhenIdle(() => {
-      const g = ms2Ref.current;
-      let changed = false;
+    const pending = urls.filter((u) => typeof u === "string" && u.trim().length > 0);
+    if (pending.length === 0) return;
 
-      for (const u of urls) {
-        if (!u || !u.trim().length) continue;
-        changed = ms2IngestUrl(g, u) || changed;
-      }
+    let idx = 0;
+    let anyChanged = false;
 
-      // If we have a pulse hint for the *current* token, apply it where we can.
-      // (We don’t guess token from pulseHint; we apply pulse in refreshPayloadFromLocation where token is known.)
-      if (pulseHint !== undefined) void pulseHint;
+    const step = () => {
+      runWhenIdle(() => {
+        const g = ms2Ref.current;
+        let changed = false;
+        const end = Math.min(idx + STREAM_PERF_BUDGET.sourceScanBatch, pending.length);
+        for (; idx < end; idx++) {
+          changed = ms2IngestUrl(g, pending[idx]) || changed;
+        }
+        anyChanged = anyChanged || changed;
 
-      if (changed) {
-        ms2Save(g);
-        setMs2Tick((x) => x + 1);
-      }
-    });
+        // If we have a pulse hint for the *current* token, apply it where we can.
+        // (We don’t guess token from pulseHint; we apply pulse in refreshPayloadFromLocation where token is known.)
+        if (pulseHint !== undefined) void pulseHint;
+
+        if (idx < pending.length) {
+          step();
+          return;
+        }
+
+        if (anyChanged) {
+          ms2Save(g);
+          setMs2Tick((x) => x + 1);
+        }
+      });
+    };
+
+    step();
   }, []);
 
   const rehydrateUsernameClaimsFromHistory = useCallback(
@@ -1614,6 +1667,7 @@ function SigilStreamInner(): React.JSX.Element {
    */
   useEffect(() => {
     if (typeof window === "undefined") return;
+    if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
 
     runWhenIdle(() => {
       const scanned = scannedForAddsRef.current;
@@ -1680,6 +1734,7 @@ function SigilStreamInner(): React.JSX.Element {
    */
   useEffect(() => {
     if (typeof window === "undefined") return;
+    if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
 
     runWhenIdle(() => {
       const scanned = ms2ScannedUrlRef.current;
@@ -1690,7 +1745,7 @@ function SigilStreamInner(): React.JSX.Element {
         if (!u || scanned.has(u)) continue;
         scanned.add(u);
         batch.push(u);
-        if (batch.length >= 256) break;
+        if (batch.length >= STREAM_PERF_BUDGET.sourceScanBatch) break;
       }
 
       if (batch.length) ms2IngestMany(batch);
@@ -2275,7 +2330,13 @@ function SigilStreamInner(): React.JSX.Element {
       : null;
 
   return (
-    <main className="sf" data-weekday={kaiTheme.weekday} data-chakra={kaiTheme.chakra} style={sigilTintStyle}>
+    <main
+      className="sf"
+      data-weekday={kaiTheme.weekday}
+      data-chakra={kaiTheme.chakra}
+      data-lite={mobileLite ? "true" : "false"}
+      style={sigilTintStyle}
+    >
       <header className="sf-head" role="region" aria-labelledby="glyph-stream-title">
         <nav className="sf-topnav" aria-label="Back navigation">
           <Link className="sf-back" to="/keystream" {...keystreamPress}>

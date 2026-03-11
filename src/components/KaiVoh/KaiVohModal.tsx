@@ -18,8 +18,6 @@
  */
 
 import {
-  lazy,
-  Suspense,
   useCallback,
   useEffect,
   useId,
@@ -37,10 +35,8 @@ import { SigilAuthProvider } from "./SigilAuthProvider";
 import { useSigilAuth } from "./useSigilAuth";
 import { clearSessionStorage } from "../session/sessionStorage";
 import { isReloadDebugEnabled } from "../../utils/reloadDetective";
-
-/** Lazy chunks */
-const KaiVohApp = lazy(() => import("./KaiVohApp"));
-const KaiRealmsApp = lazy(() => import("../KaiRealms")); // default export with optional onClose
+import KaiVohApp from "./KaiVohApp";
+import KaiRealmsApp from "../KaiRealms";
 
 type ViewMode = "voh" | "realms";
 
@@ -631,16 +627,7 @@ export default function KaiVohModal({ open, onClose }: KaiVohModalProps) {
                 style={{ display: view === "voh" ? "block" : "none" }}
                 aria-hidden={view !== "voh"}
               >
-                <Suspense
-                  fallback={
-                    <div className="kai-voh-center">
-                      <div className="kai-voh-spinner" />
-                      <div>Summoning Voh…</div>
-                    </div>
-                  }
-                >
-                  <KaiVohApp />
-                </Suspense>
+                <KaiVohApp />
               </section>
 
               <section
@@ -649,16 +636,7 @@ export default function KaiVohModal({ open, onClose }: KaiVohModalProps) {
                 aria-hidden={view !== "realms"}
               >
                 {realmsMounted ? (
-                  <Suspense
-                    fallback={
-                      <div className="kai-voh-center">
-                        <div className="kai-voh-spinner" />
-                        <div>Opening Kai Realms…</div>
-                      </div>
-                    }
-                  >
-                    <KaiRealmsApp onClose={() => switchTo("voh")} />
-                  </Suspense>
+                  <KaiRealmsApp onClose={() => switchTo("voh")} />
                 ) : null}
               </section>
             </KaiVohBoundary>

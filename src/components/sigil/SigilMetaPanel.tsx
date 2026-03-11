@@ -27,8 +27,6 @@ type Props = {
   copyLinkPress: PressHandlers;
   sharePress: PressHandlers;
   verified: "checking" | "ok" | "mismatch" | "notfound" | "error";
-  showSkeleton: boolean;
-  showError: boolean;
   stage: React.ReactNode;
 };
 

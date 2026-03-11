@@ -1611,3 +1611,22 @@ body{
   }
   *{ transition:none !important; }
 }
+
+/* Runtime low-power profile (set by data-lite="true" on .sf root) */
+.sf[data-lite="true"]::before,
+.sf[data-lite="true"]::after {
+  animation: none !important;
+  filter: none !important;
+}
+
+.sf[data-lite="true"] *,
+.sf[data-lite="true"] *::before,
+.sf[data-lite="true"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+}
+
+.sf[data-lite="true"] :is(.sf-card, .sf-linkcard, .sf-att-card, .sf-sigilWrap, .kai-feed-status) {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}

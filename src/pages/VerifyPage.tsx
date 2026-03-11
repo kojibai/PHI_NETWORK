@@ -3935,20 +3935,18 @@ if (!noteDownloadBypassRef.current && alreadySpent) {
               </button>
             </div>
             <div className="chart-popover-body">
-              <React.Suspense fallback={<div style={{ padding: 16, color: "var(--inkDim)" }}>Loading chart…</div>}>
-                <LiveChart
-                  data={chartData}
-                  live={chartPhi}
-                  pv={pvForChart}
-                  premiumX={1}
-                  momentX={1}
-                  colors={["rgba(167,255,244,1)"]}
-                  usdPerPhi={usdPerPhi}
-                  mode={chartMode === "usd" ? "usd" : "phi"}
-                  dataUnit={isReceiveGlyph ? "usd" : "phi"}
-                  reflowKey={chartReflowKey}
-                />
-              </React.Suspense>
+              <LiveChart
+                data={chartData}
+                live={chartPhi}
+                pv={pvForChart}
+                premiumX={1}
+                momentX={1}
+                colors={["rgba(167,255,244,1)"]}
+                usdPerPhi={usdPerPhi}
+                mode={chartMode === "usd" ? "usd" : "phi"}
+                dataUnit={isReceiveGlyph ? "usd" : "phi"}
+                reflowKey={chartReflowKey}
+              />
             </div>
           </div>
         </div>
