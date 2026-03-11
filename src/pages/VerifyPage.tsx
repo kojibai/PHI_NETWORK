@@ -1020,7 +1020,8 @@ export default function VerifyPage(): ReactElement {
   const [notice, setNotice] = useState<string>(initialReceiptResult.error ?? "");
 
   const [ownerAuthVerified, setOwnerAuthVerified] = useState<boolean | null>(null);
-  const [ownerAuthStatus, setOwnerAuthStatus] = useState<string>("Not present");
+  const [ownerAuthStatus, setOwnerAuthStatus] = useState<string>("Owner not present");
+  const [ownerAuthorSigVerified, setOwnerAuthorSigVerified] = useState<boolean | null>(null);
   const [ownerAuthBusy, setOwnerAuthBusy] = useState<boolean>(false);
   const [identityScanRequested, setIdentityScanRequested] = useState<boolean>(false);
   const [provenanceSigVerified, setProvenanceSigVerified] = useState<boolean | null>(null);
@@ -1247,12 +1248,15 @@ const noteClaimedFinal =
     [provenanceAuthorSig],
   );
   const ownerAuthorSig = useMemo(
-    () => embeddedProof?.authorSig ?? (result.status === "ok" ? result.embedded.authorSig ?? null : null),
-    [embeddedProof?.authorSig, result],
+    () =>
+      embeddedProof?.authorSig ??
+      sharedReceipt?.authorSig ??
+      (result.status === "ok" ? result.embedded.authorSig ?? null : null),
+    [embeddedProof?.authorSig, result, sharedReceipt?.authorSig],
   );
   const hasKASOwnerSig = useMemo(
-    () => hasRequiredKasAuthorSig(embeddedProof?.authorSig ?? (result.status === "ok" ? result.embedded.authorSig : null)),
-    [embeddedProof?.authorSig, result],
+    () => hasRequiredKasAuthorSig(ownerAuthorSig),
+    [ownerAuthorSig],
   );
   const hasKASReceiveSig = useMemo(() => {
     if (!receiveSig) return false;
@@ -1343,7 +1347,7 @@ const noteClaimedFinal =
   React.useEffect(() => {
     if (result.status === "ok") return;
     setOwnerAuthVerified(null);
-    setOwnerAuthStatus("Not present");
+    setOwnerAuthStatus("Owner not present");
     setOwnerAuthBusy(false);
   }, [result.status]);
 
@@ -1870,7 +1874,7 @@ if (receipt.receiptHash) {
         confirmNoteSend();
       } else {
         setOwnerAuthVerified(null);
-        setOwnerAuthStatus("Not present");
+        setOwnerAuthStatus("Owner not present");
       }
     } finally {
       setBusy(false);
@@ -2568,7 +2572,7 @@ useEffect(() => {
   React.useEffect(() => {
     if (!hasKASOwnerSig) {
       setOwnerAuthVerified(null);
-      setOwnerAuthStatus("Not present");
+      setOwnerAuthStatus("Owner not present");
       setOwnerAuthBusy(false);
     }
     if ((isReceiveGlyph || isChildGlyphValue) && effectiveOwnerSig && provenanceAuthorSig && effectiveOwnerSig === provenanceAuthorSig) {
@@ -2804,6 +2808,34 @@ useEffect(() => {
     };
   }, [bundleHash, provenanceAuthorSig, effectiveOriginBundleHash, hasKASProvenanceSig, isReceiveGlyph]);
 
+  React.useEffect(() => {
+    let active = true;
+    if (!bundleHash) {
+      setOwnerAuthorSigVerified(null);
+      return;
+    }
+    if (!ownerAuthorSig || !hasKASOwnerSig) {
+      setOwnerAuthorSigVerified(null);
+      return;
+    }
+
+    (async () => {
+      if (!isKASAuthorSig(ownerAuthorSig)) {
+        if (active) setOwnerAuthorSigVerified(false);
+        return;
+      }
+      const candidateHashes = [bundleHash];
+      const challengeHash = bundleHashFromAuthorSig(ownerAuthorSig);
+      if (challengeHash && challengeHash !== bundleHash) candidateHashes.push(challengeHash);
+      const ok = await verifyAuthorSigWithFallback(ownerAuthorSig, candidateHashes);
+      if (active) setOwnerAuthorSigVerified(ok);
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [bundleHash, hasKASOwnerSig, ownerAuthorSig]);
+
   const receiveCredId = useMemo(() => (effectiveReceiveSig ? effectiveReceiveSig.credId : ""), [effectiveReceiveSig]);
   const receiveNonce = useMemo(() => (effectiveReceiveSig?.nonce ? effectiveReceiveSig.nonce : ""), [effectiveReceiveSig?.nonce]);
   const receiveBundleHash = useMemo(() => effectiveReceiveBundleHash, [effectiveReceiveBundleHash]);
@@ -2840,15 +2872,15 @@ useEffect(() => {
     if (!hasKASAuthSig) return "off";
     if (busy || ownerAuthBusy) return "busy";
     if (ownerAuthorSig) {
-      if (ownerAuthVerified === null) return "na";
-      return ownerAuthVerified ? "valid" : "invalid";
+      if (ownerAuthorSigVerified === null) return "na";
+      return ownerAuthorSigVerified ? "valid" : "invalid";
     }
     if (effectiveReceiveSig) {
       if (receiveSigVerified === null) return "na";
       return receiveSigVerified ? "valid" : "invalid";
     }
     return "off";
-  }, [busy, hasKASAuthSig, ownerAuthBusy, ownerAuthVerified, ownerAuthorSig, effectiveReceiveSig, receiveSigVerified]);
+  }, [busy, hasKASAuthSig, ownerAuthBusy, ownerAuthorSig, ownerAuthorSigVerified, effectiveReceiveSig, receiveSigVerified]);
 
   const sealZK: SealState = useMemo(() => {
     if (busy) return "busy";
@@ -3080,7 +3112,13 @@ const noteInitial = useMemo<NoteBanknoteInputs>(() => {
 
   const hasSvgBytes = Boolean(svgText.trim());
   const expectedSvgHash = sharedReceipt?.svgHash ?? embeddedProof?.svgHash ?? "";
-  const identityStatusLabel = hasKASOwnerSig ? ownerAuthStatus || "Not present" : "";
+  const identityStatusLabel = hasKASOwnerSig
+    ? ownerAuthBusy
+      ? ownerAuthStatus || "Waiting for steward authentication…"
+      : ownerAuthVerified === true
+        ? ownerAuthStatus || "Steward verified"
+        : "Owner not present"
+    : "";
   const artifactStatusLabel =
     artifactAttested === true
       ? "Present (Verified)"
