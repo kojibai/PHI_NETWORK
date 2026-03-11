@@ -1425,7 +1425,20 @@ button.o-link{
   font-size: 11px;
 }
 
-.tx-status .dot{ opacity: 0.65; }
+.tx-status .kx-sep{
+  opacity: 0.65;
+  display: inline;
+  width: auto;
+  height: auto;
+  min-width: 0;
+  min-height: 0;
+  border: 0;
+  background: transparent;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0;
+  line-height: 1;
+}
 
 .tx-status.ok{
   color: color-mix(in oklab, var(--sx-ok) 72%, var(--sx-text));
@@ -1471,7 +1484,20 @@ button.o-link{
   flex-wrap: wrap;
 }
 
-.kx-footer .dot{ opacity: 0.6; }
+.kx-footer .kx-sep{
+  opacity: 0.6;
+  display: inline;
+  width: auto;
+  height: auto;
+  min-width: 0;
+  min-height: 0;
+  border: 0;
+  background: transparent;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0;
+  line-height: 1;
+}
 
 /* ─────────────────────────────────────────────────────────────
    SCROLLBAR POLISH (scoped)
@@ -1737,4 +1763,23 @@ button.o-link{
 .kx-toolbar :where(button[aria-label="Close"], button[title="Close"], button[aria-label="close"], button[title="close"]){
   transform: translate3d(0, -2px, 0);
   will-change: transform;
+}
+
+/* Runtime low-power mode */
+.sigil-explorer[data-lite="true"]::before,
+.sigil-explorer[data-lite="true"]::after {
+  animation: none !important;
+  filter: none !important;
+}
+
+.sigil-explorer[data-lite="true"] *,
+.sigil-explorer[data-lite="true"] *::before,
+.sigil-explorer[data-lite="true"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+}
+
+.sigil-explorer[data-lite="true"] :is(.kx-toolbar, .origin, .node, .kx-input, .kx-button, .kx-pill) {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
 }

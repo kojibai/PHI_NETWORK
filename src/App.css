@@ -30,8 +30,8 @@
   --bg-2: #040f24;
 
   /* Accents */
-  --accent-cyan: #33f6ff;
-  --accent-teal: #26ffc4;
+  --accent-cyan: #54d7ff;
+  --accent-teal: #45e7ff;
   --accent-violet: #9b5bff;
   --accent-gold: #ffd979;
 
@@ -1619,6 +1619,7 @@ a:hover {
   cursor: pointer;
   font: inherit;
   color: var(--accent-cyan);
+  text-shadow: 0 0 10px rgba(84, 215, 255, 0.28);
   appearance: none;
 }
 
@@ -2720,8 +2721,8 @@ a:hover {
   --breath-s: var(--breath, 5.236s);
 
   /* RGB companions (match your hex accents exactly) */
-  --rl-cyan: 51, 246, 255;   /* --accent-cyan */
-  --rl-teal: 38, 255, 196;   /* --accent-teal */
+  --rl-cyan: 84, 215, 255;   /* --accent-cyan */
+  --rl-teal: 69, 231, 255;   /* --accent-teal */
   --rl-violet: 155, 91, 255; /* --accent-violet */
   --rl-gold: 255, 217, 121;  /* --accent-gold */
 
@@ -3954,6 +3955,45 @@ html[data-perf="low"] .klock-pop,
 html[data-perf="low"] .klock-pop__panel,
 html[data-perf="low"] .kk-pop__backdrop,
 html[data-perf="low"] .kk-pop__panel {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* Runtime low-power mode (set by App shell on constrained mobile devices) */
+.app-shell[data-lite="1"] .app-bg-orbit,
+.app-shell[data-lite="1"] .app-bg-glow,
+.app-shell[data-lite="1"] .brand__title,
+.app-shell[data-lite="1"] .brand__subtitle,
+.app-shell[data-lite="1"] .brand__mark::after,
+.app-shell[data-lite="1"] .live-orb::after,
+.app-shell[data-lite="1"] .explorer-pop__panel::after,
+.app-shell[data-lite="1"] .klock-pop__panel::before,
+.app-shell[data-lite="1"] .explorer-pop__close::before,
+.app-shell[data-lite="1"] .explorer-pop__close::after {
+  animation: none !important;
+}
+
+.app-shell[data-lite="1"] .app-bg-orbit {
+  filter: blur(18px) !important;
+  opacity: 0.3 !important;
+}
+
+.app-shell[data-lite="1"] .app-bg-glow {
+  filter: blur(16px) !important;
+  opacity: 0.34 !important;
+}
+
+.app-shell[data-lite="1"] .app-topbar,
+.app-shell[data-lite="1"] .app-frame,
+.app-shell[data-lite="1"] .workspace-topbar,
+.app-shell[data-lite="1"] .app-nav,
+.app-shell[data-lite="1"] .app-panel,
+.app-shell[data-lite="1"] .explorer-pop,
+.app-shell[data-lite="1"] .explorer-pop__panel,
+.app-shell[data-lite="1"] .klock-pop,
+.app-shell[data-lite="1"] .klock-pop__panel,
+.app-shell[data-lite="1"] .kk-pop__backdrop,
+.app-shell[data-lite="1"] .kk-pop__panel {
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
 }

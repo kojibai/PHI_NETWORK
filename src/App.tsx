@@ -34,6 +34,7 @@ import {
 } from "./utils/kai_pulse";
 import { fmt2, formatPulse, modPos, readNum } from "./utils/kaiTimeDisplay";
 import { usePerfMode } from "./hooks/usePerfMode";
+import { useMobileLiteMode } from "./hooks/useMobileLiteMode";
 import { SIGIL_EXPLORER_OPEN_EVENT } from "./constants/sigilExplorer";
 import { startSigilExplorerSync } from "./utils/sigilExplorerSync";
 
@@ -896,6 +897,7 @@ type LiveKaiButtonProps = {
   breathS: number;
   breathMs: number;
   breathsPerDay: number;
+  mobileLite?: boolean;
 };
 
 function LiveKaiButton({
@@ -903,6 +905,7 @@ function LiveKaiButton({
   breathS,
   breathMs,
   breathsPerDay,
+  mobileLite = false,
 }: LiveKaiButtonProps): React.JSX.Element {
   const hydrated = useHydrated();
   const [snap, setSnap] = useState<LiveKaiSnap>(() => DEFAULT_LIVE_SNAP);
@@ -976,13 +979,13 @@ function LiveKaiButton({
     };
 
     tick();
-    const id = window.setInterval(tick, 250);
+    const id = window.setInterval(tick, mobileLite ? 700 : 250);
 
     return () => {
       alive = false;
       window.clearInterval(id);
     };
-  }, []);
+  }, [mobileLite]);
 
   // ✅ Hydration-safe numeric formatting: SSR/first pass uses deterministic toFixed.
   const breathsPerDayLabel = useMemo(() => {
@@ -1063,6 +1066,7 @@ export function AppChrome(): React.JSX.Element {
 
   useDisableZoom();
   usePerfMode();
+  const mobileLite = useMobileLiteMode();
 
   useEffect(() => {
     const stopSync = startSigilExplorerSync();
@@ -1112,6 +1116,7 @@ export function AppChrome(): React.JSX.Element {
   // SW warm-up (idle-only + focus cadence, abort-safe, respects Save-Data/2G)
   useEffect(() => {
     if (typeof window === "undefined" || !("serviceWorker" in navigator)) return undefined;
+    if (mobileLite) return undefined;
 
     const aborter = new AbortController();
 
@@ -1189,7 +1194,7 @@ export function AppChrome(): React.JSX.Element {
 
       window.removeEventListener("focus", onFocus);
     };
-  }, []);
+  }, [mobileLite]);
 
   const BREATH_S = useMemo(() => 3 + Math.sqrt(5), []);
   const BREATH_MS = useMemo(() => BREATH_S * 1000, [BREATH_S]);
@@ -1418,6 +1423,7 @@ export function AppChrome(): React.JSX.Element {
       data-ui="atlantean-banking"
       data-panel-scroll={panelShouldScroll ? "1" : "0"}
       data-roomy={roomy ? "1" : "0"}
+      data-lite={mobileLite ? "1" : "0"}
       style={shellStyle}
     >
       <a className="skip-link" href="#app-content">
@@ -1447,6 +1453,7 @@ export function AppChrome(): React.JSX.Element {
             breathS={BREATH_S}
             breathMs={BREATH_MS}
             breathsPerDay={BREATHS_PER_DAY}
+            mobileLite={mobileLite}
           />
         </div>
       </header>
@@ -1480,6 +1487,7 @@ export function AppChrome(): React.JSX.Element {
                       apiBase="https://pay.kaiklok.com"
                       ctaAmountUsd={144}
                       chartHeight={chartHeight}
+                      liteMode={mobileLite}
                     />
                   </div>
                 </div>
