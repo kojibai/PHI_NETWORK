@@ -1137,6 +1137,7 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
     capsuleHash: string;
     svgHash: string;
     bundleHash: string;
+    savedAtPulse?: number;
     shareUrl?: string;
     verifierUrl?: string;
     authorSig: AuthorSig | null;
@@ -1314,6 +1315,7 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
 
       const shareUrl = makeSigilUrl(payloadHashHex, sharePayload);
       const verifierUrl = buildVerifierUrl(pulseNum, kaiSignature);
+      const savedAtPulse = biToSafeNumber(getNowPulseBI());
       const kaiSignatureShort = kaiSignature.slice(0, 10);
       const proofCapsule: ProofCapsuleV1 = {
         v: "KPV-1",
@@ -1477,6 +1479,7 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
       const transport = {
         shareUrl,
         verifierUrl,
+        savedAtPulse,
         proofHints,
       };
       const bundleRoot = buildBundleRoot(proofBundleBase);
@@ -1496,6 +1499,7 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
         bundleRoot,
         bundleHash: computedBundleHash,
         authorSig,
+        savedAtPulse,
         transport,
         proofHints,
       };
@@ -1509,6 +1513,22 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
       const zip = new JSZip();
       zip.file(`${baseName}.svg`, sealedSvg);
       zip.file(`${baseName}_authsig_proof_bundle.json`, JSON.stringify(proofBundle, null, 2));
+      zip.file(
+        `${baseName}.manifest.json`,
+        JSON.stringify(
+          {
+            pulse: pulseNum,
+            savedAtPulse,
+            createdAt: new Date().toISOString(),
+            files: {
+              svg: `${baseName}.svg`,
+              proofBundle: `${baseName}_authsig_proof_bundle.json`,
+            },
+          },
+          null,
+          2
+        )
+      );
       const zipBlob = await zip.generateAsync({ type: "blob" });
       downloadBlob(zipBlob, `${baseName}_authsig_proof_bundle.zip`);
 
