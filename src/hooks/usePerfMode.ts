@@ -14,7 +14,7 @@ function isLowPowerEnvironment(): boolean {
   const prefersReducedTransparency =
     window.matchMedia?.("(prefers-reduced-transparency: reduce)")?.matches ?? false;
   const coarsePointer = window.matchMedia?.("(pointer: coarse)")?.matches ?? false;
-  const narrowViewport = window.matchMedia?.("(max-width: 900px)")?.matches ?? false;
+  const narrowViewport = window.matchMedia?.("(max-width: 1100px)")?.matches ?? false;
   const saveData = Boolean(nav.connection?.saveData);
   const et = (nav.connection?.effectiveType || "").toLowerCase();
   const constrainedNetwork = et === "slow-2g" || et === "2g" || et === "3g";
@@ -60,7 +60,7 @@ export function usePerfMode(): void {
       window.matchMedia?.("(prefers-reduced-motion: reduce)"),
       window.matchMedia?.("(prefers-reduced-transparency: reduce)"),
       window.matchMedia?.("(pointer: coarse)"),
-      window.matchMedia?.("(max-width: 900px)"),
+      window.matchMedia?.("(max-width: 1100px)"),
     ].filter(Boolean) as MediaQueryList[];
 
     for (const mq of mqs) {

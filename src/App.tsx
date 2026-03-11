@@ -14,6 +14,8 @@
 ────────────────────────────────────────────────────────────────────────────── */
 
 import React, {
+  Suspense,
+  lazy,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -43,14 +45,15 @@ import { DEFAULT_APP_VERSION, SW_VERSION_EVENT } from "./version";
 import { useBodyScrollLock } from "./hooks/useBodyScrollLock";
 import { useDisableZoom } from "./hooks/useDisableZoom";
 import { useVisualViewportSize } from "./hooks/useVisualViewportSize";
-import KaiVohModal from "./components/KaiVoh/KaiVohModal";
-import SigilModal from "./components/SigilModal";
 import HomePriceChartCard from "./components/HomePriceChartCard";
-import SigilExplorer from "./components/SigilExplorer/SigilExplorer";
-import VerifyPage from "./pages/VerifyPage";
-import EternalKlock from "./components/EternalKlock";
 
 import "./App.css";
+
+const KaiVohModal = lazy(() => import("./components/KaiVoh/KaiVohModal"));
+const SigilModal = lazy(() => import("./components/SigilModal"));
+const SigilExplorer = lazy(() => import("./components/SigilExplorer/SigilExplorer"));
+const VerifyPage = lazy(() => import("./pages/VerifyPage"));
+const EternalKlock = lazy(() => import("./components/EternalKlock"));
 
 declare global {
   interface Window {
@@ -803,7 +806,9 @@ export function KaiVohRoute(): React.JSX.Element {
 
   return (
     <>
-      <KaiVohModal open={open} onClose={handleClose} />
+      <Suspense fallback={null}>
+        <KaiVohModal open={open} onClose={handleClose} />
+      </Suspense>
       <div className="sr-only" aria-live="polite">
         KaiVoh portal open
       </div>
@@ -835,7 +840,9 @@ export function SigilMintRoute(): React.JSX.Element {
   return (
     <>
       <PortalMount open={canShow}>
-        <SigilModal initialPulse={initialPulse ?? 0} onClose={handleClose} />
+        <Suspense fallback={null}>
+          <SigilModal initialPulse={initialPulse ?? 0} onClose={handleClose} />
+        </Suspense>
       </PortalMount>
 
       <div className="sr-only" aria-live="polite">
@@ -857,7 +864,9 @@ export function ExplorerRoute(): React.JSX.Element {
   return (
     <>
       <ExplorerPopover open={open} onClose={handleClose}>
-        <SigilExplorer />
+        <Suspense fallback={null}>
+          <SigilExplorer />
+        </Suspense>
       </ExplorerPopover>
 
       <div className="sr-only" aria-live="polite">
@@ -879,7 +888,9 @@ export function KlockRoute(): React.JSX.Element {
   return (
     <>
       <KlockPopover open={open} onClose={handleClose}>
-        <EternalKlock />
+        <Suspense fallback={null}>
+          <EternalKlock />
+        </Suspense>
       </KlockPopover>
 
       <div className="sr-only" aria-live="polite">
@@ -1072,6 +1083,34 @@ export function AppChrome(): React.JSX.Element {
     const stopSync = startSigilExplorerSync({ mobileLite });
     return () => {
       stopSync();
+    };
+  }, [mobileLite]);
+
+  // Keep route transitions instant on capable devices while skipping eager chunk warm-up on mobile-lite.
+  useEffect(() => {
+    if (typeof window === "undefined" || mobileLite) return undefined;
+
+    const warm = (): void => {
+      void import("./components/KaiVoh/KaiVohModal");
+      void import("./components/SigilModal");
+      void import("./components/SigilExplorer/SigilExplorer");
+      void import("./components/EternalKlock");
+      void import("./pages/VerifyPage");
+    };
+
+    const idleWin = window as Window & {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout?: number }) => number;
+      cancelIdleCallback?: (id: number) => void;
+    };
+
+    const handle =
+      typeof idleWin.requestIdleCallback === "function"
+        ? idleWin.requestIdleCallback(warm, { timeout: 4000 })
+        : window.setTimeout(warm, 1400);
+
+    return () => {
+      if (typeof idleWin.cancelIdleCallback === "function") idleWin.cancelIdleCallback(handle as number);
+      else window.clearTimeout(handle as number);
     };
   }, [mobileLite]);
 
@@ -1459,7 +1498,9 @@ export function AppChrome(): React.JSX.Element {
       </header>
 
       <VerifyPopover open={verifyOpen} onClose={closeVerify}>
-        <VerifyPage />
+        <Suspense fallback={null}>
+          <VerifyPage />
+        </Suspense>
       </VerifyPopover>
 
       <main className="app-stage" id="app-content" role="main" aria-label="Sovereign Value Workspace">

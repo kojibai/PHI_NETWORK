@@ -10,6 +10,7 @@ type NetLike = {
 type NavLike = Navigator & {
   connection?: NetLike;
   deviceMemory?: number;
+  hardwareConcurrency?: number;
 };
 
 export function computeMobileLiteMode(): boolean {
@@ -21,15 +22,19 @@ export function computeMobileLiteMode(): boolean {
   const et = (conn?.effectiveType || "").toLowerCase();
   const constrainedNet = et === "slow-2g" || et === "2g" || et === "3g";
   const lowMemory = typeof nav.deviceMemory === "number" && nav.deviceMemory > 0 && nav.deviceMemory <= 4;
+  const lowerCpu =
+    typeof nav.hardwareConcurrency === "number" &&
+    nav.hardwareConcurrency > 0 &&
+    nav.hardwareConcurrency <= 6;
 
-  const mqNarrow = typeof window.matchMedia === "function" ? window.matchMedia("(max-width: 900px)").matches : false;
+  const mqNarrow = typeof window.matchMedia === "function" ? window.matchMedia("(max-width: 1100px)").matches : false;
   const mqCoarse = typeof window.matchMedia === "function" ? window.matchMedia("(pointer: coarse)").matches : false;
   const mqReduced =
     typeof window.matchMedia === "function"
       ? window.matchMedia("(prefers-reduced-motion: reduce)").matches
       : false;
 
-  return mqReduced || saveData || constrainedNet || lowMemory || (mqNarrow && mqCoarse);
+  return mqReduced || saveData || constrainedNet || lowMemory || lowerCpu || (mqNarrow && mqCoarse);
 }
 
 export function useMobileLiteMode(): boolean {
@@ -50,7 +55,7 @@ export function useMobileLiteMode(): boolean {
     const mqs: MediaQueryList[] = [];
     if (typeof window.matchMedia === "function") {
       mqs.push(
-        window.matchMedia("(max-width: 900px)"),
+        window.matchMedia("(max-width: 1100px)"),
         window.matchMedia("(pointer: coarse)"),
         window.matchMedia("(prefers-reduced-motion: reduce)"),
       );
@@ -76,4 +81,3 @@ export function useMobileLiteMode(): boolean {
 
   return lite;
 }
-

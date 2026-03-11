@@ -1630,3 +1630,23 @@ body{
   -webkit-backdrop-filter: none !important;
   backdrop-filter: none !important;
 }
+
+/* Mobile thermal guardrails (coarse pointer): preserve layout, trim expensive effects */
+@media (pointer: coarse) and (max-width: 1100px) {
+  .sf::before,
+  .sf::after,
+  .sf-card::before,
+  .sf-card::after,
+  .sf-linkcard::before,
+  .sf-linkcard::after,
+  .sf-sigilWrap::before,
+  .sf-sigilWrap::after {
+    animation: none !important;
+    filter: none !important;
+  }
+
+  .sf :is(.sf-card, .sf-linkcard, .sf-att-card, .sf-sigilWrap, .kai-feed-status) {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+}

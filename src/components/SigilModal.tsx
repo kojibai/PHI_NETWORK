@@ -791,11 +791,10 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
 
   const applyPulse = useCallback(
     (p: bigint, updateField = true) => {
-      const pFixed = clampPulseNonNeg(p);
-      setPulse(pFixed);
+      setPulse(p);
 
       if (updateField && !pulseEditingRef.current) {
-        setPulseField(pFixed.toString());
+        setPulseField(p.toString());
       }
 
       if (typeof document !== "undefined") syncPulseCss();
@@ -920,13 +919,15 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
 
   const onPulseFieldChange = (e: ChangeEvent<HTMLInputElement>) => {
     const raw = e.target.value ?? "";
-    const clean = raw.replace(/[^\d]/g, "");
+    const clean = raw
+      .replace(/[^\d-]/g, "")
+      .replace(/(?!^)-/g, "");
     setPulseField(clean);
 
-    if (!clean) return;
+    if (!clean || clean === "-") return;
 
     try {
-      const p = clampPulseNonNeg(BigInt(clean));
+      const p = BigInt(clean);
       setMode("static-pulse");
       setDateISO("");
       setBreathIdx(1);
@@ -946,7 +947,7 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
       const dt = applyBreathSlot(base, bIdx);
 
       const pμ = microPulsesSinceGenesis(dt);
-      const pBI = clampPulseNonNeg(floorDivE(pμ, ONE_PULSE_MICRO));
+      const pBI = floorDivE(pμ, ONE_PULSE_MICRO);
 
       setMode("static-date");
       clearAlignedTimer();
@@ -1680,7 +1681,7 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
               <input
                 className="sigil-input sigil-pulse-input"
                 type="text"
-                inputMode="numeric"
+                inputMode="text"
                 value={pulseField}
                 onFocus={() => {
                   pulseEditingRef.current = true;

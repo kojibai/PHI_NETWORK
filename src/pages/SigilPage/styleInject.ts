@@ -51,6 +51,34 @@ export function injectSigilPageStyles() {
     .sp-price-chip.flash-down{animation:chipDown .45s ease}
     @keyframes chipUp{from{box-shadow:0 0 0 rgba(0,0,0,0)} to{box-shadow:0 0 24px rgba(64,255,128,.35)}}
     @keyframes chipDown{from{box-shadow:0 0 0 rgba(0,0,0,0)} to{box-shadow:0 0 24px rgba(255,96,96,.28)}}
+
+    /* Runtime low-power: keep visuals intact but remove mobile thermal spikes */
+    .sigilpage[data-lite="true"] .sp-veil::before,
+    .sigilpage[data-lite="true"] .sp-veil::after,
+    .sigilpage[data-lite="true"] .sp-title-glow{
+      animation:none !important;
+      filter:none !important;
+      opacity:.45 !important;
+    }
+    .sigilpage[data-lite="true"] .sp-card,
+    .sigilpage[data-lite="true"] .auth-badge{
+      -webkit-backdrop-filter:none !important;
+      backdrop-filter:none !important;
+    }
+
+    @media (pointer: coarse) and (max-width: 1100px){
+      .sp-veil::before,
+      .sp-veil::after,
+      .sp-title-glow{
+        animation:none !important;
+        filter:none !important;
+      }
+      .sp-card,
+      .auth-badge{
+        -webkit-backdrop-filter:none !important;
+        backdrop-filter:none !important;
+      }
+    }
     `;
     document.head.appendChild(style);
   }

@@ -2374,3 +2374,17 @@ body.modal-open :where(.sigilpage, .sp-viewport, .sp-shell, .sp-veil, .sp-veil-s
   -webkit-backdrop-filter: none !important;
   backdrop-filter: none !important;
 }
+
+@media (pointer: coarse) and (max-width: 1100px) {
+  .sigilpage::before,
+  .sp-veil,
+  .sp-veil-stars {
+    animation: none !important;
+    filter: none !important;
+  }
+
+  .sigilpage :is(.sp-card, .sp-panel, .sp-provenance, .sp-lineage, .auth-badge, .sp-price-chip) {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+}

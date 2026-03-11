@@ -1,4 +1,4 @@
-import React from "react";
+import React, { Suspense, lazy } from "react";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 
 import {
@@ -11,16 +11,14 @@ import {
 } from "../App";
 import { PerfProfiler } from "../perf/PerfProfiler";
 
-import SigilFeedPage from "../pages/SigilFeedPage";
-import PShort from "../pages/PShort";
-import VerifyPage from "../pages/VerifyPage";
-import VerifyEmbedPage from "../pages/VerifyEmbedPage";
-
 // ✅ SigilPage stays eager so it always opens offline (no missing chunk)
 import SigilPage from "../pages/SigilPage/SigilPage";
 
-// ✅ HOME MUST BE INSTANT → eager import (no Suspense fallback)
-import VerifierStamper from "../components/VerifierStamper/VerifierStamper";
+const SigilFeedPage = lazy(() => import("../pages/SigilFeedPage"));
+const PShort = lazy(() => import("../pages/PShort"));
+const VerifyPage = lazy(() => import("../pages/VerifyPage"));
+const VerifyEmbedPage = lazy(() => import("../pages/VerifyEmbedPage"));
+const VerifierStamper = lazy(() => import("../components/VerifierStamper/VerifierStamper"));
 
 export function AppRoutes(): React.JSX.Element {
   return (
@@ -30,21 +28,21 @@ export function AppRoutes(): React.JSX.Element {
           <Route path="s" element={<SigilPage />} />
           <Route path="s/:hash" element={<SigilPage />} />
 
-          <Route path="stream" element={<SigilFeedPage />} />
-          <Route path="stream/p/:token" element={<SigilFeedPage />} />
-          <Route path="stream/c/:token" element={<SigilFeedPage />} />
-          <Route path="feed" element={<SigilFeedPage />} />
-          <Route path="feed/p/:token" element={<SigilFeedPage />} />
+          <Route path="stream" element={<Suspense fallback={null}><SigilFeedPage /></Suspense>} />
+          <Route path="stream/p/:token" element={<Suspense fallback={null}><SigilFeedPage /></Suspense>} />
+          <Route path="stream/c/:token" element={<Suspense fallback={null}><SigilFeedPage /></Suspense>} />
+          <Route path="feed" element={<Suspense fallback={null}><SigilFeedPage /></Suspense>} />
+          <Route path="feed/p/:token" element={<Suspense fallback={null}><SigilFeedPage /></Suspense>} />
 
-          <Route path="p~:token" element={<SigilFeedPage />} />
-          <Route path="p~:token/*" element={<PShort />} />
+          <Route path="p~:token" element={<Suspense fallback={null}><SigilFeedPage /></Suspense>} />
+          <Route path="p~:token/*" element={<Suspense fallback={null}><PShort /></Suspense>} />
 
-          <Route path="token" element={<SigilFeedPage />} />
-          <Route path="p~token" element={<SigilFeedPage />} />
-          <Route path="p" element={<PShort />} />
+          <Route path="token" element={<Suspense fallback={null}><SigilFeedPage /></Suspense>} />
+          <Route path="p~token" element={<Suspense fallback={null}><SigilFeedPage /></Suspense>} />
+          <Route path="p" element={<Suspense fallback={null}><PShort /></Suspense>} />
 
-          <Route path="verify/*" element={<VerifyPage />} />
-          <Route path="embed/verify/:slug" element={<VerifyEmbedPage />} />
+          <Route path="verify/*" element={<Suspense fallback={null}><VerifyPage /></Suspense>} />
+          <Route path="embed/verify/:slug" element={<Suspense fallback={null}><VerifyEmbedPage /></Suspense>} />
 
           {/* ───────────── App shell routes (NO RouteLoader, home = instant) ───────────── */}
           <Route
@@ -58,7 +56,9 @@ export function AppRoutes(): React.JSX.Element {
               index
               element={
                 <PerfProfiler id="verifier-stamper">
-                  <VerifierStamper />
+                  <Suspense fallback={null}>
+                    <VerifierStamper />
+                  </Suspense>
                 </PerfProfiler>
               }
             />
