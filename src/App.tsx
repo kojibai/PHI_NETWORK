@@ -1069,11 +1069,11 @@ export function AppChrome(): React.JSX.Element {
   const mobileLite = useMobileLiteMode();
 
   useEffect(() => {
-    const stopSync = startSigilExplorerSync();
+    const stopSync = startSigilExplorerSync({ mobileLite });
     return () => {
       stopSync();
     };
-  }, []);
+  }, [mobileLite]);
 
   // Re-kill splash on "/" before paint (guarantee) — safe due to root guard
   useIsoLayoutEffect(() => {

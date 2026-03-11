@@ -2696,7 +2696,7 @@ useEffect(() => {
           <span className="authority-seal__state">
             {verified === "verified" ? "VERIFIED" : "Out•Of•Sync"}
           </span>
-          <span className="dot">•</span>
+          <span className="sep-dot">•</span>
           <span>PROOF•OF•BREATH™</span>
         </div>
 

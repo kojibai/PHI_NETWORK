@@ -1871,7 +1871,7 @@ body.modal-open :where(.sigilpage, .sp-viewport, .sp-shell, .sp-veil, .sp-veil-s
   white-space:nowrap; min-width:0;
   animation: text-glow var(--pulse) ease-in-out infinite;
 }
-.authority-seal__headline .dot{ opacity:.6; }
+.authority-seal__headline .sep-dot{ opacity:.6; }
 
 .authority-seal__chip{
   align-self:start; justify-self:start;
@@ -2110,7 +2110,7 @@ body.modal-open :where(.sigilpage, .sp-viewport, .sp-shell, .sp-veil, .sp-veil-s
         /* a breath-sync’d tiny luminance lift (teal baseline; red variant above) */
         animation: text-glow var(--pulse) ease-in-out infinite;
       }
-      .authority-seal__headline .dot{ opacity:.6; }
+      .authority-seal__headline .sep-dot{ opacity:.6; }
 
       .authority-seal__chip{
         align-self:start; justify-self:start;

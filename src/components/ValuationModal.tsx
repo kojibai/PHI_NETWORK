@@ -1186,12 +1186,12 @@ useEffect(() => {
                           >
                             {pct(sessionChangePct)}
                           </span>
-                          &nbsp;session <span className="dot">•</span>{" "}
-                          {usdPerPhiText} <span className="dot">•</span>{" "}
-                          {phiPerUsdText} <span className="dot">•</span>{" "}
+                          &nbsp;session <span className="sep-dot">•</span>{" "}
+                          {usdPerPhiText} <span className="sep-dot">•</span>{" "}
+                          {phiPerUsdText} <span className="sep-dot">•</span>{" "}
                           premium ×
                           {(seal.premium ?? 1).toFixed(6)}{" "}
-                          <span className="dot">•</span> moment ×
+                          <span className="sep-dot">•</span> moment ×
                           {(seal.inputs.momentLift ?? 1).toFixed(6)}
                         </div>
                       </div>

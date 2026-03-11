@@ -9,7 +9,6 @@ import {
   NotFound,
   SigilMintRoute,
 } from "../App";
-import KaiSplashScreen from "../components/KaiSplashScreen";
 import { PerfProfiler } from "../perf/PerfProfiler";
 
 import SigilFeedPage from "../pages/SigilFeedPage";
@@ -26,9 +25,6 @@ import VerifierStamper from "../components/VerifierStamper/VerifierStamper";
 export function AppRoutes(): React.JSX.Element {
   return (
     <>
-      {/* stays allowed; your App.tsx already hard-kills splash on "/" */}
-      <KaiSplashScreen />
-
       <PerfProfiler id="routes">
         <Routes>
           <Route path="s" element={<SigilPage />} />

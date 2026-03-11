@@ -30,8 +30,8 @@
   --bg-2: #040f24;
 
   /* Accents */
-  --accent-cyan: #54d7ff;
-  --accent-teal: #45e7ff;
+  --accent-cyan: #61d6ff;
+  --accent-teal: #6be8ff;
   --accent-violet: #9b5bff;
   --accent-gold: #ffd979;
 
@@ -1619,7 +1619,7 @@ a:hover {
   cursor: pointer;
   font: inherit;
   color: var(--accent-cyan);
-  text-shadow: 0 0 10px rgba(84, 215, 255, 0.28);
+  text-shadow: 0 0 12px rgba(97, 214, 255, 0.34);
   appearance: none;
 }
 
@@ -2721,8 +2721,8 @@ a:hover {
   --breath-s: var(--breath, 5.236s);
 
   /* RGB companions (match your hex accents exactly) */
-  --rl-cyan: 84, 215, 255;   /* --accent-cyan */
-  --rl-teal: 69, 231, 255;   /* --accent-teal */
+  --rl-cyan: 97, 214, 255;   /* --accent-cyan */
+  --rl-teal: 107, 232, 255;   /* --accent-teal */
   --rl-violet: 155, 91, 255; /* --accent-violet */
   --rl-gold: 255, 217, 121;  /* --accent-gold */
 
