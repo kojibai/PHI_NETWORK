@@ -2863,10 +2863,14 @@ useEffect(() => {
   const ownerAuthSignerPresent = hasKASAuthSig && Boolean(effectiveOwnerSig || effectiveReceiveSig);
   const ownerAuthVerifiedValue = useMemo(() => {
     if (!hasKASAuthSig) return null;
-    if (effectiveOwnerSig) return ownerAuthVerified;
+    if (effectiveOwnerSig) return ownerAuthorSigVerified;
     if (effectiveReceiveSig) return receiveSigVerified;
     return null;
-  }, [effectiveOwnerSig, effectiveReceiveSig, hasKASAuthSig, ownerAuthVerified, receiveSigVerified]);
+  }, [effectiveOwnerSig, effectiveReceiveSig, hasKASAuthSig, ownerAuthorSigVerified, receiveSigVerified]);
+  const stewardPresentLive = useMemo(() => {
+    if (!hasKASOwnerSig) return null;
+    return ownerAuthVerified === true;
+  }, [hasKASOwnerSig, ownerAuthVerified]);
 
   const sealKAS: SealState = useMemo(() => {
     if (!hasKASAuthSig) return "off";
@@ -4482,9 +4486,12 @@ if (!noteDownloadBypassRef.current && alreadySpent) {
                   ) : null}
                   {hasKASOwnerSig ? (
                     <MiniField
-                      label="Owner/Auth verified"
+                      label="Owner/Auth verified (attestation)"
                       value={ownerAuthVerifiedValue === null ? "n/a" : ownerAuthVerifiedValue ? "true" : "false"}
                     />
+                  ) : null}
+                  {hasKASOwnerSig ? (
+                    <MiniField label="Steward present (live)" value={stewardPresentLive ? "yes" : "no"} />
                   ) : null}
                   {!isReceiveGlyph && hasKASProvenanceSig ? (
                     <MiniField label="Provenance/Origin signature" value={provenanceSig ? "present" : "—"} />
