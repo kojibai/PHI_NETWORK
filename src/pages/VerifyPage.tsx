@@ -2543,7 +2543,12 @@ useEffect(() => {
         "";
       ogImageUrl.searchParams.set("phiKey", ogPhiKey);
       if (result.embedded.chakraDay) ogImageUrl.searchParams.set("chakraDay", result.embedded.chakraDay);
-      const kasStatus = ownerAuthVerified;
+      const kasStatus =
+        ownerAuthorSig
+          ? ownerAuthorSigVerified
+          : effectiveReceiveSig
+            ? receiveSigVerified
+            : null;
       if (kasStatus != null) ogImageUrl.searchParams.set("kas", kasStatus ? "1" : "0");
       if (zkVerify != null) ogImageUrl.searchParams.set("g16", zkVerify ? "1" : "0");
     }
@@ -2558,9 +2563,10 @@ useEffect(() => {
     ensureMetaTag("name", "twitter:description", `Proof of Breath™ • ${statusLabel} • Pulse ${slug.pulse ?? "—"}`);
     ensureMetaTag("name", "twitter:image", ogImageUrl.toString());
   }, [
-    ownerAuthVerified,
     effectiveReceiveSig,
     embeddedProof?.ownerPhiKey,
+    ownerAuthorSig,
+    ownerAuthorSigVerified,
     receiveSigVerified,
     result,
     sharedReceipt?.ownerPhiKey,
@@ -2652,32 +2658,42 @@ useEffect(() => {
     const receiveMode = effectiveReceiveMode === "receive";
 
     if (!receiveMode && !effectiveReceiveSig) {
-      if (ownerAuthVerified === true) {
-        setOwnerPhiKeyVerified(true);
-        setOwnershipAttested(true);
+      if (!hasKASOwnerSig || !isKASAuthorSig(ownerAuthorSig)) {
+        setOwnerPhiKeyVerified(null);
+        setOwnershipAttested("missing");
         return;
       }
-      if (ownerAuthVerified === false) {
+      if (ownerAuthorSigVerified === false) {
         setOwnerPhiKeyVerified(false);
         setOwnershipAttested(false);
         return;
       }
-      setOwnerPhiKeyVerified(null);
-      setOwnershipAttested("missing");
-      return;
+      if (ownerAuthorSigVerified === null) {
+        setOwnerPhiKeyVerified(null);
+        setOwnershipAttested("missing");
+        return;
+      }
+      if (!effectiveOwnerPhiKey) {
+        setOwnerPhiKeyVerified(null);
+        setOwnershipAttested("missing");
+        return;
+      }
+
+      (async () => {
+        const signerPhiKey = await derivePhiKeyFromPubKeyJwk(ownerAuthorSig.pubKeyJwk);
+        const ok = signerPhiKey === effectiveOwnerPhiKey;
+        if (active) {
+          setOwnerPhiKeyVerified(ok);
+          setOwnershipAttested(ok);
+        }
+      })();
+
+      return () => {
+        active = false;
+      };
     }
 
     if (!effectiveReceiveSig) {
-      if (ownerAuthVerified === true) {
-        setOwnerPhiKeyVerified(true);
-        setOwnershipAttested(true);
-        return;
-      }
-      if (ownerAuthVerified === false) {
-        setOwnerPhiKeyVerified(false);
-        setOwnershipAttested(false);
-        return;
-      }
       setOwnerPhiKeyVerified(null);
       setOwnershipAttested("missing");
       return;
@@ -2767,9 +2783,11 @@ useEffect(() => {
     effectiveReceivePulse,
     effectiveReceiveSig,
     hasKASAuthSig,
+    hasKASOwnerSig,
+    ownerAuthorSig,
+    ownerAuthorSigVerified,
     receiveBundleRoot,
     receiveSigVerified,
-    ownerAuthVerified,
   ]);
 
   React.useEffect(() => {
