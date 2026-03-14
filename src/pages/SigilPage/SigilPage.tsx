@@ -63,6 +63,7 @@ import { CHAKRA_THEME} from "../../components/sigil/theme";
 /* ——— Hooks ——— */
 import { useKaiTicker } from "../../hooks/useKaiTicker";
 import { useFastPress } from "../../hooks/useFastPress";
+import { useMobileLiteMode } from "../../hooks/useMobileLiteMode";
 import { useSigilPayload } from "../../utils/useSigilPayload";
 
 /** constants.ts */
@@ -463,8 +464,12 @@ export default function SigilPage() {
   void setLoading;
   const payload = payloadState;
 
+  const mobileLite = useMobileLiteMode();
+
   // live Kai (eternal)
-  const { pulse: currentPulse, msToNextPulse } = useKaiTicker();
+  const { pulse: currentPulse, msToNextPulse } = useKaiTicker(
+    mobileLite ? { tickMs: 420, hiddenTickMs: 1800 } : { tickMs: 180, hiddenTickMs: 900 }
+  );
 
   // Sovereign additions
   const [uploadedMeta, setUploadedMeta] = useState<SigilMetaLoose | null>(null);
@@ -2601,29 +2606,48 @@ const { series, pushSample } = useValueHistory({
   maxPoints: 36 * 42 * 8, // buffer size (samples), tune as you like
   maxBeats: 36 * 42,      // retention window in Kai beats
 });
-// wherever you have displayedChipPhi and pushSample
+const displayedChipPhiRef = useRef<number | null>(null);
+useEffect(() => {
+  displayedChipPhiRef.current = Number.isFinite(displayedChipPhi) ? displayedChipPhi : null;
+}, [displayedChipPhi]);
+
 useEffect(() => {
   const BREATH_MS = (3 + Math.sqrt(5)) * 1000; // ≈ 5236.0679 ms
-  let raf: number | null = null;
   let tid: number | null = null;
+  let cancelled = false;
 
   const tick = () => {
-    const v = displayedChipPhi;
-    if (Number.isFinite(v)) {
+    if (cancelled) return;
+    const visible = typeof document === "undefined" ? true : document.visibilityState === "visible";
+    const v = displayedChipPhiRef.current;
+    if (visible && typeof v === "number" && Number.isFinite(v)) {
       // push with legacy ms; the chart normalizes to Kai beats (fractional)
       pushSample({ t: Date.now(), v });
     }
-    tid = window.setTimeout(() => {
-      raf = requestAnimationFrame(tick);
-    }, BREATH_MS);
+    tid = window.setTimeout(tick, visible ? BREATH_MS : BREATH_MS * 3);
   };
 
   tick();
-  return () => {
-    if (tid) clearTimeout(tid);
-    if (raf) cancelAnimationFrame(raf);
+
+  const onVisibility = () => {
+    if (document.visibilityState !== "visible") return;
+    if (tid !== null) {
+      window.clearTimeout(tid);
+      tid = null;
+    }
+    tick();
   };
-}, [displayedChipPhi, pushSample]);
+  document.addEventListener("visibilitychange", onVisibility);
+
+  return () => {
+    cancelled = true;
+    document.removeEventListener("visibilitychange", onVisibility);
+    if (tid !== null) {
+      window.clearTimeout(tid);
+      tid = null;
+    }
+  };
+}, [pushSample]);
 
 
   return (
@@ -2635,6 +2659,7 @@ useEffect(() => {
       data-archived={isArchived}
       data-old-link={oldLinkDetected ? "true" : "false"}
       data-ready={!loading && !!payload}
+      data-lite={mobileLite ? "true" : "false"}
       data-version="v48"
     >
       <div className="sp-veil" aria-hidden="true" />

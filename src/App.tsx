@@ -36,6 +36,7 @@ import {
 } from "./utils/kai_pulse";
 import { fmt2, formatPulse, modPos, readNum } from "./utils/kaiTimeDisplay";
 import { usePerfMode } from "./hooks/usePerfMode";
+import { useMobileLiteMode } from "./hooks/useMobileLiteMode";
 import { SIGIL_EXPLORER_OPEN_EVENT } from "./constants/sigilExplorer";
 import { startSigilExplorerSync } from "./utils/sigilExplorerSync";
 
@@ -966,6 +967,7 @@ type LiveKaiButtonProps = {
   breathS: number;
   breathMs: number;
   breathsPerDay: number;
+  mobileLite?: boolean;
 };
 
 function LiveKaiButton({
@@ -973,6 +975,7 @@ function LiveKaiButton({
   breathS,
   breathMs,
   breathsPerDay,
+  mobileLite = false,
 }: LiveKaiButtonProps): React.JSX.Element {
   const hydrated = useHydrated();
   const [snap, setSnap] = useState<LiveKaiSnap>(() => DEFAULT_LIVE_SNAP);
@@ -1046,13 +1049,13 @@ function LiveKaiButton({
     };
 
     tick();
-    const id = window.setInterval(tick, 250);
+    const id = window.setInterval(tick, mobileLite ? 700 : 250);
 
     return () => {
       alive = false;
       window.clearInterval(id);
     };
-  }, []);
+  }, [mobileLite]);
 
   // ✅ Hydration-safe numeric formatting: SSR/first pass uses deterministic toFixed.
   const breathsPerDayLabel = useMemo(() => {
@@ -1133,6 +1136,7 @@ export function AppChrome(): React.JSX.Element {
 
   useDisableZoom();
   usePerfMode();
+  const mobileLite = useMobileLiteMode();
 
   useEffect(() => {
     const stopSync = startSigilExplorerSync();
@@ -1570,6 +1574,7 @@ export function AppChrome(): React.JSX.Element {
             breathS={BREATH_S}
             breathMs={BREATH_MS}
             breathsPerDay={BREATHS_PER_DAY}
+            mobileLite={mobileLite}
           />
         </div>
       </header>

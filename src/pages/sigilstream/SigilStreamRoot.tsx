@@ -67,6 +67,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import "./styles/sigilstream.css";
 
 import { useFastPress } from "../../hooks/useFastPress";
+import { useMobileLiteMode } from "../../hooks/useMobileLiteMode";
 
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
@@ -1415,6 +1416,7 @@ function SigilStreamInner(): React.JSX.Element {
   const toasts = useToasts();
   const loc = useLocation();
   const navigate = useNavigate();
+  const mobileLite = useMobileLiteMode();
   const keystreamPress = useFastPress<HTMLAnchorElement>((e) => {
     e.preventDefault();
     navigate("/keystream");
@@ -2275,7 +2277,13 @@ function SigilStreamInner(): React.JSX.Element {
       : null;
 
   return (
-    <main className="sf" data-weekday={kaiTheme.weekday} data-chakra={kaiTheme.chakra} style={sigilTintStyle}>
+    <main
+      className="sf"
+      data-weekday={kaiTheme.weekday}
+      data-chakra={kaiTheme.chakra}
+      data-lite={mobileLite ? "true" : "false"}
+      style={sigilTintStyle}
+    >
       <header className="sf-head" role="region" aria-labelledby="glyph-stream-title">
         <nav className="sf-topnav" aria-label="Back navigation">
           <Link className="sf-back" to="/keystream" {...keystreamPress}>

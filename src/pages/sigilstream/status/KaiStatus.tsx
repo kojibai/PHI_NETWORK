@@ -28,6 +28,7 @@ import {
   MONTHS_PER_YEAR,
 } from "../../../utils/kai_pulse";
 import KaiKlockRaw from "../../../components/EternalKlock";
+import { useMobileLiteMode } from "../../../hooks/useMobileLiteMode";
 import "./KaiStatus.css";
 
 const DEFAULT_PULSE_DUR_S = 3 + Math.sqrt(5); // 5.2360679…
@@ -285,6 +286,7 @@ const KaiKlock = KaiKlockRaw as unknown as React.ComponentType<KaiKlockProps>;
 
 export function KaiStatus(): React.JSX.Element {
   const kaiNow = useAlignedKaiTicker();
+  const mobileLite = useMobileLiteMode();
 
   const [dialOpen, setDialOpen] = React.useState<boolean>(false);
   const openDial = React.useCallback(() => setDialOpen(true), []);
@@ -333,10 +335,14 @@ export function KaiStatus(): React.JSX.Element {
   const countdownValueRef = React.useRef<HTMLSpanElement | null>(null);
   const countdownLabelRef = React.useRef<HTMLSpanElement | null>(null);
   const [microCyclePercent, setMicroCyclePercent] = React.useState<number>(0);
+  const microCycleRef = React.useRef<number>(0);
+  React.useEffect(() => {
+    microCycleRef.current = microCyclePercent;
+  }, [microCyclePercent]);
 
   React.useEffect(() => {
     if (typeof window === "undefined") return;
-    let raf = 0;
+    let tid: number | null = null;
 
     const tick = (): void => {
       const now = Date.now();
@@ -351,7 +357,7 @@ export function KaiStatus(): React.JSX.Element {
       }
 
       if (countdownValueRef.current) {
-        const text = secsLeft.toFixed(6);
+        const text = secsLeft.toFixed(3);
         if (countdownValueRef.current.textContent !== text) {
           countdownValueRef.current.textContent = text;
         }
@@ -362,15 +368,39 @@ export function KaiStatus(): React.JSX.Element {
       }
 
       if (dialOpen) {
-        setMicroCyclePercent(progress * 100);
+        const next = progress * 100;
+        if (Math.abs(next - microCycleRef.current) >= 0.2) {
+          microCycleRef.current = next;
+          setMicroCyclePercent(next);
+        }
       }
 
-      raf = window.requestAnimationFrame(tick);
+      const visible = document.visibilityState === "visible";
+      const cadence = mobileLite ? 220 : 120;
+      const hiddenCadence = mobileLite ? 1200 : 700;
+      tid = window.setTimeout(tick, visible ? cadence : hiddenCadence);
     };
 
-    raf = window.requestAnimationFrame(tick);
-    return () => window.cancelAnimationFrame(raf);
-  }, [dialOpen]);
+    tick();
+
+    const onVisibility = () => {
+      if (document.visibilityState !== "visible") return;
+      if (tid != null) {
+        window.clearTimeout(tid);
+        tid = null;
+      }
+      tick();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      if (tid != null) {
+        window.clearTimeout(tid);
+        tid = null;
+      }
+    };
+  }, [dialOpen, mobileLite]);
 
   const beatStepDisp = `${kaiNow.beat}:${pad2(kaiNow.step)}`;
 
