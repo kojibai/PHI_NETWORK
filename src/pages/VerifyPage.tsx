@@ -103,12 +103,6 @@ import {
   type ValuationSnapshotState,
 } from "../utils/valuationSnapshot";
 import { decodeSharePayload, encodeSharePayload } from "../utils/shareBundleCodec";
-import {
-  resolveKasVerificationStatus,
-  resolveOriginOwnershipAttestation,
-  verificationBooleanToMark,
-  type AttestationState,
-} from "../utils/verifyAuditState";
 
 /* ────────────────────────────────────────────────────────────────
    Utilities
@@ -305,6 +299,8 @@ type DebitLoose = {
 };
 
 type EmbeddedPhiSource = "balance" | "embedded" | "live" | "note";
+
+type AttestationState = boolean | "missing";
 
 function readLedgerBalance(raw: unknown): { originalAmount: number; remaining: number } | null {
   if (!isRecord(raw)) return null;
@@ -2547,12 +2543,12 @@ useEffect(() => {
         "";
       ogImageUrl.searchParams.set("phiKey", ogPhiKey);
       if (result.embedded.chakraDay) ogImageUrl.searchParams.set("chakraDay", result.embedded.chakraDay);
-      const kasStatus = resolveKasVerificationStatus({
-        hasKASOwnerSig,
-        ownerAuthorSigVerified,
-        hasKASReceiveSig,
-        receiveSigVerified,
-      });
+      const kasStatus =
+        ownerAuthorSig
+          ? ownerAuthorSigVerified
+          : effectiveReceiveSig
+            ? receiveSigVerified
+            : null;
       if (kasStatus != null) ogImageUrl.searchParams.set("kas", kasStatus ? "1" : "0");
       if (zkVerify != null) ogImageUrl.searchParams.set("g16", zkVerify ? "1" : "0");
     }
@@ -2567,10 +2563,10 @@ useEffect(() => {
     ensureMetaTag("name", "twitter:description", `Proof of Breath™ • ${statusLabel} • Pulse ${slug.pulse ?? "—"}`);
     ensureMetaTag("name", "twitter:image", ogImageUrl.toString());
   }, [
+    effectiveReceiveSig,
     embeddedProof?.ownerPhiKey,
-    hasKASOwnerSig,
+    ownerAuthorSig,
     ownerAuthorSigVerified,
-    hasKASReceiveSig,
     receiveSigVerified,
     result,
     sharedReceipt?.ownerPhiKey,
@@ -2662,29 +2658,33 @@ useEffect(() => {
     const receiveMode = effectiveReceiveMode === "receive";
 
     if (!receiveMode && !effectiveReceiveSig) {
-      const resolved = resolveOriginOwnershipAttestation({
-        hasKASOwnerSig,
-        ownerAuthorSigVerified,
-        effectiveOwnerPhiKey,
-        signerPhiKey: null,
-      });
-      if (!hasKASOwnerSig || !isKASAuthorSig(ownerAuthorSig) || ownerAuthorSigVerified !== true || !effectiveOwnerPhiKey) {
-        setOwnerPhiKeyVerified(resolved.ownerPhiKeyVerified);
-        setOwnershipAttested(resolved.ownershipAttested);
+      if (!hasKASOwnerSig || !isKASAuthorSig(ownerAuthorSig)) {
+        setOwnerPhiKeyVerified(null);
+        setOwnershipAttested("missing");
+        return;
+      }
+      if (ownerAuthorSigVerified === false) {
+        setOwnerPhiKeyVerified(false);
+        setOwnershipAttested(false);
+        return;
+      }
+      if (ownerAuthorSigVerified === null) {
+        setOwnerPhiKeyVerified(null);
+        setOwnershipAttested("missing");
+        return;
+      }
+      if (!effectiveOwnerPhiKey) {
+        setOwnerPhiKeyVerified(null);
+        setOwnershipAttested("missing");
         return;
       }
 
       (async () => {
         const signerPhiKey = await derivePhiKeyFromPubKeyJwk(ownerAuthorSig.pubKeyJwk);
-        const next = resolveOriginOwnershipAttestation({
-          hasKASOwnerSig,
-          ownerAuthorSigVerified,
-          effectiveOwnerPhiKey,
-          signerPhiKey,
-        });
+        const ok = signerPhiKey === effectiveOwnerPhiKey;
         if (active) {
-          setOwnerPhiKeyVerified(next.ownerPhiKeyVerified);
-          setOwnershipAttested(next.ownershipAttested);
+          setOwnerPhiKeyVerified(ok);
+          setOwnershipAttested(ok);
         }
       })();
 
@@ -2885,16 +2885,6 @@ useEffect(() => {
     if (effectiveReceiveSig) return receiveSigVerified;
     return null;
   }, [effectiveOwnerSig, effectiveReceiveSig, hasKASAuthSig, ownerAuthorSigVerified, receiveSigVerified]);
-  const historicalKasStatus = useMemo(
-    () =>
-      resolveKasVerificationStatus({
-        hasKASOwnerSig,
-        ownerAuthorSigVerified,
-        hasKASReceiveSig,
-        receiveSigVerified,
-      }),
-    [hasKASOwnerSig, ownerAuthorSigVerified, hasKASReceiveSig, receiveSigVerified],
-  );
   const stewardPresentLive = useMemo(() => {
     if (!hasKASOwnerSig) return null;
     return ownerAuthVerified === true;
@@ -3176,7 +3166,7 @@ const noteInitial = useMemo<NoteBanknoteInputs>(() => {
 
   const shareStatus = result.status === "ok" ? "VERIFIED" : result.status === "error" ? "FAILED" : "STANDBY";
   const sharePhiShort = verifierPhi && verifierPhi !== "—" ? ellipsizeMiddle(verifierPhi, 12, 10) : "—";
-  const shareKas = hasKASAuthSig ? verificationBooleanToMark(historicalKasStatus) : null;
+  const shareKas = hasKASAuthSig ? (sealKAS === "valid" ? "✅" : "❌") : null;
   const shareG16 = sealZK === "valid" ? "✅" : "❌";
   const verificationSigLabel =
     verificationSigVerified === true ? "Verification signed" : verificationSigVerified === false ? "Verification signature invalid" : "Sign Verification";
@@ -3386,7 +3376,7 @@ React.useEffect(() => {
       pulse: proofCapsule.pulse,
       verifiedAtPulse: stewardVerifiedPulse,
       phikey: ownerPhiKeyValue && ownerPhiKeyValue !== "—" ? ownerPhiKeyValue : proofCapsule.phiKey,
-      kasOk: hasKASAuthSig ? historicalKasStatus ?? undefined : undefined,
+      kasOk: hasKASAuthSig ? sealKAS === "valid" : undefined,
       g16Ok: sealZK === "valid",
       verifierSlug: proofCapsule.verifierSlug,
       verifierUrl: verifierUrlValue || undefined,
@@ -3416,7 +3406,7 @@ React.useEffect(() => {
     result.status,
     effectivePhiKey,
     hasKASAuthSig,
-    historicalKasStatus,
+    sealKAS,
     sealZK,
     sharedReceipt?.receipt,
     sharedReceipt?.receiptHash,
