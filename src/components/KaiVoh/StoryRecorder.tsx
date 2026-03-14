@@ -448,10 +448,10 @@ export default function StoryRecorder(props: StoryRecorderProps) {
             onPointerLeave={handleRecordPointerUp}
           >
             <span
-              className="rec-progress"
+              className="progress-ring"
               style={{ background: `conic-gradient(currentColor ${progress * 360}deg, transparent 0)` }}
             />
-            <span className="rec-dot" />
+            <span className="dot" />
           </button>
         </div>
         {err && <div className="story-rec-error">{err}</div>}

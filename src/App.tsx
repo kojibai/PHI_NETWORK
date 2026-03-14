@@ -36,7 +36,6 @@ import {
 } from "./utils/kai_pulse";
 import { fmt2, formatPulse, modPos, readNum } from "./utils/kaiTimeDisplay";
 import { usePerfMode } from "./hooks/usePerfMode";
-import { useMobileLiteMode } from "./hooks/useMobileLiteMode";
 import { SIGIL_EXPLORER_OPEN_EVENT } from "./constants/sigilExplorer";
 import { startSigilExplorerSync } from "./utils/sigilExplorerSync";
 
@@ -45,15 +44,9 @@ import { DEFAULT_APP_VERSION, SW_VERSION_EVENT } from "./version";
 import { useBodyScrollLock } from "./hooks/useBodyScrollLock";
 import { useDisableZoom } from "./hooks/useDisableZoom";
 import { useVisualViewportSize } from "./hooks/useVisualViewportSize";
-import HomePriceChartCard from "./components/HomePriceChartCard";
+import HomePriceTickerFallback from "./components/HomePriceTickerFallback";
 
 import "./App.css";
-
-const KaiVohModal = lazy(() => import("./components/KaiVoh/KaiVohModal"));
-const SigilModal = lazy(() => import("./components/SigilModal"));
-const SigilExplorer = lazy(() => import("./components/SigilExplorer/SigilExplorer"));
-const VerifyPage = lazy(() => import("./pages/VerifyPage"));
-const EternalKlock = lazy(() => import("./components/EternalKlock"));
 
 declare global {
   interface Window {
@@ -82,6 +75,39 @@ function useHydrated(): boolean {
   }, []);
   return hydrated;
 }
+
+/* ──────────────────────────────────────────────────────────────────────────────
+   Lazy-loaded heavy modules (instant first paint)
+────────────────────────────────────────────────────────────────────────────── */
+const KaiVohModal = lazy(
+  () => import("./components/KaiVoh/KaiVohModal"),
+) as React.LazyExoticComponent<React.ComponentType<{ open: boolean; onClose: () => void }>>;
+
+const SigilModal = lazy(
+  () => import("./components/SigilModal"),
+) as React.LazyExoticComponent<
+  React.ComponentType<{ initialPulse: number; onClose: () => void }>
+>;
+
+const HomePriceChartCard = lazy(
+  () => import("./components/HomePriceChartCard"),
+) as React.LazyExoticComponent<
+  React.ComponentType<{ apiBase: string; ctaAmountUsd: number; chartHeight: number }>
+>;
+
+const SigilExplorer = lazy(
+  () => import("./components/SigilExplorer/SigilExplorer"),
+) as React.LazyExoticComponent<React.ComponentType<Record<string, never>>>;
+
+const VerifyPageLazy = lazy(
+  () => import("./pages/VerifyPage"),
+) as React.LazyExoticComponent<React.ComponentType<Record<string, never>>>;
+
+type EternalKlockProps = { initialDetailsOpen?: boolean };
+
+const EternalKlockLazy = lazy(
+  () => import("./components/EternalKlock"),
+) as React.LazyExoticComponent<React.ComponentType<EternalKlockProps>>;
 
 /* ──────────────────────────────────────────────────────────────────────────────
    Splash killer (homepage only)
@@ -674,6 +700,34 @@ function VerifyPopover({ open, onClose, children }: VerifyPopoverProps): React.J
   );
 }
 
+function ExplorerFallback(): React.JSX.Element {
+  return (
+    <div
+      style={{
+        margin: "18px",
+        padding: "18px",
+        borderRadius: "14px",
+        border: "1px solid rgba(255,255,255,.12)",
+        background: "linear-gradient(180deg, rgba(8,14,16,.75), rgba(8,14,16,.55))",
+        color: "var(--ink-dim)",
+        boxShadow: "0 18px 44px rgba(0,0,0,.28)",
+      }}
+      role="status"
+      aria-live="polite"
+    >
+      <div style={{ fontWeight: 700, marginBottom: 8 }}>Aligning keystream…</div>
+      <div style={{ opacity: 0.8, fontSize: 12, marginBottom: 12 }}>
+        Affirming the ΦStream flow & sovereign memory.
+      </div>
+      <div style={{ display: "grid", gap: 8 }}>
+        <div style={{ height: 12, borderRadius: 8, background: "rgba(255,255,255,.08)" }} />
+        <div style={{ height: 12, borderRadius: 8, background: "rgba(255,255,255,.06)" }} />
+        <div style={{ height: 12, borderRadius: 8, background: "rgba(255,255,255,.05)" }} />
+      </div>
+    </div>
+  );
+}
+
 function KlockPopover({ open, onClose, children }: KlockPopoverProps): React.JSX.Element | null {
   const hydrated = useHydrated();
   const vvSizeRaw = useVisualViewportSize();
@@ -864,7 +918,7 @@ export function ExplorerRoute(): React.JSX.Element {
   return (
     <>
       <ExplorerPopover open={open} onClose={handleClose}>
-        <Suspense fallback={null}>
+        <Suspense fallback={<ExplorerFallback />}>
           <SigilExplorer />
         </Suspense>
       </ExplorerPopover>
@@ -878,6 +932,7 @@ export function ExplorerRoute(): React.JSX.Element {
 
 export function KlockRoute(): React.JSX.Element {
   const navigate = useNavigate();
+  const location = useLocation();
   const [open, setOpen] = useState<boolean>(true);
 
   const handleClose = useCallback((): void => {
@@ -885,11 +940,14 @@ export function KlockRoute(): React.JSX.Element {
     navigate("/", { replace: true });
   }, [navigate]);
 
+  const navState = (location.state as KlockNavState | null) ?? null;
+  const initialDetailsOpen = navState?.openDetails ?? true;
+
   return (
     <>
       <KlockPopover open={open} onClose={handleClose}>
         <Suspense fallback={null}>
-          <EternalKlock />
+          <EternalKlockLazy initialDetailsOpen={initialDetailsOpen} />
         </Suspense>
       </KlockPopover>
 
@@ -908,7 +966,6 @@ type LiveKaiButtonProps = {
   breathS: number;
   breathMs: number;
   breathsPerDay: number;
-  mobileLite?: boolean;
 };
 
 function LiveKaiButton({
@@ -916,7 +973,6 @@ function LiveKaiButton({
   breathS,
   breathMs,
   breathsPerDay,
-  mobileLite = false,
 }: LiveKaiButtonProps): React.JSX.Element {
   const hydrated = useHydrated();
   const [snap, setSnap] = useState<LiveKaiSnap>(() => DEFAULT_LIVE_SNAP);
@@ -990,13 +1046,13 @@ function LiveKaiButton({
     };
 
     tick();
-    const id = window.setInterval(tick, mobileLite ? 700 : 250);
+    const id = window.setInterval(tick, 250);
 
     return () => {
       alive = false;
       window.clearInterval(id);
     };
-  }, [mobileLite]);
+  }, []);
 
   // ✅ Hydration-safe numeric formatting: SSR/first pass uses deterministic toFixed.
   const breathsPerDayLabel = useMemo(() => {
@@ -1077,42 +1133,13 @@ export function AppChrome(): React.JSX.Element {
 
   useDisableZoom();
   usePerfMode();
-  const mobileLite = useMobileLiteMode();
 
   useEffect(() => {
-    const stopSync = startSigilExplorerSync({ mobileLite });
+    const stopSync = startSigilExplorerSync();
     return () => {
       stopSync();
     };
-  }, [mobileLite]);
-
-  // Keep route transitions instant on capable devices while skipping eager chunk warm-up on mobile-lite.
-  useEffect(() => {
-    if (typeof window === "undefined" || mobileLite) return undefined;
-
-    const warm = (): void => {
-      void import("./components/KaiVoh/KaiVohModal");
-      void import("./components/SigilModal");
-      void import("./components/SigilExplorer/SigilExplorer");
-      void import("./components/EternalKlock");
-      void import("./pages/VerifyPage");
-    };
-
-    const idleWin = window as Window & {
-      requestIdleCallback?: (cb: () => void, opts?: { timeout?: number }) => number;
-      cancelIdleCallback?: (id: number) => void;
-    };
-
-    const handle =
-      typeof idleWin.requestIdleCallback === "function"
-        ? idleWin.requestIdleCallback(warm, { timeout: 4000 })
-        : window.setTimeout(warm, 1400);
-
-    return () => {
-      if (typeof idleWin.cancelIdleCallback === "function") idleWin.cancelIdleCallback(handle as number);
-      else window.clearTimeout(handle as number);
-    };
-  }, [mobileLite]);
+  }, []);
 
   // Re-kill splash on "/" before paint (guarantee) — safe due to root guard
   useIsoLayoutEffect(() => {
@@ -1142,7 +1169,60 @@ export function AppChrome(): React.JSX.Element {
   // Warm timers (fix: no global warmTimer)
   const warmTimerRef = useRef<number | null>(null);
 
+  // Heavy UI gating for instant first paint (chart + chunk prefetch)
+  const [heavyUiReady, setHeavyUiReady] = useState(false);
   const [verifyOpen, setVerifyOpen] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const idleWin = window as Window & {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout?: number }) => number;
+      cancelIdleCallback?: (handle: number) => void;
+    };
+
+    const handle =
+      typeof idleWin.requestIdleCallback === "function"
+        ? idleWin.requestIdleCallback(() => setHeavyUiReady(true), { timeout: 900 })
+        : window.setTimeout(() => setHeavyUiReady(true), 220);
+
+    return () => {
+      if (typeof idleWin.cancelIdleCallback === "function") idleWin.cancelIdleCallback(handle as number);
+      else window.clearTimeout(handle as number);
+    };
+  }, []);
+
+  // Optional: prefetch lazy chunks in idle (no UI impact)
+  useEffect(() => {
+    if (!heavyUiReady) return;
+    const navAny = navigator as Navigator & {
+      connection?: { saveData?: boolean; effectiveType?: string };
+      deviceMemory?: number;
+    };
+    const saveData = Boolean(navAny.connection?.saveData);
+    const et = navAny.connection?.effectiveType || "";
+    const slowNet = et === "slow-2g" || et === "2g";
+    const lowMemory =
+      typeof navAny.deviceMemory === "number" && navAny.deviceMemory > 0 && navAny.deviceMemory <= 2;
+
+    if (saveData || slowNet || lowMemory) return;
+
+    void import("./components/HomePriceChartCard");
+    void import("./components/KaiVoh/KaiVohModal");
+    void import("./components/SigilModal");
+    void import("./components/SigilExplorer/SigilExplorer");
+    void import("./components/EternalKlock");
+    void import("./pages/sigilstream/SigilStreamRoot");
+  }, [heavyUiReady]);
+
+  const prefetchSigilExplorer = useCallback((): void => {
+    void import("./components/SigilExplorer/SigilExplorer");
+  }, []);
+
+  const warmHomeChart = useCallback((): void => {
+    setHeavyUiReady(true);
+    void import("./components/HomePriceChartCard");
+  }, []);
 
   const openVerify = useCallback((): void => {
     setVerifyOpen(true);
@@ -1155,7 +1235,6 @@ export function AppChrome(): React.JSX.Element {
   // SW warm-up (idle-only + focus cadence, abort-safe, respects Save-Data/2G)
   useEffect(() => {
     if (typeof window === "undefined" || !("serviceWorker" in navigator)) return undefined;
-    if (mobileLite) return undefined;
 
     const aborter = new AbortController();
 
@@ -1233,7 +1312,7 @@ export function AppChrome(): React.JSX.Element {
 
       window.removeEventListener("focus", onFocus);
     };
-  }, [mobileLite]);
+  }, []);
 
   const BREATH_S = useMemo(() => 3 + Math.sqrt(5), []);
   const BREATH_MS = useMemo(() => BREATH_S * 1000, [BREATH_S]);
@@ -1462,7 +1541,6 @@ export function AppChrome(): React.JSX.Element {
       data-ui="atlantean-banking"
       data-panel-scroll={panelShouldScroll ? "1" : "0"}
       data-roomy={roomy ? "1" : "0"}
-      data-lite={mobileLite ? "1" : "0"}
       style={shellStyle}
     >
       <a className="skip-link" href="#app-content">
@@ -1492,14 +1570,13 @@ export function AppChrome(): React.JSX.Element {
             breathS={BREATH_S}
             breathMs={BREATH_MS}
             breathsPerDay={BREATHS_PER_DAY}
-            mobileLite={mobileLite}
           />
         </div>
       </header>
 
       <VerifyPopover open={verifyOpen} onClose={closeVerify}>
         <Suspense fallback={null}>
-          <VerifyPage />
+          <VerifyPageLazy />
         </Suspense>
       </VerifyPopover>
 
@@ -1524,12 +1601,29 @@ export function AppChrome(): React.JSX.Element {
                       borderRadius: "inherit",
                     }}
                   >
-                    <HomePriceChartCard
-                      apiBase="https://pay.kaiklok.com"
-                      ctaAmountUsd={144}
-                      chartHeight={chartHeight}
-                      liteMode={mobileLite}
-                    />
+                    {heavyUiReady ? (
+                      <Suspense
+                        fallback={
+                          <HomePriceTickerFallback
+                            ctaAmountUsd={144}
+                            title="Value Index"
+                            onActivate={warmHomeChart}
+                          />
+                        }
+                      >
+                        <HomePriceChartCard
+                          apiBase="https://pay.kaiklok.com"
+                          ctaAmountUsd={144}
+                          chartHeight={chartHeight}
+                        />
+                      </Suspense>
+                    ) : (
+                      <HomePriceTickerFallback
+                        ctaAmountUsd={144}
+                        title="Value Index"
+                        onActivate={warmHomeChart}
+                      />
+                    )}
                   </div>
                 </div>
               )}
@@ -1569,6 +1663,10 @@ export function AppChrome(): React.JSX.Element {
                 `nav-item ${isActive ? "nav-item--active" : ""}`
               }
               aria-label={`${item.label}: ${item.desc}`}
+              onPointerEnter={item.to === "/keystream" ? prefetchSigilExplorer : undefined}
+              onFocus={item.to === "/keystream" ? prefetchSigilExplorer : undefined}
+              onTouchStart={item.to === "/keystream" ? prefetchSigilExplorer : undefined}
+              onPointerDown={item.to === "/keystream" ? prefetchSigilExplorer : undefined}
             >
               <div className="nav-item__label">{item.label}</div>
               <div className="nav-item__desc">{item.desc}</div>

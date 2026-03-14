@@ -21,7 +21,6 @@ type Props = {
   apiBase?: string;
   title?: string;
   chartHeight?: number;
-  liteMode?: boolean;
   onError?: (err: unknown) => void;
   stripePk?: string;
   onExpandChange?: (expanded: boolean) => void;
@@ -178,7 +177,6 @@ export default function HomePriceChartCard({
   apiBase = API_DEFAULT,
   title = "Value Index",
   chartHeight = 120,
-  liteMode = false,
   onError,
   stripePk = STRIPE_PUBLISHABLE_KEY,
   onExpandChange,
@@ -372,8 +370,6 @@ export default function HomePriceChartCard({
             title={undefined}
             priceFn={chartPriceFn} // PURE; same fn that pct24h uses
             onTick={handleTick} // SINGLE SOURCE for bar data
-            windowPoints={liteMode ? 96 : 240}
-            tickMs={liteMode ? 9500 : undefined}
             live
           />
         </div>

@@ -20,8 +20,8 @@
   --kai-bg-1: var(--bg-1, #03091b);
   --kai-bg-2: var(--bg-2, #040f24);
 
-  --kai-cyan: var(--accent-cyan, #61d6ff);
-  --kai-teal: var(--accent-teal, #6be8ff);
+  --kai-cyan: var(--accent-cyan, #33f6ff);
+  --kai-teal: var(--accent-teal, #26ffc4);
   --kai-violet: var(--accent-violet, #9b5bff);
 
   --kai-safe-bottom: env(safe-area-inset-bottom, 0px);

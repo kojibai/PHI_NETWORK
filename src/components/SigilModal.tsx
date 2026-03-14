@@ -791,10 +791,11 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
 
   const applyPulse = useCallback(
     (p: bigint, updateField = true) => {
-      setPulse(p);
+      const pFixed = clampPulseNonNeg(p);
+      setPulse(pFixed);
 
       if (updateField && !pulseEditingRef.current) {
-        setPulseField(p.toString());
+        setPulseField(pFixed.toString());
       }
 
       if (typeof document !== "undefined") syncPulseCss();
@@ -919,15 +920,13 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
 
   const onPulseFieldChange = (e: ChangeEvent<HTMLInputElement>) => {
     const raw = e.target.value ?? "";
-    const clean = raw
-      .replace(/[^\d-]/g, "")
-      .replace(/(?!^)-/g, "");
+    const clean = raw.replace(/[^\d]/g, "");
     setPulseField(clean);
 
-    if (!clean || clean === "-") return;
+    if (!clean) return;
 
     try {
-      const p = BigInt(clean);
+      const p = clampPulseNonNeg(BigInt(clean));
       setMode("static-pulse");
       setDateISO("");
       setBreathIdx(1);
@@ -947,7 +946,7 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
       const dt = applyBreathSlot(base, bIdx);
 
       const pμ = microPulsesSinceGenesis(dt);
-      const pBI = floorDivE(pμ, ONE_PULSE_MICRO);
+      const pBI = clampPulseNonNeg(floorDivE(pμ, ONE_PULSE_MICRO));
 
       setMode("static-date");
       clearAlignedTimer();
@@ -1137,7 +1136,6 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
     capsuleHash: string;
     svgHash: string;
     bundleHash: string;
-    savedAtPulse?: number;
     shareUrl?: string;
     verifierUrl?: string;
     authorSig: AuthorSig | null;
@@ -1315,7 +1313,6 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
 
       const shareUrl = makeSigilUrl(payloadHashHex, sharePayload);
       const verifierUrl = buildVerifierUrl(pulseNum, kaiSignature);
-      const savedAtPulse = biToSafeNumber(getNowPulseBI());
       const kaiSignatureShort = kaiSignature.slice(0, 10);
       const proofCapsule: ProofCapsuleV1 = {
         v: "KPV-1",
@@ -1479,7 +1476,6 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
       const transport = {
         shareUrl,
         verifierUrl,
-        savedAtPulse,
         proofHints,
       };
       const bundleRoot = buildBundleRoot(proofBundleBase);
@@ -1499,7 +1495,6 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
         bundleRoot,
         bundleHash: computedBundleHash,
         authorSig,
-        savedAtPulse,
         transport,
         proofHints,
       };
@@ -1513,22 +1508,6 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
       const zip = new JSZip();
       zip.file(`${baseName}.svg`, sealedSvg);
       zip.file(`${baseName}_authsig_proof_bundle.json`, JSON.stringify(proofBundle, null, 2));
-      zip.file(
-        `${baseName}.manifest.json`,
-        JSON.stringify(
-          {
-            pulse: pulseNum,
-            savedAtPulse,
-            createdAt: new Date().toISOString(),
-            files: {
-              svg: `${baseName}.svg`,
-              proofBundle: `${baseName}_authsig_proof_bundle.json`,
-            },
-          },
-          null,
-          2
-        )
-      );
       const zipBlob = await zip.generateAsync({ type: "blob" });
       downloadBlob(zipBlob, `${baseName}_authsig_proof_bundle.zip`);
 
@@ -1701,7 +1680,7 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
               <input
                 className="sigil-input sigil-pulse-input"
                 type="text"
-                inputMode="text"
+                inputMode="numeric"
                 value={pulseField}
                 onFocus={() => {
                   pulseEditingRef.current = true;

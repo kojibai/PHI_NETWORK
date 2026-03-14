@@ -30,8 +30,8 @@
   --bg-2: #040f24;
 
   /* Accents */
-  --accent-cyan: #61d6ff;
-  --accent-teal: #6be8ff;
+  --accent-cyan: #33f6ff;
+  --accent-teal: #26ffc4;
   --accent-violet: #9b5bff;
   --accent-gold: #ffd979;
 
@@ -275,6 +275,426 @@ a:hover {
 }
 
 /* ────────────────────────────────────────────────────────────────
+   1b) First paint / navigation splash veil
+   ─────────────────────────────────────────────────────────────── */
+
+.kai-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 18% 20%, rgba(51, 246, 255, 0.18) 0, transparent 34%),
+    radial-gradient(circle at 78% 16%, rgba(155, 91, 255, 0.22) 0, transparent 40%),
+    radial-gradient(circle at 50% 110%, rgba(38, 255, 196, 0.16) 0, transparent 52%),
+    linear-gradient(132deg, #00060f 0%, #041227 40%, #071c37 76%, #041229 100%);
+  color: var(--text-main);
+  opacity: 0;
+  transform: scale(1.01);
+  pointer-events: none;
+  transition: opacity 420ms ease, transform 620ms ease;
+  --phi-breath: var(--breath-s, 5.236s);
+  --phi-inhale-ratio: 61.8%;
+}
+
+.kai-splash[data-state="show"] {
+  opacity: 1;
+  transform: scale(1);
+  pointer-events: auto;
+}
+
+.kai-splash[data-state="fade"],
+.kai-splash[data-state="hidden"] {
+  opacity: 0;
+  transform: scale(1.012);
+  pointer-events: none;
+}
+
+.kai-splash::before,
+.kai-splash::after {
+  content: "";
+  position: absolute;
+  inset: -30%;
+  pointer-events: none;
+}
+
+.kai-splash::before {
+  background: radial-gradient(circle at 50% 60%, rgba(51, 246, 255, 0.16), transparent 55%);
+  filter: blur(70px);
+  opacity: 0.85;
+}
+
+.kai-splash::after {
+  background: conic-gradient(
+    from 120deg,
+    rgba(51, 246, 255, 0.1),
+    rgba(155, 91, 255, 0.15),
+    rgba(38, 255, 196, 0.1),
+    rgba(51, 246, 255, 0.1)
+  );
+  filter: blur(120px);
+  mix-blend-mode: screen;
+  opacity: 0.6;
+}
+
+.kai-splash__grid {
+  position: absolute;
+  inset: -8%;
+  background-image: linear-gradient(
+      to right,
+      transparent 0,
+      transparent 90%,
+      rgba(95, 180, 255, 0.25) 90%,
+      rgba(95, 180, 255, 0.25) 100%
+    ),
+    linear-gradient(
+      to bottom,
+      transparent 0,
+      transparent 90%,
+      rgba(95, 180, 255, 0.2) 90%,
+      rgba(95, 180, 255, 0.2) 100%
+    );
+  background-size: 120px 120px;
+  opacity: 0.18;
+  mask-image: radial-gradient(circle at center, black 20%, transparent 82%);
+}
+
+.kai-splash__halo {
+  position: absolute;
+  inset: 8%;
+  border: 1px solid rgba(51, 246, 255, 0.2);
+  border-radius: 36px;
+  background: radial-gradient(circle at 50% 45%, rgba(51, 246, 255, 0.05), transparent 50%);
+  backdrop-filter: blur(10px);
+  opacity: 0.4;
+}
+
+.kai-splash__glow {
+  position: absolute;
+  inset: -14%;
+  background: radial-gradient(circle at 50% 50%, rgba(0, 255, 196, 0.1), transparent 60%);
+  mix-blend-mode: screen;
+  filter: blur(90px);
+}
+
+.kai-splash__content {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: clamp(0.8rem, 2vw, 1.4rem);
+  padding: clamp(1.25rem, 3vw, 2.5rem);
+  width: min(540px, 92vw);
+  border-radius: 26px;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  text-align: center;
+  backdrop-filter: none;
+}
+
+@supports not (backdrop-filter: blur(12px)) {
+  .kai-splash__content {
+    background: transparent;
+  }
+}
+
+.kai-splash__badge {
+  position: relative;
+  margin: 0 auto;
+  width: clamp(120px, 20vw, 180px);
+  aspect-ratio: 1 / 1;
+  display: grid;
+  place-items: center;
+  isolation: isolate;
+  filter: drop-shadow(0 0 32px rgba(51, 246, 255, 0.18));
+  animation: kai-splash-hover var(--phi-breath) ease-in-out infinite;
+}
+
+.kai-splash__badge-core {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 82%;
+  height: 82%;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0)),
+    radial-gradient(circle at 72% 70%, rgba(51, 246, 255, 0.38), rgba(51, 246, 255, 0)),
+    linear-gradient(200deg, rgba(0, 255, 196, 0.4), rgba(3, 9, 27, 0.9));
+  border: 1px solid rgba(168, 241, 255, 0.45);
+  box-shadow:
+    0 0 0 12px rgba(51, 246, 255, 0.08),
+    0 0 60px rgba(38, 255, 196, 0.25);
+  overflow: hidden;
+  animation: kai-splash-breathe var(--phi-breath) ease-in-out infinite;
+}
+
+.kai-splash__badge-core img {
+  width: 58%;
+  filter:
+    drop-shadow(0 0 14px rgba(51, 246, 255, 0.65))
+    drop-shadow(0 0 50px rgba(38, 255, 196, 0.45));
+}
+
+.kai-splash__badge-core-shine {
+  position: absolute;
+  inset: -18%;
+  background: radial-gradient(circle at 50% 35%, rgba(255, 255, 255, 0.26), transparent 52%);
+  mix-blend-mode: screen;
+  filter: blur(28px);
+  opacity: 0.65;
+  animation: kai-splash-surge var(--phi-breath) ease-in-out infinite;
+}
+
+.kai-splash__badge-core::after {
+  content: "";
+  position: absolute;
+  inset: -8%;
+  background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.25), transparent 45%);
+  mix-blend-mode: screen;
+  filter: blur(18px);
+  opacity: 0.7;
+  animation: kai-splash-surge var(--phi-breath) ease-in-out infinite;
+}
+
+.kai-splash__badge-orb {
+  position: absolute;
+  inset: 18%;
+  border-radius: 50%;
+  background: radial-gradient(circle at 45% 35%, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0));
+  mix-blend-mode: screen;
+}
+.kai-splash__ring {
+  position: absolute;
+  inset: 8%;
+  border-radius: 50%;
+  isolation: isolate;
+
+  /* iOS circular edge hardening */
+  clip-path: inset(0 round 9999px);
+  -webkit-mask-image: radial-gradient(white, white);
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  will-change: transform, opacity;
+
+  /* keep your existing breath */
+  animation: kai-splash-pulse var(--phi-breath) ease-in-out infinite;
+}
+
+/* Glow (REPLACES the spread box-shadow that causes mobile artifacts) */
+.kai-splash__ring::before {
+  content: "";
+  position: absolute;
+  inset: -14px; /* how far the glow can extend */
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 50%, rgba(51, 246, 255, 0.28), transparent 60%);
+  filter: blur(14px);
+  opacity: 0.55;
+
+  /* make it a ring-shaped glow (not a filled disc) */
+  -webkit-mask: radial-gradient(
+    farthest-side,
+    transparent calc(100% - 22px),
+    #000 calc(100% - 18px)
+  );
+  mask: radial-gradient(
+    farthest-side,
+    transparent calc(100% - 22px),
+    #000 calc(100% - 18px)
+  );
+
+  transform: translateZ(0);
+}
+
+/* Crisp ring stroke + subtle inner highlight */
+.kai-splash__ring::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(51, 246, 255, 0.35);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08) inset;
+  transform: translateZ(0);
+}
+
+/* Inner ring: same structure, different tint + opposite breath */
+.kai-splash__ring--inner {
+  inset: 16%;
+  animation: kai-splash-pulse var(--phi-breath) ease-in-out infinite reverse;
+}
+
+.kai-splash__ring--inner::before {
+  background: radial-gradient(circle at 50% 50%, rgba(155, 91, 255, 0.26), transparent 60%);
+  opacity: 0.52;
+  -webkit-mask: radial-gradient(
+    farthest-side,
+    transparent calc(100% - 20px),
+    #000 calc(100% - 16px)
+  );
+  mask: radial-gradient(
+    farthest-side,
+    transparent calc(100% - 20px),
+    #000 calc(100% - 16px)
+  );
+}
+
+.kai-splash__ring--inner::after {
+  border: 1px solid rgba(155, 91, 255, 0.35);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+}
+
+
+.kai-splash__rays {
+  position: absolute;
+  inset: -40%;
+  background: conic-gradient(
+    from 120deg,
+    rgba(51, 246, 255, 0.08),
+    rgba(155, 91, 255, 0.18),
+    rgba(38, 255, 196, 0.12),
+    rgba(51, 246, 255, 0.08)
+  );
+  filter: blur(32px);
+  mix-blend-mode: screen;
+  border-radius: 50%;
+  opacity: 0.9;
+  animation: kai-splash-rotate calc(var(--phi-breath) * 3) linear infinite;
+}
+
+.kai-splash__flare {
+  position: absolute;
+  inset: 22% 6% auto 6%;
+  height: 4px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.8), transparent);
+  filter: blur(3px);
+  opacity: 0.65;
+  transform: translateY(-60px) scaleX(0.4);
+  transform-origin: center;
+  animation: kai-splash-flare calc(var(--phi-breath) * 0.5) ease-in-out infinite;
+}
+
+@keyframes kai-splash-rotate {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes kai-splash-surge {
+  0% {
+    opacity: 0.35;
+    transform: scale(0.92);
+  }
+  61.8% {
+    opacity: 0.95;
+    transform: scale(1.08);
+  }
+  100% {
+    opacity: 0.35;
+    transform: scale(0.92);
+  }
+}
+
+@keyframes kai-splash-flare {
+  0% {
+    opacity: 0.15;
+    transform: translateY(-70px) scaleX(0.2);
+  }
+  61.8% {
+    opacity: 0.82;
+    transform: translateY(0) scaleX(1.04);
+  }
+  100% {
+    opacity: 0.12;
+    transform: translateY(-70px) scaleX(0.2);
+  }
+}
+
+@keyframes kai-splash-hover {
+  0% {
+    transform: translateY(0px) scale(1);
+  }
+  61.8% {
+    transform: translateY(-6px) scale(1.015);
+  }
+  100% {
+    transform: translateY(0px) scale(1);
+  }
+}
+
+@keyframes kai-splash-breathe {
+  0% {
+    transform: scale(1);
+    box-shadow:
+      0 0 0 12px rgba(51, 246, 255, 0.08),
+      0 0 60px rgba(38, 255, 196, 0.25);
+  }
+  61.8% {
+    transform: scale(1.04);
+    box-shadow:
+      0 0 0 16px rgba(51, 246, 255, 0.15),
+      0 0 90px rgba(155, 91, 255, 0.25);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow:
+      0 0 0 12px rgba(51, 246, 255, 0.08),
+      0 0 60px rgba(38, 255, 196, 0.25);
+  }
+}
+
+@keyframes kai-splash-pulse {
+  0% {
+    transform: scale(1);
+    opacity: 0.8;
+  }
+  50% {
+    transform: scale(1.04);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 0.8;
+  }
+}
+
+@media (max-width: 540px) {
+  .kai-splash__content {
+    padding: 1.15rem;
+    border-radius: 18px;
+  }
+
+  .kai-splash__badge {
+    width: clamp(110px, 34vw, 140px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kai-splash,
+  .kai-splash[data-state="fade"],
+  .kai-splash[data-state="show"] {
+    transition: opacity 180ms ease, transform 200ms ease;
+  }
+
+  .kai-splash__rays,
+  .kai-splash__ring {
+    animation: none;
+  }
+
+  .kai-splash__badge-core::after,
+  .kai-splash__flare {
+    animation: none;
+  }
+}
+.kai-splash__badge {
+  transform: translateZ(0);
+}
+
+/* ────────────────────────────────────────────────────────────────
    2) A11y — Skip link
    ─────────────────────────────────────────────────────────────── */
 
@@ -294,6 +714,84 @@ a:hover {
 }
 .skip-link:focus {
   transform: translateY(0);
+}
+
+/* ────────────────────────────────────────────────────────────────
+   Route Loader (lazy bundle fallback)
+   ─────────────────────────────────────────────────────────────── */
+
+.route-loader {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  display: grid;
+  place-items: center;
+  padding: 1.35rem;
+  background: radial-gradient(circle at 25% 10%, rgba(51, 246, 255, 0.08), transparent 48%),
+    radial-gradient(circle at 75% 85%, rgba(155, 91, 255, 0.12), transparent 58%),
+    linear-gradient(160deg, rgba(2, 3, 10, 0.96), rgba(6, 14, 35, 0.96));
+}
+
+.route-loader__glow {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(800px 520px at 50% 50%, rgba(51, 246, 255, 0.14), transparent 68%);
+  filter: blur(14px);
+  opacity: 0.6;
+}
+
+.route-loader__content {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.92rem 1.05rem;
+  border-radius: 18px;
+  background: rgba(3, 8, 24, 0.9);
+  border: 1px solid rgba(170, 241, 255, 0.28);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.06) inset;
+  color: var(--text-main);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.route-loader__dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: var(--accent-cyan);
+  box-shadow:
+    0 0 18px rgba(51, 246, 255, 0.5),
+    0 0 36px rgba(155, 91, 255, 0.35);
+  animation: routeLoaderPulse 1.05s ease-in-out infinite;
+  transform: translateZ(0);
+}
+
+.route-loader__text {
+  white-space: normal;
+  font-size: 0.96rem;
+  max-width: min(320px, 82vw);
+}
+
+@keyframes routeLoaderPulse {
+  0% {
+    transform: scale(0.92);
+    opacity: 0.75;
+  }
+  50% {
+    transform: scale(1.08);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.92);
+    opacity: 0.75;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .route-loader__dot {
+    animation: none;
+  }
 }
 
 /* ────────────────────────────────────────────────────────────────
@@ -1121,7 +1619,6 @@ a:hover {
   cursor: pointer;
   font: inherit;
   color: var(--accent-cyan);
-  text-shadow: 0 0 12px rgba(97, 214, 255, 0.34);
   appearance: none;
 }
 
@@ -2212,6 +2709,483 @@ a:hover {
   }
 }
 /* ─────────────────────────────────────────────────────────────
+   RouteLoader — Atlantean Console Match (Canonical)
+   - Uses App.css tokens (bg/glass/accent/radii/blur/breath)
+   - Same halo/grid language as app-shell + explorer-pop
+   - Motion is compositor-safe (transform/opacity only)
+───────────────────────────────────────────────────────────── */
+
+.route-loader {
+  /* breathe = app canonical */
+  --breath-s: var(--breath, 5.236s);
+
+  /* RGB companions (match your hex accents exactly) */
+  --rl-cyan: 51, 246, 255;   /* --accent-cyan */
+  --rl-teal: 38, 255, 196;   /* --accent-teal */
+  --rl-violet: 155, 91, 255; /* --accent-violet */
+  --rl-gold: 255, 217, 121;  /* --accent-gold */
+
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+
+  width: 100vw;
+  height: 100dvh;
+  height: 100svh;
+
+  display: grid;
+  place-items: center;
+
+  padding: clamp(14px, 2.2vw, 20px);
+  padding-top: calc(clamp(14px, 2.2vw, 20px) + env(safe-area-inset-top, 0px));
+  padding-right: calc(clamp(14px, 2.2vw, 20px) + env(safe-area-inset-right, 0px));
+  padding-bottom: calc(clamp(14px, 2.2vw, 20px) + env(safe-area-inset-bottom, 0px));
+  padding-left: calc(clamp(14px, 2.2vw, 20px) + env(safe-area-inset-left, 0px));
+
+  overflow: hidden;
+  isolation: isolate;
+
+  /* SAME “console ether” language as app-shell */
+  background:
+    radial-gradient(circle at 18% 20%, rgba(var(--rl-cyan), 0.12) 0, transparent 38%),
+    radial-gradient(circle at 78% 16%, rgba(var(--rl-violet), 0.14) 0, transparent 44%),
+    radial-gradient(circle at 50% 110%, rgba(var(--rl-teal), 0.10) 0, transparent 56%),
+    linear-gradient(145deg, var(--bg-0), var(--bg-1), var(--bg-2));
+
+  color: var(--text-main);
+
+  /* perf isolation */
+  contain: layout paint;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+/* soft column glow (like .app-bg-glow, but local) */
+.route-loader__bg {
+  position: absolute;
+  inset: -18%;
+  pointer-events: none;
+
+  background:
+    radial-gradient(circle at 50% 40%, rgba(var(--rl-teal), 0.11), transparent 58%),
+    radial-gradient(circle at 50% 60%, rgba(var(--rl-violet), 0.10), transparent 62%),
+    radial-gradient(circle at 50% 75%, rgba(var(--rl-gold), 0.08), transparent 68%);
+
+  opacity: 0.72;
+  filter: blur(44px);
+  transform: translateZ(0);
+
+  /* compositor-safe breath */
+  animation: rl-breath var(--breath-s) ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+/* grid = same vibe as .app-bg-grid, masked to center */
+.route-loader__grid {
+  position: absolute;
+  inset: -40px;
+  pointer-events: none;
+
+  background-image:
+    linear-gradient(
+      to right,
+      transparent 0,
+      transparent 92%,
+      rgba(95, 180, 255, 0.20) 92%,
+      rgba(95, 180, 255, 0.20) 100%
+    ),
+    linear-gradient(
+      to bottom,
+      transparent 0,
+      transparent 92%,
+      rgba(95, 180, 255, 0.16) 92%,
+      rgba(95, 180, 255, 0.16) 100%
+    );
+
+  background-size: 72px 72px;
+  opacity: 0.22;
+  mix-blend-mode: screen;
+
+  mask-image: radial-gradient(circle at center, black 0, transparent 74%);
+  transform: translateZ(0);
+
+  /* subtle drift (no filters animated) */
+  animation: rl-drift calc(var(--breath-s) * 3.236) ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+/* halo field (same family as explorer-pop) */
+.route-loader__halo {
+  position: absolute;
+  inset: -20%;
+  pointer-events: none;
+
+  background:
+    radial-gradient(circle at 45% 40%, rgba(var(--rl-cyan), 0.10), transparent 60%),
+    radial-gradient(circle at 62% 66%, rgba(var(--rl-violet), 0.10), transparent 64%),
+    radial-gradient(circle at 50% 78%, rgba(var(--rl-gold), 0.06), transparent 70%);
+
+  filter: blur(70px);
+  opacity: 0.62;
+  transform: translateZ(0);
+
+  animation: rl-halo calc(var(--breath-s) * 1.618) ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Stage (glass slab) — match app-frame / panel glass
+───────────────────────────────────────────────────────────── */
+
+.route-loader__stage {
+  position: relative;
+
+  width: min(540px, 92vw);
+  height: min(720px, 92dvh);
+  height: min(720px, 92svh);
+
+  display: grid;
+  place-items: center;
+
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+
+  border: 1px solid rgba(170, 241, 255, 0.26);
+
+  background:
+    radial-gradient(900px 420px at 18% 0%, rgba(var(--rl-cyan), 0.10), transparent 60%),
+    radial-gradient(820px 520px at 92% 110%, rgba(var(--rl-violet), 0.12), transparent 62%),
+    linear-gradient(180deg, rgba(10, 16, 36, 0.92), rgba(3, 6, 16, 0.96));
+
+  box-shadow:
+    0 30px 90px rgba(0, 0, 0, 0.62),
+    0 0 0 1px rgba(255, 255, 255, 0.06) inset,
+    0 0 70px rgba(var(--rl-cyan), 0.10);
+
+  backdrop-filter: blur(var(--blur-strong)) saturate(150%);
+  -webkit-backdrop-filter: blur(var(--blur-strong)) saturate(150%);
+
+  isolation: isolate;
+  transform: translateZ(0);
+}
+
+/* inner rim (same as app-frame inner line) */
+.route-loader__stage::before {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  border-radius: calc(var(--radius-xl) - 2px);
+  pointer-events: none;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  opacity: 0.78;
+}
+
+/* sheen (same family as explorer panel sheen; animate transform/opacity only) */
+.route-loader__stage::after {
+  content: "";
+  position: absolute;
+  inset: -30%;
+  pointer-events: none;
+
+  background: linear-gradient(
+    120deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.16) 45%,
+    transparent 70%
+  );
+
+  transform: rotate(18deg) translateX(-58%) translateZ(0);
+  opacity: 0;
+
+  animation: rl-sheen calc(var(--breath-s) * 2) ease-in-out infinite;
+  mix-blend-mode: soft-light;
+  will-change: transform, opacity;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Orb — same “badge core” language as kai-splash, calmer
+───────────────────────────────────────────────────────────── */
+
+.route-loader__orb {
+  position: relative;
+  width: min(210px, 54vw);
+  aspect-ratio: 1 / 1;
+  border-radius: 999px;
+
+  display: grid;
+  place-items: center;
+
+  filter: drop-shadow(0 0 32px rgba(var(--rl-cyan), 0.14));
+  transform: translateZ(0);
+  isolation: isolate;
+}
+
+/* outer aura */
+.route-loader__orb::before {
+  content: "";
+  position: absolute;
+  inset: -18%;
+  border-radius: 999px;
+  pointer-events: none;
+
+  background:
+    radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.12), transparent 54%),
+    radial-gradient(circle at 50% 70%, rgba(var(--rl-teal), 0.16), transparent 62%),
+    radial-gradient(circle at 70% 60%, rgba(var(--rl-violet), 0.12), transparent 66%);
+
+  opacity: 0.75;
+  filter: blur(22px);
+
+  animation: rl-breath var(--breath-s) ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+/* core */
+.route-loader__orb-core {
+  width: 78%;
+  height: 78%;
+  border-radius: 999px;
+
+  background:
+    radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.14), transparent 55%),
+    radial-gradient(circle at 72% 70%, rgba(var(--rl-cyan), 0.38), transparent 60%),
+    linear-gradient(200deg, rgba(var(--rl-teal), 0.34), rgba(3, 9, 27, 0.92));
+
+  border: 1px solid rgba(168, 241, 255, 0.42);
+
+  box-shadow:
+    0 0 0 12px rgba(var(--rl-cyan), 0.08),
+    0 0 60px rgba(var(--rl-teal), 0.18);
+
+  overflow: hidden;
+
+  animation: rl-core calc(var(--breath-s) * 1.0) ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+/* rings */
+.route-loader__orb-ring {
+  position: absolute;
+  inset: 6%;
+  border-radius: 999px;
+  border: 1px solid rgba(var(--rl-cyan), 0.32);
+
+  box-shadow:
+    0 0 0 10px rgba(var(--rl-cyan), 0.10),
+    0 0 0 1px rgba(255, 255, 255, 0.06) inset;
+
+  opacity: 0.88;
+
+  mask-image: radial-gradient(circle at 50% 50%, transparent 0%, black 34%, black 72%, transparent 100%);
+  transform: translateZ(0);
+  will-change: transform;
+}
+
+.route-loader__orb-ring--a {
+  animation: rl-rotate calc(var(--breath-s) * 3.236) linear infinite;
+}
+.route-loader__orb-ring--b {
+  inset: -6%;
+  border-color: rgba(var(--rl-violet), 0.26);
+  box-shadow:
+    0 0 0 8px rgba(var(--rl-violet), 0.10),
+    0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+  animation: rl-rotate calc(var(--breath-s) * 5.236) linear infinite reverse;
+}
+.route-loader__orb-ring--c {
+  inset: -18%;
+  border-color: rgba(var(--rl-gold), 0.18);
+  box-shadow: 0 0 0 6px rgba(var(--rl-gold), 0.08);
+  animation: rl-rotate calc(var(--breath-s) * 8.472) linear infinite;
+}
+
+/* glints */
+.route-loader__spark {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow:
+    0 0 0 2px rgba(var(--rl-cyan), 0.14),
+    0 0 26px rgba(var(--rl-cyan), 0.20),
+    0 0 52px rgba(var(--rl-gold), 0.08);
+
+  opacity: 0.78;
+  transform: translateZ(0);
+  will-change: transform, opacity;
+}
+
+.route-loader__spark--a {
+  top: 12%;
+  left: 18%;
+  animation: rl-spark calc(var(--breath-s) * 1.618) ease-in-out infinite;
+}
+.route-loader__spark--b {
+  bottom: 14%;
+  right: 20%;
+  animation: rl-spark calc(var(--breath-s) * 2.236) ease-in-out infinite;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Content — centered over the orb (console typography)
+───────────────────────────────────────────────────────────── */
+
+.route-loader__content {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  z-index: 6;
+  padding: 0 18px;
+  pointer-events: none;
+}
+
+.route-loader__content-inner {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+}
+
+.route-loader__dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+
+  background: var(--accent-cyan);
+  box-shadow:
+    0 0 18px rgba(var(--rl-cyan), 0.50),
+    0 0 36px rgba(var(--rl-violet), 0.32);
+
+  animation: rl-dot var(--breath-s) ease-in-out infinite;
+  transform: translateZ(0);
+  will-change: transform, opacity;
+}
+
+.route-loader__text {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "SF Mono",
+    "Liberation Mono", "Courier New", monospace;
+
+  font-size: clamp(13px, 1.9vw, 16px);
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  text-align: center;
+
+  /* match your “brand subtitle drift” look */
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  -webkit-background-clip: text;
+  background-clip: text;
+
+  background-image: linear-gradient(
+    105deg,
+    rgba(255, 255, 255, 0.88) 0%,
+    rgba(160, 255, 244, 0.86) 28%,
+    rgba(150, 205, 255, 0.78) 58%,
+    rgba(210, 170, 255, 0.74) 86%,
+    rgba(255, 255, 255, 0.84) 100%
+  );
+  background-size: 240% 240%;
+  background-position: 0% 50%;
+
+  text-shadow:
+    0 0 0.22em rgba(120, 255, 240, 0.22),
+    0 0 0.55em rgba(120, 130, 255, 0.12);
+
+  animation: rl-text calc(var(--breath-s) * 2) ease-in-out infinite;
+  will-change: transform, opacity, background-position;
+}
+
+.route-loader__sub {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "SF Mono",
+    "Liberation Mono", "Courier New", monospace;
+
+  font-size: clamp(11px, 1.6vw, 13px);
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  opacity: 0.72;
+  color: rgba(245, 247, 255, 0.70);
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Motion — compositor safe only
+───────────────────────────────────────────────────────────── */
+
+@keyframes rl-breath {
+  0%, 100% { transform: scale(0.985) translateZ(0); opacity: 0.62; }
+  50%      { transform: scale(1.02) translateZ(0); opacity: 0.82; }
+}
+
+@keyframes rl-halo {
+  0%, 100% { transform: scale(1) translateZ(0); opacity: 0.52; }
+  50%      { transform: scale(1.04) translateZ(0); opacity: 0.72; }
+}
+
+@keyframes rl-drift {
+  0%   { transform: translate3d(0, 0, 0); }
+  50%  { transform: translate3d(0, -10px, 0); }
+  100% { transform: translate3d(0, 0, 0); }
+}
+
+@keyframes rl-rotate {
+  to { transform: rotate(360deg) translateZ(0); }
+}
+
+@keyframes rl-core {
+  0%, 100% { transform: scale(1) translateZ(0); opacity: 0.92; }
+  50%      { transform: scale(1.035) translateZ(0); opacity: 1; }
+}
+
+@keyframes rl-dot {
+  0%, 100% { transform: scale(0.86) translateZ(0); opacity: 0.72; }
+  50%      { transform: scale(1.18) translateZ(0); opacity: 1; }
+}
+
+@keyframes rl-spark {
+  0%, 100% { transform: translate3d(0, 0, 0); opacity: 0.52; }
+  50%      { transform: translate3d(0, -9px, 0); opacity: 0.98; }
+}
+
+@keyframes rl-text {
+  0%, 100% { opacity: 0.88; transform: translate3d(0, 1px, 0); background-position: 0% 50%; }
+  50%      { opacity: 1;    transform: translate3d(0, -1px, 0); background-position: 100% 50%; }
+}
+
+@keyframes rl-sheen {
+  0%   { transform: rotate(18deg) translateX(-58%) translateZ(0); opacity: 0; }
+  35%  { opacity: 0.42; }
+  70%  { transform: rotate(18deg) translateX(58%) translateZ(0); opacity: 0; }
+  100% { opacity: 0; }
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .route-loader__bg,
+  .route-loader__grid,
+  .route-loader__halo,
+  .route-loader__orb::before,
+  .route-loader__orb-core,
+  .route-loader__orb-ring,
+  .route-loader__dot,
+  .route-loader__spark,
+  .route-loader__text,
+  .route-loader__stage::after {
+    animation: none !important;
+  }
+}
+
+/* Backdrop-filter fallback */
+@supports not ((backdrop-filter: blur(10px)) or (-webkit-backdrop-filter: blur(10px))) {
+  .route-loader__stage {
+    background:
+      radial-gradient(900px 420px at 18% 0%, rgba(var(--rl-cyan), 0.10), transparent 60%),
+      radial-gradient(820px 520px at 92% 110%, rgba(var(--rl-violet), 0.12), transparent 62%),
+      linear-gradient(180deg, rgba(6, 14, 35, 0.92), rgba(3, 8, 24, 0.96));
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────
    13) Eternal KaiKlok Popover — TRUE FULLSCREEN + HUGE STAGE
    (Single source of truth; X is always clickable)
    ───────────────────────────────────────────────────────────── */
@@ -2984,45 +3958,6 @@ html[data-perf="low"] .kk-pop__panel {
   -webkit-backdrop-filter: none !important;
 }
 
-/* Runtime low-power mode (set by App shell on constrained mobile devices) */
-.app-shell[data-lite="1"] .app-bg-orbit,
-.app-shell[data-lite="1"] .app-bg-glow,
-.app-shell[data-lite="1"] .brand__title,
-.app-shell[data-lite="1"] .brand__subtitle,
-.app-shell[data-lite="1"] .brand__mark::after,
-.app-shell[data-lite="1"] .live-orb::after,
-.app-shell[data-lite="1"] .explorer-pop__panel::after,
-.app-shell[data-lite="1"] .klock-pop__panel::before,
-.app-shell[data-lite="1"] .explorer-pop__close::before,
-.app-shell[data-lite="1"] .explorer-pop__close::after {
-  animation: none !important;
-}
-
-.app-shell[data-lite="1"] .app-bg-orbit {
-  filter: blur(18px) !important;
-  opacity: 0.3 !important;
-}
-
-.app-shell[data-lite="1"] .app-bg-glow {
-  filter: blur(16px) !important;
-  opacity: 0.34 !important;
-}
-
-.app-shell[data-lite="1"] .app-topbar,
-.app-shell[data-lite="1"] .app-frame,
-.app-shell[data-lite="1"] .workspace-topbar,
-.app-shell[data-lite="1"] .app-nav,
-.app-shell[data-lite="1"] .app-panel,
-.app-shell[data-lite="1"] .explorer-pop,
-.app-shell[data-lite="1"] .explorer-pop__panel,
-.app-shell[data-lite="1"] .klock-pop,
-.app-shell[data-lite="1"] .klock-pop__panel,
-.app-shell[data-lite="1"] .kk-pop__backdrop,
-.app-shell[data-lite="1"] .kk-pop__panel {
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-}
-
 
 /* ─────────────────────────────────────────────────────────────
    ZERO-LAG PORTAL POLICY — targeted (no heavy universal selector)
@@ -3321,34 +4256,278 @@ html[data-perf="low"] .kk-pop__panel {
     align-self: start;
   }
 }
+/* ─────────────────────────────────────────────────────────────
+   KAI SPLASH SCREEN — full viewport, centered, fade out on load
+   - circular badge with halos + rays
+   - subtle background grid
+   - no blur boxes (performance safe)
+────────────────────────────────────────────────────────────── */ 
+.kai-splash{
+  position: fixed;
+  inset: 0;
+  z-index: 2147483646;
+  display: grid;
+  place-items: center;
 
-/* Coarse-pointer mobile guardrails: keep design, cut GPU-heavy blur/animation cost */
-@media (pointer: coarse) and (max-width: 1100px){
-  .app-bg-orbit,
-  .app-bg-glow,
-  .brand__title,
-  .brand__subtitle,
-  .live-orb::after,
-  .explorer-pop__panel::after,
-  .klock-pop__panel::before,
-  .explorer-pop__close::before,
-  .explorer-pop__close::after {
-    animation: none !important;
-    filter: none !important;
+  width: 100dvw;
+  height: 100dvh;
+
+  padding:
+    env(safe-area-inset-top)
+    env(safe-area-inset-right)
+    env(safe-area-inset-bottom)
+    env(safe-area-inset-left);
+
+overflow: hidden; /* iOS/WebKit: prevents square tile artifacts */
+
+  background:
+    radial-gradient(900px circle at 50% 42%, rgba(120, 210, 255, 0.12), rgba(0,0,0,0) 62%),
+    radial-gradient(1200px circle at 50% 55%, rgba(170, 120, 255, 0.10), rgba(0,0,0,0) 70%),
+    var(--bg-0, #040f24);
+
+  -webkit-font-smoothing: antialiased;
+  isolation: isolate;
+}
+
+.kai-splash[data-state="show"]{ opacity: 1; }
+.kai-splash[data-state="fade"]{
+  opacity: 0;
+  transition: opacity 260ms ease;
+  pointer-events: none;
+}
+.kai-splash[data-state="hidden"]{
+  opacity: 0;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce){
+  .kai-splash[data-state="fade"]{ transition-duration: 140ms; }
+}
+
+/* subtle background grid (safe, no blur boxes) */
+.kai-splash__grid{
+  position: absolute;
+  inset: 0;
+  opacity: 0.18;
+  background-image:
+    linear-gradient(to right, rgba(255,255,255,0.055) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255,255,255,0.055) 1px, transparent 1px);
+  background-size: 34px 34px;
+  mask-image: radial-gradient(circle at 50% 45%, #000 0 55%, transparent 72%);
+  pointer-events: none;
+}
+
+.kai-splash__content{
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: min(84vw, 320px);
+  aspect-ratio: 1;
+}
+
+.kai-splash__badge{
+  position: relative;
+  width: clamp(160px, 44vw, 240px);
+  aspect-ratio: 1;
+  border-radius: 9999px;
+  display: grid;
+  place-items: center;
+  isolation: isolate;
+}
+
+/* ✅ ALWAYS CIRCULAR — no rectangles, no blur bounding boxes */
+.kai-splash__badge-halo,
+.kai-splash__badge-glow{
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  border-radius: 9999px;
+  transform: translate(-50%, -50%) translateZ(0);
+  pointer-events: none;
+}
+
+/* outer halo */
+.kai-splash__badge-halo{
+  width: 138%;
+  height: 138%;
+  opacity: 0.85;
+  background: radial-gradient(circle,
+    rgba(120, 210, 255, 0.26) 0%,
+    rgba(120, 210, 255, 0.10) 34%,
+    rgba(0,0,0,0) 68%);
+}
+
+/* tighter inner glow (still circular) */
+.kai-splash__badge-glow{
+  width: 110%;
+  height: 110%;
+  opacity: 0.65;
+  background: radial-gradient(circle,
+    rgba(170, 120, 255, 0.22) 0%,
+    rgba(170, 120, 255, 0.08) 38%,
+    rgba(0,0,0,0) 70%);
+  mix-blend-mode: screen;
+}
+
+/* rays ring */
+.kai-splash__rays{
+  position: absolute;
+  inset: -12%;
+  border-radius: 9999px;
+  opacity: 0.35;
+  background:
+    conic-gradient(
+      from 0deg,
+      rgba(255,255,255,0.18),
+      rgba(255,255,255,0) 14%,
+      rgba(255,255,255,0.12) 28%,
+      rgba(255,255,255,0) 42%,
+      rgba(255,255,255,0.16) 56%,
+      rgba(255,255,255,0) 70%,
+      rgba(255,255,255,0.12) 84%,
+      rgba(255,255,255,0) 100%
+    );
+  mask-image: radial-gradient(circle, transparent 0 55%, #000 60% 72%, transparent 78%);
+}
+
+/* core is a perfect circle (no box glow here) */
+.kai-splash__badge-core{
+  position: relative;
+  width: 56%;
+  aspect-ratio: 1;
+  border-radius: 9999px;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(circle at 30% 30%, rgba(255,255,255,0.12), rgba(255,255,255,0.03) 50%, rgba(0,0,0,0.20) 100%);
+  border: 1px solid rgba(255,255,255,0.14);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.28);
+}
+
+/* ✅ THIS is the key: glow hugs the SVG alpha, not its box */
+.kai-splash__phi{
+  width: 62%;
+  height: auto;
+  display: block;
+  transform: translateZ(0);
+  filter:
+    drop-shadow(0 0 10px rgba(120, 210, 255, 0.55))
+    drop-shadow(0 0 22px rgba(170, 120, 255, 0.22));
+}
+
+/* tiny orb + shine (both circular) */
+.kai-splash__badge-orb{
+  position: absolute;
+  width: 22%;
+  aspect-ratio: 1;
+  border-radius: 9999px;
+  left: 62%;
+  top: 26%;
+  background: radial-gradient(circle, rgba(255,255,255,0.22), rgba(255,255,255,0) 62%);
+  opacity: 0.9;
+}
+
+.kai-splash__badge-core-shine{
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: radial-gradient(circle at 30% 22%, rgba(255,255,255,0.22), rgba(255,255,255,0) 58%);
+  pointer-events: none;
+}
+
+/* rings */
+.kai-splash__ring{
+  position: absolute;
+  inset: -6%;
+  border-radius: 9999px;
+  border: 1px solid rgba(255,255,255,0.14);
+  opacity: 0.55;
+}
+.kai-splash__ring--inner{
+  inset: 6%;
+  opacity: 0.45;
+  border-color: rgba(255,255,255,0.10);
+}
+
+/* flare (circular + masked so it can’t square out) */
+.kai-splash__flare{
+  position: absolute;
+  inset: -18%;
+  border-radius: 9999px;
+  opacity: 0.35;
+  background: radial-gradient(circle at 50% 45%, rgba(255,255,255,0.16), rgba(0,0,0,0) 62%);
+  mask-image: radial-gradient(circle, #000 0 62%, transparent 78%);
+}
+
+@media (prefers-reduced-motion: no-preference){
+  .kai-splash__rays{
+    animation: kai-splash-spin 3.6s linear infinite;
+  }
+  .kai-splash__badge-glow{
+    animation: kai-splash-breathe 2.2s ease-in-out infinite;
+  }
+}
+@keyframes kai-splash-spin{
+  to{ transform: translateZ(0) rotate(360deg); }
+}
+@keyframes kai-splash-breathe{
+  0%,100%{ opacity: 0.55; }
+  50%{ opacity: 0.78; }
+}
+
+/* ─────────────────────────────────────────────────────────────
+   MOBILE SAFARI HARDENING — removes square compositing artifacts
+   (paste at end of file)
+────────────────────────────────────────────────────────────── */
+
+/* Make masks behave correctly on WebKit + prevent any tiling edges */
+.kai-splash__grid{
+  -webkit-mask-image: radial-gradient(circle at 50% 45%, #000 0 55%, transparent 72%);
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-size: 100% 100%;
+          mask-repeat: no-repeat;
+          mask-size: 100% 100%;
+}
+
+.kai-splash__rays{
+  overflow: hidden;                 /* conic-gradient must be hard clipped */
+  -webkit-mask-image: radial-gradient(circle, transparent 0 55%, #000 60% 72%, transparent 78%);
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-size: 100% 100%;
+          mask-repeat: no-repeat;
+          mask-size: 100% 100%;
+
+  transform: translateZ(0);
+  will-change: transform;
+}
+
+.kai-splash__flare{
+  overflow: hidden;                 /* radial flare must be hard clipped */
+  -webkit-mask-image: radial-gradient(circle, #000 0 62%, transparent 78%);
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-size: 100% 100%;
+          mask-repeat: no-repeat;
+          mask-size: 100% 100%;
+
+  transform: translateZ(0);
+}
+
+/* iOS/WebKit specific: blend-mode + svg filters are the #1 source of square tiles */
+@supports (-webkit-touch-callout: none){
+  .kai-splash__badge-glow{
+    mix-blend-mode: normal;         /* kills the square “screen blend” tile */
   }
 
-  .app-topbar,
-  .app-frame,
-  .workspace-topbar,
-  .app-nav,
-  .app-panel,
-  .explorer-pop,
-  .explorer-pop__panel,
-  .klock-pop,
-  .klock-pop__panel,
-  .kk-pop__backdrop,
-  .kk-pop__panel {
-    -webkit-backdrop-filter: none !important;
-    backdrop-filter: none !important;
+  .kai-splash__phi{
+    -webkit-filter: none !important; /* kills square filter backing surface */
+            filter: none !important;
+  }
+
+  /* replace lost svg glow with safe circular core glow */
+  .kai-splash__badge-core{
+    box-shadow:
+      0 10px 30px rgba(0,0,0,0.28),
+      0 0 18px rgba(120, 210, 255, 0.34),
+      0 0 44px rgba(170, 120, 255, 0.18);
   }
 }

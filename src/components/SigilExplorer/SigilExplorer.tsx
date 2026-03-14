@@ -102,7 +102,6 @@ import {
 import type { SigilSharePayloadLoose } from "./types";
 import { registerSigilUrl as registerSigilUrlGlobal } from "../../utils/sigilRegistry";
 import { stepIndexFromPulseExact } from "../../utils/kai_pulse";
-import { useMobileLiteMode } from "../../hooks/useMobileLiteMode";
 
 /** Tree build */
 import { buildForest, resolveCanonicalHashFromNode } from "./tree/buildForest";
@@ -1274,7 +1273,6 @@ function ExplorerToolbar({
  *  Main Page — Layout matches CSS: .sigil-explorer + ONLY .explorer-scroll scrolls
  *  ───────────────────────────────────────────────────────────────────── */
 const SigilExplorer: React.FC = () => {
-  const mobileLite = useMobileLiteMode();
   const [registryRev, setRegistryRev] = useState(() => (ensureRegistryHydrated() ? 1 : 0));
   const [transferRev, setTransferRev] = useState(0);
   const [lastAdded, setLastAdded] = useState<string | undefined>(undefined);
@@ -1495,9 +1493,9 @@ const SigilExplorer: React.FC = () => {
   useEffect(() => {
     if (!hasWindow) return;
     const tick = () => setNowPulseSafe(getKaiPulseEternalInt(new Date()));
-    const id = window.setInterval(tick, mobileLite ? 12000 : 6000);
+    const id = window.setInterval(tick, 6000);
     return () => window.clearInterval(id);
-  }, [mobileLite, setNowPulseSafe]);
+  }, [setNowPulseSafe]);
 
   // Prevent browser pull-to-refresh overscroll while explorer is open
   useEffect(() => {
@@ -1923,7 +1921,7 @@ const SigilExplorer: React.FC = () => {
 
       if (breathTimer != null) window.clearTimeout(breathTimer);
 
-      const delay = msUntilNextKaiBreath() * (mobileLite ? 2 : 1);
+      const delay = msUntilNextKaiBreath();
       breathTimer = window.setTimeout(() => {
         breathTimer = null;
 
@@ -2007,7 +2005,7 @@ const SigilExplorer: React.FC = () => {
       unmounted.current = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bump, markInteracting, mobileLite, scheduleUiFlush, setLastAddedSafe]);
+  }, [bump, markInteracting, scheduleUiFlush, setLastAddedSafe]);
 
   const requestImmediateSync = useCallback((reason: SyncReason) => {
     const fn = syncNowRef.current;
@@ -2128,7 +2126,6 @@ const SigilExplorer: React.FC = () => {
 
   useEffect(() => {
     if (!hasWindow) return;
-    if (mobileLite) return;
     if (prefetchTargets.length === 0) return;
 
     const pending = prefetchTargets.filter((u) => !prefetchedRef.current.has(u));
@@ -2163,7 +2160,7 @@ const SigilExplorer: React.FC = () => {
       cancelled = true;
       cancel?.();
     };
-  }, [mobileLite, prefetchTargets]);
+  }, [prefetchTargets]);
 
   const probePrimaryCandidates = useCallback(async () => {
     if (!hasWindow) return;
@@ -2193,13 +2190,12 @@ const SigilExplorer: React.FC = () => {
     for (const r of forest) walk(r);
     if (candidates.length === 0) return;
 
-    const cap = mobileLite ? Math.min(3, URL_PROBE_MAX_PER_REFRESH) : URL_PROBE_MAX_PER_REFRESH;
-    for (const u of candidates.slice(0, cap)) {
+    for (const u of candidates.slice(0, URL_PROBE_MAX_PER_REFRESH)) {
       const res = await probeUrl(u);
       if (res === "ok") setUrlHealth(u, 1);
       if (res === "bad") setUrlHealth(u, -1);
     }
-  }, [forest, mobileLite]);
+  }, [forest]);
 
   useEffect(() => {
     if (!hasWindow) return;
@@ -2219,10 +2215,10 @@ const SigilExplorer: React.FC = () => {
     let cancel: (() => void) | null = null;
 
     if (typeof w.requestIdleCallback === "function") {
-      const id = w.requestIdleCallback(run, { timeout: mobileLite ? 1600 : 900 });
+      const id = w.requestIdleCallback(run, { timeout: 900 });
       cancel = () => w.cancelIdleCallback?.(id);
     } else {
-      const id = window.setTimeout(run, mobileLite ? 700 : 250);
+      const id = window.setTimeout(run, 250);
       cancel = () => window.clearTimeout(id);
     }
 
@@ -2230,7 +2226,7 @@ const SigilExplorer: React.FC = () => {
       cancelled = true;
       cancel?.();
     };
-  }, [mobileLite, registryRev, probePrimaryCandidates]);
+  }, [registryRev, probePrimaryCandidates]);
 
   const handleAdd = useCallback(
     (url: string) => {
@@ -2323,7 +2319,7 @@ const SigilExplorer: React.FC = () => {
   }, [markInteracting]);
 
   return (
-    <div className="sigil-explorer" data-lite={mobileLite ? "true" : "false"} aria-label="Kairos Keystream Explorer">
+    <div className="sigil-explorer" aria-label="Kairos Keystream Explorer">
       <ExplorerToolbar
         onAdd={handleAdd}
         onImport={handleImport}
@@ -2383,13 +2379,9 @@ const SigilExplorer: React.FC = () => {
           <footer className="kx-footer" aria-label="Explorer footer">
             <span className="row">
                <span>Determinate • Stateless • Kairos-Memory</span>
-              <span className="kx-sep" aria-hidden="true">
-                •
-              </span>
+              <span className="dot">•</span>
               <span>{isOnline() ? "online" : "offline"}</span>
-              <span className="kx-sep" aria-hidden="true">
-                •
-              </span>
+              <span className="dot">•</span>
               <span>{totalKeys} keys</span>
             </span>
           </footer>

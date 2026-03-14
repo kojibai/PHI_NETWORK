@@ -1020,8 +1020,7 @@ export default function VerifyPage(): ReactElement {
   const [notice, setNotice] = useState<string>(initialReceiptResult.error ?? "");
 
   const [ownerAuthVerified, setOwnerAuthVerified] = useState<boolean | null>(null);
-  const [ownerAuthStatus, setOwnerAuthStatus] = useState<string>("Owner not present");
-  const [ownerAuthorSigVerified, setOwnerAuthorSigVerified] = useState<boolean | null>(null);
+  const [ownerAuthStatus, setOwnerAuthStatus] = useState<string>("Not present");
   const [ownerAuthBusy, setOwnerAuthBusy] = useState<boolean>(false);
   const [identityScanRequested, setIdentityScanRequested] = useState<boolean>(false);
   const [provenanceSigVerified, setProvenanceSigVerified] = useState<boolean | null>(null);
@@ -1248,15 +1247,12 @@ const noteClaimedFinal =
     [provenanceAuthorSig],
   );
   const ownerAuthorSig = useMemo(
-    () =>
-      embeddedProof?.authorSig ??
-      sharedReceipt?.authorSig ??
-      (result.status === "ok" ? result.embedded.authorSig ?? null : null),
-    [embeddedProof?.authorSig, result, sharedReceipt?.authorSig],
+    () => embeddedProof?.authorSig ?? (result.status === "ok" ? result.embedded.authorSig ?? null : null),
+    [embeddedProof?.authorSig, result],
   );
   const hasKASOwnerSig = useMemo(
-    () => hasRequiredKasAuthorSig(ownerAuthorSig),
-    [ownerAuthorSig],
+    () => hasRequiredKasAuthorSig(embeddedProof?.authorSig ?? (result.status === "ok" ? result.embedded.authorSig : null)),
+    [embeddedProof?.authorSig, result],
   );
   const hasKASReceiveSig = useMemo(() => {
     if (!receiveSig) return false;
@@ -1347,7 +1343,7 @@ const noteClaimedFinal =
   React.useEffect(() => {
     if (result.status === "ok") return;
     setOwnerAuthVerified(null);
-    setOwnerAuthStatus("Owner not present");
+    setOwnerAuthStatus("Not present");
     setOwnerAuthBusy(false);
   }, [result.status]);
 
@@ -1874,7 +1870,7 @@ if (receipt.receiptHash) {
         confirmNoteSend();
       } else {
         setOwnerAuthVerified(null);
-        setOwnerAuthStatus("Owner not present");
+        setOwnerAuthStatus("Not present");
       }
     } finally {
       setBusy(false);
@@ -2543,12 +2539,7 @@ useEffect(() => {
         "";
       ogImageUrl.searchParams.set("phiKey", ogPhiKey);
       if (result.embedded.chakraDay) ogImageUrl.searchParams.set("chakraDay", result.embedded.chakraDay);
-      const kasStatus =
-        ownerAuthorSig
-          ? ownerAuthorSigVerified
-          : effectiveReceiveSig
-            ? receiveSigVerified
-            : null;
+      const kasStatus = ownerAuthVerified;
       if (kasStatus != null) ogImageUrl.searchParams.set("kas", kasStatus ? "1" : "0");
       if (zkVerify != null) ogImageUrl.searchParams.set("g16", zkVerify ? "1" : "0");
     }
@@ -2563,10 +2554,9 @@ useEffect(() => {
     ensureMetaTag("name", "twitter:description", `Proof of Breath™ • ${statusLabel} • Pulse ${slug.pulse ?? "—"}`);
     ensureMetaTag("name", "twitter:image", ogImageUrl.toString());
   }, [
+    ownerAuthVerified,
     effectiveReceiveSig,
     embeddedProof?.ownerPhiKey,
-    ownerAuthorSig,
-    ownerAuthorSigVerified,
     receiveSigVerified,
     result,
     sharedReceipt?.ownerPhiKey,
@@ -2578,7 +2568,7 @@ useEffect(() => {
   React.useEffect(() => {
     if (!hasKASOwnerSig) {
       setOwnerAuthVerified(null);
-      setOwnerAuthStatus("Owner not present");
+      setOwnerAuthStatus("Not present");
       setOwnerAuthBusy(false);
     }
     if ((isReceiveGlyph || isChildGlyphValue) && effectiveOwnerSig && provenanceAuthorSig && effectiveOwnerSig === provenanceAuthorSig) {
@@ -2658,42 +2648,32 @@ useEffect(() => {
     const receiveMode = effectiveReceiveMode === "receive";
 
     if (!receiveMode && !effectiveReceiveSig) {
-      if (!hasKASOwnerSig || !isKASAuthorSig(ownerAuthorSig)) {
-        setOwnerPhiKeyVerified(null);
-        setOwnershipAttested("missing");
+      if (ownerAuthVerified === true) {
+        setOwnerPhiKeyVerified(true);
+        setOwnershipAttested(true);
         return;
       }
-      if (ownerAuthorSigVerified === false) {
+      if (ownerAuthVerified === false) {
         setOwnerPhiKeyVerified(false);
         setOwnershipAttested(false);
         return;
       }
-      if (ownerAuthorSigVerified === null) {
-        setOwnerPhiKeyVerified(null);
-        setOwnershipAttested("missing");
-        return;
-      }
-      if (!effectiveOwnerPhiKey) {
-        setOwnerPhiKeyVerified(null);
-        setOwnershipAttested("missing");
-        return;
-      }
-
-      (async () => {
-        const signerPhiKey = await derivePhiKeyFromPubKeyJwk(ownerAuthorSig.pubKeyJwk);
-        const ok = signerPhiKey === effectiveOwnerPhiKey;
-        if (active) {
-          setOwnerPhiKeyVerified(ok);
-          setOwnershipAttested(ok);
-        }
-      })();
-
-      return () => {
-        active = false;
-      };
+      setOwnerPhiKeyVerified(null);
+      setOwnershipAttested("missing");
+      return;
     }
 
     if (!effectiveReceiveSig) {
+      if (ownerAuthVerified === true) {
+        setOwnerPhiKeyVerified(true);
+        setOwnershipAttested(true);
+        return;
+      }
+      if (ownerAuthVerified === false) {
+        setOwnerPhiKeyVerified(false);
+        setOwnershipAttested(false);
+        return;
+      }
       setOwnerPhiKeyVerified(null);
       setOwnershipAttested("missing");
       return;
@@ -2783,11 +2763,9 @@ useEffect(() => {
     effectiveReceivePulse,
     effectiveReceiveSig,
     hasKASAuthSig,
-    hasKASOwnerSig,
-    ownerAuthorSig,
-    ownerAuthorSigVerified,
     receiveBundleRoot,
     receiveSigVerified,
+    ownerAuthVerified,
   ]);
 
   React.useEffect(() => {
@@ -2826,34 +2804,6 @@ useEffect(() => {
     };
   }, [bundleHash, provenanceAuthorSig, effectiveOriginBundleHash, hasKASProvenanceSig, isReceiveGlyph]);
 
-  React.useEffect(() => {
-    let active = true;
-    if (!bundleHash) {
-      setOwnerAuthorSigVerified(null);
-      return;
-    }
-    if (!ownerAuthorSig || !hasKASOwnerSig) {
-      setOwnerAuthorSigVerified(null);
-      return;
-    }
-
-    (async () => {
-      if (!isKASAuthorSig(ownerAuthorSig)) {
-        if (active) setOwnerAuthorSigVerified(false);
-        return;
-      }
-      const candidateHashes = [bundleHash];
-      const challengeHash = bundleHashFromAuthorSig(ownerAuthorSig);
-      if (challengeHash && challengeHash !== bundleHash) candidateHashes.push(challengeHash);
-      const ok = await verifyAuthorSigWithFallback(ownerAuthorSig, candidateHashes);
-      if (active) setOwnerAuthorSigVerified(ok);
-    })();
-
-    return () => {
-      active = false;
-    };
-  }, [bundleHash, hasKASOwnerSig, ownerAuthorSig]);
-
   const receiveCredId = useMemo(() => (effectiveReceiveSig ? effectiveReceiveSig.credId : ""), [effectiveReceiveSig]);
   const receiveNonce = useMemo(() => (effectiveReceiveSig?.nonce ? effectiveReceiveSig.nonce : ""), [effectiveReceiveSig?.nonce]);
   const receiveBundleHash = useMemo(() => effectiveReceiveBundleHash, [effectiveReceiveBundleHash]);
@@ -2881,28 +2831,24 @@ useEffect(() => {
   const ownerAuthSignerPresent = hasKASAuthSig && Boolean(effectiveOwnerSig || effectiveReceiveSig);
   const ownerAuthVerifiedValue = useMemo(() => {
     if (!hasKASAuthSig) return null;
-    if (effectiveOwnerSig) return ownerAuthorSigVerified;
+    if (effectiveOwnerSig) return ownerAuthVerified;
     if (effectiveReceiveSig) return receiveSigVerified;
     return null;
-  }, [effectiveOwnerSig, effectiveReceiveSig, hasKASAuthSig, ownerAuthorSigVerified, receiveSigVerified]);
-  const stewardPresentLive = useMemo(() => {
-    if (!hasKASOwnerSig) return null;
-    return ownerAuthVerified === true;
-  }, [hasKASOwnerSig, ownerAuthVerified]);
+  }, [effectiveOwnerSig, effectiveReceiveSig, hasKASAuthSig, ownerAuthVerified, receiveSigVerified]);
 
   const sealKAS: SealState = useMemo(() => {
     if (!hasKASAuthSig) return "off";
     if (busy || ownerAuthBusy) return "busy";
     if (ownerAuthorSig) {
-      if (ownerAuthorSigVerified === null) return "na";
-      return ownerAuthorSigVerified ? "valid" : "invalid";
+      if (ownerAuthVerified === null) return "na";
+      return ownerAuthVerified ? "valid" : "invalid";
     }
     if (effectiveReceiveSig) {
       if (receiveSigVerified === null) return "na";
       return receiveSigVerified ? "valid" : "invalid";
     }
     return "off";
-  }, [busy, hasKASAuthSig, ownerAuthBusy, ownerAuthorSig, ownerAuthorSigVerified, effectiveReceiveSig, receiveSigVerified]);
+  }, [busy, hasKASAuthSig, ownerAuthBusy, ownerAuthVerified, ownerAuthorSig, effectiveReceiveSig, receiveSigVerified]);
 
   const sealZK: SealState = useMemo(() => {
     if (busy) return "busy";
@@ -3134,13 +3080,7 @@ const noteInitial = useMemo<NoteBanknoteInputs>(() => {
 
   const hasSvgBytes = Boolean(svgText.trim());
   const expectedSvgHash = sharedReceipt?.svgHash ?? embeddedProof?.svgHash ?? "";
-  const identityStatusLabel = hasKASOwnerSig
-    ? ownerAuthBusy
-      ? ownerAuthStatus || "Waiting for steward authentication…"
-      : ownerAuthVerified === true
-        ? ownerAuthStatus || "Steward verified"
-        : "Owner not present"
-    : "";
+  const identityStatusLabel = hasKASOwnerSig ? ownerAuthStatus || "Not present" : "";
   const artifactStatusLabel =
     artifactAttested === true
       ? "Present (Verified)"
@@ -3995,18 +3935,20 @@ if (!noteDownloadBypassRef.current && alreadySpent) {
               </button>
             </div>
             <div className="chart-popover-body">
-              <LiveChart
-                data={chartData}
-                live={chartPhi}
-                pv={pvForChart}
-                premiumX={1}
-                momentX={1}
-                colors={["rgba(167,255,244,1)"]}
-                usdPerPhi={usdPerPhi}
-                mode={chartMode === "usd" ? "usd" : "phi"}
-                dataUnit={isReceiveGlyph ? "usd" : "phi"}
-                reflowKey={chartReflowKey}
-              />
+              <React.Suspense fallback={<div style={{ padding: 16, color: "var(--inkDim)" }}>Loading chart…</div>}>
+                <LiveChart
+                  data={chartData}
+                  live={chartPhi}
+                  pv={pvForChart}
+                  premiumX={1}
+                  momentX={1}
+                  colors={["rgba(167,255,244,1)"]}
+                  usdPerPhi={usdPerPhi}
+                  mode={chartMode === "usd" ? "usd" : "phi"}
+                  dataUnit={isReceiveGlyph ? "usd" : "phi"}
+                  reflowKey={chartReflowKey}
+                />
+              </React.Suspense>
             </div>
           </div>
         </div>
@@ -4504,12 +4446,9 @@ if (!noteDownloadBypassRef.current && alreadySpent) {
                   ) : null}
                   {hasKASOwnerSig ? (
                     <MiniField
-                      label="Owner/Auth verified (attestation)"
+                      label="Owner/Auth verified"
                       value={ownerAuthVerifiedValue === null ? "n/a" : ownerAuthVerifiedValue ? "true" : "false"}
                     />
-                  ) : null}
-                  {hasKASOwnerSig ? (
-                    <MiniField label="Steward present (live)" value={stewardPresentLive ? "yes" : "no"} />
                   ) : null}
                   {!isReceiveGlyph && hasKASProvenanceSig ? (
                     <MiniField label="Provenance/Origin signature" value={provenanceSig ? "present" : "—"} />

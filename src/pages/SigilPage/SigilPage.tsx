@@ -64,7 +64,6 @@ import { CHAKRA_THEME} from "../../components/sigil/theme";
 import { useKaiTicker } from "../../hooks/useKaiTicker";
 import { useFastPress } from "../../hooks/useFastPress";
 import { useSigilPayload } from "../../utils/useSigilPayload";
-import { useMobileLiteMode } from "../../hooks/useMobileLiteMode";
 
 /** constants.ts */
 import { DEFAULT_UPGRADE_BREATHS } from "./constants";
@@ -464,12 +463,8 @@ export default function SigilPage() {
   void setLoading;
   const payload = payloadState;
 
-  const mobileLite = useMobileLiteMode();
-
   // live Kai (eternal)
-  const { pulse: currentPulse, msToNextPulse } = useKaiTicker(
-    mobileLite ? { tickMs: 420, hiddenTickMs: 1800 } : { tickMs: 180, hiddenTickMs: 900 }
-  );
+  const { pulse: currentPulse, msToNextPulse } = useKaiTicker();
 
   // Sovereign additions
   const [uploadedMeta, setUploadedMeta] = useState<SigilMetaLoose | null>(null);
@@ -1658,6 +1653,7 @@ const onReady = useCallback(
 );
 
   /* Render guards */
+  const showSkeleton = loading && !payload;
   const showError = verified === "notfound" || verified === "error";
 
   const pulse = payload?.pulse ?? 0;
@@ -2507,7 +2503,7 @@ return () => document.body.classList.remove(cls);
   /* Stage node */
   const stageNode = (
     <SigilFrame frameRef={frameRef}>
-      {!showError && payload && (
+      {!showSkeleton && !showError && payload && (
         <div
           id="sigil-stage"
           style={{
@@ -2534,6 +2530,7 @@ return () => document.body.classList.remove(cls);
         </div>
       )}
 
+      {showSkeleton && <div className="sp-skeleton" aria-hidden="true" />}
       {showError && (
         <div className="sp-error">
           {verified === "notfound" ? "Waiting for SVG upload or ?p= payload." : "Unable to load sigil."}
@@ -2604,51 +2601,29 @@ const { series, pushSample } = useValueHistory({
   maxPoints: 36 * 42 * 8, // buffer size (samples), tune as you like
   maxBeats: 36 * 42,      // retention window in Kai beats
 });
-const displayedChipPhiRef = useRef<number | null>(null);
-useEffect(() => {
-  displayedChipPhiRef.current = Number.isFinite(displayedChipPhi) ? displayedChipPhi : null;
-}, [displayedChipPhi]);
-
+// wherever you have displayedChipPhi and pushSample
 useEffect(() => {
   const BREATH_MS = (3 + Math.sqrt(5)) * 1000; // ≈ 5236.0679 ms
+  let raf: number | null = null;
   let tid: number | null = null;
-  let cancelled = false;
 
   const tick = () => {
-    if (cancelled) return;
-
-    const visible = typeof document === "undefined" ? true : document.visibilityState === "visible";
-    const v = displayedChipPhiRef.current;
-    if (visible && typeof v === "number" && Number.isFinite(v)) {
+    const v = displayedChipPhi;
+    if (Number.isFinite(v)) {
       // push with legacy ms; the chart normalizes to Kai beats (fractional)
       pushSample({ t: Date.now(), v });
     }
-
-    const delay = visible ? BREATH_MS : BREATH_MS * 3;
-    tid = window.setTimeout(tick, delay);
+    tid = window.setTimeout(() => {
+      raf = requestAnimationFrame(tick);
+    }, BREATH_MS);
   };
 
   tick();
-
-  const onVisibility = () => {
-    if (document.visibilityState !== "visible") return;
-    if (tid !== null) {
-      window.clearTimeout(tid);
-      tid = null;
-    }
-    tick();
-  };
-  document.addEventListener("visibilitychange", onVisibility);
-
   return () => {
-    cancelled = true;
-    document.removeEventListener("visibilitychange", onVisibility);
-    if (tid !== null) {
-      window.clearTimeout(tid);
-      tid = null;
-    }
+    if (tid) clearTimeout(tid);
+    if (raf) cancelAnimationFrame(raf);
   };
-}, [pushSample]);
+}, [displayedChipPhi, pushSample]);
 
 
   return (
@@ -2660,7 +2635,6 @@ useEffect(() => {
       data-archived={isArchived}
       data-old-link={oldLinkDetected ? "true" : "false"}
       data-ready={!loading && !!payload}
-      data-lite={mobileLite ? "true" : "false"}
       data-version="v48"
     >
       <div className="sp-veil" aria-hidden="true" />
@@ -2696,7 +2670,7 @@ useEffect(() => {
           <span className="authority-seal__state">
             {verified === "verified" ? "VERIFIED" : "Out•Of•Sync"}
           </span>
-          <span className="sep-dot">•</span>
+          <span className="dot">•</span>
           <span>PROOF•OF•BREATH™</span>
         </div>
 
@@ -2784,6 +2758,8 @@ useEffect(() => {
             copyLinkPress={copyLinkPress}
             sharePress={sharePress}
             verified={toMetaVerifyState(verified)}
+            showSkeleton={showSkeleton}
+            showError={showError}
             stage={stageNode}
           />{/* Breath Proof overlay (portal) */}
           {proofOpen && breathProof &&

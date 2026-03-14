@@ -282,7 +282,7 @@ dialog.valuation-modal::backdrop{
   align-items: center;
   margin-top: 6px;
 }
-.kpi-subline .sep-dot { opacity: 0.5 }
+.kpi-subline .dot { opacity: 0.5 }
 .kpi-subline .gain { color: var(--green-500, #22c55e) }
 .kpi-subline .loss { color: var(--red-400, #f87171) }
 

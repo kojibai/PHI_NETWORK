@@ -128,7 +128,6 @@ export type ExportableSigilMeta = {
   stepsPerBeat?: number;
   stepIndex?: number | null;
   exportedAtPulse?: number | null;
-  savedAtPulse?: number | null;
   canonicalHash?: string | null;
 
   /** identity / signing */
@@ -342,7 +341,6 @@ export async function exportZIP(ctx: {
     const claimedMeta: ExportableSigilMeta = {
       ...payload,
       exportedAtPulse: nowPulse,
-      savedAtPulse: nowPulse,
       stepIndex: sealedStepIndex,
       stepsPerBeat: stepsNum, // ensure explicit in metadata
       provenance: [...(payload.provenance ?? []), provEntry],
@@ -630,7 +628,6 @@ export async function exportZIP(ctx: {
     const transport = {
       shareUrl,
       verifierUrl,
-      savedAtPulse: nowPulse,
       proofHints,
     };
     const bundleRoot = buildBundleRoot(proofBundleBase);
@@ -641,7 +638,6 @@ export async function exportZIP(ctx: {
       bundleRoot,
       bundleHash: computedBundleHash,
       authorSig: null,
-      savedAtPulse: nowPulse,
       transport,
       proofHints,
     };
@@ -687,7 +683,6 @@ export async function exportZIP(ctx: {
 
       expiresAtPulse: claimedMetaCanon.expiresAtPulse ?? null,
       exportedAtPulse: claimedMetaCanon.exportedAtPulse ?? null,
-      savedAtPulse: nowPulse,
       claimedAtPulse: nowPulse,
 
       overlays: { qr: false, eternalPulseBar: false },

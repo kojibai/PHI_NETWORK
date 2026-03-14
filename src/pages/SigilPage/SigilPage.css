@@ -1871,7 +1871,7 @@ body.modal-open :where(.sigilpage, .sp-viewport, .sp-shell, .sp-veil, .sp-veil-s
   white-space:nowrap; min-width:0;
   animation: text-glow var(--pulse) ease-in-out infinite;
 }
-.authority-seal__headline .sep-dot{ opacity:.6; }
+.authority-seal__headline .dot{ opacity:.6; }
 
 .authority-seal__chip{
   align-self:start; justify-self:start;
@@ -2110,7 +2110,7 @@ body.modal-open :where(.sigilpage, .sp-viewport, .sp-shell, .sp-veil, .sp-veil-s
         /* a breath-sync’d tiny luminance lift (teal baseline; red variant above) */
         animation: text-glow var(--pulse) ease-in-out infinite;
       }
-      .authority-seal__headline .sep-dot{ opacity:.6; }
+      .authority-seal__headline .dot{ opacity:.6; }
 
       .authority-seal__chip{
         align-self:start; justify-self:start;
@@ -2354,37 +2354,3 @@ body.modal-open :where(.sigilpage, .sp-viewport, .sp-shell, .sp-veil, .sp-veil-s
   }
 }
 .sp-price-chip .usd-inline { opacity:.8; margin-left:.5ch; font-variant-numeric: tabular-nums; }
-
-/* Runtime low-power mode (set by data-lite="true" on page root) */
-.sigilpage[data-lite="true"]::before,
-.sigilpage[data-lite="true"] .sp-veil,
-.sigilpage[data-lite="true"] .sp-veil-stars {
-  animation: none !important;
-  filter: none !important;
-}
-
-.sigilpage[data-lite="true"] *,
-.sigilpage[data-lite="true"] *::before,
-.sigilpage[data-lite="true"] *::after {
-  animation-duration: 0.01ms !important;
-  animation-iteration-count: 1 !important;
-}
-
-.sigilpage[data-lite="true"] :is(.sp-card, .sp-panel, .sp-provenance, .sp-lineage, .auth-badge, .sp-price-chip) {
-  -webkit-backdrop-filter: none !important;
-  backdrop-filter: none !important;
-}
-
-@media (pointer: coarse) and (max-width: 1100px) {
-  .sigilpage::before,
-  .sp-veil,
-  .sp-veil-stars {
-    animation: none !important;
-    filter: none !important;
-  }
-
-  .sigilpage :is(.sp-card, .sp-panel, .sp-provenance, .sp-lineage, .auth-badge, .sp-price-chip) {
-    -webkit-backdrop-filter: none !important;
-    backdrop-filter: none !important;
-  }
-}

@@ -39,8 +39,6 @@ type SigilSyncBag = {
 const hasWindow = typeof window !== "undefined";
 const INHALE_INTERVAL_MS = 3236;
 const EXHALE_INTERVAL_MS = 2000;
-const INHALE_INTERVAL_MOBILE_LITE_MS = 12_944;
-const EXHALE_INTERVAL_MOBILE_LITE_MS = 8_944;
 
 function getSigilBag(): SigilSyncBag {
   if (!hasWindow) return {};
@@ -113,13 +111,8 @@ function buildUrl(base: string, path: string): string {
   return new URL(path, base).toString();
 }
 
-type StartSigilExplorerSyncOptions = {
-  mobileLite?: boolean;
-};
-
-export function startSigilExplorerSync(options: StartSigilExplorerSyncOptions = {}): () => void {
+export function startSigilExplorerSync(): () => void {
   if (!hasWindow) return () => {};
-  const mobileLite = Boolean(options.mobileLite);
 
   const bag = getSigilBag();
   if (bag.explorerSync?.running) return bag.explorerSync.stop ?? (() => {});
@@ -263,20 +256,16 @@ export function startSigilExplorerSync(options: StartSigilExplorerSyncOptions = 
 
   const scheduleInhale = (): void => {
     if (inhaleTimer != null) window.clearInterval(inhaleTimer);
-    const intervalMs = mobileLite ? INHALE_INTERVAL_MOBILE_LITE_MS : INHALE_INTERVAL_MS;
     inhaleTimer = window.setInterval(() => {
-      if (mobileLite && document.visibilityState !== "visible") return;
       void inhaleOnce();
-    }, intervalMs);
+    }, INHALE_INTERVAL_MS);
   };
 
   const scheduleExhale = (): void => {
     if (exhaleTimer != null) window.clearInterval(exhaleTimer);
-    const intervalMs = mobileLite ? EXHALE_INTERVAL_MOBILE_LITE_MS : EXHALE_INTERVAL_MS;
     exhaleTimer = window.setInterval(() => {
-      if (mobileLite && document.visibilityState !== "visible") return;
       void exhaleOnce("pulse");
-    }, intervalMs);
+    }, EXHALE_INTERVAL_MS);
   };
 
   const resnapBreath = (): void => {

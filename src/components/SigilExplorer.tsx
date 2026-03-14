@@ -3743,9 +3743,7 @@ breathTimer = null;
           <footer className="kx-footer" aria-label="About">
             <div className="row">
               <span>Determinate • Stateless • Kairos-remembered</span>
-              <span className="kx-sep" aria-hidden="true">
-                •
-              </span>
+              <span className="dot">•</span>
               <span>No DB. No Server. Pure Φ.</span>
             </div>
           </footer>
