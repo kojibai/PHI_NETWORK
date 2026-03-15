@@ -1525,6 +1525,34 @@ button.o-link{
   }
 }
 
+.sigil-explorer[data-lite="true"]::after,
+.sigil-explorer[data-lite="true"] .kx-glyph::after,
+.sigil-explorer[data-lite="true"] .origin,
+.sigil-explorer[data-lite="true"] .node,
+.sigil-explorer[data-lite="true"] .tw {
+  animation: none !important;
+}
+
+.sigil-explorer[data-lite="true"] .kx-toolbar {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+@media (pointer: coarse) and (max-width: 1100px){
+  .sigil-explorer::after,
+  .kx-glyph::after,
+  .origin,
+  .node,
+  .tw {
+    animation: none !important;
+  }
+
+  .kx-toolbar {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+}
+
 /* ─────────────────────────────────────────────────────────────
    ANDROID / WEBVIEW COLOR-MIX FALLBACK
    ───────────────────────────────────────────────────────────── */

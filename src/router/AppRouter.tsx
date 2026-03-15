@@ -11,6 +11,7 @@ import {
 } from "../App";
 import KaiSplashScreen from "../components/KaiSplashScreen";
 import { PerfProfiler } from "../perf/PerfProfiler";
+import { computeMobileLiteMode } from "../hooks/useMobileLiteMode";
 
 // Standalone pages stay lazy (RouteLoader allowed here)
 const SigilFeedPage = React.lazy(() => import("../pages/SigilFeedPage"));
@@ -33,6 +34,7 @@ const PREFETCH_LAZY_ROUTES: ReadonlyArray<() => Promise<unknown>> = [
 
 function shouldPrefetchLazyRoutes(): boolean {
   if (typeof navigator === "undefined") return false;
+  if (computeMobileLiteMode()) return false;
   const navAny = navigator as Navigator & {
     connection?: { saveData?: boolean; effectiveType?: string };
     deviceMemory?: number;
@@ -45,39 +47,38 @@ function shouldPrefetchLazyRoutes(): boolean {
 }
 
 function RouteLoader(): React.JSX.Element {
-return (
-  <div
-    className="route-loader"
-    role="status"
-    aria-live="polite"
-    aria-label="Loading"
-  >
-    <div className="route-loader__bg" aria-hidden="true" />
-    <div className="route-loader__grid" aria-hidden="true" />
-    <div className="route-loader__halo" aria-hidden="true" />
-
-    <div className="route-loader__stage">
-      <div className="route-loader__orb" aria-hidden="true">
-        <div className="route-loader__orb-ring route-loader__orb-ring--a" />
-        <div className="route-loader__orb-ring route-loader__orb-ring--b" />
-        <div className="route-loader__orb-ring route-loader__orb-ring--c" />
-
-        <div className="route-loader__orb-core" />
-
-        <span className="route-loader__spark route-loader__spark--a" />
-        <span className="route-loader__spark route-loader__spark--b" />
-      </div>
-
-      <div className="route-loader__content">
-        <div className="route-loader__content-inner">
-          <div className="route-loader__dot" aria-hidden="true" />
-          <div className="route-loader__text">BREATH REMEMBERS</div>
-          <div className="route-loader__sub">Aligning…</div>
-        </div>
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      aria-label="Loading"
+      style={{
+        minHeight: "100dvh",
+        display: "grid",
+        placeItems: "center",
+        padding: "1.25rem",
+        background:
+          "radial-gradient(circle at 25% 10%, rgba(51,246,255,.06), transparent 48%), radial-gradient(circle at 75% 85%, rgba(155,91,255,.08), transparent 58%), linear-gradient(160deg, rgba(2,3,10,.96), rgba(6,14,35,.96))",
+      }}
+    >
+      <div
+        style={{
+          padding: "0.85rem 1rem",
+          borderRadius: "14px",
+          border: "1px solid rgba(255,255,255,.12)",
+          background: "rgba(8,14,16,.6)",
+          color: "rgba(231,251,247,.92)",
+          boxShadow: "0 14px 34px rgba(0,0,0,.24)",
+          fontSize: "12px",
+          fontWeight: 700,
+          letterSpacing: "0.12em",
+          textTransform: "uppercase",
+        }}
+      >
+        Opening...
       </div>
     </div>
-  </div>
-);
+  );
 }
 
 function withStandaloneSuspense(node: React.ReactElement): React.JSX.Element {

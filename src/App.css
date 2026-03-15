@@ -3958,6 +3958,45 @@ html[data-perf="low"] .kk-pop__panel {
   -webkit-backdrop-filter: none !important;
 }
 
+/* Runtime low-power mode (set by App shell on constrained mobile devices) */
+.app-shell[data-lite="1"] .app-bg-orbit,
+.app-shell[data-lite="1"] .app-bg-glow,
+.app-shell[data-lite="1"] .brand__title,
+.app-shell[data-lite="1"] .brand__subtitle,
+.app-shell[data-lite="1"] .brand__mark::after,
+.app-shell[data-lite="1"] .live-orb::after,
+.app-shell[data-lite="1"] .explorer-pop__panel::after,
+.app-shell[data-lite="1"] .klock-pop__panel::before,
+.app-shell[data-lite="1"] .explorer-pop__close::before,
+.app-shell[data-lite="1"] .explorer-pop__close::after {
+  animation: none !important;
+}
+
+.app-shell[data-lite="1"] .app-bg-orbit {
+  filter: blur(18px) !important;
+  opacity: 0.3 !important;
+}
+
+.app-shell[data-lite="1"] .app-bg-glow {
+  filter: blur(16px) !important;
+  opacity: 0.34 !important;
+}
+
+.app-shell[data-lite="1"] .app-topbar,
+.app-shell[data-lite="1"] .app-frame,
+.app-shell[data-lite="1"] .workspace-topbar,
+.app-shell[data-lite="1"] .app-nav,
+.app-shell[data-lite="1"] .app-panel,
+.app-shell[data-lite="1"] .explorer-pop,
+.app-shell[data-lite="1"] .explorer-pop__panel,
+.app-shell[data-lite="1"] .klock-pop,
+.app-shell[data-lite="1"] .klock-pop__panel,
+.app-shell[data-lite="1"] .kk-pop__backdrop,
+.app-shell[data-lite="1"] .kk-pop__panel {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
 
 /* ─────────────────────────────────────────────────────────────
    ZERO-LAG PORTAL POLICY — targeted (no heavy universal selector)
@@ -4254,6 +4293,37 @@ html[data-perf="low"] .kk-pop__panel {
     height: auto;
     max-height: none;
     align-self: start;
+  }
+}
+
+/* Coarse-pointer mobile guardrails: keep design, cut GPU-heavy blur/animation cost */
+@media (pointer: coarse) and (max-width: 1100px){
+  .app-bg-orbit,
+  .app-bg-glow,
+  .brand__title,
+  .brand__subtitle,
+  .live-orb::after,
+  .explorer-pop__panel::after,
+  .klock-pop__panel::before,
+  .explorer-pop__close::before,
+  .explorer-pop__close::after {
+    animation: none !important;
+    filter: none !important;
+  }
+
+  .app-topbar,
+  .app-frame,
+  .workspace-topbar,
+  .app-nav,
+  .app-panel,
+  .explorer-pop,
+  .explorer-pop__panel,
+  .klock-pop,
+  .klock-pop__panel,
+  .kk-pop__backdrop,
+  .kk-pop__panel {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
   }
 }
 /* ─────────────────────────────────────────────────────────────

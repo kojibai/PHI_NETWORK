@@ -143,7 +143,7 @@ const floorDivE = (a: bigint, d: bigint) => {
   return r === 0n || a >= 0n ? q : q - 1n;
 };
 
-const clampPulseNonNeg = (p: bigint) => (p < 0n ? 0n : p);
+const normalizePulseBI = (p: bigint) => p;
 
 /** BigInt gcd (non-negative). */
 const gcdBI = (a: bigint, b: bigint): bigint => {
@@ -178,7 +178,12 @@ const fmtSeal = (raw: string) =>
 const fmtSealKairos = (beat: number, stepIdx: number) => `${beat}:${pad2(stepIdx)}`;
 
 const fmtPulse = (pulseValue: bigint) =>
-  pulseValue <= MAX_SAFE_BI ? Number(pulseValue).toLocaleString() : pulseValue.toString();
+  pulseValue >= -MAX_SAFE_BI && pulseValue <= MAX_SAFE_BI
+    ? Number(pulseValue).toLocaleString()
+    : pulseValue.toString();
+
+const sanitizePulseField = (raw: string) =>
+  raw.replace(/[^\d-]/g, "").replace(/(?!^)-/g, "");
 
 type SolarSealContext = {
   weekday: string;
@@ -700,7 +705,7 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
   const getNowPulseBI = useCallback((): bigint => {
     try {
       const pμNow = nowMicroGenesis();
-      return clampPulseNonNeg(floorDivE(pμNow, ONE_PULSE_MICRO));
+      return normalizePulseBI(floorDivE(pμNow, ONE_PULSE_MICRO));
     } catch {
       return 0n;
     }
@@ -791,7 +796,7 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
 
   const applyPulse = useCallback(
     (p: bigint, updateField = true) => {
-      const pFixed = clampPulseNonNeg(p);
+      const pFixed = normalizePulseBI(p);
       setPulse(pFixed);
 
       if (updateField && !pulseEditingRef.current) {
@@ -920,13 +925,13 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
 
   const onPulseFieldChange = (e: ChangeEvent<HTMLInputElement>) => {
     const raw = e.target.value ?? "";
-    const clean = raw.replace(/[^\d]/g, "");
+    const clean = sanitizePulseField(raw);
     setPulseField(clean);
 
-    if (!clean) return;
+    if (!clean || clean === "-") return;
 
     try {
-      const p = clampPulseNonNeg(BigInt(clean));
+      const p = normalizePulseBI(BigInt(clean));
       setMode("static-pulse");
       setDateISO("");
       setBreathIdx(1);
@@ -946,7 +951,7 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
       const dt = applyBreathSlot(base, bIdx);
 
       const pμ = microPulsesSinceGenesis(dt);
-      const pBI = clampPulseNonNeg(floorDivE(pμ, ONE_PULSE_MICRO));
+      const pBI = normalizePulseBI(floorDivE(pμ, ONE_PULSE_MICRO));
 
       setMode("static-date");
       clearAlignedTimer();
@@ -1208,7 +1213,7 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
     const svg = getSVGElement();
     const svgPulseAttr = svg?.getAttribute("data-pulse");
     const svgPulseBI =
-      svgPulseAttr && /^\d+$/.test(svgPulseAttr) ? BigInt(svgPulseAttr) : null;
+      svgPulseAttr && /^-?\d+$/.test(svgPulseAttr) ? BigInt(svgPulseAttr) : null;
     const svgMatchesMint = svgPulseBI !== null && svgPulseBI === mintPulse;
     const canTrustChildHash = mintPulse <= MAX_SAFE_BI && svgMatchesMint;
 
@@ -1680,7 +1685,8 @@ const SigilModal: FC<Props> = ({ onClose }: Props) => {
               <input
                 className="sigil-input sigil-pulse-input"
                 type="text"
-                inputMode="numeric"
+                inputMode="text"
+                pattern="-?[0-9]*"
                 value={pulseField}
                 onFocus={() => {
                   pulseEditingRef.current = true;

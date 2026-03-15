@@ -8,6 +8,7 @@ import React, {
 } from "react";
 import { createPortal } from "react-dom";
 import { matchPath, useLocation, useNavigationType } from "react-router";
+import { useMobileLiteMode } from "../hooks/useMobileLiteMode";
 
 
 type SplashPhase = "show" | "fade" | "hidden";
@@ -66,6 +67,7 @@ export default function KaiSplashScreen(): React.JSX.Element | null {
   const location = useLocation();
   const navigationType = useNavigationType();
   const prefersReducedMotion = usePrefersReducedMotion();
+  const mobileLite = useMobileLiteMode();
 
   const [phase, setPhase] = useState<SplashPhase>("show");
   const [mounted, setMounted] = useState<boolean>(true);
@@ -126,8 +128,8 @@ export default function KaiSplashScreen(): React.JSX.Element | null {
 
   const splashEnabled = useMemo(() => {
     // ✅ Safe on server
-    return isFirstLoad || matchesSplashRoute;
-  }, [isFirstLoad, matchesSplashRoute]);
+    return !mobileLite && (isFirstLoad || matchesSplashRoute);
+  }, [isFirstLoad, matchesSplashRoute, mobileLite]);
 
   const hideSplash = useCallback(
     (delayMs: number) => {
@@ -224,6 +226,7 @@ export default function KaiSplashScreen(): React.JSX.Element | null {
   // ✅ Navigation-triggered splash (client only)
   useEffect(() => {
     if (!isBrowser) return;
+    if (mobileLite) return;
 
     if (!hasCompletedFirstPaint.current) {
       hasCompletedFirstPaint.current = true;
@@ -256,6 +259,7 @@ export default function KaiSplashScreen(): React.JSX.Element | null {
     location.pathname,
     location.search,
     location.hash,
+    mobileLite,
     navigationType,
   ]);
 
@@ -270,6 +274,7 @@ export default function KaiSplashScreen(): React.JSX.Element | null {
 
   // ✅ SSR render: portalTarget is null (no DOM), so we return null safely.
   // ✅ Client: portalTarget becomes document.body via layout effect.
+  if (mobileLite) return null;
   if (!mounted) return null;
   if (!portalTarget) return null;
 

@@ -93,7 +93,7 @@ const SigilModal = lazy(
 const HomePriceChartCard = lazy(
   () => import("./components/HomePriceChartCard"),
 ) as React.LazyExoticComponent<
-  React.ComponentType<{ apiBase: string; ctaAmountUsd: number; chartHeight: number }>
+  React.ComponentType<{ apiBase: string; ctaAmountUsd: number; chartHeight: number; liteMode?: boolean }>
 >;
 
 const SigilExplorer = lazy(
@@ -1139,11 +1139,11 @@ export function AppChrome(): React.JSX.Element {
   const mobileLite = useMobileLiteMode();
 
   useEffect(() => {
-    const stopSync = startSigilExplorerSync();
+    const stopSync = startSigilExplorerSync({ mobileLite });
     return () => {
       stopSync();
     };
-  }, []);
+  }, [mobileLite]);
 
   // Re-kill splash on "/" before paint (guarantee) — safe due to root guard
   useIsoLayoutEffect(() => {
@@ -1198,7 +1198,7 @@ export function AppChrome(): React.JSX.Element {
 
   // Optional: prefetch lazy chunks in idle (no UI impact)
   useEffect(() => {
-    if (!heavyUiReady) return;
+    if (!heavyUiReady || mobileLite) return;
     const navAny = navigator as Navigator & {
       connection?: { saveData?: boolean; effectiveType?: string };
       deviceMemory?: number;
@@ -1217,7 +1217,7 @@ export function AppChrome(): React.JSX.Element {
     void import("./components/SigilExplorer/SigilExplorer");
     void import("./components/EternalKlock");
     void import("./pages/sigilstream/SigilStreamRoot");
-  }, [heavyUiReady]);
+  }, [heavyUiReady, mobileLite]);
 
   const prefetchSigilExplorer = useCallback((): void => {
     void import("./components/SigilExplorer/SigilExplorer");
@@ -1239,6 +1239,7 @@ export function AppChrome(): React.JSX.Element {
   // SW warm-up (idle-only + focus cadence, abort-safe, respects Save-Data/2G)
   useEffect(() => {
     if (typeof window === "undefined" || !("serviceWorker" in navigator)) return undefined;
+    if (mobileLite) return undefined;
 
     const aborter = new AbortController();
 
@@ -1316,7 +1317,7 @@ export function AppChrome(): React.JSX.Element {
 
       window.removeEventListener("focus", onFocus);
     };
-  }, []);
+  }, [mobileLite]);
 
   const BREATH_S = useMemo(() => 3 + Math.sqrt(5), []);
   const BREATH_MS = useMemo(() => BREATH_S * 1000, [BREATH_S]);
@@ -1545,6 +1546,7 @@ export function AppChrome(): React.JSX.Element {
       data-ui="atlantean-banking"
       data-panel-scroll={panelShouldScroll ? "1" : "0"}
       data-roomy={roomy ? "1" : "0"}
+      data-lite={mobileLite ? "1" : "0"}
       style={shellStyle}
     >
       <a className="skip-link" href="#app-content">
@@ -1620,6 +1622,7 @@ export function AppChrome(): React.JSX.Element {
                           apiBase="https://pay.kaiklok.com"
                           ctaAmountUsd={144}
                           chartHeight={chartHeight}
+                          liteMode={mobileLite}
                         />
                       </Suspense>
                     ) : (
