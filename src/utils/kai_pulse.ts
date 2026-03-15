@@ -469,6 +469,15 @@ export function latticeFromMicroPulses(pμ: bigint): {
   return { beat: Number(beatBI), stepIndex: Number(stepBI), percentIntoStep };
 }
 
+/** Exact KKS lattice coordinates from an integer pulse index. */
+export function latticeFromPulse(pulse: number | bigint): {
+  beat: number;
+  stepIndex: number;
+  percentIntoStep: number; // [0,1)
+} {
+  return latticeFromMicroPulses(microPulsesFromPulse(pulse));
+}
+
 /** Full KaiMoment from any UTC input (string/Date/bigint). */
 export function momentFromUTC(
   utc?: string | Date | bigint,

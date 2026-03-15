@@ -1,5 +1,6 @@
 import { derivePhiKeyFromSig } from "../components/VerifierStamper/sigilUtils";
 import { extractEmbeddedMetaFromSvg, type EmbeddedMeta } from "./sigilMetadata";
+import { latticeFromPulse } from "./kai_pulse";
 import { assertReceiptHashMatch } from "./verificationReceipt";
 
 export type SlugInfo = {
@@ -14,6 +15,8 @@ export type VerifyChecks = {
   slugPulseMatches: boolean | null;
   slugShortSigMatches: boolean | null;
   derivedPhiKeyMatchesEmbedded: boolean | null;
+  beatMatchesPulse: boolean | null;
+  stepIndexMatchesPulse: boolean | null;
 };
 
 export type VerifyResult =
@@ -41,14 +44,14 @@ export type VerifyResult =
 
 export function parseSlug(rawSlug: string): SlugInfo {
   const raw = decodeURIComponent(rawSlug || "").trim();
-  const m = raw.match(/^(\d+)-([A-Za-z0-9]+)(?:-(\d+))?$/);
+  const m = raw.match(/^(-?\d+)-([A-Za-z0-9]+)(?:-(-?\d+))?$/);
   if (!m) return { raw, pulse: null, shortSig: null, verifiedAtPulse: null };
 
   const pulseNum = Number(m[1]);
-  const pulse = Number.isFinite(pulseNum) && pulseNum > 0 ? pulseNum : null;
+  const pulse = Number.isFinite(pulseNum) ? pulseNum : null;
   const shortSig = m[2] ? String(m[2]) : null;
   const verifiedAtPulseNum = m[3] ? Number(m[3]) : Number.NaN;
-  const verifiedAtPulse = Number.isFinite(verifiedAtPulseNum) && verifiedAtPulseNum > 0 ? verifiedAtPulseNum : null;
+  const verifiedAtPulse = Number.isFinite(verifiedAtPulseNum) ? verifiedAtPulseNum : null;
 
   return { raw, pulse, shortSig, verifiedAtPulse };
 }
@@ -88,6 +91,10 @@ export async function verifySigilSvg(slug: SlugInfo, svgText: string, verifiedAt
       embeddedPulseExact && Number.isFinite(Number(embeddedPulseExact))
         ? Number(embeddedPulseExact)
         : embedded.pulse;
+    const canonicalLattice =
+      typeof embeddedPulse === "number" && Number.isFinite(embeddedPulse)
+        ? latticeFromPulse(embeddedPulse)
+        : null;
 
     const slugPulseMatches =
       slug.pulse == null || embeddedPulse == null ? null : slug.pulse === embeddedPulse;
@@ -97,18 +104,30 @@ export async function verifySigilSvg(slug: SlugInfo, svgText: string, verifiedAt
 
     const derivedPhiKeyMatchesEmbedded =
       embeddedPhiKey.length === 0 ? null : derivedPhiKey === embeddedPhiKey;
+    const beatMatchesPulse =
+      canonicalLattice == null || embedded.beat == null
+        ? null
+        : embedded.beat === canonicalLattice.beat;
+    const stepIndexMatchesPulse =
+      canonicalLattice == null || embedded.stepIndex == null
+        ? null
+        : embedded.stepIndex === canonicalLattice.stepIndex;
 
     const checks: VerifyChecks = {
       hasSignature: true,
       slugPulseMatches,
       slugShortSigMatches,
       derivedPhiKeyMatchesEmbedded,
+      beatMatchesPulse,
+      stepIndexMatchesPulse,
     };
 
     const hardFail =
       checks.slugPulseMatches === false ||
       checks.slugShortSigMatches === false ||
-      checks.derivedPhiKeyMatchesEmbedded === false;
+      checks.derivedPhiKeyMatchesEmbedded === false ||
+      checks.beatMatchesPulse === false ||
+      checks.stepIndexMatchesPulse === false;
 
     if (hardFail) {
       return {

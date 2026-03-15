@@ -84,11 +84,23 @@ function transpileRecursive(fileUrl) {
 
 const verifyPath = new URL("../src/utils/verifySigil.ts", import.meta.url);
 const sigilPath = new URL("../src/components/VerifierStamper/sigilUtils.ts", import.meta.url);
+const payloadPath = new URL("../src/utils/payload.ts", import.meta.url);
+const sigilUrlPath = new URL("../src/utils/sigilUrl.ts", import.meta.url);
+const svgMetaPath = new URL("../src/utils/svgMeta.ts", import.meta.url);
+const kaiPulsePath = new URL("../src/utils/kai_pulse.ts", import.meta.url);
 const verify = await import(pathToFileURL(transpileRecursive(verifyPath.href)).href);
 const sigilUtils = await import(pathToFileURL(transpileRecursive(sigilPath.href)).href);
+const payloadUtils = await import(pathToFileURL(transpileRecursive(payloadPath.href)).href);
+const sigilUrlUtils = await import(pathToFileURL(transpileRecursive(sigilUrlPath.href)).href);
+const svgMetaUtils = await import(pathToFileURL(transpileRecursive(svgMetaPath.href)).href);
+const kaiPulse = await import(pathToFileURL(transpileRecursive(kaiPulsePath.href)).href);
 
 const { parseSlug, verifySigilSvg } = verify;
 const { derivePhiKeyFromSig } = sigilUtils;
+const { decodePayloadFromQuery } = payloadUtils;
+const { encodeSigilPayloadLoose } = sigilUrlUtils;
+const { validateSigilMeta } = svgMetaUtils;
+const { latticeFromPulse, STEPS_BEAT } = kaiPulse;
 
 process.on("exit", () => {
   rmSync(tempRoot, { recursive: true, force: true });
@@ -113,13 +125,14 @@ test("verifySigilSvg passes for matching slug + embedded metadata", async () => 
 
 test("verifySigilSvg accepts legacy data-attribute metadata", async () => {
   const pulse = 456;
+  const canonical = latticeFromPulse(pulse);
   const kaiSignature = "LEGACYsig";
   const phiKey = await derivePhiKeyFromSig(kaiSignature);
   const svg = `
     <svg xmlns="http://www.w3.org/2000/svg"
       data-pulse="${pulse}"
-      data-beat="7"
-      data-step-index="2"
+      data-beat="${canonical.beat}"
+      data-step-index="${canonical.stepIndex}"
       data-frequency-hz="528"
       data-chakra-day="Root"
       data-chakra-gate="Gate-A"
@@ -132,8 +145,8 @@ test("verifySigilSvg accepts legacy data-attribute metadata", async () => {
   assert.equal(result.status, "ok");
   assert.equal(result.checks?.slugPulseMatches, true);
   assert.equal(result.checks?.slugShortSigMatches, true);
-  assert.equal(result.embedded?.beat, 7);
-  assert.equal(result.embedded?.stepIndex, 2);
+  assert.equal(result.embedded?.beat, canonical.beat);
+  assert.equal(result.embedded?.stepIndex, canonical.stepIndex);
   assert.equal(result.embedded?.frequencyHz, 528);
   assert.equal(result.embedded?.chakraDay, "Root");
   assert.equal(result.embedded?.chakraGate, "Gate-A");
@@ -152,6 +165,76 @@ test("verifySigilSvg fails when slug pulse mismatches embedded pulse", async () 
   const result = await verifySigilSvg(slug, svg);
   assert.equal(result.status, "error");
   assert.equal(result.checks?.slugPulseMatches, false);
+});
+
+test("parseSlug accepts signed pulses so verifier URLs do not drift pre-genesis", () => {
+  const slug = parseSlug("-7-sigABCD-42");
+  assert.equal(slug.pulse, -7);
+  assert.equal(slug.shortSig, "sigABCD");
+  assert.equal(slug.verifiedAtPulse, 42);
+});
+
+test("decodePayloadFromQuery canonicalizes beat, step, and pct from pulse", () => {
+  const pulse = -7;
+  const encoded = encodeSigilPayloadLoose({
+    pulse,
+    beat: 99,
+    stepIndex: 12,
+    stepPct: 0.99,
+    chakraDay: "Root",
+    stepsPerBeat: 99,
+  });
+  const payload = decodePayloadFromQuery(`?p=${encoded}`);
+  const canonical = latticeFromPulse(pulse);
+
+  assert.ok(payload);
+  assert.equal(payload.pulse, pulse);
+  assert.equal(payload.beat, canonical.beat);
+  assert.equal(payload.stepIndex, canonical.stepIndex);
+  assert.equal(payload.stepsPerBeat, STEPS_BEAT);
+  assert.equal(payload.stepPct, canonical.percentIntoStep);
+});
+
+test("validateSigilMeta rejects beat/step drift against canonical pulse lattice", () => {
+  const pulse = -7;
+  const canonical = latticeFromPulse(pulse);
+  const good = validateSigilMeta({
+    pulse,
+    beat: canonical.beat,
+    stepIndex: canonical.stepIndex,
+    chakraDay: "Root",
+    stepsPerBeat: STEPS_BEAT,
+  });
+  assert.equal(good.ok, true);
+  assert.equal(good.normalized?.beat, canonical.beat);
+  assert.equal(good.normalized?.stepIndex, canonical.stepIndex);
+
+  const bad = validateSigilMeta({
+    pulse,
+    beat: canonical.beat + 1,
+    stepIndex: canonical.stepIndex,
+    chakraDay: "Root",
+    stepsPerBeat: STEPS_BEAT,
+  });
+  assert.equal(bad.ok, false);
+  assert.match(bad.errors[0], /does not match canonical pulse beat/i);
+});
+
+test("verifySigilSvg fails when embedded beat or step drift from the pulse", async () => {
+  const pulse = -7;
+  const canonical = latticeFromPulse(pulse);
+  const kaiSignature = "negPulseSig";
+  const phiKey = await derivePhiKeyFromSig(kaiSignature);
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg">
+      <metadata>{"pulse":${pulse},"beat":${canonical.beat + 1},"stepIndex":${canonical.stepIndex},"kaiSignature":"${kaiSignature}","userPhiKey":"${phiKey}"}</metadata>
+    </svg>
+  `;
+  const slug = parseSlug(`${pulse}-${kaiSignature.slice(0, 4)}`);
+  const result = await verifySigilSvg(slug, svg);
+  assert.equal(result.status, "error");
+  assert.equal(result.checks?.beatMatchesPulse, false);
+  assert.equal(result.checks?.stepIndexMatchesPulse, true);
 });
 
 test("verifySigilSvg passes for fixture sigils", async () => {

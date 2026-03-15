@@ -1,7 +1,10 @@
 // src/utils/payload.ts
 import { decodeSigilPayload } from "./sigilUrl";
-import { STEPS_BEAT as STEPS_PER_BEAT } from "./kai_pulse";
-import { percentIntoStepFromPulse } from "../SovereignSolar";
+import {
+  latticeFromPulse,
+  normalizePercentIntoStep,
+  STEPS_BEAT as STEPS_PER_BEAT,
+} from "./kai_pulse";
 import type {
   ExpiryUnit,
   SigilPayload,
@@ -105,27 +108,15 @@ export function decodePayloadFromQuery(search: string): SigilPayload | null {
     if (!raw || typeof raw !== "object") return null;
 
     // steps/stepIndex/stepPct
-    const stepsRaw = raw.stepsPerBeat;
-    const steps =
-      stepsRaw != null && !Number.isNaN(Number(stepsRaw))
-        ? Math.max(1, Math.floor(Number(stepsRaw)))
-        : STEPS_PER_BEAT;
+    const steps = STEPS_PER_BEAT;
 
     const pulseNum =
       raw.pulse != null && !Number.isNaN(Number(raw.pulse)) ? Number(raw.pulse) : 0;
 
-    const rawStepIndex = raw.stepIndex;
-    const stepIndex =
-      rawStepIndex != null && !Number.isNaN(Number(rawStepIndex))
-        ? Math.max(0, Math.min(steps - 1, Math.floor(Number(rawStepIndex))))
-        : undefined;
+    const canonical = latticeFromPulse(pulseNum);
+    const stepIndex = canonical.stepIndex;
 
-    const derivedPct =
-      typeof raw.stepPct === "number"
-        ? Math.max(0, Math.min(1, raw.stepPct))
-        : Number.isFinite(pulseNum)
-        ? percentIntoStepFromPulse(pulseNum)
-        : 0;
+    const derivedPct = normalizePercentIntoStep(canonical.percentIntoStep);
 
     // expiry/exported
     const exp = raw.expiresAtPulse != null ? Number(raw.expiresAtPulse) : NaN;
@@ -176,7 +167,7 @@ export function decodePayloadFromQuery(search: string): SigilPayload | null {
     // Cast at the end so we don't fight local repo-required fields.
     const payload = {
       pulse: pulseNum,
-      beat: Number(raw.beat) || 0,
+      beat: canonical.beat,
       chakraDay: raw.chakraDay as SigilPayload["chakraDay"],
       stepIndex,
       stepPct: derivedPct,

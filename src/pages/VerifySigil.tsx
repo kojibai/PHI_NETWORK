@@ -24,10 +24,10 @@ import "./SigilPage/SigilPage.css";
 
 /* Kai math */
 import {
-  ETERNAL_STEPS_PER_BEAT as STEPS_PER_BEAT,
-  stepIndexFromPulse,
-  percentIntoStepFromPulse,
-} from "../SovereignSolar";
+  latticeFromPulse,
+  normalizePercentIntoStep,
+  STEPS_BEAT as STEPS_PER_BEAT,
+} from "../utils/kai_pulse";
 
 /* Chakra theming (for subtle accent + info) */
 import { CHAKRA_THEME } from "../components/sigil/theme";
@@ -120,20 +120,15 @@ export default function VerifySigil(): React.JSX.Element {
 
   // Basic derived display values
   const chakraDay = (payload?.chakraDay ?? "Throat") as SigilPayload["chakraDay"];
-  const steps: number = (payload?.stepsPerBeat ?? STEPS_PER_BEAT) as number;
-
-  const stepIndex = useMemo(
-    () => (payload ? stepIndexFromPulse(payload.pulse, steps) : 0),
-    [payload, steps]
+  const steps: number = STEPS_PER_BEAT;
+  const canonicalLattice = useMemo(
+    () => latticeFromPulse(payload?.pulse ?? 0),
+    [payload?.pulse]
   );
 
-  const stepPct = useMemo(
-    () =>
-      typeof payload?.stepPct === "number"
-        ? Math.max(0, Math.min(1, payload.stepPct))
-        : percentIntoStepFromPulse(payload?.pulse ?? 0),
-    [payload]
-  );
+  const stepIndex = canonicalLattice.stepIndex;
+
+  const stepPct = normalizePercentIntoStep(canonicalLattice.percentIntoStep);
 
   const zkHints = useMemo(() => {
     const hints = (payload as { proofHints?: unknown })?.proofHints;
@@ -244,13 +239,14 @@ export default function VerifySigil(): React.JSX.Element {
 
       try {
         const stepsNum: number =
-          (payload.stepsPerBeat ?? STEPS_PER_BEAT) as number;
-        const sealedIdx = stepIndexFromPulse(payload.pulse, stepsNum);
+          STEPS_PER_BEAT;
+        const sealedBeat = latticeFromPulse(payload.pulse).beat;
+        const sealedIdx = latticeFromPulse(payload.pulse).stepIndex;
         const intention = readIntentionSigil(payload);
 
         const sigmaString = verifierSigmaString(
           payload.pulse,
-          payload.beat,
+          sealedBeat,
           sealedIdx,
           String(payload.chakraDay ?? ""),
           intention
@@ -269,7 +265,7 @@ export default function VerifySigil(): React.JSX.Element {
 
         const proof: BreathProof = {
           pulse: payload.pulse,
-          beat: payload.beat,
+          beat: sealedBeat,
           stepsPerBeat: stepsNum,
           stepIndex: sealedIdx,
           chakraDay: String(payload.chakraDay ?? ""),

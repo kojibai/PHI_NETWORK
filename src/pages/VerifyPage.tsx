@@ -2154,6 +2154,8 @@ if (receipt.receiptHash) {
         slugPulseMatches,
         slugShortSigMatches,
         derivedPhiKeyMatchesEmbedded,
+        beatMatchesPulse: null,
+        stepIndexMatchesPulse: null,
       } as const;
       const hardFail =
         checks.slugPulseMatches === false ||

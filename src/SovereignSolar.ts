@@ -9,6 +9,7 @@ import {
   DAYS_PER_WEEK,
   DAYS_PER_YEAR,
   GENESIS_TS,
+  latticeFromPulse,
   N_DAY_MICRO,
   PULSES_STEP,
   SOLAR_GENESIS_UTC_TS,
@@ -65,15 +66,14 @@ export const DAY_MILLISECONDS_DEC = DAY_SECONDS_DEC.mul(1000);
 
 // --- internal: μpulse-in-day from an absolute pulse (floor to whole pulse) ---
 function muPosInDayFromPulse(pulse: number): bigint {
-  const muAbs = BigInt(Math.max(0, Math.floor(pulse))) * MU_PER_PULSE;
+  const safePulse = Number.isFinite(pulse) ? Math.trunc(pulse) : 0;
+  const muAbs = BigInt(safePulse) * MU_PER_PULSE;
   return imod(muAbs, MU_PER_DAY);
 }
 
 // Beat index (0..35) from absolute pulse (grid-scaled, exact integers)
 export function beatIndexFromPulse(pulse: number): number {
-  const muInDay = muPosInDayFromPulse(pulse);
-  const muGrid  = (muInDay * MU_PER_GRID_DAY) / MU_PER_DAY;
-  return Number(muGrid / MU_PER_GRID_BEAT);
+  return latticeFromPulse(pulse).beat;
 }
 
 // Step index (0..43) from absolute pulse (grid-scaled, exact integers)
@@ -81,20 +81,13 @@ export function stepIndexFromPulse(
   pulse: number,
   stepsPerBeat: number = ETERNAL_STEPS_PER_BEAT
 ): number {
-  const muInDay = muPosInDayFromPulse(pulse);
-  const muGrid  = (muInDay * MU_PER_GRID_DAY) / MU_PER_DAY;
-  const muInBeat = muGrid % MU_PER_GRID_BEAT;
-  const idx = Number(muInBeat / MU_PER_GRID_STEP);
+  const idx = latticeFromPulse(pulse).stepIndex;
   return Math.min(Math.max(0, idx), Math.max(1, stepsPerBeat) - 1);
 }
 
 // 0..1 progress into current step (exact)
 export function percentIntoStepFromPulse(pulse: number): number {
-  const muInDay = muPosInDayFromPulse(pulse);
-  const muGrid  = (muInDay * MU_PER_GRID_DAY) / MU_PER_DAY;
-  const muInBeat = muGrid % MU_PER_GRID_BEAT;
-  const muInStep = muInBeat % MU_PER_GRID_STEP;
-  return Number(muInStep) / Number(MU_PER_GRID_STEP);
+  return latticeFromPulse(pulse).percentIntoStep;
 }
 
 // Whole pulses into the current beat (0..483)

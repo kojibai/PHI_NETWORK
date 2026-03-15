@@ -1,6 +1,10 @@
-import { STEPS_BEAT as STEPS_PER_BEAT } from "./kai_pulse";
+import {
+  type ChakraDay,
+  latticeFromPulse,
+  normalizePercentIntoStep,
+  STEPS_BEAT as STEPS_PER_BEAT,
+} from "./kai_pulse";
 import type { SigilMetaLoose, SigilPayload } from "../types/sigil";
-import { stepIndexFromPulse } from "./kaiMath";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 const XLINK_NS = "http://www.w3.org/1999/xlink";
@@ -123,24 +127,39 @@ export function validateSigilMeta(meta: SigilMetaLoose): {
   if (meta.pulse == null) errors.push("Missing metadata field: pulse");
   if (meta.beat == null) errors.push("Missing metadata field: beat");
   if (meta.chakraDay == null) errors.push("Missing metadata field: chakraDay");
+  const pulseNum = Number(meta.pulse);
+  if (meta.pulse != null && !Number.isFinite(pulseNum)) {
+    errors.push("Metadata field pulse must be numeric.");
+  }
+  const providedBeat = Number(meta.beat);
+  if (meta.beat != null && !Number.isFinite(providedBeat)) {
+    errors.push("Metadata field beat must be numeric.");
+  }
   if (errors.length > 0) return { ok: false, errors };
 
-  const steps = Number.isFinite(meta.stepsPerBeat)
-    ? Math.max(1, Number(meta.stepsPerBeat))
-    : STEPS_PER_BEAT;
+  const canonical = latticeFromPulse(pulseNum);
+  const steps = STEPS_PER_BEAT;
 
-  const pulseNum = Number(meta.pulse);
+  if (Number.isFinite(providedBeat) && Math.trunc(providedBeat) !== canonical.beat) {
+    errors.push(
+      `Embedded beat ${Math.trunc(providedBeat)} does not match canonical pulse beat ${canonical.beat}.`
+    );
+  }
 
-  // ✅ KKS rule: honor the embedded step if present & in-range. Only derive as a fallback.
   const providedStep = Number(meta.stepIndex);
-  const stepIndex =
-    Number.isFinite(providedStep) && providedStep >= 0 && providedStep < steps
-      ? Math.trunc(providedStep)
-      : stepIndexFromPulse(pulseNum, steps);
+  if (Number.isFinite(providedStep) && Math.trunc(providedStep) !== canonical.stepIndex) {
+    errors.push(
+      `Embedded step ${Math.trunc(providedStep)} does not match canonical pulse step ${canonical.stepIndex}.`
+    );
+  }
 
-  const stepPct = typeof meta.stepPct === "number"
-    ? Math.max(0, Math.min(1, meta.stepPct))
-    : (stepIndex + 1e-9) / steps;
+  const providedStepsPerBeat = Number(meta.stepsPerBeat);
+  if (Number.isFinite(providedStepsPerBeat) && Math.trunc(providedStepsPerBeat) !== STEPS_PER_BEAT) {
+    errors.push(`Embedded stepsPerBeat ${Math.trunc(providedStepsPerBeat)} is non-canonical; expected ${STEPS_PER_BEAT}.`);
+  }
+
+  const stepIndex = canonical.stepIndex;
+  const stepPct = normalizePercentIntoStep(canonical.percentIntoStep);
 
   const exp = asNumber(meta.expiresAtPulse, NaN);
   const expd = asNumber(meta.exportedAtPulse, NaN);
@@ -158,7 +177,7 @@ export function validateSigilMeta(meta: SigilMetaLoose): {
 
   const normalized: SigilPayload = {
     pulse: pulseNum,
-    beat: Number(meta.beat),
+    beat: canonical.beat,
     stepIndex,                    // ← authoritative KKS step
     stepPct,
     chakraDay: meta.chakraDay as SigilPayload["chakraDay"],
@@ -187,7 +206,7 @@ export function validateSigilMeta(meta: SigilMetaLoose): {
     proofHints: { scheme: "", api: "", explorer: "" },
   };
 
-  return { ok: true, errors: [], normalized };
+  return { ok: errors.length === 0, errors, normalized };
 }
 
 
@@ -197,7 +216,24 @@ export function validateSvgForVerifier(svgText: string, expectedHash?: string) {
     const hasXmlns = !!svg.getAttribute("xmlns") && !!svg.getAttribute("xmlns:xlink");
     const hasViewBox = !!svg.getAttribute("viewBox");
     const hasWH = !!svg.getAttribute("width") && !!svg.getAttribute("height");
-    const { ok, errors, normalized } = validateSigilMeta(meta);
+    const attrPulse = svg.getAttribute("data-pulse");
+    const attrBeat = svg.getAttribute("data-beat");
+    const attrStep = svg.getAttribute("data-step-index");
+    const attrSteps = svg.getAttribute("data-steps-per-beat");
+    const attrChakra =
+      svg.getAttribute("data-chakra-day") ?? svg.getAttribute("data-harmonic-day");
+
+    const enrichedMeta: SigilMetaLoose = {
+      ...meta,
+      pulse: meta.pulse ?? (attrPulse != null ? Number(attrPulse) : undefined),
+      beat: meta.beat ?? (attrBeat != null ? Number(attrBeat) : undefined),
+      stepIndex: meta.stepIndex ?? (attrStep != null ? Number(attrStep) : undefined),
+      stepsPerBeat:
+        meta.stepsPerBeat ?? (attrSteps != null ? Number(attrSteps) : undefined),
+      chakraDay: meta.chakraDay ?? ((attrChakra as ChakraDay | null) ?? undefined),
+    };
+
+    const { ok, errors, normalized } = validateSigilMeta(enrichedMeta);
 
     if (!hasXmlns) errors.push("Missing xmlns / xmlns:xlink on <svg>.");
     if (!hasViewBox) errors.push("Missing viewBox on <svg>.");
