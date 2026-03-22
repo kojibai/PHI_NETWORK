@@ -426,9 +426,9 @@ function bestCompressionFormat(): CompressionFormat | null {
 
   // Prefer deflate if constructor accepts it
   try {
-    // eslint-disable-next-line no-new
+     
     new CS("deflate");
-    // eslint-disable-next-line no-new
+     
     new DS("deflate");
     return "deflate";
   } catch {
@@ -436,9 +436,9 @@ function bestCompressionFormat(): CompressionFormat | null {
   }
 
   try {
-    // eslint-disable-next-line no-new
+     
     new CS("gzip");
-    // eslint-disable-next-line no-new
+     
     new DS("gzip");
     return "gzip";
   } catch {

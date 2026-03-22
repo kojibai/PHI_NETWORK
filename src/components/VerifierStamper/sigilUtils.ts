@@ -10,6 +10,7 @@ import type {
 import { base58Check, sha256Hex } from "./crypto";
 import { buildMerkleRoot } from "./merkle";
 import { normalizeChakraDay } from "./types";
+import { latticeFromPulse } from "../../utils/kai_pulse";
 
 /* ──────────────────────────────────────────────────────────────
    Sentinels to *use* imported constants/types without changing behavior
@@ -39,16 +40,15 @@ export function stableStringify(v: unknown): string {
 }
 
 export async function computeKaiSignature(meta: SigilMetadata): Promise<string | null> {
-  const { pulse, beat, stepIndex, chakraDay } = meta;
+  const { pulse, chakraDay } = meta;
   if (
     typeof pulse !== "number" ||
-    typeof beat !== "number" ||
-    typeof stepIndex !== "number" ||
     typeof chakraDay !== "string"
   ) {
     return null;
   }
-  const base = `${pulse}|${beat}|${stepIndex}|${chakraDay}|${meta.intentionSigil ?? ""}`;
+  const canonical = latticeFromPulse(pulse);
+  const base = `${pulse}|${canonical.beat}|${canonical.stepIndex}|${chakraDay}|${meta.intentionSigil ?? ""}`;
   return sha256Hex(base);
 }
 

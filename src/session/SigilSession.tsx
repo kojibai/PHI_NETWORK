@@ -88,7 +88,7 @@ import React, {
           return true;
         } catch (e) {
           // Fail closed without throwing; keep this non-fatal and typed.
-          // eslint-disable-next-line no-console
+           
           console.warn(
             "Sigil login failed:",
             e instanceof Error ? e.message : String(e)

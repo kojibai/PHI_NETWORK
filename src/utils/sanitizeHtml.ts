@@ -1,5 +1,3 @@
-/* eslint-disable no-control-regex */
-
 /**
  * sanitizeHtml — strict, allowlist-based HTML sanitizer (no deps)
  * ---------------------------------------------------------------
@@ -21,6 +19,16 @@ export type SanitizeHtmlOptions = {
   forceTargetBlank?: boolean;
   maxInputLength?: number;
 };
+
+function stripControlChars(value: string): string {
+  let out = "";
+  for (let i = 0; i < value.length; i += 1) {
+    const code = value.charCodeAt(i);
+    if ((code >= 0x00 && code <= 0x1f) || code === 0x7f) continue;
+    out += value[i] ?? "";
+  }
+  return out;
+}
 
 const DEFAULTS: Required<SanitizeHtmlOptions> = {
   allowImages: false,
@@ -407,5 +415,5 @@ export function sanitizeHtml(
   const root = doc.body;
   walk(root, opts);
 
-  return (root.innerHTML ?? "").replace(/[\u0000-\u001F\u007F]/g, "");
+  return stripControlChars(root.innerHTML ?? "");
 }

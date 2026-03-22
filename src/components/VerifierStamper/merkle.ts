@@ -16,7 +16,7 @@ export async function buildMerkleRoot(leaves: HashHex[]): Promise<HashHex> {
       const L = level[i];
       const R = i + 1 < level.length ? level[i + 1] : level[i];
       const [a, b] = L <= R ? [L, R] : [R, L]; // order-independence
-      // eslint-disable-next-line no-await-in-loop
+       
       next.push(await hashPair(a, b));
     }
     level = next;
@@ -39,7 +39,7 @@ export async function merkleProof(leaves: HashHex[], index: number): Promise<Tra
     for (let i = 0; i < level.length; i += 2) {
       const L = level[i];
       const R = i + 1 < level.length ? level[i + 1] : level[i];
-      // eslint-disable-next-line no-await-in-loop
+       
       next.push(await hashPair(L <= R ? L : R, L <= R ? R : L));
     }
     level = next;
@@ -53,7 +53,7 @@ export async function verifyProof(root: HashHex, proof: TransferProof): Promise<
   let idx = proof.index;
   for (const sib of proof.siblings) {
     const pair = idx % 2 === 0 ? [acc, sib] : [sib, acc];
-    // eslint-disable-next-line no-await-in-loop
+     
     acc = await hashPair(pair[0] <= pair[1] ? pair[0] : pair[1], pair[0] <= pair[1] ? pair[1] : pair[0]);
     idx = Math.floor(idx / 2);
   }

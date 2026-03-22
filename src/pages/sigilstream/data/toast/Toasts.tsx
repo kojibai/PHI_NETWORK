@@ -47,9 +47,10 @@ export function ToastsProvider({
   const api = useMemo<ToastApi>(() => ({ push }), [push]);
 
   useEffect(() => {
+    const timers = timersRef.current;
     return () => {
-      for (const h of timersRef.current.values()) window.clearTimeout(h);
-      timersRef.current.clear();
+      for (const h of timers.values()) window.clearTimeout(h);
+      timers.clear();
     };
   }, []);
 

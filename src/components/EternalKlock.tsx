@@ -755,6 +755,16 @@ export const EternalKlock: React.FC = () => {
   const toggleRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [detailEl, setDetailEl] = useState<HTMLDivElement | null>(null);
+  const [overlayEl, setOverlayEl] = useState<HTMLDivElement | null>(null);
+  const setDetailNode = useCallback((node: HTMLDivElement | null) => {
+    detailRef.current = node;
+    setDetailEl(node);
+  }, []);
+  const setOverlayNode = useCallback((node: HTMLDivElement | null) => {
+    overlayRef.current = node;
+    setOverlayEl(node);
+  }, []);
 
   // Anti-sleep + schedulers + solar sync
   const wakeRef = useRef<WakeLockSentinelLike | null>(null);
@@ -1168,8 +1178,7 @@ export const EternalKlock: React.FC = () => {
   useEffect(() => {
     const id = window.setTimeout(() => fireTick(), 0);
     return () => window.clearTimeout(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [solarHook?.solarStepString, solarHook?.solarArcName, solarHook?.sunriseOffsetSec, solarOverrideSec]);
+  }, [fireTick, solarHook?.solarStepString, solarHook?.solarArcName, solarHook?.sunriseOffsetSec, solarOverrideSec]);
 
   // Close helpers (topmost-first behavior)
   const closeDetails = useCallback(() => {
@@ -1309,8 +1318,7 @@ export const EternalKlock: React.FC = () => {
   const arkIndexForKey = Math.floor(((((klock.solarChakraStep?.beatIndex ?? 0) % 36) + 36) % 36) / 6) % 6;
   const kaiKey = `ark-${arkIndexForKey}-${klock.solarChakraStepString}`;
 
-  // Week modal container (keeps portals inside overlay hierarchy for better stacking/click safety)
-  const weekModalContainer = detailRef.current ?? overlayRef.current ?? portalTarget;
+  const weekModalContainer = detailEl ?? overlayEl ?? portalTarget;
 
   return (
     <div ref={containerRef} className="eternal-klock-container">
@@ -1348,7 +1356,7 @@ export const EternalKlock: React.FC = () => {
             role="dialog"
             aria-modal="true"
             aria-label="Eternal Klock Details"
-            ref={overlayRef}
+            ref={setOverlayNode}
             tabIndex={-1}
             style={INSTANT_OPEN_STYLE}
             onClick={(e) => {
@@ -1371,7 +1379,7 @@ export const EternalKlock: React.FC = () => {
           >
             <div
               className="eternal-modal-card"
-              ref={detailRef}
+              ref={setDetailNode}
               style={INSTANT_OPEN_STYLE}
               onClick={(e) => e.stopPropagation()}
             >

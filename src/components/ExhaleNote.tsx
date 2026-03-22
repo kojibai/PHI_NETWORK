@@ -1,5 +1,5 @@
 // src/components/ExhaleNote.tsx
-/* eslint-disable @typescript-eslint/consistent-type-assertions */
+ 
 /**
  * ExhaleNote — Exhale Note Composer
  * v26.3 — GUIDED STEP COMPOSER + SEND AMOUNT UNIT TOGGLE (Φ ⇄ USD)
@@ -789,7 +789,7 @@ const ExhaleNote: React.FC<NoteProps> = ({
 
   useEffect(() => {
     setForm((prev) => (prev.valuationAlg ? prev : { ...prev, valuationAlg: liveAlgString }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [liveAlgString]);
 
   const liveQuote = useMemo(
@@ -953,7 +953,7 @@ const ExhaleNote: React.FC<NoteProps> = ({
     try {
       renderPreview(host, buildCurrentSVG());
     } catch (e) {
-      // eslint-disable-next-line no-console
+       
       console.error("preview render failed", e);
     }
   }, 8);
@@ -1046,7 +1046,7 @@ const ExhaleNote: React.FC<NoteProps> = ({
 
       onRender?.(payload);
     } catch (err) {
-      // eslint-disable-next-line no-console
+       
       console.error("Render/Lock failed", err);
       window.alert(`Render failed.\n${err instanceof Error ? err.message : String(err)}`);
     } finally {
@@ -1076,7 +1076,7 @@ const ExhaleNote: React.FC<NoteProps> = ({
           verifyUrl: resolveVerifyUrl(merged.verifyUrl ?? prev.verifyUrl, defaultVerifyUrl),
         }));
       } catch (e) {
-        // eslint-disable-next-line no-console
+         
         console.error("bridge hydration failed", e);
       }
     })();
@@ -1130,7 +1130,7 @@ const ExhaleNote: React.FC<NoteProps> = ({
 
         setForm((prev) => ({ ...prev, ...normalized }));
       } catch (err) {
-        // eslint-disable-next-line no-console
+         
         console.error("bridge event failed", err);
       }
     };
@@ -1331,7 +1331,7 @@ const ExhaleNote: React.FC<NoteProps> = ({
       triggerDownload(`${title}.svg`, new Blob([banknote], { type: "image/svg+xml" }), "image/svg+xml");
     } catch (err) {
       window.alert("Save SVG failed: " + (err instanceof Error ? err.message : String(err)));
-      // eslint-disable-next-line no-console
+       
       console.error(err);
     }
   }, [form, locked, liveAlgString, defaultVerifyUrl, effectiveSendPhi, effectiveValueUsd, ensureNoteSend]);
@@ -1401,7 +1401,7 @@ const ExhaleNote: React.FC<NoteProps> = ({
       triggerDownload(`${title}.png`, finalBlob, "image/png");
     } catch (err) {
       window.alert("Save PNG failed: " + (err instanceof Error ? err.message : String(err)));
-      // eslint-disable-next-line no-console
+       
       console.error(err);
     }
   }, [form, locked, liveAlgString, defaultVerifyUrl, effectiveSendPhi, effectiveValueUsd, ensureNoteSend, buildNoteSendPayload]);
@@ -1486,8 +1486,7 @@ const ExhaleNote: React.FC<NoteProps> = ({
     if (uiMode !== "guide") return;
     if (isLocked) return;
     setDraft((form[guideKey] ?? "").toString());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [uiMode, guideKey, isLocked]);
+  }, [uiMode, guideKey, isLocked, form]);
 
   useEffect(() => {
     if (uiMode !== "guide") return;

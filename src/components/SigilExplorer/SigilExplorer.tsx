@@ -1,5 +1,4 @@
 // src/components/SigilExplorer.tsx
-/* eslint-disable no-empty -- benign lifecycle errors are silenced */
 "use client";
 
 import React, {
@@ -642,7 +641,7 @@ async function copyText(text: string): Promise<void> {
       await navigator.clipboard.writeText(text);
       return;
     }
-  } catch {}
+  } catch { /* ignore */ }
 
   try {
     const ta = document.createElement("textarea");
@@ -655,7 +654,7 @@ async function copyText(text: string): Promise<void> {
     ta.select();
     document.execCommand("copy");
     document.body.removeChild(ta);
-  } catch {}
+  } catch { /* ignore */ }
 }
 
 /* ─────────────────────────────────────────────────────────────────────
@@ -665,7 +664,7 @@ async function prefetchViewUrl(u: string): Promise<void> {
   if (!hasWindow) return;
   try {
     await fetch(u, { method: "GET", cache: "force-cache", mode: "cors", credentials: "omit", redirect: "follow" });
-  } catch {}
+  } catch { /* ignore */ }
 }
 
 /* ─────────────────────────────────────────────────────────────────────
@@ -1391,7 +1390,7 @@ const SigilExplorer: React.FC = () => {
       pendingBumpRef.current = false;
       startTransition(() => setRegistryRev((v) => v + 1));
     }
-  }, [markInteracting]);
+  }, []);
 
   const scheduleUiFlush = useCallback(() => {
     if (!hasWindow) return;
@@ -1771,7 +1770,7 @@ const SigilExplorer: React.FC = () => {
           persistRegistryToStorage();
           bump();
         }
-      } catch {}
+      } catch { /* ignore */ }
     };
     window.addEventListener("storage", onStorage);
 
@@ -2006,8 +2005,7 @@ const SigilExplorer: React.FC = () => {
       syncNowRef.current = null;
       unmounted.current = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bump, markInteracting, mobileLite, scheduleUiFlush, setLastAddedSafe]);
+  }, [bump, bumpTransferRevSafe, markInteracting, mobileLite, scheduleUiFlush, setLastAddedSafe]);
 
   const requestImmediateSync = useCallback((reason: SyncReason) => {
     const fn = syncNowRef.current;
@@ -2021,11 +2019,22 @@ const SigilExplorer: React.FC = () => {
     return () => window.removeEventListener(SIGIL_EXPLORER_OPEN_EVENT, onOpen);
   }, [requestImmediateSync]);
 
-  const forest = useMemo(() => buildForest(memoryRegistry), [registryRev]);
-  const transferRegistry = useMemo(() => readSigilTransferRegistry(), [transferRev]);
-  const receiveLocks = useMemo(() => buildReceiveLockIndex(memoryRegistry), [registryRev, transferRev]);
+  const forest = useMemo(() => {
+    void registryRev;
+    return buildForest(memoryRegistry);
+  }, [registryRev]);
+  const transferRegistry = useMemo(() => {
+    void transferRev;
+    return readSigilTransferRegistry();
+  }, [transferRev]);
+  const receiveLocks = useMemo(() => {
+    void registryRev;
+    void transferRev;
+    return buildReceiveLockIndex(memoryRegistry);
+  }, [registryRev, transferRev]);
 
   const totalKeys = useMemo(() => {
+    void registryRev;
     let n = 0;
     for (const [,] of memoryRegistry) n += 1;
     return n;
@@ -2089,6 +2098,7 @@ const SigilExplorer: React.FC = () => {
   }, [forest, nowPulse, receiveLocks, transferRegistry]);
 
   const phiTotalsByPulse = useMemo((): ReadonlyMap<number, number> => {
+    void registryRev;
     const totals = new Map<number, number>();
     const seenByPulse = new Map<number, Set<string>>();
 
@@ -2117,6 +2127,7 @@ const SigilExplorer: React.FC = () => {
   }, [registryRev]);
 
   const prefetchTargets = useMemo((): string[] => {
+    void registryRev;
     const urls: string[] = [];
     for (const [rawUrl] of memoryRegistry) {
       const viewUrl = explorerOpenUrl(rawUrl);

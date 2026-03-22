@@ -1,5 +1,6 @@
 // src/verifier/validator.ts
 import type { SigilMetadataLite } from "../utils/valuation";
+import { latticeFromPulse } from "../utils/kai_pulse";
 import { sha256HexCanon, verifierSigmaString } from "./canonical";
 
 /* Public constants (kept identical to Verifier) */
@@ -51,20 +52,19 @@ export type SigilMetadata = SigilMetadataLite & {
 
 /* Producer-compatible Σ (Verifier semantics: uses stepIndex as parsed) */
 async function computeKaiSignature(meta: SigilMetadata): Promise<string | null> {
-  const { pulse, beat, stepIndex, chakraDay } = meta;
+  const { pulse, chakraDay } = meta;
   if (
     typeof pulse !== "number" ||
-    typeof beat !== "number" ||
-    typeof stepIndex !== "number" ||
     typeof chakraDay !== "string"
   ) {
     return null;
   }
+  const canonical = latticeFromPulse(pulse);
 
   const base = verifierSigmaString(
     pulse,
-    beat,
-    stepIndex,
+    canonical.beat,
+    canonical.stepIndex,
     chakraDay,
     typeof meta.intentionSigil === "string" ? meta.intentionSigil : "",
   );

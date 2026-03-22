@@ -1,7 +1,7 @@
 // src/components/valuation/chart/LiveChart.tsx
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   ResponsiveContainer,
   LineChart,
@@ -155,18 +155,23 @@ export default function LiveChart({
    * Remember last known positive FX and use it whenever a new
    * tick passes 0/NaN/∞ or otherwise invalid. Eliminates $0 spikes.
    */
-  const stableFxRef = useRef<number>(finitePos(usdPerPhi) ? usdPerPhi : 1);
-  useEffect(() => {
-    if (finitePos(usdPerPhi)) stableFxRef.current = usdPerPhi;
-  }, [usdPerPhi]);
+  const stableFx = useMemo<number>(() => {
+    if (finitePos(usdPerPhi)) return usdPerPhi as number;
+    for (let i = safeData.length - 1; i >= 0; i -= 1) {
+      const p = safeData[i] as FXPoint;
+      const candidate = p.fx ?? p.usdPerPhi;
+      if (finitePos(candidate)) return candidate as number;
+    }
+    return 1;
+  }, [safeData, usdPerPhi]);
 
   // Accessor for per-point FX with stable fallback
   const fxOf = useCallback(
     (p?: FXPoint): number => {
       const candidate = p?.fx ?? p?.usdPerPhi ?? usdPerPhi;
-      return finitePos(candidate) ? (candidate as number) : stableFxRef.current;
+      return finitePos(candidate) ? (candidate as number) : stableFx;
     },
-    [usdPerPhi],
+    [stableFx, usdPerPhi],
   );
 
   const lastParentPhi = useMemo<number>(() => {
@@ -208,15 +213,13 @@ export default function LiveChart({
       }
 
       if (!finitePos(val)) {
-        val =
-          prevUsd ??
-          (finitePos(stableFxRef.current) ? (Number(p.value) || 0) * stableFxRef.current : 0);
+        val = prevUsd ?? (finitePos(stableFx) ? (Number(p.value) || 0) * stableFx : 0);
       }
 
       const nextPrev = finitePos(val) ? (val as number) : (prevUsd ?? 0);
       return [val as number, nextPrev];
     },
-    [fxOf],
+    [fxOf, stableFx],
   );
 
   // Build plot series in correct units (Φ or USD)
@@ -248,8 +251,8 @@ export default function LiveChart({
   // Live values in both units (use stable FX)
   const livePhi = live;
   const liveUsd = useMemo(
-    () => livePhi * (finitePos(usdPerPhi) ? usdPerPhi : stableFxRef.current),
-    [livePhi, usdPerPhi],
+    () => livePhi * (finitePos(usdPerPhi) ? usdPerPhi : stableFx),
+    [livePhi, stableFx, usdPerPhi],
   );
 
   // Viewport (x-domain)
@@ -271,8 +274,7 @@ export default function LiveChart({
     });
 
     return () => window.cancelAnimationFrame(rafId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lastIndex, hasData]);
+  }, [dataMin, hasData, lastIndex, xMax, xMin]);
 
   // Y-domain padding (ignore non-finite)
   const [yMin, yMax] = useMemo<[number, number]>(() => {
@@ -303,7 +305,7 @@ export default function LiveChart({
   const [pinnedIdx, setPinnedIdx] = useState<number | null>(null);
 
   /** Gradient id (stable for chart instance) */
-  const areaId = useMemo(() => `grad-${Math.random().toString(36).slice(2)}`, []);
+  const areaId = useId().replace(/:/g, "-");
 
   /** Tiny pill tag (H/L/child Φ) */
   const tinyTag = useCallback(
@@ -638,7 +640,7 @@ export default function LiveChart({
   const childBaselineY =
     isChild && childΦ != null
       ? isUsdMode
-        ? childΦ * (finitePos(usdPerPhi) ? usdPerPhi : stableFxRef.current)
+        ? childΦ * (finitePos(usdPerPhi) ? usdPerPhi : stableFx)
         : childΦ
       : 0;
 

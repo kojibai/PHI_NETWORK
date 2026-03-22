@@ -311,7 +311,7 @@ const KaiPriceChart: React.FC<KaiPriceChartProps> = ({
       const lastSeed = seeded[seeded.length - 1]!;
       onTick({ p: lastSeed.p, price: lastSeed.price });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [live, windowPoints, computeForPulse, meta, onTick, points]);
 
   // Pulse-aligned scheduler — emits onTick every breath

@@ -93,7 +93,7 @@ export function createIpfsHttpAdapter(opts: IpfsHttpOptions): IpfsLike {
   const warnOnce = (msg: string): void => {
     if (quiet || warnedOnce) return;
     try {
-      // eslint-disable-next-line no-console
+       
       console.warn(msg);
     } catch { /* ignore */ }
     warnedOnce = true;

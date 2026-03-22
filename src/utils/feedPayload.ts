@@ -495,9 +495,7 @@ async function sha256Hex(bytes: ArrayBufferLike): Promise<string> {
   }
 
   // Node fallback (dynamic to avoid bundling in browser)
-  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-  // @ts-ignore
-  const { createHash } = await import("crypto");
+  const { createHash } = (await import("crypto")) as typeof import("crypto");
 
   // ✅ No Buffer reference (avoids requiring @types/node / Buffer polyfills)
   return createHash("sha256").update(new Uint8Array(ab)).digest("hex");

@@ -2228,6 +2228,7 @@ const FeedCardThread: React.FC<ThreadProps> = ({
   }, [sigilSUrl, node.openUrl, url]);
 
   const threadView = useMemo((): { origin: ThreadItem | null; replies: ThreadItem[] } => {
+    void registryVersion;
     if (!nodeOk) return { origin: null, replies: [] };
 
     const originRef = addChain.length > 0 ? addChain[0]! : sigilSUrl ?? url;
@@ -2401,7 +2402,10 @@ const FeedCardThread: React.FC<ThreadProps> = ({
     return buildSegmentedPack(r, dedupPreserveOrder(adds).slice(-THREAD_MAX_DEPTH));
   }, [nodeOk, nodeStorePayload, node.openUrl, rootRef, selfKey, embeddedAddsForThisNode]);
 
-  const rememberPack = useMemo(() => computeRememberPackNow(), [computeRememberPackNow, chainVersion]);
+  const rememberPack = useMemo(() => {
+    void chainVersion;
+    return computeRememberPackNow();
+  }, [computeRememberPackNow, chainVersion]);
 
   const rememberUrl = rememberPack.primary.url;
   const hasArchives = rememberPack.archives.length > 0;

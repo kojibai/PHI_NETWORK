@@ -1,5 +1,4 @@
 // src/pages/SigilPage/useSigilSend.ts
-/* eslint-disable no-empty */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { SigilPayload } from "../../types/sigil";
 import { getKaiPulseEternalInt } from "../../SovereignSolar";
@@ -146,10 +145,10 @@ const acquireSendLock = (canonical: string | null, token: string | null): { ok: 
         const msg: SendLockWire = { type: "lock", canonical: canonical.toLowerCase(), token, id, at: Date.now() };
         bc.postMessage(msg);
         bc.close();
-      } catch {}
+      } catch { /* ignore */ }
       return { ok: true, id };
     }
-  } catch {}
+  } catch { /* ignore */ }
   return { ok: false, id };
 };
 
@@ -166,9 +165,9 @@ const releaseSendLock = (canonical: string | null, token: string | null, id: str
         const msg: SendLockWire = { type: "unlock", canonical: canonical.toLowerCase(), token, id, at: Date.now() };
         bc.postMessage(msg);
         bc.close();
-      } catch {}
+      } catch { /* ignore */ }
     }
-  } catch {}
+  } catch { /* ignore */ }
 };
 
 /** ─────────────────────────────────────────────────────────────
@@ -209,12 +208,12 @@ export function useSigilSend(params: {
     try {
       bc = new BroadcastChannel(SEND_LOCK_CH);
       bc.onmessage = () => {};
-    } catch {}
+    } catch { /* ignore */ }
     return () => {
       if (bc && typeof bc.close === "function") {
         try {
           bc.close();
-        } catch {}
+        } catch { /* ignore */ }
       }
     };
   }, []);
@@ -236,7 +235,7 @@ export function useSigilSend(params: {
       u.searchParams.set("t", tok);
       // silent—no remount
       window.history.replaceState(null, "", `${u.pathname}${u.search}${u.hash}`);
-    } catch {}
+    } catch { /* ignore */ }
 
     setPayload((prev) =>
       prev ? ({ ...(prev as SigilPayload), transferNonce: tok } as SigilPayload) : prev

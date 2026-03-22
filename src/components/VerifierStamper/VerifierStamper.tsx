@@ -1762,7 +1762,7 @@ const openNote = () =>
     } catch (err) {
       logError("shareTransferLink.publishRotation", err);
     }
-  }, []);
+  }, [computeEffectiveCanonical]);
 
   const syncMetaAndUi = useCallback(
     async (mNew: SigilMetadata) => {

@@ -38,7 +38,7 @@ function normalizeBaseToAbsolute(base: string): string {
   if (hasScheme) {
     try {
       // Validate it
-      // eslint-disable-next-line no-new
+       
       new URL(raw);
       return raw;
     } catch {
@@ -50,7 +50,7 @@ function normalizeBaseToAbsolute(base: string): string {
   if (raw.startsWith("//")) {
     const candidate = `https:${raw}`;
     try {
-      // eslint-disable-next-line no-new
+       
       new URL(candidate);
       return candidate;
     } catch {
@@ -76,7 +76,7 @@ function normalizeBaseToAbsolute(base: string): string {
 
   const withScheme = `${isLocal ? "http" : "https"}://${raw}`;
   try {
-    // eslint-disable-next-line no-new
+     
     new URL(withScheme);
     return withScheme;
   } catch {

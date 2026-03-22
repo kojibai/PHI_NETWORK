@@ -43,9 +43,15 @@ export default function useSovereignSolarClock() {
   }, []);
 
   // core (100% offline)
-  const kaiPulseEternal = useMemo(() => getKaiPulseEternal(now), [now, tick]);
+  const kaiPulseEternal = useMemo(() => {
+    void tick;
+    return getKaiPulseEternal(now);
+  }, [now, tick]);
 
-  const today = useMemo(() => getKaiPulseToday(now), [now, tick]);
+  const today = useMemo(() => {
+    void tick;
+    return getKaiPulseToday(now);
+  }, [now, tick]);
   const {
     kaiPulseToday,
     dayPercent,
@@ -65,9 +71,15 @@ export default function useSovereignSolarClock() {
   );
 
   const solarStepString = `${solarBeatIndex}:${String(solarStepIndex).padStart(2, "0")}`;
-  const solarArcName = useMemo(() => getSolarArcName(now), [now, tick]);
+  const solarArcName = useMemo(() => {
+    void tick;
+    return getSolarArcName(now);
+  }, [now, tick]);
 
-  const counters = useMemo(() => getSolarAlignedCounters(now), [now, tick]);
+  const counters = useMemo(() => {
+    void tick;
+    return getSolarAlignedCounters(now);
+  }, [now, tick]);
   const solarWeekDayName = SOLAR_DAY_NAMES[counters.solarAlignedWeekDayIndex];
 
   const monthIndex1 = clamp(counters.solarAlignedMonth, 1, 8);

@@ -243,7 +243,7 @@ export default function GlyphImportModal({
         setPreview({ hash, value: valPhi, pulse: pulseCreated });
         setStatus(res.unsigned ? "warn" : "ok");
       } catch (err: unknown) {
-        // eslint-disable-next-line no-console
+         
         console.error("Glyph import error:", err);
         setStatus("err");
         const msg = (err as Error | { message?: unknown })?.message;
@@ -345,7 +345,7 @@ export default function GlyphImportModal({
       onImport(finalizedGlyph);
       onClose();
     } catch (err: unknown) {
-      // eslint-disable-next-line no-console
+       
       console.error("Finalize import error:", err);
       setStatus("err");
       setError("Failed to finalize valuation for this glyph.");

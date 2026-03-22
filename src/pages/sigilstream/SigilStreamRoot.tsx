@@ -1951,7 +1951,7 @@ function SigilStreamInner(): React.JSX.Element {
 
   useEffect(() => {
     void refreshPayloadFromLocation();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [loc.pathname, loc.search, loc.hash, refreshPayloadFromLocation]);
 
   /** ---------- Derived Kai attrs for theming (KKS-1.0 from pulse) ---------- */
@@ -2211,6 +2211,7 @@ function SigilStreamInner(): React.JSX.Element {
   ──────────────────────────────────────────────────────────────── */
 
   const threadHistoryUrls = useMemo((): string[] => {
+    void ms2Tick;
     if (!activeToken) return [];
     const g = ms2Ref.current;
     const tokens = ms2ThreadTokens(g, activeToken);

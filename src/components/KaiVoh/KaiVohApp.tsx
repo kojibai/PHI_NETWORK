@@ -579,10 +579,10 @@ function KaiVohFlow(): ReactElement {
 
   useEffect(() => {
     if (!isReloadDebugEnabled()) return;
-    // eslint-disable-next-line no-console
+     
     console.log("[Reload Detective] KaiVohFlow mount");
     return () => {
-      // eslint-disable-next-line no-console
+       
       console.log("[Reload Detective] KaiVohFlow unmount");
     };
   }, []);
@@ -597,7 +597,7 @@ function KaiVohFlow(): ReactElement {
       const expectedPhiKey = await derivePhiKeyFromSig(meta.kaiSignature);
 
       if (meta.userPhiKey && meta.userPhiKey !== expectedPhiKey) {
-        // eslint-disable-next-line no-console
+         
         console.warn("[KaiVoh] Embedded userPhiKey differs from derived; preferring derived from signature.", {
           embedded: meta.userPhiKey,
           derived: expectedPhiKey,

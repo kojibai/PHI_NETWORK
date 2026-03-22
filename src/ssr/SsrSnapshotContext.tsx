@@ -1,9 +1,6 @@
 import React from "react";
-import type { SsrSnapshot } from "./snapshotTypes";
-
-type SnapshotContextValue = SsrSnapshot | null;
-
-const SsrSnapshotContext = React.createContext<SnapshotContextValue>(null);
+import type { SnapshotContextValue } from "./snapshotContext";
+import { SsrSnapshotContext } from "./snapshotContext";
 
 export function SsrSnapshotProvider({
   snapshot,
@@ -13,8 +10,4 @@ export function SsrSnapshotProvider({
   children: React.ReactNode;
 }): React.JSX.Element {
   return <SsrSnapshotContext.Provider value={snapshot}>{children}</SsrSnapshotContext.Provider>;
-}
-
-export function useSsrSnapshot(): SnapshotContextValue {
-  return React.useContext(SsrSnapshotContext);
 }

@@ -195,7 +195,10 @@ const DayDetailModal: FC<{
   // Notes: localStorage is the source-of-truth; rev tick triggers reread (no setState-in-effect)
   const [notesRev, setNotesRev] = useState<number>(0);
 
-  const notes = useMemo(() => loadNotes(day.startPulse), [day.startPulse, notesRev]);
+  const notes = useMemo(() => {
+    void notesRev;
+    return loadNotes(day.startPulse);
+  }, [day.startPulse, notesRev]);
 
   const notesByBeat = useMemo(() => {
     const map = new Map<number, Note[]>();

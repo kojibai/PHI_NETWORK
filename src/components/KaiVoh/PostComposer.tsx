@@ -450,7 +450,7 @@ export default function PostComposer({ onReady }: PostComposerProps) {
     const trimmedLink = linkUrl.trim();
     if (trimmedLink.length > 0) {
       try {
-        // eslint-disable-next-line no-new
+         
         new URL(trimmedLink);
       } catch {
         setError("The link URL looks invalid. Please check it.");

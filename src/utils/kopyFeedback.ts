@@ -1,6 +1,6 @@
 // kopyFeedback.ts — Sacred Φ “Kopy” feedback: LEGIT TEMPLE GONG + φ-reverb + Fibonacci haptic
 // Side-effect module (no exports). Import once on client pages.
-/* eslint-disable @typescript-eslint/consistent-type-assertions */
+ 
 
 type AudioCtor = new () => AudioContext;
 

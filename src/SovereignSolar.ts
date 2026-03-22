@@ -5,13 +5,12 @@ import Decimal from "decimal.js";
 import {
   BASE_DAY_MICRO,
   BEATS_DAY,
-  DAYS_PER_MONTH,
-  DAYS_PER_WEEK,
-  DAYS_PER_YEAR,
+  eternalCalendarFromPulse,
   GENESIS_TS,
   latticeFromPulse,
   N_DAY_MICRO,
   PULSES_STEP,
+  pulsesIntoBeatFromPulse as canonicalPulsesIntoBeatFromPulse,
   SOLAR_GENESIS_UTC_TS,
   STEPS_BEAT,
 } from "./utils/kai_pulse";
@@ -64,12 +63,13 @@ export const DAY_MILLISECONDS_DEC = DAY_SECONDS_DEC.mul(1000);
 
 // ⬇️ ADD near the other exports in SovereignSolar.ts
 
-// --- internal: μpulse-in-day from an absolute pulse (floor to whole pulse) ---
+// Retained for module-local parity with older exact grid helpers.
 function muPosInDayFromPulse(pulse: number): bigint {
   const safePulse = Number.isFinite(pulse) ? Math.trunc(pulse) : 0;
   const muAbs = BigInt(safePulse) * MU_PER_PULSE;
   return imod(muAbs, MU_PER_DAY);
 }
+void muPosInDayFromPulse;
 
 // Beat index (0..35) from absolute pulse (grid-scaled, exact integers)
 export function beatIndexFromPulse(pulse: number): number {
@@ -92,27 +92,12 @@ export function percentIntoStepFromPulse(pulse: number): number {
 
 // Whole pulses into the current beat (0..483)
 export function pulsesIntoBeatFromPulse(pulse: number): number {
-  const muInDay = muPosInDayFromPulse(pulse);
-  const muGrid  = (muInDay * MU_PER_GRID_DAY) / MU_PER_DAY;
-  const muInBeat = muGrid % MU_PER_GRID_BEAT;
-  return Number(muInBeat / MU_PER_PULSE);
+  return canonicalPulsesIntoBeatFromPulse(pulse);
 }
 
 // Kai calendar from absolute pulse (exact integer math; abs day is 1-based)
 export function kaiCalendarFromPulse(pulse: number) {
-  const muAbs = BigInt(Math.trunc(pulse)) * MU_PER_PULSE;
-  const absDayIdxBI = muAbs / MU_PER_DAY;          // 0..∞
-  const absDayIdx   = Number(absDayIdxBI) + 1;     // 1..∞
-
-  const dYear = Number(((absDayIdxBI % BigInt(DAYS_PER_YEAR)) + BigInt(DAYS_PER_YEAR)) % BigInt(DAYS_PER_YEAR)); // 0..335
-  const yearIdx  = Math.floor(Number(absDayIdxBI) / DAYS_PER_YEAR);
-  const monthIdx = Math.floor(dYear / DAYS_PER_MONTH);     // 0..7
-  const dayInMonth = (dYear % DAYS_PER_MONTH) + 1;         // 1..42
-  const weekOfYear = Math.floor(dYear / DAYS_PER_WEEK);    // 0..55
-  const weekOfMonth = Math.floor((dayInMonth - 1) / DAYS_PER_WEEK); // 0..6
-  const dayOfWeek = (dYear % DAYS_PER_WEEK) + 1;           // 1..6
-
-  return { absDayIdx, yearIdx, monthIdx, weekOfYear, weekOfMonth, dayInMonth, dayOfWeek };
+  return eternalCalendarFromPulse(pulse);
 }
 
 // Φ-spiral level (document/display helper)

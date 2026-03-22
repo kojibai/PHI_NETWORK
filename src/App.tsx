@@ -463,16 +463,19 @@ const [vvStable, setVvStable] = useState<{ width: number; height: number }>({ wi
 useIsoLayoutEffect(() => {
   if (!hydrated) return;
   setVvStable({ width: vvSizeRaw.width, height: vvSizeRaw.height });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
 }, [hydrated]);
 
 useEffect(() => {
   if (!hydrated) return;
   if (isEditingNow()) return; // ✅ do not update while typing
-  setVvStable((prev) => {
-    if (prev.width === vvSizeRaw.width && prev.height === vvSizeRaw.height) return prev;
-    return { width: vvSizeRaw.width, height: vvSizeRaw.height };
+  const raf = window.requestAnimationFrame(() => {
+    setVvStable((prev) => {
+      if (prev.width === vvSizeRaw.width && prev.height === vvSizeRaw.height) return prev;
+      return { width: vvSizeRaw.width, height: vvSizeRaw.height };
+    });
   });
+  return () => window.cancelAnimationFrame(raf);
 }, [hydrated, vvSizeRaw.width, vvSizeRaw.height]);
 
 useEffect(() => {

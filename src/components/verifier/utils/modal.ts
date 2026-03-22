@@ -15,7 +15,7 @@ let openCount = 0;
 
 /** Lightweight logger that never throws. */
 function logError(ctx: string, err: unknown): void {
-  // eslint-disable-next-line no-console
+   
   console.error(`[modal] ${ctx}:`, err);
 }
 

@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useMemo } from "react";
+import React, { useRef, useEffect, useMemo, useCallback } from "react";
 import { CENTER, PHI, SPACE, lissajousPath } from "./constants";
 import { PULSE_MS } from "../../utils/kai_pulse";
 
@@ -81,11 +81,10 @@ const ZKGlyph: React.FC<Props> = ({
   const outerFont = Math.max(8, (size ?? 240) * 0.026);
   const innerFont = Math.max(7, (size ?? 240) * 0.022);
 
-  const approxCharW = (fs: number) => fs * 0.62; // good mono approximation
-  const maxCharsForRadius = (radius: number, fs: number) => {
+  const maxCharsForRadius = useCallback((radius: number, fs: number) => {
     const circ = 2 * Math.PI * radius;
-    return Math.max(48, Math.floor(circ / approxCharW(fs)));
-  };
+    return Math.max(48, Math.floor(circ / (fs * 0.62)));
+  }, []);
 
   const condenseSeal = (raw: string, maxLen: number) => {
     const s = (raw ?? "").trim();
@@ -106,12 +105,12 @@ const ZKGlyph: React.FC<Props> = ({
   const outerDisplay = useMemo(() => {
     const maxLen = maxCharsForRadius(rOuter, outerFont);
     return condenseSeal(outerRingText, maxLen);
-  }, [outerRingText, rOuter, outerFont]);
+  }, [outerRingText, rOuter, outerFont, maxCharsForRadius]);
 
   const innerDisplay = useMemo(() => {
     const maxLen = maxCharsForRadius(rInner, innerFont);
     return condenseSeal(innerRingText, maxLen);
-  }, [innerRingText, rInner, innerFont]);
+  }, [innerRingText, rInner, innerFont, maxCharsForRadius]);
 
   const renderRingText = (
     text: string,

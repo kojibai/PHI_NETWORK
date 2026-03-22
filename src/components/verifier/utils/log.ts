@@ -6,7 +6,7 @@
 ────────────────────────────────────────────────────────────────── */
 
 export function logError(where: string, err: unknown): void {
-  // eslint-disable-next-line no-console
+   
   console.error(`[VerifierStamper] ${where}`, err);
 
   if (typeof window === "undefined") return;
@@ -21,7 +21,7 @@ export function logError(where: string, err: unknown): void {
       })
     );
   } catch (e) {
-    // eslint-disable-next-line no-console
+     
     console.error(`[VerifierStamper] kk:error dispatch failed in ${where}`, e);
   }
 }

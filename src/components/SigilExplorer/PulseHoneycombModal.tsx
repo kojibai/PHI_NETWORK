@@ -689,7 +689,7 @@ function useAnchoredPopoverPosition(args: {
       window.removeEventListener("scroll", onRecalc as EventListener, true);
       ro?.disconnect();
     };
-  }, [enabled, shellRef, anchor?.x, anchor?.y]);
+  }, [enabled, shellRef, anchor]);
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -1496,9 +1496,9 @@ function PulseHoneycombInner({ pulse, originUrl, originHash, registryRev, onClos
   }, []);
 
   const activePulse = typeof pulse === "number" ? pulse : null;
-  void registryRev;
 
   const nodesRaw = useMemo(() => {
+    void registryRev;
     if (activePulse == null) return [];
     return buildNodesForPulse(activePulse);
   }, [activePulse, registryRev]);
@@ -1586,6 +1586,7 @@ function PulseHoneycombInner({ pulse, originUrl, originHash, registryRev, onClos
   }, [selected?.userPhiKey, selected?.kaiSignature, selected?.hash, activePulse]);
 
   const pulseValue = useMemo(() => {
+    void registryRev;
     if (activePulse == null) return { phi: null, usd: null, usdPerPhi: null };
 
     let phiTotal = 0;
@@ -1615,6 +1616,7 @@ function PulseHoneycombInner({ pulse, originUrl, originHash, registryRev, onClos
   type ChartBundle = ReturnType<typeof bootstrapSeries>;
 
   const chartBundle = useMemo<ChartBundle | null>(() => {
+    void registryRev;
     if (activePulse == null || nowPulse == null) return null;
     let payload: Record<string, unknown> | null = null;
 

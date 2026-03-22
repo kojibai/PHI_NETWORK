@@ -3,6 +3,7 @@
 // Everything is deterministic, monotone in adoption, and φ-anchored.
 // No RNG, no hidden levers. All boosts are tiny, transparent, and math-backed.
 
+import { latticeFromPulse, STEPS_BEAT } from "./kai_pulse";
 import type { SigilMetadataLite } from "./valuation";
 import { computeIntrinsicUnsigned } from "./valuation";
 
@@ -17,11 +18,16 @@ const q = (x: number, d = 9) => Math.round(x * 10 ** d) / 10 ** d;
 
 
 function stepIndexFromPulse(p: number, stepsPerBeat: number) {
-  const n = Math.trunc(Math.max(0, p));
-  return Math.floor(n / PULSES_PER_STEP) % Math.max(1, stepsPerBeat);
+  const steps = Math.max(1, Math.trunc(stepsPerBeat));
+  if (steps === STEPS_BEAT) return latticeFromPulse(p).stepIndex;
+  const n = Number.isFinite(p) ? Math.trunc(p) : 0;
+  const pulsesPerBeat = PULSES_PER_STEP * steps;
+  const into = ((n % pulsesPerBeat) + pulsesPerBeat) % pulsesPerBeat;
+  return Math.floor(into / PULSES_PER_STEP);
 }
 function breathResid(p: number) {
-  return Math.trunc(Math.max(0, p)) % PULSES_PER_STEP; // 0..10
+  const safePulse = Number.isFinite(p) ? Math.trunc(p) : 0;
+  return ((safePulse % PULSES_PER_STEP) + PULSES_PER_STEP) % PULSES_PER_STEP; // 0..10
 }
 function circSim01(a: number, b: number, period: number) {
   const da = ((a - b) % period + period) % period;

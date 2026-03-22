@@ -14,7 +14,7 @@
  * - Graceful permission and support errors.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import "./styles/StoryRecorder.css";
 
 export type CapturedStory = {
@@ -96,6 +96,15 @@ export default function StoryRecorder(props: StoryRecorderProps) {
   const rafRef = useRef<number | null>(null);
 
   const supportedMime = useMemo(() => pickSupportedMime(), []);
+  const initCameraEvent = useEffectEvent(async () => {
+    await initCamera();
+  });
+  const stopAllEvent = useEffectEvent(() => {
+    stopAll();
+  });
+  const checkTorchCapabilityEvent = useEffectEvent(async () => {
+    await checkTorchCapability();
+  });
 
   useEffect(() => {
     if (!isOpen) return;
@@ -103,7 +112,7 @@ export default function StoryRecorder(props: StoryRecorderProps) {
       setErr(null);
       setBusy(true);
       try {
-        await initCamera();
+        await initCameraEvent();
       } catch (e) {
         const msg = e instanceof Error ? e.message : "Failed to access camera.";
         setErr(msg);
@@ -112,16 +121,14 @@ export default function StoryRecorder(props: StoryRecorderProps) {
       }
     })();
     return () => {
-      stopAll();
+      stopAllEvent();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, facing, muted]);
 
   useEffect(() => {
     if (!isOpen) return;
     // Try torch capability (only back camera tends to have it)
-    checkTorchCapability().catch(() => setTorchSupported(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    checkTorchCapabilityEvent().catch(() => setTorchSupported(false));
   }, [isOpen, facing]);
 
   async function initCamera(): Promise<void> {

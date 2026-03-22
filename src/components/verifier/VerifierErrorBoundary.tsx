@@ -31,7 +31,7 @@ export class VerifierErrorBoundary extends React.Component<
   }
 
   componentDidCatch(error: unknown, info: React.ErrorInfo) {
-    // eslint-disable-next-line no-console
+     
     console.error("[VerifierStamper] crashed", error, info);
     try {
       if (typeof window !== "undefined") {
@@ -45,7 +45,7 @@ export class VerifierErrorBoundary extends React.Component<
         );
       }
     } catch (e) {
-      // eslint-disable-next-line no-console
+       
       console.error("[VerifierStamper] failed to dispatch kk:error", e);
     }
   }

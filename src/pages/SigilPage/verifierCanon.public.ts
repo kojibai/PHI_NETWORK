@@ -40,7 +40,7 @@ import {
   });
   
   declare global {
-    // eslint-disable-next-line no-var
+     
     var KaiVerifier: KaiVerifierShape;
     interface Window { KaiVerifier: KaiVerifierShape }
   }

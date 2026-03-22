@@ -1,6 +1,7 @@
 // src/components/sigil/SigilMetaPanel.tsx
 import type * as React from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { eternalCalendarFromPulse, latticeFromPulse } from "../../utils/kai_pulse";
 import { chakraDayToLabel, type SigilPayload } from "../../types/sigil";
 import { useFastPress } from "../../hooks/useFastPress";
 
@@ -32,12 +33,8 @@ type Props = {
   stage: React.ReactNode;
 };
 
-/* ── Exact step math (μpulse-precise; matches ProvenanceList/EternalKlock) ── */
-const HARMONIC_DAY_PULSES_EXACT = 17_491.270421; // exact
-const CHAKRA_BEATS_PER_DAY = 36;
+/* ── Exact step math (canonical KKS v1 lattice) ───────────────────────────── */
 const PULSES_PER_STEP = 11; // 11 breaths per step
-const UPULSES = 1_000_000; // μpulses per pulse
-const MU_PER_DAY = Math.round(HARMONIC_DAY_PULSES_EXACT * UPULSES);
 
 /* ── Kairos Calendar lattice (pure semantic counts) ──
    Week  = 6 Kai-Days
@@ -53,65 +50,23 @@ const DAYS_PER_YEAR = DAYS_PER_MONTH * MONTHS_PER_YEAR; // 336
 /* NEW: φ constant for “Phi Spiral” level (matches SigilModal) */
 const PHI = (1 + Math.sqrt(5)) / 2;
 
-/* μpulse helpers */
-function muPerBeat() {
-  return Math.round(
-    (HARMONIC_DAY_PULSES_EXACT / CHAKRA_BEATS_PER_DAY) * UPULSES
-  );
-}
-function muPosInDayFromPulse(pulse: number) {
-  const muAbs = Math.floor(pulse * UPULSES); // snap down to current μpulse
-  const mu = ((muAbs % MU_PER_DAY) + MU_PER_DAY) % MU_PER_DAY;
-  return mu;
-}
 function exactStepIndexFromPulse(pulse: number, stepsPerBeat: number): number {
-  const muBeat = muPerBeat();
-  const muStep = PULSES_PER_STEP * UPULSES;
-  const muInBeat = muPosInDayFromPulse(pulse) % muBeat;
-  const idx = Math.floor(muInBeat / muStep); // 0..(steps-1)
-  return Math.min(Math.max(idx, 0), Math.max(stepsPerBeat - 1, 0));
+  const steps = Number.isFinite(stepsPerBeat) && stepsPerBeat > 0 ? Math.floor(stepsPerBeat) : 44;
+  if (steps === 44) return latticeFromPulse(pulse).stepIndex;
+  const safePulse = Number.isFinite(pulse) ? Math.trunc(pulse) : 0;
+  const pulsesPerBeat = PULSES_PER_STEP * steps;
+  const into = ((safePulse % pulsesPerBeat) + pulsesPerBeat) % pulsesPerBeat;
+  return Math.floor(into / PULSES_PER_STEP);
 }
 function exactPercentIntoStepFromPulse(pulse: number): number {
-  const muBeat = muPerBeat();
-  const muStep = PULSES_PER_STEP * UPULSES;
-  const muInBeat = muPosInDayFromPulse(pulse) % muBeat;
-  const muInto = muInBeat % muStep;
-  return Math.max(0, Math.min(1, muInto / muStep)); // 0..1
+  return latticeFromPulse(pulse).percentIntoStep;
 }
 
 /* ── Kairos Calendar indices (no Chronos) ────────────────────────────────
    Compute absolute Kai-Day since Genesis, then reduce into Y/M/W/D.
    Uses BigInt for exact integer division/mod; converts to number for display. */
 function kaiCalendarFromPulse(pulse: number) {
-  const pμ = BigInt(Math.trunc(pulse)) * 1_000_000n; // μpulses since Genesis
-  const N_DAY_μ = BigInt(MU_PER_DAY); // μpulses per Kai-Day (exact)
-  const absDayIdxBI = pμ / N_DAY_μ; // floor division
-  const absDayIdx = Number(absDayIdxBI); // internal 0..∞
-
-  // Reduce into current Kai-Year
-  const dYear = Number(
-    ((absDayIdxBI % BigInt(DAYS_PER_YEAR)) + BigInt(DAYS_PER_YEAR)) %
-      BigInt(DAYS_PER_YEAR)
-  ); // 0..335
-  const yearIdx = Math.floor(absDayIdx / DAYS_PER_YEAR); // 0..∞
-
-  const monthIdx = Math.floor(dYear / DAYS_PER_MONTH); // 0..7
-  const dayInMonth = (dYear % DAYS_PER_MONTH) + 1; // 1..42
-
-  const weekOfYear = Math.floor(dYear / DAYS_PER_WEEK); // 0..55
-  const weekOfMonth = Math.floor(dayInMonth / DAYS_PER_WEEK); // 0..6
-
-  const dayOfWeek = (dYear % DAYS_PER_WEEK) + 1; // 1..6
-
-  return {
-    absDayIdx: absDayIdx + 1, // 1..∞ (display)
-    yearIdx, // 0..∞
-    monthIdx, // 0..7  (08 months/year)
-    weekOfYear, // 0..55 (56 weeks/year)
-    weekOfMonth, // 0..6  (07 weeks/month)
-    dayInMonth, // 1..42 (42 days/month)
-    dayOfWeek, // 1..6  (06 days/week)
-  };
+  return eternalCalendarFromPulse(pulse);
 }
 
 /* UI helpers */

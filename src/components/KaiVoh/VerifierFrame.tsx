@@ -137,7 +137,7 @@ export default function VerifierFrame({
     const phiKeyClean = typeof phiKey === "string" ? phiKey.trim() : "";
 
     const capsule: ProofCapsuleV1 | null =
-      pulse > 0 && sigFull.length > 0 && phiKeyClean.length > 0 && chakraNorm
+      Number.isFinite(pulse) && sigFull.length > 0 && phiKeyClean.length > 0 && chakraNorm
         ? { v: "KPV-1", pulse, chakraDay: chakraNorm, kaiSignature: sigFull, phiKey: phiKeyClean, verifierSlug: slug }
         : null;
 
@@ -208,7 +208,7 @@ export default function VerifierFrame({
     };
   }, [proof.verifierUrl, qrSize]);
 
-  const pulseLabel = Number.isFinite(pulse) && pulse > 0 ? String(pulse) : "—";
+  const pulseLabel = Number.isFinite(pulse) ? String(pulse) : "—";
   const captionClean = typeof caption === "string" ? caption.trim() : "";
 
   const phiKeyDisplay = truncateMiddle(proof.phiKey, compact ? 10 : 12, compact ? 10 : 12);

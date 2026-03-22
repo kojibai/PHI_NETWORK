@@ -2,6 +2,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactElement, type ReactNode } from "react";
+import { useLocation } from "react-router-dom";
 import "./VerifyPage.css";
 
 import VerifierFrame from "../components/KaiVoh/VerifierFrame";
@@ -362,10 +363,13 @@ function readReceiveSigFromBundle(raw: unknown): ReceiveSig | null {
   return isReceiveSig(candidate) ? candidate : null;
 }
 
-function readSlugFromLocation(): string {
-  if (typeof window === "undefined") return "";
-  const path = window.location.pathname || "";
-  const hash = window.location.hash || "";
+function readSlugFromLocation(pathname?: string, hashValue?: string): string {
+  const path =
+    pathname ??
+    (typeof window !== "undefined" ? window.location.pathname || "" : "");
+  const hash =
+    hashValue ??
+    (typeof window !== "undefined" ? window.location.hash || "" : "");
 
   const m1 = path.match(/\/verify\/([^/?#]+)/);
   if (m1?.[1]) return m1[1];
@@ -478,9 +482,11 @@ function buildSharedReceiptFromObject(raw: unknown): SharedReceipt | null {
   };
 }
 
-function readSharedReceiptFromLocation(): { receipt: SharedReceipt | null; error?: string } {
-  if (typeof window === "undefined") return { receipt: null };
-  const params = new URLSearchParams(window.location.search);
+function readSharedReceiptFromLocation(searchValue?: string): { receipt: SharedReceipt | null; error?: string } {
+  const search =
+    searchValue ??
+    (typeof window !== "undefined" ? window.location.search : "");
+  const params = new URLSearchParams(search);
   const payload = params.get("p");
   if (payload) {
     try {
@@ -985,6 +991,7 @@ function Modal(props: { open: boolean; title: string; subtitle?: string; onClose
 ─────────────────────────────────────────────────────────────── */
 
 export default function VerifyPage(): ReactElement {
+  const location = useLocation();
   const fileRef = useRef<HTMLInputElement | null>(null);
   const pngFileRef = useRef<HTMLInputElement | null>(null);
   const lastAutoScanKeyRef = useRef<string | null>(null);
@@ -993,16 +1000,16 @@ export default function VerifyPage(): ReactElement {
   const noteDownloadBypassRef = useRef<boolean>(false);
   const noteDownloadInFlightRef = useRef<boolean>(false);
 
-  const slugRaw = useMemo(() => readSlugFromLocation(), []);
+  const slugRaw = useMemo(() => readSlugFromLocation(location.pathname, location.hash), [location.hash, location.pathname]);
   const slug = useMemo(() => parseSlug(slugRaw), [slugRaw]);
-  const initialReceiptResult = useMemo(() => readSharedReceiptFromLocation(), []);
+  const locationReceiptResult = useMemo(() => readSharedReceiptFromLocation(location.search), [location.search]);
 
   const [panel, setPanel] = useState<PanelKey>("inhale");
 
   const [svgText, setSvgText] = useState<string>("");
   const [result, setResult] = useState<VerifyResult>({ status: "idle" });
   const [busy, setBusy] = useState<boolean>(false);
-  const [sharedReceipt, setSharedReceipt] = useState<SharedReceipt | null>(initialReceiptResult.receipt);
+  const [sharedReceipt, setSharedReceipt] = useState<SharedReceipt | null>(() => locationReceiptResult.receipt);
   const [noteSendMeta, setNoteSendMeta] = useState<NoteSendMeta | null>(null);
   const [noteSendPayloadRaw, setNoteSendPayloadRaw] = useState<Record<string, unknown> | null>(null);
   const [noteClaimedImmediate, setNoteClaimedImmediate] = useState<boolean>(false);
@@ -1017,7 +1024,7 @@ export default function VerifyPage(): ReactElement {
   const [svgBytesHash, setSvgBytesHash] = useState<string>("");
 
   const [embeddedProof, setEmbeddedProof] = useState<ProofBundleMeta | null>(null);
-  const [notice, setNotice] = useState<string>(initialReceiptResult.error ?? "");
+  const [notice, setNotice] = useState<string>(() => locationReceiptResult.error ?? "");
 
   const [ownerAuthVerified, setOwnerAuthVerified] = useState<boolean | null>(null);
   const [ownerAuthStatus, setOwnerAuthStatus] = useState<string>("Not present");
@@ -1058,8 +1065,13 @@ useEffect(() => {
   });
 }, []);
 
+  useEffect(() => {
+    setSharedReceipt(locationReceiptResult.receipt);
+    setNotice(locationReceiptResult.error ?? "");
+  }, [locationReceiptResult.error, locationReceiptResult.receipt]);
+
   const { pulse: currentPulse } = useKaiTicker();
-  const searchParams = useMemo(() => new URLSearchParams(typeof window !== "undefined" ? window.location.search : ""), []);
+  const searchParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
 
   const valuationPayload = useMemo<SigilMetadataLite | null>(() => {
     if (result.status !== "ok") return null;
@@ -1150,15 +1162,25 @@ useEffect(() => {
           : "Live glyph valuation";
 
   const noteSendRecord = useMemo(
-    () => (effectiveNoteMeta ? getSendRecordByNonce(effectiveNoteMeta.parentCanonical, effectiveNoteMeta.transferNonce) : null),
+    () => {
+      void ledgerTick;
+      void registryTick;
+      return effectiveNoteMeta ? getSendRecordByNonce(effectiveNoteMeta.parentCanonical, effectiveNoteMeta.transferNonce) : null;
+    },
     [effectiveNoteMeta, ledgerTick, registryTick],
   );
   const noteClaimInfo = useMemo(
-    () => (effectiveNoteMeta ? getNoteClaimInfo(effectiveNoteMeta.parentCanonical, effectiveNoteMeta.transferNonce) : null),
+    () => {
+      void registryTick;
+      return effectiveNoteMeta ? getNoteClaimInfo(effectiveNoteMeta.parentCanonical, effectiveNoteMeta.transferNonce) : null;
+    },
     [effectiveNoteMeta, registryTick],
   );
   const noteClaimLeader = useMemo(
-    () => (effectiveNoteMeta ? getNoteClaimLeader(effectiveNoteMeta.parentCanonical) : null),
+    () => {
+      void registryTick;
+      return effectiveNoteMeta ? getNoteClaimLeader(effectiveNoteMeta.parentCanonical) : null;
+    },
     [effectiveNoteMeta, registryTick],
   );
   const noteClaimedPulse = useMemo(() => {
@@ -1460,8 +1482,8 @@ const noteClaimedFinal =
 
   const currentVerifyUrl = useMemo(() => {
     if (typeof window === "undefined") return "";
-    return window.location.href;
-  }, [slugRaw]);
+    return new URL(`${location.pathname}${location.search}${location.hash}`, window.location.origin).toString();
+  }, [location.hash, location.pathname, location.search]);
 
   const remember = useCallback(async (text: string, label: string): Promise<void> => {
     const t = (text || "").trim();
@@ -1476,7 +1498,7 @@ const noteClaimedFinal =
       setNotice(`${label} remembered.`);
     } catch (err) {
       setNotice("Remember failed. Use manual copy.");
-      // eslint-disable-next-line no-console
+       
       console.error(err);
     }
   }, []);
@@ -1669,7 +1691,7 @@ const confirmNoteSend = useCallback(
         });
       }
     } catch (err) {
-      // eslint-disable-next-line no-console
+       
       console.error("note send confirm failed", err);
     } finally {
       // ✅ force re-render even if iOS storage/broadcast events don’t fire
@@ -2502,7 +2524,7 @@ useEffect(() => {
     // ✅ force UI refresh on mobile
     setRegistryTick((prev) => prev + 1);
   } catch (err) {
-    // eslint-disable-next-line no-console
+     
     console.error("note claim pulse hydrate failed", err);
   }
 }, [effectiveNoteMeta, effectiveReceivePulse, noteSendPayloadRaw, noteSendRecord]);
@@ -3287,6 +3309,7 @@ React.useEffect(() => {
     sharedReceipt?.cacheKey,
     sharedReceipt?.receipt,
     sharedReceipt?.receiptHash,
+    sharedReceipt?.verificationCache,
     sharedReceipt?.verificationSig,
     verificationCacheEntry,
     verificationReceipt,
@@ -3646,10 +3669,16 @@ if (!noteDownloadBypassRef.current && alreadySpent) {
     zkMeta?.zkPoseidonHash,
     zkVerify,
     cacheKey,
+    embeddedProof?.cacheKey,
+    embeddedProof?.receipt,
+    embeddedProof?.receiptHash,
+    embeddedProof?.verificationCache,
+    embeddedProof?.verificationSig,
     receiptHash,
     sharedReceipt?.cacheKey,
     sharedReceipt?.receipt,
     sharedReceipt?.receiptHash,
+    sharedReceipt?.verificationCache,
     sharedReceipt?.verificationSig,
     verificationCacheEntry,
     verificationReceipt,

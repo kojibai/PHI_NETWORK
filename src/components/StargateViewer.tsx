@@ -198,8 +198,7 @@ const StargateViewer: FC<StargateViewerProps> = ({
       if (id !== null) clearInterval(id);
       document.removeEventListener("visibilitychange", onVis);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [paused, tilt.x, tilt.y, baseHue]);
+  }, [paused, tilt.x, tilt.y, baseHue, beat, livePulse, stepPct]);
 
   /* ══ Gyro + pointer parallax (mobile + desktop) ═══════════════ */
   useEffect(() => {

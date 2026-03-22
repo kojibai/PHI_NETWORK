@@ -107,8 +107,7 @@ export function useKaiParityPricePoints(opts: {
       // try to seed; if quote isn’t ready yet, it’ll no-op until first step/mint
       pushPoint(0.35);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [points.length, pushPoint]);
 
   return points;
 }

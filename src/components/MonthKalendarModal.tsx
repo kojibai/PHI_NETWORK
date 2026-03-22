@@ -9,6 +9,7 @@
 ────────────────────────────────────────────────────────────── */
 
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -311,14 +312,14 @@ const MonthKalendarModal:FC<Props>=({
     const periods = Math.ceil(elapsed / PULSE_MS_EXACT);
     return GENESIS_TS + periods * PULSE_MS_EXACT;
   };
-  const clearAlignedTimer = () => {
+  const clearAlignedTimer = useCallback(() => {
     if (timeoutRef.current !== null) {
       clearTimeout(timeoutRef.current);
       timeoutRef.current = null;
     }
-  };
+  }, []);
 
-  const scheduleAlignedTick = () => {
+  const scheduleAlignedTick = useCallback(() => {
     clearAlignedTimer();
 
     // initial compute (immediate)
@@ -346,20 +347,20 @@ const MonthKalendarModal:FC<Props>=({
     targetBoundaryRef.current = computeNextBoundary(epochNow());
     const initialDelay = Math.max(0, targetBoundaryRef.current - epochNow());
     timeoutRef.current = window.setTimeout(fire, initialDelay) as unknown as number;
-  };
+  }, [clearAlignedTimer]);
 
   useEffect(() => {
-    scheduleAlignedTick();
+    const raf = requestAnimationFrame(() => scheduleAlignedTick());
     const onVis = () => {
       if (document.visibilityState === "visible") scheduleAlignedTick();
     };
     document.addEventListener("visibilitychange", onVis);
     return () => {
+      cancelAnimationFrame(raf);
       clearAlignedTimer();
       document.removeEventListener("visibilitychange", onVis);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [clearAlignedTimer, scheduleAlignedTick]);
 
   /* Interpolate comet position */
   const comet = useMemo(()=>{
@@ -381,18 +382,6 @@ const MonthKalendarModal:FC<Props>=({
   /* Accessibility + focus + ESC + Home to snap Day 1 */
   const closeRef = useRef<HTMLButtonElement>(null);
   useEffect(()=>closeRef.current?.focus(),[]);
-  useEffect(()=>{
-    const h = (e:KeyboardEvent)=>{
-      if(e.key==="Escape") onClose();
-      if(e.key==="Home"){
-        e.preventDefault();
-        focusDay(0, 8);
-        setCamMode("free");
-      }
-    };
-    window.addEventListener("keydown",h);
-    return ()=>window.removeEventListener("keydown",h);
-  },[onClose]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const root = container ?? document.body;
 
@@ -416,7 +405,7 @@ const MonthKalendarModal:FC<Props>=({
   const openDay = (day: Day, idx: number) => {
     try { onSelectDay?.(day, idx); } catch (err) {
       if (typeof process !== "undefined" && process.env?.NODE_ENV !== "production") {
-        // eslint-disable-next-line no-console
+         
         console.warn("[MonthKalendarModal] onSelectDay threw:", err);
       }
     }
@@ -450,24 +439,24 @@ const MonthKalendarModal:FC<Props>=({
   const svgRef = useRef<SVGSVGElement|null>(null);
   const contentRef = useRef<SVGGElement|null>(null);
   const [viewBox, setViewBox] = useState<string>("-60 -60 120 120");
-  const vbNumsRef = useRef<{x:number;y:number;w:number;h:number}>({x:-60,y:-60,w:120,h:120});
+  const [vbNums, setVbNums] = useState<{x:number;y:number;w:number;h:number}>({x:-60,y:-60,w:120,h:120});
 
-  const computeViewBox = () => {
+  const computeViewBox = useCallback(() => {
     const g = contentRef.current;
     if (!g) return;
     const bb = g.getBBox(); // geometry bbox (filters not included)
     const PAD = 14;
     const x = bb.x - PAD, y = bb.y - PAD, w = bb.width + PAD*2, h = bb.height + PAD*2;
-    vbNumsRef.current = { x, y, w, h };
+    setVbNums({ x, y, w, h });
     setViewBox(`${x} ${y} ${w} ${h}`);
-  };
+  }, []);
 
   useLayoutEffect(() => {
     let raf = requestAnimationFrame(computeViewBox);
     const onResize = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(computeViewBox); };
     window.addEventListener("resize", onResize);
     return () => { cancelAnimationFrame(raf); window.removeEventListener("resize", onResize); };
-  }, [points.length]);
+  }, [computeViewBox, points.length]);
 
   /* ══════════ Camera: fit / follow / free ══════════ */
   const [camMode, setCamMode] = useState<CamMode>("fit");
@@ -476,7 +465,7 @@ const MonthKalendarModal:FC<Props>=({
   const camRef = useRef<Cam>(camState);
   const rafSetRef = useRef<number | null>(null);
 
-  const setCam: (next: Cam | ((prev: Cam) => Cam)) => void = (next) => {
+  const setCam: (next: Cam | ((prev: Cam) => Cam)) => void = useCallback((next) => {
     const value = typeof next === "function" ? (next as (p:Cam)=>Cam)(camRef.current) : next;
     camRef.current = value;
     if (rafSetRef.current !== null) return;
@@ -484,38 +473,51 @@ const MonthKalendarModal:FC<Props>=({
       rafSetRef.current = null;
       _setCam(camRef.current);
     });
-  };
+  }, []);
 
   const cam = camState; // read-friendly alias
 
   // helper: snap to specific day index with chosen zoom
-  const focusDay = (idx:number, targetZ:number = 6) => {
+  const focusDay = useCallback((idx:number, targetZ:number = 6) => {
     const p = points[idx];
     if (!p) return;
-    const { x:vbX, y:vbY, w:vbW, h:vbH } = vbNumsRef.current;
+    const { x:vbX, y:vbY, w:vbW, h:vbH } = vbNums;
     const cx = vbX + vbW/2;
     const cy = vbY + vbH/2;
     const z = Math.max(1, Math.min(ZOOM_MAX, targetZ));
     setCam({ x: cx - z*p.x, y: cy - z*p.y, z });
-  };
+  }, [points, setCam, vbNums]);
+
+  useEffect(()=>{
+    const h = (e:KeyboardEvent)=>{
+      if(e.key==="Escape") onClose();
+      if(e.key==="Home"){
+        e.preventDefault();
+        focusDay(0, 8);
+        setCamMode("free");
+      }
+    };
+    window.addEventListener("keydown",h);
+    return ()=>window.removeEventListener("keydown",h);
+  },[focusDay, onClose]);
 
   // Keep Fit mode centered/normalized whenever viewBox changes
   useEffect(() => {
     if (camMode !== "fit") return;
     setCam({ x: 0, y: 0, z: 1 });
-  }, [viewBox, camMode]);
+  }, [camMode, setCam, viewBox]);
 
   // Follow comet: center on comet with a gentle spring
   useEffect(() => {
     if (camMode !== "follow") return;
-    const { x:vbX, y:vbY, w:vbW, h:vbH } = vbNumsRef.current;
+    const { x:vbX, y:vbY, w:vbW, h:vbH } = vbNums;
     const cx = vbX + vbW/2;
     const cy = vbY + vbH/2;
     setCam((prev) => {
       const z = prev.z;
       return { x: cx - z*comet.x, y: cy - z*comet.y, z };
     });
-  }, [comet.x, comet.y, camMode]);
+  }, [camMode, comet.x, comet.y, setCam, vbNums]);
 
   /* ══════════ Mobile-first gesture engine (pinch + pan) ══════════ */
   type Pointer = { id:number; clientX:number; clientY:number; };

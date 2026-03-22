@@ -91,6 +91,16 @@ export type KaiMoment = {
   weekday: Weekday;
 };
 
+export type EternalCalendarPoint = {
+  absDayIdx: number; // 1-based display index; pre-genesis can be <= 0
+  yearIdx: number;
+  monthIdx: number; // 0..7
+  weekOfYear: number; // 0..55
+  weekOfMonth: number; // 0..6
+  dayInMonth: number; // 1..42
+  dayOfWeek: number; // 1..6
+};
+
 // ─────────────────────────────────────────────────────────────
 export const WEEKDAYS: readonly Weekday[] = [
   "Solhara",
@@ -476,6 +486,38 @@ export function latticeFromPulse(pulse: number | bigint): {
   percentIntoStep: number; // [0,1)
 } {
   return latticeFromMicroPulses(microPulsesFromPulse(pulse));
+}
+
+/** Whole pulses elapsed within the current beat on the canonical KKS v1 lattice. */
+export function pulsesIntoBeatFromPulse(pulse: number | bigint): number {
+  const pμ = microPulsesFromPulse(pulse);
+  const pulsesInGrid = pulsesInGridDay(pμ);
+  const beatBI = pulsesInGrid / PULSES_PER_BEAT_MICRO;
+  const pulsesInBeat = pulsesInGrid - beatBI * PULSES_PER_BEAT_MICRO;
+  return toSafeNumber(floorDivE(pulsesInBeat, 1_000_000n));
+}
+
+/** Canonical eternal calendar indices from a pulse, using Euclidean floor for signed pulses. */
+export function eternalCalendarFromPulse(pulse: number | bigint): EternalCalendarPoint {
+  const pμ = microPulsesFromPulse(pulse);
+  const dayIdx = floorDivE(pμ, N_DAY_MICRO);
+  const dayInYear = toSafeNumber(modE(dayIdx, BigInt(DAYS_PER_YEAR))); // 0..335
+  const yearIdx = toSafeNumber(floorDivE(dayIdx, BigInt(DAYS_PER_YEAR)));
+  const monthIdx = Math.floor(dayInYear / DAYS_PER_MONTH); // 0..7
+  const dayInMonth = (dayInYear % DAYS_PER_MONTH) + 1; // 1..42
+  const weekOfYear = Math.floor(dayInYear / DAYS_PER_WEEK); // 0..55
+  const weekOfMonth = Math.floor((dayInMonth - 1) / DAYS_PER_WEEK); // 0..6
+  const dayOfWeek = (dayInYear % DAYS_PER_WEEK) + 1; // 1..6
+
+  return {
+    absDayIdx: toSafeNumber(dayIdx) + 1,
+    yearIdx,
+    monthIdx,
+    weekOfYear,
+    weekOfMonth,
+    dayInMonth,
+    dayOfWeek,
+  };
 }
 
 /** Full KaiMoment from any UTC input (string/Date/bigint). */

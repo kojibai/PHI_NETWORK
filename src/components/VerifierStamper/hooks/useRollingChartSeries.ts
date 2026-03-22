@@ -40,9 +40,10 @@ export default function useRollingChartSeries({
   const vRef = useRef<number>(0);
   const fxRef = useRef<number>(0);
 
-  // keep refs updated during render (pure assignments are ok)
-  if (Number.isFinite(valuePhi)) vRef.current = valuePhi;
-  if (Number.isFinite(usdPerPhi) && usdPerPhi > 0) fxRef.current = usdPerPhi;
+  useEffect(() => {
+    if (Number.isFinite(valuePhi)) vRef.current = valuePhi;
+    if (Number.isFinite(usdPerPhi) && usdPerPhi > 0) fxRef.current = usdPerPhi;
+  }, [usdPerPhi, valuePhi]);
 
   // make resets/snap-trigger detection without effects that setState
   const prevSeriesKeyRef = useRef<string>(seriesKey);
@@ -117,9 +118,9 @@ export default function useRollingChartSeries({
   // and the state update happens via the same pushPoint path.
   useEffect(() => {
     // one-time initial snap
-    pushPoint(kaiPulseNow());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // intentionally once
+    const raf = window.requestAnimationFrame(() => pushPoint(kaiPulseNow()));
+    return () => window.cancelAnimationFrame(raf);
+  }, [pushPoint]);
 
   return data;
 }

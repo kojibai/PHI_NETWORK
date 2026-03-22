@@ -212,8 +212,11 @@ function bytesToBase64(bytes: Uint8Array): string {
   }
 
   // node-ish fallback
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const B: any = (globalThis as any).Buffer;
+  type BufferCtor = {
+    from(input: Uint8Array): { toString(encoding: "base64"): string };
+    from(input: string, encoding: "base64"): Uint8Array;
+  };
+  const B = (globalThis as { Buffer?: BufferCtor }).Buffer;
   if (B) return B.from(bytes).toString("base64");
   throw new Error("No base64 encoder available");
 }
@@ -226,8 +229,11 @@ function base64ToBytes(b64: string): Uint8Array {
     return out;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const B: any = (globalThis as any).Buffer;
+  type BufferCtor = {
+    from(input: Uint8Array): { toString(encoding: "base64"): string };
+    from(input: string, encoding: "base64"): Uint8Array;
+  };
+  const B = (globalThis as { Buffer?: BufferCtor }).Buffer;
   if (B) return new Uint8Array(B.from(b64, "base64"));
   throw new Error("No base64 decoder available");
 }

@@ -1,7 +1,7 @@
 // src/pages/sigilstream/core/ticker.ts
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { computeLocalKai, GENESIS_TS, PULSE_MS, KAI_PULSE_SEC } from "./kai_time";
 import type { LocalKai } from "./types";
 
@@ -15,22 +15,22 @@ export function useKaiPulseCountdown(active: boolean): number | null {
   const rafRef = useRef<number | null>(null);
   const targetRef = useRef<number | null>(null);
 
-  const scheduleNextBoundary = () => {
+  const scheduleNextBoundary = useCallback(() => {
     const now = Date.now();
     const periods = Math.ceil((now - GENESIS_TS) / PULSE_MS);
     targetRef.current = GENESIS_TS + periods * PULSE_MS;
-  };
+  }, []);
 
   useEffect(() => {
     if (!active) {
       if (rafRef.current != null) window.cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
       targetRef.current = null;
-      setSecsLeft(null);
       return;
     }
 
     scheduleNextBoundary();
+    const prime = window.requestAnimationFrame(() => setSecsLeft(KAI_PULSE_SEC));
 
     const tick = () => {
       const target = targetRef.current;
@@ -59,14 +59,14 @@ export function useKaiPulseCountdown(active: boolean): number | null {
     document.addEventListener("visibilitychange", onVis);
 
     return () => {
+      window.cancelAnimationFrame(prime);
       if (rafRef.current != null) window.cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
       document.removeEventListener("visibilitychange", onVis);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active]);
+  }, [active, scheduleNextBoundary]);
 
-  return secsLeft;
+  return active ? (secsLeft ?? KAI_PULSE_SEC) : null;
 }
 
 /**
@@ -81,7 +81,7 @@ export function useAlignedKaiTicker(): LocalKai {
   const [kai, setKai] = useState<LocalKai>(() => computeLocalKai(new Date()));
   const timerRef = useRef<number | null>(null);
 
-  const setCssPhaseVars = () => {
+  const setCssPhaseVars = useCallback(() => {
     if (typeof document === "undefined") return;
     const root = document.documentElement;
     const now = Date.now();
@@ -89,25 +89,29 @@ export function useAlignedKaiTicker(): LocalKai {
     root.style.setProperty("--pulse-dur", `${PULSE_MS}ms`);
     // Negative delay causes CSS animations to appear already in-progress by `lag`
     root.style.setProperty("--pulse-offset", `-${Math.round(lag)}ms`);
-  };
+  }, []);
 
-  const schedule = () => {
-    if (timerRef.current) window.clearTimeout(timerRef.current);
+  const schedule = useCallback(() => {
+    const scheduleNext = () => {
+      if (timerRef.current) window.clearTimeout(timerRef.current);
 
-    const now = Date.now();
-    const elapsed = now - GENESIS_TS;
-    const next = GENESIS_TS + Math.ceil(elapsed / PULSE_MS) * PULSE_MS;
-    const delay = Math.max(0, next - now);
+      const now = Date.now();
+      const elapsed = now - GENESIS_TS;
+      const next = GENESIS_TS + Math.ceil(elapsed / PULSE_MS) * PULSE_MS;
+      const delay = Math.max(0, next - now);
 
-    // Keep CSS phase vars fresh (useful for pure-CSS progress)
-    setCssPhaseVars();
+      // Keep CSS phase vars fresh (useful for pure-CSS progress)
+      setCssPhaseVars();
 
-    timerRef.current = window.setTimeout(() => {
-      // Update state exactly at boundary, then immediately schedule the next one
-      setKai(computeLocalKai(new Date()));
-      schedule();
-    }, delay) as unknown as number;
-  };
+      timerRef.current = window.setTimeout(() => {
+        // Update state exactly at boundary, then immediately schedule the next one
+        setKai(computeLocalKai(new Date()));
+        scheduleNext();
+      }, delay) as unknown as number;
+    };
+
+    scheduleNext();
+  }, [setCssPhaseVars]);
 
   useEffect(() => {
     schedule();
@@ -126,8 +130,7 @@ export function useAlignedKaiTicker(): LocalKai {
       timerRef.current = null;
       document.removeEventListener("visibilitychange", onVis);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [schedule]);
 
   return kai;
 }

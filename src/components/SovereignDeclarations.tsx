@@ -95,6 +95,7 @@ export default function SovereignDeclarations(): React.JSX.Element {
       (ctaRef.current ?? closeRef.current)?.focus();
     });
 
+    const triggerEl = triggerRef.current;
     return () => {
       window.removeEventListener("keydown", onKeyDown, { capture: true });
 
@@ -103,7 +104,7 @@ export default function SovereignDeclarations(): React.JSX.Element {
 
       requestAnimationFrame(() => {
         if (prevFocused && "focus" in prevFocused) prevFocused.focus();
-        else triggerRef.current?.focus();
+        else triggerEl?.focus();
       });
     };
   }, [open, close]);
