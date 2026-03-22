@@ -11,7 +11,7 @@
  * - Post body + derived caption computed ONLY on Exhale (not per-keystroke).
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, DragEvent, ReactElement, MutableRefObject } from "react";
 import "./styles/KaiVoh.css";
 import {
