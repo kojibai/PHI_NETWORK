@@ -75,7 +75,7 @@ function RouteLoader(): React.JSX.Element {
           textTransform: "uppercase",
         }}
       >
-        Opening...
+        Alligning...
       </div>
     </div>
   );

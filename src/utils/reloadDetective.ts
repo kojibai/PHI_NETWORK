@@ -27,18 +27,18 @@ export function isReloadDebugEnabled(): boolean {
 }
 
 function log(...args: unknown[]): void {
-  // eslint-disable-next-line no-console
+   
   console.log(LOG_PREFIX, ...args);
 }
 
 function logWarn(...args: unknown[]): void {
-  // eslint-disable-next-line no-console
+   
   console.warn(LOG_PREFIX, ...args);
 }
 
 function safeTrace(label: string): void {
   try {
-    // eslint-disable-next-line no-console
+     
     console.trace(LOG_PREFIX, label);
   } catch {
     logWarn("trace unavailable for", label);

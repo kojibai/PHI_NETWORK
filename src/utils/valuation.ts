@@ -1,3 +1,5 @@
+import { latticeFromPulse } from "./kai_pulse";
+
 /* valuation.ts — Natural-Law valuation for Kai-sigils (vφ-5 “Harmonia”)
    Base unit: 1 coherent breath = 1 Φ
 
@@ -21,9 +23,9 @@
      valuePhi(now) = 1 Φ × premium(now) + PV(IP at now)
 
    STEP CONSISTENCY (fix):
-     • Single-source step: if the caller supplies meta.stepIndex, we always trust it.
-     • Only if absent do we derive stepIndex from the claim pulse.
-     • We also normalize `beat` for geometry if missing (fall back to claimPulse // pulsesPerBeat).
+     • Canonical KKS v1 beat/step come from the claim pulse.
+     • Caller-provided beat/step are only relevant on non-canonical alternate lattices.
+     • Geometry and valuation share the same pulse-derived lattice in canonical mode.
 */
 
 export type HashHex = string;
@@ -603,12 +605,16 @@ function circularSim01(a: number, b: number, period: number): number {
 }
 function stepIndexFromPulse(pulse: number, stepsPerBeat: number): number {
   if (!Number.isFinite(pulse) || stepsPerBeat <= 0) return 0;
-  const step = Math.floor(Math.floor(Math.max(0, pulse)) / PULSES_PER_STEP) % stepsPerBeat;
-  return step;
+  if (stepsPerBeat === DEFAULT_STEPS_PER_BEAT) return latticeFromPulse(pulse).stepIndex;
+  const safePulse = Math.trunc(pulse);
+  const pulsesPerBeat = PULSES_PER_STEP * stepsPerBeat;
+  const into = ((safePulse % pulsesPerBeat) + pulsesPerBeat) % pulsesPerBeat;
+  return Math.floor(into / PULSES_PER_STEP);
 }
 function breathResidFromPulse(pulse: number): number {
   if (!Number.isFinite(pulse)) return 0;
-  return Math.floor(Math.max(0, pulse)) % PULSES_PER_STEP; // 0..10
+  const safePulse = Math.trunc(pulse);
+  return ((safePulse % PULSES_PER_STEP) + PULSES_PER_STEP) % PULSES_PER_STEP; // 0..10
 }
 function logPhiFrac01(n: number): number {
   if (!Number.isFinite(n) || n <= 0) return 0;
@@ -681,6 +687,9 @@ function resolveClaimPulse(meta: SigilMetadataLite, nowPulse: number): number {
 }
 
 function resolveStepIndex(meta: SigilMetadataLite, stepsPerBeat: number, claimPulse: number): number {
+  if (stepsPerBeat === DEFAULT_STEPS_PER_BEAT) {
+    return latticeFromPulse(claimPulse).stepIndex;
+  }
   if (typeof meta.stepIndex === "number" && Number.isFinite(meta.stepIndex)) {
     return clamp(Math.trunc(meta.stepIndex), 0, stepsPerBeat - 1);
   }
@@ -688,6 +697,9 @@ function resolveStepIndex(meta: SigilMetadataLite, stepsPerBeat: number, claimPu
 }
 
 function resolveBeat(meta: SigilMetadataLite, pulsesPerBeat: number, claimPulse: number): number {
+  if (pulsesPerBeat === PULSES_PER_BEAT_CANON) {
+    return latticeFromPulse(claimPulse).beat;
+  }
   if (typeof meta.beat === "number" && Number.isFinite(meta.beat)) {
     return Math.trunc(meta.beat);
   }

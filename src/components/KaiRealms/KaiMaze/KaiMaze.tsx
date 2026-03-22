@@ -3,7 +3,7 @@
 
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./styles/kai-maze.css";
 import { useGameFocus } from "../lib/gameFocus";
 
@@ -355,12 +355,21 @@ const KaiMaze: React.FC<Props> = ({ currentPhi, onPhiChange, onExit }) => {
   }, []);
 
   const [wallet, setWallet] = useState<number>(currentPhi);
-  useEffect(() => setWallet(currentPhi), [currentPhi]);
+  useEffect(() => {
+    const raf = window.requestAnimationFrame(() => setWallet(currentPhi));
+    return () => window.cancelAnimationFrame(raf);
+  }, [currentPhi]);
 
   const [state, setState] = useState<GameState>(() => newGameState(1, performance.now()));
+  const entryChargedRef = useRef(false);
 
   // Breath anchor
-  const breathAnchorRef = useRef<number>(performance.now());
+  const breathAnchorRef = useRef<number>(0);
+  useEffect(() => {
+    if (breathAnchorRef.current === 0) {
+      breathAnchorRef.current = performance.now();
+    }
+  }, []);
 
   // Show on-screen D-pad on coarse/touch pointers (fallback to width)
   const [showDpad, setShowDpad] = useState<boolean>(() => {
@@ -401,19 +410,24 @@ const KaiMaze: React.FC<Props> = ({ currentPhi, onPhiChange, onExit }) => {
 
   // Entry cost (take focus when we start)
   useEffect(() => {
+    if (entryChargedRef.current) return;
     if (ENTRY_COST_PHI > 0 && wallet >= ENTRY_COST_PHI) {
+      entryChargedRef.current = true;
       const next = wallet - ENTRY_COST_PHI;
-      setWallet(next); onPhiChange(next);
-      takeFocus();
+      const raf = window.requestAnimationFrame(() => {
+        setWallet(next);
+        onPhiChange(next);
+        takeFocus();
+      });
+      return () => window.cancelAnimationFrame(raf);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [onPhiChange, takeFocus, wallet]);
 
   /* ----------------------------- Input ----------------------------- */
 
-  const cancelChannel = () => {
+  const cancelChannel = useCallback(() => {
     setState(s => (s.channelingUntil ? { ...s, channelingUntil: 0 } : s));
-  };
+  }, []);
 
   // Keyboard (desktop) — also takes focus
   useEffect(() => {
@@ -439,8 +453,7 @@ const KaiMaze: React.FC<Props> = ({ currentPhi, onPhiChange, onExit }) => {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [onExit, state.over, state.onAltar, state.channelingUntil]);
+  }, [cancelChannel, onExit, state.over, state.onAltar, state.channelingUntil, takeFocus]);
 
   // Mobile D-pad helpers
   const handlePadDir = (dir: Dir) => {

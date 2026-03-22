@@ -3436,7 +3436,7 @@ breathTimer = null;
       syncNowRef.current = null;
       unmounted.current = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [bump, markInteracting, scheduleUiFlush, setLastAddedSafe]);
 
   const requestImmediateSync = useCallback(
@@ -3455,10 +3455,17 @@ breathTimer = null;
     return () => window.removeEventListener(SIGIL_EXPLORER_OPEN_EVENT, onOpen);
   }, [requestImmediateSync]);
 
-  const forest = useMemo(() => buildForest(memoryRegistry), [registryRev]);
-  const transferRegistry = useMemo(() => readSigilTransferRegistry(), [transferRev]);
+  const forest = useMemo(() => {
+    void registryRev;
+    return buildForest(memoryRegistry);
+  }, [registryRev]);
+  const transferRegistry = useMemo(() => {
+    void transferRev;
+    return readSigilTransferRegistry();
+  }, [transferRev]);
 
   const phiTotalsByPulse = useMemo((): ReadonlyMap<number, number> => {
+    void registryRev;
     const totals = new Map<number, number>();
     const seenByPulse = new Map<number, Set<string>>();
 
@@ -3487,6 +3494,7 @@ breathTimer = null;
   }, [registryRev]);
 
   const prefetchTargets = useMemo((): string[] => {
+    void registryRev;
     const urls: string[] = [];
 
     for (const [rawUrl] of memoryRegistry) {

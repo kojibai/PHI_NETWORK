@@ -1,5 +1,10 @@
 // src/components/sigil/ProvenanceList.tsx
 import { useEffect, useMemo, useState } from "react";
+import {
+  eternalCalendarFromPulse,
+  latticeFromPulse,
+  pulsesIntoBeatFromPulse as canonicalPulsesIntoBeatFromPulse,
+} from "../../utils/kai_pulse";
 import type { ProvenanceEntry } from "../../types/sigil";
 
 type Props = {
@@ -7,12 +12,8 @@ type Props = {
   steps: number; // steps per beat (usually 44)
 };
 
-/* ── Exact beat/step math (match EternalKlock) ────────────────────────────── */
-const HARMONIC_DAY_PULSES_EXACT = 17_491.270421; // exact
-const CHAKRA_BEATS_PER_DAY = 36;
+/* ── Exact beat/step math (canonical KKS v1 lattice) ──────────────────────── */
 const PULSES_PER_STEP = 11;                      // 11 breaths per step
-const UPULSES = 1_000_000;                       // μpulses per pulse
-const MU_PER_DAY = Math.round(HARMONIC_DAY_PULSES_EXACT * UPULSES);
 
 const DAYS_PER_WEEK = 6;
 const WEEKS_PER_MONTH = 7;
@@ -22,72 +23,29 @@ const DAYS_PER_YEAR = DAYS_PER_MONTH * MONTHS_PER_YEAR; // 336
 
 const PHI = (1 + Math.sqrt(5)) / 2;
 
-/* μpulse helpers (exact, floor-snapped to current μpulse) */
-function muPerBeat() {
-  return Math.round(
-    (HARMONIC_DAY_PULSES_EXACT / CHAKRA_BEATS_PER_DAY) * UPULSES
-  );
-}
-function muPosInDayFromPulse(pulse: number) {
-  const muAbs = Math.floor(pulse * UPULSES); // snap down to current μpulse
-  const mu = ((muAbs % MU_PER_DAY) + MU_PER_DAY) % MU_PER_DAY;
-  return mu;
-}
 function exactBeatIndexFromPulse(pulse: number): number {
-  const muBeat = muPerBeat();
-  const muDay  = muPosInDayFromPulse(pulse);
-  const idx = Math.floor(muDay / muBeat);  // 0..35
-  return Math.min(Math.max(idx, 0), CHAKRA_BEATS_PER_DAY - 1);
+  return latticeFromPulse(pulse).beat;
 }
 function exactStepIndexFromPulse(pulse: number, stepsPerBeat: number): number {
-  const muBeat   = muPerBeat();
-  const muStep   = PULSES_PER_STEP * UPULSES;
-  const muInBeat = muPosInDayFromPulse(pulse) % muBeat;
-  const idx = Math.floor(muInBeat / muStep);  // 0..(steps-1)
-  return Math.min(Math.max(idx, 0), Math.max(stepsPerBeat - 1, 0));
+  const steps = Number.isFinite(stepsPerBeat) && stepsPerBeat > 0 ? Math.floor(stepsPerBeat) : 44;
+  if (steps === 44) return latticeFromPulse(pulse).stepIndex;
+  const safePulse = Number.isFinite(pulse) ? Math.trunc(pulse) : 0;
+  const pulsesPerBeat = PULSES_PER_STEP * steps;
+  const into = ((safePulse % pulsesPerBeat) + pulsesPerBeat) % pulsesPerBeat;
+  return Math.floor(into / PULSES_PER_STEP);
 }
 function exactPercentIntoStepFromPulse(pulse: number): number {
-  const muBeat   = muPerBeat();
-  const muStep   = PULSES_PER_STEP * UPULSES;
-  const muInBeat = muPosInDayFromPulse(pulse) % muBeat;
-  const muInto   = muInBeat % muStep;
-  return Math.max(0, Math.min(1, muInto / muStep)); // 0..1
+  return latticeFromPulse(pulse).percentIntoStep;
 }
 function pulsesIntoBeatFromPulse(pulse: number): number {
-  const muBeat   = muPerBeat();
-  const muInBeat = muPosInDayFromPulse(pulse) % muBeat;
-  return Math.floor(muInBeat / UPULSES); // whole pulses since beat start
+  return canonicalPulsesIntoBeatFromPulse(pulse);
 }
 
 /* ── Kairos Calendar indices (NO Chronos) ────────────────────────────────
    Absolute day is 1-based for official display.
 */
 function kaiCalendarFromPulse(pulse: number) {
-  const pμ = BigInt(Math.floor(pulse * UPULSES));         // μpulses since Genesis (use full precision)
-  const N_DAY_μ = BigInt(MU_PER_DAY);                     // μpulses per Kai-Day (exact)
-  const absDayIdxBI = pμ / N_DAY_μ;                       // floor division (0..∞)
-  const absDayIdxDisp = Number(absDayIdxBI) + 1;          // 1..∞ for display
-
-  const dYear = Number(((absDayIdxBI % BigInt(DAYS_PER_YEAR)) + BigInt(DAYS_PER_YEAR)) % BigInt(DAYS_PER_YEAR)); // 0..335
-  const yearIdx  = Math.floor(Number(absDayIdxBI) / DAYS_PER_YEAR); // 0..∞
-
-  const monthIdx = Math.floor(dYear / DAYS_PER_MONTH);        // 0..7 (UI shows +1)
-  const dayInMonth = (dYear % DAYS_PER_MONTH) + 1;            // 1..42
-
-  const weekOfYear = Math.floor(dYear / DAYS_PER_WEEK);       // 0..55 (UI shows +1)
-  const weekOfMonth = Math.floor((dayInMonth - 1) / DAYS_PER_WEEK); // 0..6 (UI shows +1)
-
-  const dayOfWeek = (dYear % DAYS_PER_WEEK) + 1;              // 1..6
-
-  return {
-    absDayIdx: absDayIdxDisp, // 1..∞
-    yearIdx,                   // 0..∞
-    monthIdx,                  // 0..7
-    weekOfYear,                // 0..55
-    weekOfMonth,               // 0..6
-    dayInMonth,                // 1..42
-    dayOfWeek,                 // 1..6
-  };
+  return eternalCalendarFromPulse(pulse);
 }
 
 /* Display helpers */
@@ -313,12 +271,11 @@ function CopyClaim({ seal }: { seal: string }) {
 }
 
 export default function ProvenanceList({ entries, steps }: Props) {
-  // Guards for safety when parent passes undefined/null
-  const safeEntries = Array.isArray(entries) ? entries : [];
   const safeSteps = Number.isFinite(steps) && steps > 0 ? steps : 44;
 
   // Precompute everything once per (entries, steps)
   const derived = useMemo(() => {
+    const safeEntries = Array.isArray(entries) ? entries : [];
     return safeEntries.map((e) => {
       const beat0        = exactBeatIndexFromPulse(e.pulse);
       const step0        = exactStepIndexFromPulse(e.pulse, safeSteps);
@@ -337,7 +294,7 @@ export default function ProvenanceList({ entries, steps }: Props) {
 
       return { e, beat0, step0, stepPct, pulsesInBeat, k, phiLevel, seal };
     });
-  }, [safeEntries, safeSteps]);
+  }, [entries, safeSteps]);
 
   return (
     <div className="sp-provenance" role="region" aria-label="Provenance">

@@ -174,7 +174,7 @@ export async function exportPosterPNG(params: {
     requestAnimationFrame(() => URL.revokeObjectURL(outUrl));
     onToast("Public key PNG saved");
   } catch (e) {
-    // eslint-disable-next-line no-console
+     
     console.error(e);
     onToast("Poster export failed");
   }

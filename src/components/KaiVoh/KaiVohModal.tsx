@@ -195,10 +195,10 @@ export default function KaiVohModal({ open, onClose }: KaiVohModalProps) {
 
   useEffect(() => {
     if (!isReloadDebugEnabled()) return;
-    // eslint-disable-next-line no-console
+     
     console.log("[Reload Detective] KaiVohModal mount");
     return () => {
-      // eslint-disable-next-line no-console
+       
       console.log("[Reload Detective] KaiVohModal unmount");
     };
   }, []);

@@ -206,17 +206,6 @@ import { useSigilSession } from "./session/useSigilSession";
       titleCount <= 140 &&
       appId.length > 0;
   
-    // Keyboard: Cmd/Ctrl + Enter => Mint
-    const onKeyDown = useCallback(
-      (e: React.KeyboardEvent<HTMLTextAreaElement | HTMLInputElement>) => {
-        if ((e.ctrlKey || e.metaKey) && e.key === "Enter" && canMint) {
-          e.preventDefault();
-          void (async () => onMint())();
-        }
-      },
-      [canMint] // onMint is stable via deps below
-    );
-  
     const setLiveStatus = useCallback((msg: string) => {
       setStatus(msg);
       if (statusRef.current) statusRef.current.textContent = msg;
@@ -376,7 +365,7 @@ import { useSigilSession } from "./session/useSigilSession";
               );
             }
           } catch (e: unknown) {
-            // eslint-disable-next-line no-console
+             
             console.warn(
               "Local feed cache/broadcast failed:",
               e instanceof Error ? e.message : String(e)
@@ -394,7 +383,7 @@ import { useSigilSession } from "./session/useSigilSession";
         setDraft((d) => ({ ...d, text: "", mediaLines: "" }));
       } catch (e: unknown) {
         setLiveStatus(`Mint failed: ${e instanceof Error ? e.message : String(e)}`);
-        // eslint-disable-next-line no-console
+         
         console.error(e);
       } finally {
         setIsMinting(false);
@@ -414,8 +403,19 @@ import { useSigilSession } from "./session/useSigilSession";
       draft.includeCanonicalHash,
       setDraft,
       setLiveStatus,
-      tags.length,
+      tags,
     ]);
+
+    // Keyboard: Cmd/Ctrl + Enter => Mint
+    const onKeyDown = useCallback(
+      (e: React.KeyboardEvent<HTMLTextAreaElement | HTMLInputElement>) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === "Enter" && canMint) {
+          e.preventDefault();
+          void (async () => onMint())();
+        }
+      },
+      [canMint, onMint]
+    );
   
     /* ───────────────────────── UI ───────────────────────── */
   
@@ -615,7 +615,7 @@ import { useSigilSession } from "./session/useSigilSession";
                         setLiveStatus("URL copied");
                         window.setTimeout(() => setLiveStatus(""), 1000);
                       } catch (e: unknown) {
-                        // eslint-disable-next-line no-console
+                         
                         console.warn(
                           "Remember failed:",
                           e instanceof Error ? e.message : String(e)

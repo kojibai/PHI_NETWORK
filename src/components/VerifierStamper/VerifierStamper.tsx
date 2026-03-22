@@ -378,12 +378,12 @@ const VerifierStamperInner: React.FC = () => {
     setPulseNow(kaiPulseNow());
     const id = window.setInterval(() => setPulseNow(kaiPulseNow()), 1000);
     return () => window.clearInterval(id);
-  }, []);
+  }, [computeEffectiveCanonical]);
 
   useEffect(() => {
     loadApiBackupDeadUntil();
     loadApiBaseHint();
-  }, []);
+  }, [computeEffectiveCanonical]);
 
   const [svgURL, setSvgURL] = useState<string | null>(null);
   const [sourceFilename, setSourceFilename] = useState<string | null>(null);
@@ -607,7 +607,7 @@ const VerifierStamperInner: React.FC = () => {
         logError("loadOrCreateKeypair", err);
       }
     })();
-  }, []);
+  }, [computeEffectiveCanonical]);
 
   useEffect(() => {
     let alive = true;
@@ -1762,7 +1762,7 @@ const openNote = () =>
     } catch (err) {
       logError("shareTransferLink.publishRotation", err);
     }
-  }, []);
+  }, [computeEffectiveCanonical]);
 
   const syncMetaAndUi = useCallback(
     async (mNew: SigilMetadata) => {

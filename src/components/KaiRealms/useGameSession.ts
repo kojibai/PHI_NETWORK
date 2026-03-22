@@ -111,7 +111,7 @@ export function useGameSession(sessionIdInput?: string): UseGameSessionResult {
       });
     })().catch((e: unknown) => {
       // surface initialization failures
-      // eslint-disable-next-line no-console
+       
       console.error("[KaiRealms] Peer init failed:", e);
     });
 
@@ -120,7 +120,7 @@ export function useGameSession(sessionIdInput?: string): UseGameSessionResult {
       try {
         peerRef.current?.destroy();
       } catch (e) {
-        // eslint-disable-next-line no-console
+         
         console.warn("[KaiRealms] Peer destroy failed:", e);
       }
       peerRef.current = null;

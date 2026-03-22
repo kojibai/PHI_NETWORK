@@ -1,5 +1,4 @@
 // src/pages/SigilPage/SigilPage.tsx
-/* eslint-disable no-empty -- benign lifecycle errors are silenced */
 "use client";
 
 import type * as React from "react";
@@ -218,10 +217,10 @@ const acquireSendLock = (
         };
         bc.postMessage(msg);
         bc.close();
-      } catch {}
+      } catch { /* ignore */ }
       return { ok: true, id };
     }
-  } catch {}
+  } catch { /* ignore */ }
   return { ok: false, id };
 };
 
@@ -245,9 +244,9 @@ const releaseSendLock = (canonical: string | null, token: string | null, id: str
         };
         bc.postMessage(msg);
         bc.close();
-      } catch {}
+      } catch { /* ignore */ }
     }
-  } catch {}
+  } catch { /* ignore */ }
 };
 
 const isValidDebit = (d: unknown): d is DebitLoose => {
@@ -378,17 +377,17 @@ const publishRotation = (keys: string[], token: string) => {
   uniq.forEach((canonical) => {
     try {
       localStorage.setItem(rotationKey(canonical), `${token}@${Date.now()}`);
-    } catch {}
+    } catch { /* ignore */ }
     try {
       const bc = new BroadcastChannel(ROTATE_CH);
       bc.postMessage({ type: "rotated", canonical, token } as RotationMsg);
       bc.close();
-    } catch {}
+    } catch { /* ignore */ }
     try {
       window.dispatchEvent(
         new CustomEvent("sigil:transfer-rotated", { detail: { canonical, token } })
       );
-    } catch {}
+    } catch { /* ignore */ }
   });
 };
 
@@ -414,7 +413,7 @@ function writeDescendantsStored(
   if (!c || !token) return;
   try {
     localStorage.setItem(descendantsKey(c, token), JSON.stringify(list || []));
-  } catch {}
+  } catch { /* ignore */ }
 }
 type DescendantsMsg = {
   type: "descendants";
@@ -435,7 +434,7 @@ function broadcastDescendants(canonical: string, token: string, list: Descendant
     };
     bc.postMessage(msg);
     bc.close();
-  } catch {}
+  } catch { /* ignore */ }
 }
 
 /* ——— Page ——— */
@@ -498,13 +497,13 @@ export default function SigilPage() {
     try {
       const v = localStorage.getItem(upgradeLockKey);
       setUpgradedOnce(v === "1");
-    } catch {}
+    } catch { /* ignore */ }
   }, [upgradeLockKey]);
   const markLegacyUpgraded = useCallback(() => {
     if (!upgradeLockKey) return;
     try {
       localStorage.setItem(upgradeLockKey, "1");
-    } catch {}
+    } catch { /* ignore */ }
     setUpgradedOnce(true);
     signal(setToast, "Upgraded — legacy link locked");
   }, [upgradeLockKey]);
@@ -542,7 +541,7 @@ export default function SigilPage() {
             break;
           }
         }
-      } catch {}
+      } catch { /* ignore */ }
       setRotatedToken(tok);
     };
     refreshFromLS();
@@ -557,7 +556,7 @@ export default function SigilPage() {
           if (keys.includes(kn)) setRotatedToken(m.token || null);
         }
       };
-    } catch {}
+    } catch { /* ignore */ }
 
     const onStorage = (e: StorageEvent) => {
       if (!e.key) return;
@@ -575,7 +574,7 @@ export default function SigilPage() {
       if (bc && typeof bc.close === "function") {
         try {
           bc.close();
-        } catch {}
+        } catch { /* ignore */ }
       }
     };
   }, [payload?.canonicalHash, routeHash, localHash]);
@@ -614,12 +613,12 @@ export default function SigilPage() {
       bc.onmessage = () => {
         // no-op: localStorage remains source of truth; UI reactivity is already sufficient
       };
-    } catch {}
+    } catch { /* ignore */ }
     return () => {
       if (bc && typeof bc.close === "function") {
         try {
           bc.close();
-        } catch {}
+        } catch { /* ignore */ }
       }
     };
   }, []);
@@ -753,7 +752,7 @@ useEffect(() => {
       } else {
         await copy(absUrl, "Link copied");
       }
-    } catch {}
+    } catch { /* ignore */ }
   }, [absUrl, copy]);
 
 useEffect(() => {
@@ -1044,7 +1043,7 @@ useEffect(() => {
       }
       return nextPayload as SigilPayload;
     });
-  }, [payload?.canonicalHash, localHash, legacyInfo, urlQs, transferToken, setPayload]);
+  }, [payload, localHash, legacyInfo, urlQs, transferToken, setPayload]);
 
   /* Canonicalize route to canonical hash when active */
   useEffect(() => {
@@ -1076,7 +1075,7 @@ useEffect(() => {
       u.pathname = `/s/${localHash}`;
       navigate(`${u.pathname}${u.search}${u.hash}`, { replace: true });
     }
-  }, [payload?.canonicalHash, localHash, routeHash, linkStatus, legacyInfo, navigate]);
+  }, [payload, localHash, routeHash, linkStatus, legacyInfo, navigate]);
 
   /* Cross-tab debit sync — v48: cap/prune merges */
   useEffect(() => {
@@ -1157,7 +1156,7 @@ useEffect(() => {
           handleIncoming(m.canonical, m.qs, m.token);
         }
       };
-    } catch {}
+    } catch { /* ignore */ }
 
     const onStorage = (e: StorageEvent) => {
       if (!e.key || typeof e.newValue !== "string") return;
@@ -1175,7 +1174,7 @@ useEffect(() => {
       if (bc && typeof bc.close === "function") {
         try {
           bc.close();
-        } catch {}
+        } catch { /* ignore */ }
       }
     };
   }, [expectedCanonCandidates, transferToken, payload, setPayload]);
@@ -1222,7 +1221,7 @@ useEffect(() => {
       kaiSignature: payload.kaiSignature ?? undefined,
       userPhiKey: payload.userPhiKey ?? undefined,
     });
-  }, [payload, STEPS_PER_BEAT]);
+  }, [payload]);
 
   const qrAccent = useMemo(() => {
     const baseHue = CHAKRA_THEME[chakraDay as keyof typeof CHAKRA_THEME]?.hue ?? 180;
@@ -1424,7 +1423,7 @@ try {
   const currentD = new URLSearchParams(window.location.search).get("d");
   if (currentD) u.searchParams.set("d", currentD);
   finalUrl = u.toString();                 // keep origin+protocol
-} catch {}
+} catch { /* ignore */ }
 
 const u = new URL(finalUrl, window.location.origin);
 u.pathname = `/s/${canonical}`;
@@ -1488,7 +1487,7 @@ current.searchParams.forEach((v, k) => {
           } catch {
             try {
               window.location.href = u;
-            } catch {}
+            } catch { /* ignore */ }
           }
         },
       });
@@ -1784,6 +1783,7 @@ useEffect(() => {
   currentPulse,
   legacyInfo,
   linkStatus,
+  payload?.canonicalHash,
 ]);
 
   // derive IDs (deterministic preview)
@@ -1815,6 +1815,8 @@ useEffect(() => {
     };
   }, [payload, localHash]);
 
+  const sealAndSendRef = useRef<(() => void) | null>(null);
+
   const handleSeal = useCallback(
     async (e?: React.SyntheticEvent) => {
       e?.preventDefault?.();
@@ -1831,12 +1833,11 @@ useEffect(() => {
       const d = await deriveMomentKeys(payload, canon, nowPulseVal, nowBeatIdx, nowStepIdx);
       setNewOwner(d.ownerPhiKey);
       setNewKaiSig(d.kaiSig);
-// after
 setTimeout(() => {
   try {
-    sealAndSend();
+    sealAndSendRef.current?.();
     // let the deep verifier effect promote to "verified"
-  } catch {}
+  } catch { /* ignore */ }
 }, 0);
     },
     [payload, localHash, isFutureSealed, isArchived]
@@ -1986,7 +1987,12 @@ setTimeout(() => setSuppressAuthUntil(0), 0);
     linkStatus,
     isFutureSealed,
     openShareTransferModal,
+    setPayload,
+    signAndAttach,
   ]);
+  useEffect(() => {
+    sealAndSendRef.current = sealAndSend;
+  }, [sealAndSend]);
 
   // === debit math ===
   type SPWithDebits = SigilPayload & {
@@ -2124,7 +2130,7 @@ const chipUsd: number = (displayedChipPhi ?? 0) * (usdPerPhi || 0);
         if (m.canonical !== h.toLowerCase() || m.token !== tok) return;
         if (Array.isArray(m.list)) setDescendants(m.list);
       };
-    } catch {}
+    } catch { /* ignore */ }
     const onStorage = (e: StorageEvent) => {
       if (!e.key || !e.newValue) return;
       const h = currentCanonicalUtil(payload ?? null, localHash, legacyInfo);
@@ -2134,7 +2140,7 @@ const chipUsd: number = (displayedChipPhi ?? 0) * (usdPerPhi || 0);
         try {
           const arr = JSON.parse(e.newValue || "[]") as unknown;
           if (Array.isArray(arr)) setDescendants(arr as DescendantLocal[]);
-        } catch {}
+        } catch { /* ignore */ }
       }
     };
     window.addEventListener("storage", onStorage, { passive: true });
@@ -2142,7 +2148,7 @@ const chipUsd: number = (displayedChipPhi ?? 0) * (usdPerPhi || 0);
       if (bc && typeof bc.close === "function") {
         try {
           bc.close();
-        } catch {}
+        } catch { /* ignore */ }
       }
       window.removeEventListener("storage", onStorage);
     };
@@ -2263,7 +2269,7 @@ try {
       return patched || null;
     }
   },
-  [payload, expiryUnit, expiryAmount, localHash, openShareTransferModal, legacyInfo, transferToken]
+  [payload, expiryUnit, expiryAmount, localHash, openShareTransferModal, legacyInfo, transferToken, signAndAttach]
 );
 
 
@@ -2326,7 +2332,7 @@ const ensureParentTokenActive = useCallback(
       } else {
         navigate(`${u.pathname}${u.search}${u.hash}`, { replace: true });
       }
-    } catch {}
+    } catch { /* ignore */ }
 
     // 2) Persist to payload so UI/logic see it immediately
     setPayload(prev =>
@@ -2460,7 +2466,6 @@ const ensureParentTokenActive = useCallback(
   }, [
     ownerVerified,
     payload,
-    (payload as SPWithDebits | null)?.originalAmount,
     valSeal?.valuePhi,
     sendAmount,
     rotatedToken,

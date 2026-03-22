@@ -16,7 +16,7 @@ export default function VerifyEmbedPage(): React.JSX.Element {
   const slug = parseSlug(rawSlug ?? "");
   const status = "STANDBY";
 
-  const pulseLabel = slug.pulse ? String(slug.pulse) : "—";
+  const pulseLabel = typeof slug.pulse === "number" && Number.isFinite(slug.pulse) ? String(slug.pulse) : "—";
   const phiLabel = slug.shortSig ? ellipsizeMiddle(slug.shortSig, 8, 6) : "—";
   const openUrl = `/verify/${encodeURIComponent(slug.raw || rawSlug || "")}`;
 

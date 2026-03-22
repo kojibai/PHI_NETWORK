@@ -1,5 +1,5 @@
 // src/components/valuation/ValuationModal.tsx
-/* eslint-disable no-restricted-globals */
+ 
 "use client";
 
 /* ────────────────────────────────────────────────────────────────
@@ -90,7 +90,7 @@ import {
 const devWarn = (...args: ReadonlyArray<unknown>): void => {
   if (process.env.NODE_ENV !== "production") {
     try {
-      // eslint-disable-next-line no-console
+       
       console.debug(...args);
     } catch {
       /* no-op */
@@ -561,10 +561,10 @@ useEffect(() => {
     transfersWindowRootV14?: string;
   };
 
-  const getHeadRoot = (m: SigilMetadataLite): string => {
+  const getHeadRoot = useCallback((m: SigilMetadataLite): string => {
     const x = m as SigilMetadataLite & Partial<HeadRootCarrier>;
     return x.transfersWindowRoot ?? x.transfersWindowRootV14 ?? "";
-  };
+  }, []);
 
   /* ───────── Child/Derivative detection + exact child Φ extraction (bulletproof) ───────── */
   type DerivativeHints = {
@@ -609,7 +609,7 @@ useEffect(() => {
   };
 
   /** Heuristics to declare “this is a derivative (child) glyph” — lenient like Verifier */
-  const isDerivative = (m: SigilMetadataLite): boolean => {
+  const isDerivative = useCallback((m: SigilMetadataLite): boolean => {
     const mm = m as SigilMetadataLite & Partial<DerivativeHints>;
 
     // name-ish fields combined
@@ -645,10 +645,10 @@ useEffect(() => {
     if (mm.valuationSource?.childValuePhi != null) return true;
 
     return false;
-  };
+  }, []);
 
   /** Extract the child’s *exact* Φ (6dp) from any known slot (first hit wins) */
-  const getChildExactPhi = (m: SigilMetadataLite): number | null => {
+  const getChildExactPhi = useCallback((m: SigilMetadataLite): number | null => {
     const mm = m as SigilMetadataLite & Partial<DerivativeHints>;
     const sureChild = isDerivative(m);
 
@@ -691,7 +691,7 @@ useEffect(() => {
           : [])
       ) ?? null
     );
-  };
+  }, [isDerivative]);
 
   /* ───────── Exact glyph Φ resolution (priority: child → last upload → initial) ───────── */
   const glyphPhiExact = useMemo<number | null>(() => {
@@ -714,7 +714,7 @@ useEffect(() => {
     }
 
     return null;
-  }, [meta, importedGlyphs, initialGlyph]);
+  }, [meta, importedGlyphs, initialGlyph, getChildExactPhi, isDerivative]);
 
   /* ───────── Bootstrap valuation + series (child Φ first) ───────── */
   useEffect(() => {
@@ -751,7 +751,7 @@ useEffect(() => {
     return () => {
       alive = false;
     };
-  }, [meta, nowPulse, glyphPhiExact]);
+  }, [meta, nowPulse, glyphPhiExact, getHeadRoot]);
 
   /* ───────── Breath loop (visual only; model parity preserved) ───────── */
   useEffect(() => {

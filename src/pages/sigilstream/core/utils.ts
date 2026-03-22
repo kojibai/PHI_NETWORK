@@ -40,7 +40,7 @@ export function roundTiesToEvenBigInt(x: number): bigint {
 export function report(where: string, err: unknown): void {
   try {
     const msg = err instanceof Error ? err.message : String(err);
-    // eslint-disable-next-line no-console
+     
     console.warn(`[SigilStream:${where}] ${msg}`);
   } catch {
     /* ignore */

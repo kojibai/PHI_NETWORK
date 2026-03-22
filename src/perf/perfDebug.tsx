@@ -17,7 +17,7 @@ export const isPerfEnabled = (): boolean => perfEnabled;
 
 export const logPerf = (...args: unknown[]) => {
   if (!perfEnabled) return;
-  // eslint-disable-next-line no-console
+   
   console.log("[perf]", ...args);
 };
 

@@ -88,19 +88,31 @@ const payloadPath = new URL("../src/utils/payload.ts", import.meta.url);
 const sigilUrlPath = new URL("../src/utils/sigilUrl.ts", import.meta.url);
 const svgMetaPath = new URL("../src/utils/svgMeta.ts", import.meta.url);
 const kaiPulsePath = new URL("../src/utils/kai_pulse.ts", import.meta.url);
+const solarPath = new URL("../src/SovereignSolar.ts", import.meta.url);
+const kaiMathPath = new URL("../src/utils/kaiMath.ts", import.meta.url);
 const verify = await import(pathToFileURL(transpileRecursive(verifyPath.href)).href);
 const sigilUtils = await import(pathToFileURL(transpileRecursive(sigilPath.href)).href);
 const payloadUtils = await import(pathToFileURL(transpileRecursive(payloadPath.href)).href);
 const sigilUrlUtils = await import(pathToFileURL(transpileRecursive(sigilUrlPath.href)).href);
 const svgMetaUtils = await import(pathToFileURL(transpileRecursive(svgMetaPath.href)).href);
 const kaiPulse = await import(pathToFileURL(transpileRecursive(kaiPulsePath.href)).href);
+const solar = await import(pathToFileURL(transpileRecursive(solarPath.href)).href);
+const kaiMath = await import(pathToFileURL(transpileRecursive(kaiMathPath.href)).href);
 
 const { parseSlug, verifySigilSvg } = verify;
-const { derivePhiKeyFromSig } = sigilUtils;
+const { computeKaiSignature, derivePhiKeyFromSig } = sigilUtils;
 const { decodePayloadFromQuery } = payloadUtils;
 const { encodeSigilPayloadLoose } = sigilUrlUtils;
 const { validateSigilMeta } = svgMetaUtils;
-const { latticeFromPulse, STEPS_BEAT } = kaiPulse;
+const { eternalCalendarFromPulse, latticeFromPulse, pulsesIntoBeatFromPulse, STEPS_BEAT } = kaiPulse;
+const {
+  beatIndexFromPulse,
+  kaiCalendarFromPulse,
+  percentIntoStepFromPulse,
+  pulsesIntoBeatFromPulse: solarPulsesIntoBeatFromPulse,
+  stepIndexFromPulse,
+} = solar;
+const { stepIndexFromPulse: kaiMathStepIndexFromPulse, stepProgressWithinStepFromPulse } = kaiMath;
 
 process.on("exit", () => {
   rmSync(tempRoot, { recursive: true, force: true });
@@ -193,6 +205,48 @@ test("decodePayloadFromQuery canonicalizes beat, step, and pct from pulse", () =
   assert.equal(payload.stepIndex, canonical.stepIndex);
   assert.equal(payload.stepsPerBeat, STEPS_BEAT);
   assert.equal(payload.stepPct, canonical.percentIntoStep);
+});
+
+test("SovereignSolar pulse helpers stay aligned with canonical KKS v1 lattice", () => {
+  const pulse = -7;
+  const canonical = latticeFromPulse(pulse);
+  const calendar = eternalCalendarFromPulse(pulse);
+
+  assert.equal(beatIndexFromPulse(pulse), canonical.beat);
+  assert.equal(stepIndexFromPulse(pulse, STEPS_BEAT), canonical.stepIndex);
+  assert.equal(percentIntoStepFromPulse(pulse), canonical.percentIntoStep);
+  assert.equal(solarPulsesIntoBeatFromPulse(pulse), pulsesIntoBeatFromPulse(pulse));
+  assert.deepEqual(kaiCalendarFromPulse(pulse), calendar);
+});
+
+test("kaiMath helpers match canonical KKS v1 when using canonical steps-per-beat", () => {
+  const pulse = -7;
+  const canonical = latticeFromPulse(pulse);
+
+  assert.equal(kaiMathStepIndexFromPulse(pulse, STEPS_BEAT), canonical.stepIndex);
+  assert.equal(stepProgressWithinStepFromPulse(pulse, STEPS_BEAT), canonical.percentIntoStep);
+});
+
+test("computeKaiSignature canonicalizes beat and step from pulse", async () => {
+  const pulse = -7;
+  const canonical = latticeFromPulse(pulse);
+  const sig = await computeKaiSignature({
+    pulse,
+    beat: canonical.beat + 1,
+    stepIndex: canonical.stepIndex + 1,
+    chakraDay: "Root",
+    kaiSignature: "",
+    userPhiKey: "",
+  });
+  const expected = await computeKaiSignature({
+    pulse,
+    beat: canonical.beat,
+    stepIndex: canonical.stepIndex,
+    chakraDay: "Root",
+    kaiSignature: "",
+    userPhiKey: "",
+  });
+  assert.equal(sig, expected);
 });
 
 test("validateSigilMeta rejects beat/step drift against canonical pulse lattice", () => {

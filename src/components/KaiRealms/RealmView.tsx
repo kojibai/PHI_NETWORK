@@ -260,7 +260,7 @@ const RealmView: React.FC<Props> = ({ glyphData, onExit }) => {
   });
 
   /* ------------------------ Networking send ------------------------ */
-  const trySendState = (nowMs: number): void => {
+  const trySendState = useCallback((nowMs: number): void => {
     const last = lastSentRef.current;
     const x = playerXRef.current;
     const pulseIndex = currentPulse;
@@ -287,7 +287,7 @@ const RealmView: React.FC<Props> = ({ glyphData, onExit }) => {
     } catch {
       // swallow transient transport errors
     }
-  };
+  }, [currentPulse, glyphData, sendState]);
 
   /* ------------------------------ Loop ------------------------------ */
 
@@ -432,7 +432,7 @@ const RealmView: React.FC<Props> = ({ glyphData, onExit }) => {
       rafIdRef.current = null;
       lastTsRef.current = null;
     };
-  }, [glyphData, paused, gameOver, size.w, size.h, currentPulse, streak, sendState]);
+  }, [glyphData, paused, gameOver, size.w, size.h, currentPulse, streak, trySendState]);
 
   /* ----------------------------- View ----------------------------- */
 

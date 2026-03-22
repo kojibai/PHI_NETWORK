@@ -52,11 +52,12 @@ export type SvgToPngOptions = {
   
     try {
       // Wait for fonts (where supported) to reduce text reflow variance in rasterization.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const anyDoc: any = document;
-      if (anyDoc?.fonts?.ready && typeof anyDoc.fonts.ready.then === "function") {
+      const docWithFonts = document as Document & {
+        fonts?: { ready?: Promise<unknown> };
+      };
+      if (docWithFonts.fonts?.ready && typeof docWithFonts.fonts.ready.then === "function") {
         try {
-          await anyDoc.fonts.ready;
+          await docWithFonts.fonts.ready;
         } catch (e) {
           // If fonts don't resolve, just proceed with system fallback fonts.
           void e;

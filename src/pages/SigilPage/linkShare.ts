@@ -3,6 +3,7 @@
 
 import { makeSigilUrl, type SigilSharePayload } from "../../utils/sigilUrl";
 import { rewriteUrlPayload } from "../../utils/shareUrl";
+import { latticeFromPulse, STEPS_BEAT } from "../../utils/kai_pulse";
 import { ensureClaimTimeInUrl } from "../../utils/urlShort";
 import type { SigilPayload } from "../../types/sigil";
 
@@ -13,7 +14,7 @@ export type ShareableSigilMeta = {
   chakraDay?: string | null;
 
   stepsPerBeat?: number;
-  stepIndex?: number | null; // ✅ if present, this is the UI's exact step and will be preserved
+  stepIndex?: number | null; // ignored in canonical KKS mode; derived from pulse
 
   userPhiKey?: string | null;
   kaiSignature?: string | null;
@@ -80,13 +81,14 @@ function randomToken(): string {
 /** Build only the fields that actually belong to SigilSharePayload (no canonicalHash, no transferNonce, no expiry/claim fields). */
 function buildSharePayload(args: {
   meta: ShareableSigilMeta;
+  beat: number;
   stepIndex: number;
   stepsPerBeat: number;
 }): SigilSharePayload {
-  const { meta, stepIndex, stepsPerBeat } = args;
+  const { meta, beat, stepIndex, stepsPerBeat } = args;
   return {
     pulse: meta.pulse,
-    beat: meta.beat,
+    beat,
     stepIndex, // ✅ single source of truth fed in here
     chakraDay: toChakraDay(meta.chakraDay),
     stepsPerBeat,
@@ -95,24 +97,19 @@ function buildSharePayload(args: {
   };
 }
 
-/** Resolve the step index, preferring the exact UI-provided value. */
+/** Resolve the step index from the canonical pulse lattice. */
 function resolveStepIndex(
   meta: ShareableSigilMeta,
   stepsPerBeat: number,
   deps: ShareDeps
 ): number {
-  // Use UI's explicit stepIndex when it's a finite integer in range; else derive from pulse.
-  const s = meta.stepIndex;
-  if (
-    typeof s === "number" &&
-    Number.isFinite(s) &&
-    s >= 0 &&
-    s < stepsPerBeat &&
-    Math.floor(s) === s
-  ) {
-    return s;
-  }
+  if (stepsPerBeat === STEPS_BEAT) return latticeFromPulse(meta.pulse).stepIndex;
   return deps.stepIndexFromPulse(meta.pulse, stepsPerBeat);
+}
+
+function resolveBeat(meta: ShareableSigilMeta, stepsPerBeat: number): number {
+  if (stepsPerBeat === STEPS_BEAT) return latticeFromPulse(meta.pulse).beat;
+  return meta.beat;
 }
 
 /**
@@ -129,13 +126,14 @@ export function shareTransferLink(
   if (!canonical) return null;
 
   const token = forcedToken ?? randomToken();
-  const stepsNum = meta.stepsPerBeat ?? deps.stepsPerBeat;
+  const stepsNum = STEPS_BEAT;
 
-  // ✅ Prefer the UI's exact step if provided, else fall back to deterministic derivation
+  const beat = resolveBeat(meta, stepsNum);
   const stepIndex = resolveStepIndex(meta, stepsNum, deps);
 
   const sharePayload = buildSharePayload({
     meta,
+    beat,
     stepIndex,
     stepsPerBeat: stepsNum,
   });
@@ -148,7 +146,7 @@ export function shareTransferLink(
   // (We also include the resolved stepIndex for future-proof verifiers that read long-form fields.)
   const metaForP: Partial<SigilPayload> = {
     pulse: meta.pulse,
-    beat: meta.beat,
+    beat,
     stepsPerBeat: stepsNum,
     stepIndex, // ✅ mirror the same stepIndex into the long-form merge
     chakraDay: toChakraDay(meta.chakraDay) as SigilPayload["chakraDay"],

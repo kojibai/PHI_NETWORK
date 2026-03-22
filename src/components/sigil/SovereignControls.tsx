@@ -169,7 +169,7 @@ async function filesFromDataTransfer(dt: DataTransfer): Promise<File[]> {
               if (!batch.length) return resolve();
               // walk sequentially to avoid stack blow-ups on huge trees
               for (const e of batch) {
-                // eslint-disable-next-line no-await-in-loop
+                 
                 await walkEntry(e);
               }
               readAll();
@@ -185,7 +185,7 @@ async function filesFromDataTransfer(dt: DataTransfer): Promise<File[]> {
   }
 
   for (const e of entries) {
-    // eslint-disable-next-line no-await-in-loop
+     
     await walkEntry(e);
   }
   return out.length ? out : Array.from(dt.files || []);

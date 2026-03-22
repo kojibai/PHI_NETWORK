@@ -569,7 +569,7 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
   const hasVerifiedSigil = Boolean(sigilMeta);
 
   // Debounced draft save (reads from refs + current state snapshot)
-  const scheduleDraftSave = (): void => {
+  const scheduleDraftSave = useCallback((): void => {
     if (!draftHydratedRef.current) return;
     if (typeof window === "undefined") return;
 
@@ -599,7 +599,7 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
         /* ignore */
       }
     }, 450);
-  };
+  }, [allowedGlyphs, bodyKind, codeLang, extraUrls, htmlMode, privateOn, sealAdvanced, sealMode, sealSalt]);
 
   // Prop updates only affect refs if we haven't hydrated draft
   useEffect(() => {
@@ -674,14 +674,12 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
     } catch {
       /* ignore */
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [initialAuthor, initialCaption]);
 
   // Save draft when any STATE changes (caption/author handled by onInput)
   useEffect(() => {
     scheduleDraftSave();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bodyKind, codeLang, htmlMode, extraUrls, privateOn, sealMode, sealSalt, allowedGlyphs, sealAdvanced]);
+  }, [scheduleDraftSave]);
 
   useEffect(() => {
     attachmentsRef.current = attachments;
@@ -692,8 +690,7 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
     return () => {
       if (storyPreview) URL.revokeObjectURL(storyPreview.url);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [storyPreview]);
 
   /** Preferred sigil action URL from meta/SVG; fall back to origin */
   const sigilActionUrl = useMemo(() => {
@@ -891,7 +888,10 @@ export default function KaiVoh({ initialCaption = "", initialAuthor = "", onExha
 
   /* ───────────── Private helpers ───────────── */
 
-  const hasFileRef = useMemo(() => attachmentsRef.current.items.some((it) => it.kind === "file-ref"), [attachments]);
+  const hasFileRef = useMemo(() => {
+    void attachments;
+    return attachmentsRef.current.items.some((it) => it.kind === "file-ref");
+  }, [attachments]);
 
   const canSealDerived = privateOn && sealMode === "derived" && hasVerifiedSigil && Boolean(kaiSignature.trim());
   const canSealGlyph = privateOn && sealMode === "glyph" && allowedGlyphs.length > 0;

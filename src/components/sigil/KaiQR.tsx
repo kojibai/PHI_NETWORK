@@ -144,6 +144,8 @@ export default function KaiQR({
   }, [url]);
 
   const content = useMemo(() => {
+    void animate;
+    void pulseMs;
     if (!finalUrl) return null;
 
     const now = new Date();

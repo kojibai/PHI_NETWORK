@@ -81,7 +81,7 @@ export function useAuthorityProof(payload: SigilPayload | null) {
       }
     })();
     return () => { cancelled = true; };
-  }, [payload?.pulse, payload?.beat, payload?.stepsPerBeat, payload?.chakraDay, payload?.kaiSignature, payload?.userPhiKey]);
+  }, [payload]);
 
   return proof;
 }

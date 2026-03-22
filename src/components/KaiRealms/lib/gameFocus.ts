@@ -17,7 +17,7 @@ const hasWindow = typeof window !== "undefined";
 
 function warn(msg: string, err?: unknown): void {
   if (process.env.NODE_ENV !== "production") {
-    // eslint-disable-next-line no-console
+     
     console.warn(`[gameFocus] ${msg}`, err);
   }
 }

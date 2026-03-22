@@ -415,7 +415,7 @@ export async function exportZIP(ctx: {
         stepsPerBeat: stepsNum,
       });
     } catch {
-      // eslint-disable-next-line no-console
+       
       console.debug("Display metadata write failed");
     }
 
@@ -434,7 +434,7 @@ export async function exportZIP(ctx: {
       pValue = u.searchParams.get("p");
       tValue = u.searchParams.get("t");
     } catch {
-      // eslint-disable-next-line no-console
+       
       console.debug("URL parse failed");
     }
 
@@ -722,7 +722,7 @@ export async function exportZIP(ctx: {
     signal(setToast, "Access key generated");
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Claim failed";
-    // eslint-disable-next-line no-console
+     
     console.error(e);
     signal(setToast, `Claim failed: ${msg}`);
   } finally {

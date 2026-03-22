@@ -8,7 +8,7 @@
  * Small, sharp URL utilities for Sigil routes:
  *  - Extract a canonical hash from `/s/:hash`.
  *  - Normalize/merge manifest-style `?p=` payloads (and legacy `c:` payloads)
- *    while ensuring `stepIndex` is present and correct for the *sealed* moment.
+ *    while ensuring canonical KKS lattice fields are correct for the *sealed* moment.
  *  - Normalize a Sigil URL to the modern `/s/:canonical` route without losing qs/hash.
  *  - Provide helpers to choose the current canonical hash and active token.
  *
@@ -18,8 +18,8 @@
  *  - Avoids throwing: all functions return safe fallbacks on malformed inputs.
  *  - Legacy `c:` payloads (`{u,b,s,c,d}`) are auto-upgraded to manifest JSON:
  *      { pulse, beat, stepIndex, chakraDay, stepsPerBeat, ... }
- *  - `stepIndex` is guaranteed to be present by computing from the *sealed* pulse
- *    (never from the current time).
+ *  - `beat` / `stepIndex` / `stepsPerBeat` are recomputed from the *sealed* pulse
+ *    (never from the current time or stale caller metadata).
  *
  * Integration
  * -----------
@@ -33,10 +33,7 @@
 
 import type { SigilPayload } from "../types/sigil";
 import { b64urlDecodeUtf8, b64urlEncodeUtf8 } from "./cryptoLedger";
-import {
-  stepIndexFromPulse,
-  ETERNAL_STEPS_PER_BEAT as STEPS_PER_BEAT,
-} from "../SovereignSolar";
+import { latticeFromPulse, STEPS_BEAT as STEPS_PER_BEAT } from "./kai_pulse";
 
 /** Extract the canonical hash from a /s/:hash URL (lowercased). */
 export function canonicalFromUrl(u: string): string | null {
@@ -227,7 +224,7 @@ function decodePToManifestLike(pRaw: string | null | undefined): ManifestLike {
  * Priority per field (left wins):
  *   1) meta value (if present)
  *   2) existing `p` value (if present)
- *   3) computed fallback (for stepIndex only)
+ *   3) canonical pulse-derived lattice values
  */
 function mergeManifestLike(
   fromP: ManifestLike,
@@ -242,8 +239,6 @@ function mergeManifestLike(
 
   // Identity
   if (typeof meta.pulse === "number") out.pulse = meta.pulse;
-  if (typeof meta.beat === "number") out.beat = meta.beat;
-  if (typeof meta.stepsPerBeat === "number") out.stepsPerBeat = meta.stepsPerBeat;
 
   // chakraDay — only assign when definitely present (strict literal union)
   if (meta.chakraDay !== undefined) {
@@ -258,23 +253,12 @@ function mergeManifestLike(
   // Optional lineage
   if (Array.isArray((meta as WithLineage).lineage)) out.lineage = (meta as WithLineage).lineage;
 
-  // Ensure stepIndex is present and sealed to the moment:
-  // Priority: meta.stepIndex → p.stepIndex → compute from pulse
-  const steps =
-    typeof out.stepsPerBeat === "number" && Number.isFinite(out.stepsPerBeat)
-      ? (out.stepsPerBeat as number)
-      : STEPS_PER_BEAT;
-
-  const metaAny = meta as unknown as { stepIndex?: unknown };
-  const metaStepMaybe = toNum(metaAny?.stepIndex);
-  const pStepMaybe = toNum(out.stepIndex);
-
-  if (metaStepMaybe !== undefined) {
-    out.stepIndex = metaStepMaybe;
-  } else if (pStepMaybe !== undefined) {
-    out.stepIndex = pStepMaybe;
-  } else if (typeof out.pulse === "number" && Number.isFinite(out.pulse)) {
-    out.stepIndex = stepIndexFromPulse(out.pulse, steps);
+  // Canonical KKS v1 lattice values come only from the sealed pulse.
+  if (typeof out.pulse === "number" && Number.isFinite(out.pulse)) {
+    const canonical = latticeFromPulse(out.pulse);
+    out.beat = canonical.beat;
+    out.stepIndex = canonical.stepIndex;
+    out.stepsPerBeat = STEPS_PER_BEAT;
   }
 
   return out;

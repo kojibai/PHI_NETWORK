@@ -42,7 +42,7 @@ export default function useAutoShrink<T extends HTMLElement>(
       window.removeEventListener("resize", recompute);
       window.clearInterval(id);
     };
-  }, deps);
+  }, [paddingPx, minScale, deps]);
 
   return { boxRef, textRef, scale };
 }

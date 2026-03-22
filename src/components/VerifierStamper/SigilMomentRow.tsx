@@ -83,10 +83,11 @@ const SigilMomentRow: FC<Props> = ({
 
   // Cleanup only on unmount
   useEffect(() => {
+    const fillEl = fillRef.current;
     return () => {
       if (boomTimer.current !== null) window.clearTimeout(boomTimer.current);
       if (boomRaf.current !== null) window.cancelAnimationFrame(boomRaf.current);
-      if (fillRef.current) fillRef.current.classList.remove("is-boom");
+      if (fillEl) fillEl.classList.remove("is-boom");
       boomTimer.current = null;
       boomRaf.current = null;
     };

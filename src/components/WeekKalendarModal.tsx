@@ -426,7 +426,7 @@ function upsertSortedByPulse(prev: SavedNote[], next: SavedNote): SavedNote[] {
 type DayNote = { beat: number; step: number; text: string };
 
 function dayStartPulseFromAbsolute(pulse: number): number {
-  const safePulse = BigInt(Math.max(0, Math.floor(pulse)));
+  const safePulse = BigInt(Number.isFinite(pulse) ? Math.trunc(pulse) : 0);
   const dayIndex = floorDiv(safePulse * ONE_PULSE_MICRO, N_DAY_MICRO);
   return Number(floorDiv(dayIndex * N_DAY_MICRO, ONE_PULSE_MICRO));
 }
