@@ -1,0 +1,220 @@
+import assert from "node:assert/strict";
+import { existsSync, lstatSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { test } from "node:test";
+import ts from "typescript";
+
+const tempRoot = mkdtempSync(join(process.cwd(), ".tmp-stream-upgrade-"));
+const moduleCache = new Map();
+
+const IMPORT_FROM_RE = /from\s+["']([^"']+)["']/g;
+const IMPORT_CALL_RE = /import\(\s*["']([^"']+)["']\s*\)/g;
+
+function resolveImport(spec, baseFile) {
+  if (!spec.startsWith(".")) return null;
+  const baseDir = dirname(baseFile);
+  const candidates = [spec, `${spec}.ts`, `${spec}.tsx`, `${spec}.js`, `${spec}.jsx`];
+  for (const candidate of candidates) {
+    const full = resolve(baseDir, candidate);
+    if (existsSync(full) && lstatSync(full).isFile()) return full;
+  }
+  return null;
+}
+
+function gatherImports(source) {
+  const specs = new Set();
+  for (const match of source.matchAll(IMPORT_FROM_RE)) specs.add(match[1]);
+  for (const match of source.matchAll(IMPORT_CALL_RE)) specs.add(match[1]);
+  return [...specs];
+}
+
+function rewriteImports(code, replacements) {
+  let out = code;
+  for (const [spec, replacement] of replacements) {
+    out = out.replaceAll(`"${spec}"`, `"${replacement}"`);
+    out = out.replaceAll(`'${spec}'`, `'${replacement}'`);
+  }
+  return out;
+}
+
+function transpileRecursive(fileUrl) {
+  const filePath = fileURLToPath(fileUrl);
+  if (moduleCache.has(filePath)) return moduleCache.get(filePath);
+  moduleCache.set(filePath, filePath);
+
+  const source = readFileSync(filePath, "utf8");
+  const imports = gatherImports(source);
+  const replacements = new Map();
+
+  for (const spec of imports) {
+    const resolved = resolveImport(spec, filePath);
+    if (!resolved) continue;
+    const depUrl = pathToFileURL(resolved).href;
+    const compiledPath = transpileRecursive(depUrl);
+    replacements.set(spec, pathToFileURL(compiledPath).href);
+  }
+
+  const transpiled = ts.transpileModule(source, {
+    compilerOptions: {
+      module: ts.ModuleKind.ES2022,
+      target: ts.ScriptTarget.ES2022,
+      moduleResolution: ts.ModuleResolutionKind.Bundler,
+      jsx: ts.JsxEmit.ReactJSX,
+    },
+  }).outputText;
+
+  const rewritten = rewriteImports(transpiled, replacements);
+  const tempFile = join(
+    tempRoot,
+    `${basename(filePath).replace(/\W+/g, "_")}-${Date.now()}-${Math.random().toString(16).slice(2)}.mjs`,
+  );
+  writeFileSync(tempFile, rewritten, "utf8");
+  moduleCache.set(filePath, tempFile);
+  return tempFile;
+}
+
+process.on("exit", () => {
+  rmSync(tempRoot, { recursive: true, force: true });
+});
+
+const streamStorePath = new URL("../src/lib/stream/streamStore.ts", import.meta.url);
+const streamSyncPath = new URL("../src/lib/stream/streamSync.ts", import.meta.url);
+const streamListPath = new URL("../src/pages/sigilstream/list/virtualWindow.ts", import.meta.url);
+
+const streamStore = await import(pathToFileURL(transpileRecursive(streamStorePath.href)).href);
+const streamSync = await import(pathToFileURL(transpileRecursive(streamSyncPath.href)).href);
+const streamList = await import(pathToFileURL(transpileRecursive(streamListPath.href)).href);
+
+test("delta apply correctness updates and deletes records", () => {
+  const start = new Map([
+    [
+      "tokA",
+      {
+        token: "tokA",
+        url: "https://x/p/tokA",
+        title: "old",
+        author: "@a",
+        pulse: 10,
+        kind: "text",
+        shortBody: "old",
+        links: [],
+        updatedAt: 1,
+      },
+    ],
+  ]);
+
+  const next = streamStore.applyDeltaRowsToRecords(start, {
+    rows: [
+      { token: "tokA", url: "https://x/p/tokA", preview: { title: "new", pulse: 22 } },
+      { token: "tokB", url: "https://x/p/tokB", preview: { title: "insert", pulse: 30 } },
+      { token: "tokA", url: "https://x/p/tokA", deleted: true },
+    ],
+  });
+
+  assert.equal(next.has("tokA"), false);
+  assert.equal(next.get("tokB")?.title, "insert");
+  assert.equal(next.get("tokB")?.pulse, 30);
+});
+
+test("offline-first sync path uses snapshot for empty local seal", () => {
+  assert.equal(streamSync.buildSyncUrl(null, 200), "/api/stream/snapshot?compact=1&limit=200");
+  assert.equal(streamSync.buildSyncUrl("abc", 200), "/api/stream/delta?after=abc&limit=200");
+  assert.equal(streamSync.buildSyncUrl("abc", 200, "cur"), "/api/stream/delta?after=abc&limit=200&cursor=cur");
+});
+
+test("worker fallback control flag can be toggled", () => {
+  streamStore.setStreamWorkerFailedForTests(false);
+  streamStore.setStreamWorkerFailedForTests(true);
+  streamStore.setStreamWorkerFailedForTests(false);
+  assert.equal(typeof streamStore.setStreamWorkerFailedForTests, "function");
+});
+
+
+
+test("syncStreamDelta paginates until latest seal", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalGetSeal = streamStore.streamStore.getSeal;
+  const originalApplyDelta = streamStore.streamStore.applyDelta;
+  const originalGetSourceDigest = streamStore.streamStore.getSourceDigest;
+
+  let localSeal = "old-seal";
+  const applied = [];
+  const responses = [
+    { seal: "page-1", latestPulse: 10, total: 3 },
+    { seal: "page-1", latestSeal: "page-3", rows: [{ token: "t1", url: "https://x/p/t1" }] },
+    { seal: "page-2", latestSeal: "page-3", rows: [{ token: "t2", url: "https://x/p/t2" }] },
+    { seal: "page-3", latestSeal: "page-3", rows: [{ token: "t3", url: "https://x/p/t3" }] },
+  ];
+
+  globalThis.fetch = async () => ({ ok: true, json: async () => responses.shift() });
+  streamStore.streamStore.getSeal = async () => localSeal;
+  streamStore.streamStore.getSourceDigest = async () => "digest-a";
+  streamStore.streamStore.applyDelta = async (delta) => {
+    applied.push(delta);
+    if (delta.seal) localSeal = delta.seal;
+  };
+
+  try {
+    const changed = await streamSync.syncStreamDelta(1);
+    assert.equal(changed, 3);
+    assert.equal(applied.length, 3);
+    assert.equal(applied[0].seal, "page-1");
+    assert.equal(applied[2].seal, "page-3");
+    assert.equal(localSeal, "page-3");
+  } finally {
+    globalThis.fetch = originalFetch;
+    streamStore.streamStore.getSeal = originalGetSeal;
+    streamStore.streamStore.applyDelta = originalApplyDelta;
+    streamStore.streamStore.getSourceDigest = originalGetSourceDigest;
+  }
+});
+
+
+test("syncStreamDelta forces snapshot when source digest changes", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalGetSeal = streamStore.streamStore.getSeal;
+  const originalGetSourceDigest = streamStore.streamStore.getSourceDigest;
+  const originalApplyDelta = streamStore.streamStore.applyDelta;
+
+  const seenUrls = [];
+  const applied = [];
+  const responses = [
+    { seal: "head-seal", latestPulse: 10, total: 2, sourceDigest: "digest-b" },
+    { seal: "next-seal", latestSeal: "next-seal", rows: [{ token: "t1", url: "https://x/p/t1" }] },
+  ];
+
+  globalThis.fetch = async (url) => {
+    seenUrls.push(String(url));
+    return { ok: true, json: async () => responses.shift() };
+  };
+
+  streamStore.streamStore.getSeal = async () => "head-seal";
+  streamStore.streamStore.getSourceDigest = async () => "digest-a";
+  streamStore.streamStore.applyDelta = async (delta) => {
+    applied.push(delta);
+  };
+
+  try {
+    const changed = await streamSync.syncStreamDelta(50);
+    assert.equal(changed, 1);
+    assert.equal(seenUrls[1], "/api/stream/snapshot?compact=1&limit=50");
+    assert.equal(applied[0].sourceDigest, "digest-b");
+  } finally {
+    globalThis.fetch = originalFetch;
+    streamStore.streamStore.getSeal = originalGetSeal;
+    streamStore.streamStore.getSourceDigest = originalGetSourceDigest;
+    streamStore.streamStore.applyDelta = originalApplyDelta;
+  }
+});
+
+test("virtual list windowing computes bounded start/end", () => {
+  const nearTop = streamList.computeVirtualWindow(0, 900, 100);
+  assert.equal(nearTop.start, 0);
+  assert.ok(nearTop.end > 0);
+
+  const mid = streamList.computeVirtualWindow(2400, 900, 100);
+  assert.ok(mid.start > 0);
+  assert.ok(mid.end <= 100);
+  assert.ok(mid.end > mid.start);
+});
